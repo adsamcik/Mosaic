@@ -3,6 +3,7 @@ import { getCurrentOrFetchEpochKey } from '../lib/epoch-key-service';
 import { type EpochKeyBundle } from '../lib/epoch-key-store';
 import { createLogger } from '../lib/logger';
 import { createManifestForUpload } from '../lib/manifest-service';
+import { syncEngine } from '../lib/sync-engine';
 import { UploadError, UploadErrorCode } from '../lib/upload-errors';
 import { uploadQueue } from '../lib/upload-queue';
 
@@ -51,7 +52,16 @@ export function useUpload() {
       // Create manifest when upload completes
       uploadQueue.onComplete = async (task, shardIds, tieredShards) => {
         try {
-          await createManifestForUpload(task, shardIds, epochKey, tieredShards);
+          const result = await createManifestForUpload(task, shardIds, epochKey, tieredShards);
+          if (result.kind === 'ManifestFinalized' || result.kind === 'AlreadyFinalized') {
+            try {
+              await syncEngine.sync(task.albumId, epochKey.epochHandleId);
+            } catch (syncErr) {
+              log.warn('Post-upload sync failed (photo still uploaded):', {
+                error: syncErr instanceof Error ? syncErr.message : String(syncErr),
+              });
+            }
+          }
           setIsUploading(false);
           setProgress(1);
         } catch (manifestErr) {
@@ -84,7 +94,7 @@ export function useUpload() {
         file,
         albumId,
         epochKey.epochId,
-        epochKey.epochSeed,
+        epochKey.epochHandleId,
       );
     } catch (err) {
       // Only handle errors not already handled above

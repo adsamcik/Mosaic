@@ -330,14 +330,14 @@ private fun deferred(message: String): Nothing = throw SkipException(message)
 private class CannedLinkKeysApi(
   private val expectedLinkSecret: ByteArray,
   private val cannedLinkId: ByteArray,
-  private val cannedWrappingKey: ByteArray,
+  private val cannedLinkHandleId: ULong,
 ) : GeneratedRustLinkKeysApi {
   override fun deriveLinkKeysFromRawSecret(linkSecret: ByteArray): RustLinkKeysFfiResult {
     if (linkSecret.size != 32) {
       return RustLinkKeysFfiResult(
         code = RustLinkKeysStableCode.INVALID_KEY_LENGTH,
         linkId = ByteArray(0),
-        wrappingKey = ByteArray(0),
+        linkHandleId = 0UL,
       )
     }
     if (!linkSecret.contentEquals(expectedLinkSecret)) {
@@ -346,7 +346,7 @@ private class CannedLinkKeysApi(
     return RustLinkKeysFfiResult(
       code = RustLinkKeysStableCode.OK,
       linkId = cannedLinkId.copyOf(),
-      wrappingKey = cannedWrappingKey.copyOf(),
+      linkHandleId = cannedLinkHandleId,
     )
   }
 }
@@ -355,10 +355,10 @@ private fun linkKeysIsDeferredToSliceZeroC() {
   val document = readVector("link_keys.json")
   val linkSecret = decodeHex(extractStringField(document, "linkSecretHex"))
   val expectedLinkId = decodeHex(extractStringField(document, "linkIdHex"))
-  val expectedWrappingKey = decodeHex(extractStringField(document, "wrappingKeyHex"))
+  val expectedWrappingKeyHex = extractStringField(document, "wrappingKeyHex")
 
   val bridge = GeneratedRustLinkKeysBridge(
-    CannedLinkKeysApi(linkSecret, expectedLinkId, expectedWrappingKey),
+    CannedLinkKeysApi(linkSecret, expectedLinkId, 42UL),
   )
   val result = bridge.deriveLinkKeys(linkSecret)
   if (result.code != LinkKeysCode.SUCCESS) {
@@ -367,15 +367,15 @@ private fun linkKeysIsDeferredToSliceZeroC() {
   if (!result.linkId.contentEquals(expectedLinkId)) {
     throw IllegalStateException("link_keys link_id mismatch")
   }
-  if (!result.wrappingKey.contentEquals(expectedWrappingKey)) {
-    throw IllegalStateException("link_keys wrapping_key mismatch")
+  if (result.linkHandleId != 42UL) {
+    throw IllegalStateException("link_keys link_handle_id mismatch")
   }
 
   val rendered = result.toString()
   if (rendered.contains(extractStringField(document, "linkSecretHex"))) {
     throw IllegalStateException("link_keys toString must not leak link_secret hex")
   }
-  if (rendered.contains(extractStringField(document, "wrappingKeyHex"))) {
+  if (rendered.contains(expectedWrappingKeyHex)) {
     throw IllegalStateException("link_keys toString must not leak wrapping_key hex")
   }
 
@@ -690,7 +690,7 @@ private class CannedSealedBundleApi(
   private val cannedAlbumId: String,
   private val cannedEpochId: Int,
   private val cannedRecipient: ByteArray,
-  private val cannedEpochSeed: ByteArray,
+  private val cannedEpochHandleId: ULong,
   private val cannedSignPub: ByteArray,
 ) : GeneratedRustSealedBundleApi {
   @Suppress("LongParameterList")
@@ -743,7 +743,7 @@ private class CannedSealedBundleApi(
       albumId = cannedAlbumId,
       epochId = cannedEpochId,
       recipientPubkey = cannedRecipient.copyOf(),
-      epochSeed = cannedEpochSeed.copyOf(),
+      epochHandleId = cannedEpochHandleId,
       signPublicKey = cannedSignPub.copyOf(),
     )
   }
@@ -754,7 +754,7 @@ private class CannedSealedBundleApi(
     albumId = "",
     epochId = 0,
     recipientPubkey = ByteArray(0),
-    epochSeed = ByteArray(0),
+    epochHandleId = 0UL,
     signPublicKey = ByteArray(0),
   )
 }
@@ -768,7 +768,7 @@ private fun sealedBundleIsDeferredToSliceZeroC() {
   val recipientSeed = decodeHex(extractStringField(document, "recipientIdentitySeedHex"))
   val expectedAlbumId = extractStringField(document, "albumId")
   val expectedRecipientPubkey = decodeHex(extractStringField(document, "bundleRecipientPubkeyHex"))
-  val expectedEpochSeed = decodeHex(extractStringField(document, "bundleEpochSeedHex"))
+  val expectedEpochSeedHex = extractStringField(document, "bundleEpochSeedHex")
   val expectedSignPubkey = decodeHex(extractStringField(document, "bundleSignPublicKeyHex"))
   val expectedEpochId = extractIntegerField(document, "bundleEpochId")
   val minEpochId = extractIntegerField(document, "minEpochId")
@@ -777,7 +777,7 @@ private fun sealedBundleIsDeferredToSliceZeroC() {
     CannedSealedBundleApi(
       recipientSeed, sealed, signature, sharer, owner,
       expectedAlbumId, expectedEpochId,
-      expectedRecipientPubkey, expectedEpochSeed, expectedSignPubkey,
+      expectedRecipientPubkey, 77UL, expectedSignPubkey,
     ),
   )
 
@@ -798,15 +798,15 @@ private fun sealedBundleIsDeferredToSliceZeroC() {
   if (!ok.recipientPubkey.contentEquals(expectedRecipientPubkey)) {
     throw IllegalStateException("sealed_bundle recipient_pubkey mismatch")
   }
-  if (!ok.epochSeed.contentEquals(expectedEpochSeed)) {
-    throw IllegalStateException("sealed_bundle epoch_seed mismatch")
+  if (ok.epochHandleId != 77UL) {
+    throw IllegalStateException("sealed_bundle epoch_handle_id mismatch")
   }
   if (!ok.signPublicKey.contentEquals(expectedSignPubkey)) {
     throw IllegalStateException("sealed_bundle sign_public_key mismatch")
   }
 
   val rendered = ok.toString()
-  if (rendered.contains(extractStringField(document, "bundleEpochSeedHex"))) {
+  if (rendered.contains(expectedEpochSeedHex)) {
     throw IllegalStateException("sealed_bundle toString must not leak epoch_seed hex")
   }
 

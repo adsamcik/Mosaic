@@ -203,7 +203,15 @@ public class ManifestsControllerTests
             EncryptedMeta: encryptedMeta,
             Signature: signature,
             SignerPubkey: signerPubkey,
-            ShardIds: [Guid.NewGuid().ToString()]);
+            ShardIds: [],
+            TieredShards:
+            [
+                new TieredShardInfo(
+                    Guid.NewGuid().ToString(),
+                    (int)ShardTier.Original,
+                    Sha256: TestDataBuilder.TestSha256Hex(),
+                    ContentLength: 1024)
+            ]);
 
         var controller = CreateController(db, config, quotaService, OwnerAuthSub);
 
@@ -277,7 +285,8 @@ public class ManifestsControllerTests
             EncryptedMeta: encryptedMeta,
             Signature: Convert.ToBase64String(new byte[64]),
             SignerPubkey: Convert.ToBase64String(new byte[32]),
-            ShardIds: [shard.Id.ToString()]);
+            ShardIds: [],
+            TieredShards: [new TieredShardInfo(shard.Id.ToString(), (int)ShardTier.Original)]);
 
         var controller = CreateController(db, config, quotaService, OwnerAuthSub);
 

@@ -21,6 +21,8 @@
       promotions whose service type was not declared at install time.
     - POST_NOTIFICATIONS is declared because the user-visible notification
       driving the foreground promotion is a hard requirement on Android 13+.
+    - UploadForegroundService is declared as a non-exported `dataSync`
+      foreground service for user-cancellable shard upload notifications.
     - The merged WorkManager `SystemForegroundService` is patched with
       android:foregroundServiceType="dataSync" so the runtime `setForeground`
       call from `AutoImportWorker` matches the manifest declaration. The merge
@@ -59,6 +61,11 @@
         android:name="androidx.work.impl.foreground.SystemForegroundService"
         android:foregroundServiceType="dataSync"
         tools:node="merge" />
+
+    <service
+        android:name=".service.UploadForegroundService"
+        android:exported="false"
+        android:foregroundServiceType="dataSync" />
 
   </application>
 

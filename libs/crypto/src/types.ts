@@ -25,6 +25,9 @@ export interface DeriveKeysResult {
  * Full key hierarchy from derivation (internal/testing only).
  * L0 (master) and L1 (root) are NEVER persisted - callers MUST call memzero() after use.
  *
+ * @deprecated Account key derivation is Rust-owned. Do not introduce new
+ * TypeScript consumers of raw L0/L1/L2 key material.
+ *
  * @internal This type is exported for testing purposes only.
  * Production code should use DeriveKeysResult from deriveKeys().
  */
@@ -42,6 +45,9 @@ export interface DerivedKeys {
 /**
  * Per-album epoch key set with tiered access keys.
  * Each tier has a separate HKDF-derived key for cryptographic separation.
+ *
+ * @deprecated Epoch keys are Rust-handle owned. This type remains only for
+ * legacy web compatibility code that has not yet moved behind WASM handles.
  */
 export interface EpochKey {
   /** Epoch identifier (increments on key rotation) */
@@ -110,6 +116,9 @@ export interface IdentityKeypair {
  * Epoch key bundle transmitted to album members.
  * Encrypted via sealed box and signed by owner.
  * Contains full epoch seed for deriving all tier keys.
+ *
+ * @deprecated Epoch key bundle open/seal flows are Rust-owned. Do not add new
+ * TypeScript consumers of raw epoch seeds or signing keys.
  */
 export interface EpochKeyBundle {
   /** Bundle format version */

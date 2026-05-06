@@ -11,6 +11,20 @@
 # raw-input bridges. Production files in apps/web/src/ are never allowlisted;
 # src-local test files are excluded from the production scan, mirroring the
 # Kotlin guard's src/main-only semantics.
+#
+# Allowlist audit checkpoint:
+# Last full audit: R-C5.5 at 2d17c47
+# Each allowlist entry below MUST carry an explicit classifier prefix and a
+# SPECIFIC cryptographic safety argument as its rationale comment. "Reviewed existing API" / "Internal
+# use" / "Not a secret" are NOT acceptable rationales. Audits should be
+# repeated whenever an entry is added; v1 freeze checkpoint should re-run
+# this audit.
+# R-C5.5.1 mechanical enforcement: rationales missing a classifier, shorter than 40 chars, or
+# matching banned phrases ('reviewed existing api', 'internal use', etc.)
+# fail at script execution time. See R-C5.5 audit checkpoint above.
+# Classifier vocabulary is locked by SPEC-FfiSecretClassifiers.md (v1).
+# Permitted classifiers: SAFE, BEARER-TOKEN-PERMITTED, CORPUS-DRIVER-ONLY,
+# MIGRATION-PENDING. Adding a new classifier requires a SPEC amendment.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -47,8 +61,67 @@ target_module_pattern = re.compile(r"^(?:@mosaic/wasm|mosaic-wasm)$|(?:^|/)gener
 namespace_import_pattern = re.compile(r"\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)\b")
 
 allowlisted_files = {
-    "apps/web/tests/cross-client-vectors.test.ts",
+    # Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.
+    "apps/web/tests/cross-client-vectors.test.ts": "SAFE: Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.",
 }
+
+banned_rationale_phrases = [
+    "reviewed existing api",
+    "internal use",
+    "not a secret",
+    "todo",
+    "trust me",
+    "fixme",
+    "tbd",
+]
+min_rationale_length = 40
+rationale_fix_suggestion = "Replace with a sentence stating the SPECIFIC bytes returned and why an attacker gains no advantage."
+permitted_classifiers = {"SAFE", "BEARER-TOKEN-PERMITTED", "CORPUS-DRIVER-ONLY", "MIGRATION-PENDING"}
+classifier_pattern = re.compile(r"^([A-Z][A-Z0-9-]+):")
+
+def get_allowlist_rationale_errors(*allowlist_tables):
+    rationale_errors = []
+    for table in allowlist_tables:
+        for name, rationale_value in table.items():
+            rationale = (rationale_value or "").strip()
+            if len(rationale) < min_rationale_length:
+                rationale_errors.append(f"Allowlist entry '{name}' failed length check: \"{rationale}\" ({rationale_fix_suggestion})")
+            lowered = rationale.lower()
+            for phrase in banned_rationale_phrases:
+                if phrase in lowered:
+                    rationale_errors.append(f"Allowlist entry '{name}' failed banned phrase check ('{phrase}'): \"{rationale}\" ({rationale_fix_suggestion})")
+            classifier_match = classifier_pattern.match(rationale)
+            if classifier_match:
+                if classifier_match.group(1) not in permitted_classifiers:
+                    rationale_errors.append(
+                        f"Allowlist entry '{name}' failed classifier check ('{classifier_match.group(1)}'): "
+                        "classifier vocabulary is locked by SPEC-FfiSecretClassifiers.md"
+                    )
+            else:
+                rationale_errors.append(
+                    f"Allowlist entry '{name}' failed missing classifier check: "
+                    "rationale must start with one of the permitted classifiers followed by ':'"
+                )
+    return rationale_errors
+
+def assert_rationale_quality_fixture_caught(name, rationale, expected_check):
+    fixture_errors = get_allowlist_rationale_errors({f"tests/architecture/negative-fixtures/{name}": rationale})
+    if not any(expected_check in error for error in fixture_errors):
+        raise AssertionError(
+            f"rationale negative fixture {name!r} did not catch expected check {expected_check!r}. "
+            f"Errors: {fixture_errors!r}"
+        )
+
+def invoke_allowlist_rationale_quality_check(*allowlist_tables):
+    rationale_errors = get_allowlist_rationale_errors(*allowlist_tables)
+    if rationale_errors:
+        print("Allowlist rationale quality check FAILED:")
+        for rationale_error in rationale_errors:
+            print(f"  {rationale_error}")
+        print()
+        print("Each rationale MUST state the SPECIFIC bytes returned and why an attacker gains no advantage.")
+        print("See R-C5.5 audit checkpoint comment block for the standard.")
+        raise SystemExit(1)
 
 def is_production_source(repo_path: str) -> bool:
     if not repo_path.startswith("apps/web/src/"):
@@ -67,6 +140,26 @@ def iter_web_typescript_files():
             continue
         for pattern in ("*.ts", "*.tsx"):
             yield from root.rglob(pattern)
+
+assert_rationale_quality_fixture_caught("rationale-reviewed-existing-api", "reviewed existing api", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-internal-use", "internal use", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-not-a-secret", "not a secret", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-todo", "todo", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-trust-me", "trust me", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-fixme", "fixme", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-tbd", "tbd", "banned phrase check")
+assert_rationale_quality_fixture_caught("rationale-short", "short", "length check")
+assert_rationale_quality_fixture_caught(
+    "rationale-missing-classifier",
+    "Returns placeholder bytes with a long enough rationale for classifier validation.",
+    "missing classifier check",
+)
+assert_rationale_quality_fixture_caught(
+    "rationale-unknown-classifier",
+    "BACKWARD-COMPAT-LEGACY: Returns placeholder bytes with a long enough rationale for classifier validation.",
+    "classifier check",
+)
+invoke_allowlist_rationale_quality_check(allowlisted_files)
 
 violations = []
 for path in iter_web_typescript_files():

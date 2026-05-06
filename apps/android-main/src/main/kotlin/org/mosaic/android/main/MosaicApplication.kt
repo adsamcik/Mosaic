@@ -1,9 +1,12 @@
 package org.mosaic.android.main
 
 import android.app.Application
+import android.util.Log
 import org.mosaic.android.main.bridge.AndroidRustCoreLibraryLoader
+import org.mosaic.android.main.service.UploadForegroundService
 import org.mosaic.android.main.work.AutoImportRuntime
 import org.mosaic.android.main.work.AutoImportWorkScheduler
+import org.mosaic.android.main.work.ShellStubRecordMigration
 
 /**
  * Application entry point. Eagerly initializes the UniFFI library loader so the
@@ -22,8 +25,39 @@ import org.mosaic.android.main.work.AutoImportWorkScheduler
 class MosaicApplication : Application() {
   override fun onCreate() {
     super.onCreate()
-    AndroidRustCoreLibraryLoader.warmUp()
-    AutoImportRuntime.installRuntimeProvider(AutoImportRuntime.systemRuntimeProvider(this))
-    AutoImportWorkScheduler.enqueueIfPolicyAllows(this)
+    rustCoreWarmUp()
+    runCatching { ShellStubRecordMigration.clearOnFirstLaunch(this) }
+      .onFailure { Log.w(TAG, "A-pre-1 cleanup failed", it) }
+    installAutoImportRuntime(this)
+    registerUploadNotificationChannel(this)
+    enqueueAutoImportIfPolicyAllows(this)
+  }
+
+  companion object {
+    private const val TAG = "MosaicApplication"
+
+    internal var rustCoreWarmUp: () -> Unit = AndroidRustCoreLibraryLoader::warmUp
+    internal var installAutoImportRuntime: (MosaicApplication) -> Unit = { application ->
+      AutoImportRuntime.installRuntimeProvider(AutoImportRuntime.systemRuntimeProvider(application))
+    }
+    internal var registerUploadNotificationChannel: (MosaicApplication) -> Unit = { application ->
+      UploadForegroundService.ensureNotificationChannel(application)
+    }
+    internal var enqueueAutoImportIfPolicyAllows: (MosaicApplication) -> Unit = { application ->
+      AutoImportWorkScheduler.enqueueIfPolicyAllows(application)
+    }
+
+    internal fun resetTestHooks() {
+      rustCoreWarmUp = AndroidRustCoreLibraryLoader::warmUp
+      installAutoImportRuntime = { application ->
+        AutoImportRuntime.installRuntimeProvider(AutoImportRuntime.systemRuntimeProvider(application))
+      }
+      registerUploadNotificationChannel = { application ->
+        UploadForegroundService.ensureNotificationChannel(application)
+      }
+      enqueueAutoImportIfPolicyAllows = { application ->
+        AutoImportWorkScheduler.enqueueIfPolicyAllows(application)
+      }
+    }
   }
 }

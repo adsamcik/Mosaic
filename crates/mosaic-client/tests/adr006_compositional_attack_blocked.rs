@@ -2,8 +2,8 @@
 
 use mosaic_client::{
     ClientErrorCode, close_account_key_handle, close_epoch_key_handle, close_identity_handle,
-    create_epoch_key_handle, create_identity_handle, open_secret_handle,
-    unwrap_with_account_handle, wrap_with_account_handle,
+    create_epoch_key_handle, create_identity_handle, derive_link_keys, open_secret_handle,
+    unwrap_with_account_handle, wrap_tier_key_for_link_handle, wrap_with_account_handle,
 };
 
 const ACCOUNT_KEY: [u8; 32] = [
@@ -70,5 +70,59 @@ fn account_data_wrap_unwrap_round_trip() {
     assert_eq!(unwrapped.code, ClientErrorCode::Ok);
     assert_eq!(unwrapped.bytes, plaintext);
 
+    close_account_key_handle(account_handle).expect("account handle should close");
+}
+
+#[test]
+fn adr006_link_handle_cannot_be_used_as_account_handle() {
+    let account_handle = open_account_handle();
+    let wrapped_account_data = wrap_with_account_handle(account_handle, b"account scoped data");
+    assert_eq!(wrapped_account_data.code, ClientErrorCode::Ok);
+
+    let link = derive_link_keys(&[0x42; 32]);
+    assert_eq!(link.code, ClientErrorCode::Ok);
+    assert_ne!(link.link_handle_id, 0);
+
+    let attempt = unwrap_with_account_handle(link.link_handle_id, &wrapped_account_data.bytes);
+    assert_eq!(
+        attempt.code,
+        ClientErrorCode::AuthenticationFailed,
+        "ADR-006 violation: link wrapping handles must not decrypt account-data blobs"
+    );
+    assert!(
+        attempt.bytes.is_empty(),
+        "no key material may leak in error path"
+    );
+
+    mosaic_client::close_secret_handle(link.link_handle_id).expect("link handle should close");
+    close_account_key_handle(account_handle).expect("account handle should close");
+}
+
+#[test]
+fn adr006_link_wrapped_tier_key_cannot_be_unwrapped_as_account_data() {
+    let account_handle = open_account_handle();
+    let tier_key_handle =
+        open_secret_handle(&[0x24; 32]).expect("tier key handle should open for attack test");
+    let link = derive_link_keys(&[0x43; 32]);
+    assert_eq!(link.code, ClientErrorCode::Ok);
+
+    let wrapped = wrap_tier_key_for_link_handle(link.link_handle_id, tier_key_handle, 1);
+    assert_eq!(wrapped.code, ClientErrorCode::Ok);
+    let mut link_wrapped_blob = wrapped.nonce;
+    link_wrapped_blob.extend_from_slice(&wrapped.encrypted_key);
+
+    let attempt = unwrap_with_account_handle(account_handle, &link_wrapped_blob);
+    assert_eq!(
+        attempt.code,
+        ClientErrorCode::AuthenticationFailed,
+        "ADR-006 violation: ACCOUNT_DATA_AAD unwrap must reject link-tier ciphertext"
+    );
+    assert!(
+        attempt.bytes.is_empty(),
+        "no key material may leak in error path"
+    );
+
+    mosaic_client::close_secret_handle(tier_key_handle).expect("tier key handle should close");
+    mosaic_client::close_secret_handle(link.link_handle_id).expect("link handle should close");
     close_account_key_handle(account_handle).expect("account handle should close");
 }

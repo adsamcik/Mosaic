@@ -146,6 +146,44 @@ Per ADR-018, retry/failure telemetry uses stable `ClientErrorCode` values. `atte
 
 Because the frozen snapshot has no retry-target key, `RetryTimerElapsed` carries `target_phase`. Adapters must persist the scheduled `target_phase` alongside the timer/effect journal and replay it into the event. The reducer must not infer manifest retry from shard phases and must not jump from shard phases to `CreatingManifest` unless `target_phase == CreatingManifest`.
 
+## ADR-018 telemetry counters
+
+The Rust client core exposes an ADR-018 counter-only telemetry ring buffer at
+`mosaic_client::telemetry::TelemetryRingBuffer`. Counters are local-first,
+bounded, aggregable diagnostics; they carry no event payloads and no
+correlatable identifiers. Counter names must be `&'static str` (compile-time
+string literals or static-lifetime constants). This prevents accidental
+runtime-built names from `format!()`, `String::from()`, server responses,
+encrypted bytes, or other request-local values.
+
+The `&'static str` type is not a complete privacy proof: a static constant
+could still embed a correlatable value. Privacy therefore also depends on
+reviewer discipline and the naming convention below. Reviewers must reject
+counter names that include user IDs, asset IDs, album IDs, account IDs, IP
+addresses, or any other PII/correlatable identifier.
+
+The buffer retains at most `DEFAULT_CAPACITY = 256` distinct counter names.
+When full, incrementing a new counter evicts the least-recently-incremented
+counter. Snapshots are deterministic name-sorted `(String, u64)` tuples.
+`set_enabled(false)` is the runtime kill-switch: it clears local counters,
+causes future increments to be ignored, and makes snapshots empty until
+re-enabled. `to_diagnostic_payload()` serializes the deterministic snapshot as
+CBOR only; sealed-box wrapping under the operator diagnostic X25519 public key
+is adapter/operator-config scope per ADR-018 §III.B.
+
+Reducer telemetry is explicit and testable through
+`advance_upload_job_with_telemetry`, `advance_album_sync_with_telemetry`, and
+`UploadJobSnapshot::from_canonical_cbor_with_telemetry`. Existing pure reducer
+entry points remain available and delegate with no telemetry sink. The wired
+counter names are:
+
+| Counter | Increment point |
+|---|---|
+| `manifest_commit_unknown_retry_rejected` | `ManifestCommitUnknown` rejects a generic `RetryableFailure`. |
+| `album_sync_exhaustion_with_originating_code` | AlbumSync exhausts retry budget while preserving a non-default originating `ClientErrorCode`. |
+| `legacy_retry_waiting_manifest_commit_unknown_migrated` | Legacy upload snapshot migration restores a stuck `RetryWaiting` snapshot to `ManifestCommitUnknown`. |
+| `effect_ack_dedup_drop` | Duplicate `EffectAck` is dropped without mutating state. |
+
 ## Manifest-unknown recovery table (ADR-022)
 
 | Sync/recovery outcome | Required comparison | Reducer result |
@@ -161,9 +199,93 @@ Because the frozen snapshot has no retry-target key, `RetryTimerElapsed` carries
 
 `AlbumDeleted` during any non-terminal upload phase transitions to `Cancelled` and emits `CleanupStaging { reason: AlbumDeleted }`. Adapters must not retry manifest commits after this event. This applies especially to `EncryptingShard`, `UploadingShard`, `CreatingManifest`, `ManifestCommitUnknown`, and `AwaitingSyncConfirmation`.
 
-## AlbumSync status
+## AlbumSync DTOs: finalized R-Cl2 v1 shape
 
-AlbumSync legacy reducer behavior remains covered by `client_core_state_machines`, `state_machine_core`, `state_machine_crafted_snapshots`, `public_api_smoke`, and `mutation_kills`. R-Cl1 does not freeze AlbumSync CBOR or DTO field layout; that remains R-Cl2. R-Cl2 sync state-machine finalization is independent and must not reinterpret the upload CBOR keys added here. No R-Cl1 change may remove existing AlbumSync retry, rerun, cancel, page-apply, or failure coverage.
+R-Cl2 finalizes the sync state-machine DTO shape for v1. The reducer surface is
+client-side only: it carries opaque album/sync ids, cursor tokens, page counts,
+retry metadata, and stable `ClientErrorCode` values. It does not carry plaintext
+photo bytes, metadata, keys, filenames, EXIF, GPS, device metadata, or raw URIs.
+
+R-Cl2 does not introduce a new AlbumSync canonical-CBOR encoder. Existing
+`snapshot_schema::AlbumSyncSnapshotPlaceholder` remains R-Cl3 migration
+scaffolding and is not the authoritative reducer DTO. Therefore
+`SNAPSHOT_SCHEMA_VERSION_V1 == 1` remains unchanged.
+
+### AlbumSyncRequest
+
+| Field | Type | Normative rules |
+|---|---|---|
+| `sync_id` | `String` | Opaque adapter-generated sync/run id. |
+| `album_id` | `String` | Opaque album id; never parsed as plaintext metadata. |
+| `initial_page_token` | `Option<String>` | `None` means start from the beginning. |
+| `max_retry_count` | `u32` | Retry budget copied into `AlbumSyncRetryMetadata.max_attempts`. |
+
+### AlbumSyncSnapshot
+
+| Field | Type | Normative rules |
+|---|---|---|
+| `schema_version` | `u16` | Must be `SNAPSHOT_SCHEMA_VERSION_V1` for v1 snapshots. |
+| `sync_id` | `String` | Opaque sync/run id. |
+| `album_id` | `String` | Opaque album id. |
+| `phase` | `AlbumSyncPhase` (`#[repr(u8)]`) | Must match the discriminant table below. |
+| `initial_page_token` | `Option<String>` | Cursor used to restart a rerun cycle. |
+| `next_page_token` | `Option<String>` | Cursor for the next `FetchPage` effect. |
+| `current_page` | `Option<SyncPageSummary>` | Present only while applying a fetched page. |
+| `rerun_requested` | `bool` | Coalesces `SyncRequested` while active/retry-waiting. |
+| `completed_cycle_count` | `u32` | Saturating count of complete sync cycles. |
+| `retry` | `AlbumSyncRetryMetadata` | Retry attempt, target, delay, and error breadcrumbs. |
+| `failure_code` | `Option<ClientErrorCode>` | Terminal failure/cancel cause when available. |
+
+### SyncPageSummary
+
+| Field | Type | Normative rules |
+|---|---|---|
+| `previous_page_token` | `Option<String>` | Cursor that produced this page. |
+| `next_page_token` | `Option<String>` | Cursor for the following page. |
+| `reached_end` | `bool` | `true` completes the cycle after `PageApplied`. |
+| `encrypted_item_count` | `u32` | Count only; no plaintext item metadata. |
+
+### AlbumSyncRetryMetadata
+
+| Field | Type | Normative rules |
+|---|---|---|
+| `attempt_count` | `u32` | Incremented on accepted retryable failures. |
+| `max_attempts` | `u32` | Exhaustion when `attempt_count >= max_attempts`. |
+| `retry_after_ms` | `Option<u64>` | Adapter/server delay hint; reducer reads no clock. |
+| `last_error_code` | `Option<ClientErrorCode>` | Last retry/failure code. |
+| `last_error_stage` | `Option<AlbumSyncPhase>` | Source phase for the last retry/failure. |
+| `retry_target_phase` | `Option<AlbumSyncPhase>` | Required when `phase == RetryWaiting`. |
+
+### AlbumSync events and effects
+
+| DTO | Variant | Fields |
+|---|---|---|
+| `AlbumSyncEvent` | `SyncRequested` | `request: Option<AlbumSyncRequest>` |
+| `AlbumSyncEvent` | `PageFetched` | `page: Option<SyncPageSummary>` |
+| `AlbumSyncEvent` | `PageApplied` | none |
+| `AlbumSyncEvent` | `RetryableFailure` | `code: ClientErrorCode`, `retry_after_ms: Option<u64>` |
+| `AlbumSyncEvent` | `RetryTimerElapsed` | none |
+| `AlbumSyncEvent` | `CancelRequested` | none |
+| `AlbumSyncEvent` | `NonRetryableFailure` | `code: ClientErrorCode` |
+| `AlbumSyncEffect` | `FetchPage` | `page_token: Option<String>` |
+| `AlbumSyncEffect` | `ApplyPage` | `encrypted_item_count: u32` |
+| `AlbumSyncEffect` | `ScheduleRetry` | `attempt: u32`, `retry_after_ms: u64`, `target_phase: AlbumSyncPhase` |
+| `AlbumSyncTransition` | record | `snapshot: AlbumSyncSnapshot`, `effects: Vec<AlbumSyncEffect>` |
+
+### AlbumSync phases
+
+`AlbumSyncPhase` is `#[repr(u8)]`, append-only, and exposes
+`to_u8()`/`try_from_u8()` for discriminant-exhaustive lock tests.
+
+| Value | Phase | Meaning |
+|---:|---|---|
+| 0 | `Idle` | Coordinator exists but no sync is active. |
+| 1 | `FetchingPage` | Adapter should fetch the page at `next_page_token`. |
+| 2 | `ApplyingPage` | Adapter should apply encrypted item summaries from `current_page`. |
+| 3 | `RetryWaiting` | Timer gate before resuming `retry.retry_target_phase`. |
+| 4 | `Completed` | Terminal successful cycle until a new `SyncRequested`. |
+| 5 | `Cancelled` | Terminal cancellation until a new `SyncRequested`. |
+| 6 | `Failed` | Terminal failure until a new `SyncRequested`. |
 
 On AlbumSync retry-budget exhaustion, `failure_code` MUST be the originating
 `code` from the `RetryableFailure` event, NOT
@@ -172,12 +294,32 @@ On AlbumSync retry-budget exhaustion, `failure_code` MUST be the originating
 breadcrumb fields `retry.last_error_code` and `retry.last_error_stage` MUST be
 updated to the originating code and source phase at the exhaustion boundary.
 
+### AlbumSync FFI/WASM surface
+
+UniFFI and WASM expose compact `ClientCoreAlbumSync*` facade records for platform
+adapters. Those records continue to use string phase labels and empty-string
+sentinels for cross-language compatibility; the authoritative reducer phase
+allocation remains the internal `#[repr(u8)] AlbumSyncPhase` table above. R-Cl2
+does not change the FFI/WASM API shape or regenerate golden bindings.
+
+### R-Cl2 lock-test inventory
+
+| Test | Coverage |
+|---|---|
+| `album_sync_phase_discriminants_are_frozen` | Pins every `AlbumSyncPhase as u8` value and `to_u8()`. |
+| `album_sync_phase_iteration_is_discriminant_exhaustive` | Scans every byte through `try_from_u8()` and asserts the exact phase set. |
+| `album_sync_dto_field_shape_is_locked` | Compile-locks all `AlbumSyncSnapshot`, `SyncPageSummary`, and `AlbumSyncRetryMetadata` fields and types. |
+| `album_sync_event_and_effect_field_shapes_are_locked` | Compile-locks all AlbumSync event/effect variants and fields. |
+| Existing `album_sync_phase_lock.rs` tests | Preserve terminal/idempotent cancellation behavior, retry target validation, phase matrix, and retry-budget cause preservation. |
+
+R-Cl2 finalization complete: commit recorded by the implementing change.
+
 ## Verification plan
 
 | Test file | Required coverage |
 |---|---|
 | `upload_state_machine_locked.rs` | Phase numerics, golden canonical CBOR, c2/c3 byte regression, strict CBOR rejection, backoff table, ADR-022 recovery table, ADR-011 cleanup, effect-id idempotency, EffectAck replay-dedup split, failure_code persistence, retryable-phase/resume consistency, ManifestCommitUnknown retry-trap rejection. |
-| `album_sync_phase_lock.rs` | AlbumSync phase matrix, terminal/idempotent cancellation behavior, retry target validation, and retry-budget exhaustion cause preservation. |
+| `album_sync_phase_lock.rs` | AlbumSync phase discriminants, `try_from_u8()` byte exhaustivity, DTO/event/effect field-shape locks, phase matrix, terminal/idempotent cancellation behavior, retry target validation, and retry-budget exhaustion cause preservation. |
 | `upload_state_machine_replay.rs` | Encode/decode post-state then re-apply same event/effect id and assert no effects/no revision bump. |
 | Existing `mosaic-client` tests | Compile against R-Cl1 DTOs and preserve AlbumSync behavior. |
 | Architecture script | Rust boundary remains clean and no forbidden cross-crate dependency is introduced. |

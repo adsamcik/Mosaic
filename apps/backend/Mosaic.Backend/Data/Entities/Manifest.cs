@@ -6,9 +6,14 @@ public class Manifest
 {
     public Guid Id { get; set; }
     public Guid AlbumId { get; set; }
+    public int ProtocolVersion { get; set; } = 1;
+    [MaxLength(16)]
+    public string AssetType { get; set; } = "Image";
     public long VersionCreated { get; set; }
+    public long MetadataVersion { get; set; } = 1;
     public bool IsDeleted { get; set; }
     public required byte[] EncryptedMeta { get; set; }
+    public byte[]? EncryptedMetaSidecar { get; set; }
     [MaxLength(128)]
     public required string Signature { get; set; }
     [MaxLength(128)]

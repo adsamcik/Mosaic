@@ -455,13 +455,13 @@ export class CreateLinkShareHandleResult {
         }
     }
     /**
-     * URL fragment seed allowed by the link-share protocol; not a derived key.
+     * Bearer URL fragment token allowed by the link-share protocol.
      * @returns {Uint8Array}
      */
-    get linkSecretForUrl() {
+    get linkUrlToken() {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.createlinksharehandleresult_linkSecretForUrl(retptr, this.__wbg_ptr);
+            wasm.createlinksharehandleresult_linkUrlToken(retptr, this.__wbg_ptr);
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var v1 = getArrayU8FromWasm0(r0, r1).slice();
@@ -1193,6 +1193,215 @@ export class IdentityHandleResult {
 if (Symbol.dispose) IdentityHandleResult.prototype[Symbol.dispose] = IdentityHandleResult.prototype.free;
 
 /**
+ * WASM-bindgen class for image inspection results.
+ */
+export class ImageInspectResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(ImageInspectResult.prototype);
+        obj.__wbg_ptr = ptr;
+        ImageInspectResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        ImageInspectResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_imageinspectresult_free(ptr, 0);
+    }
+    /**
+     * Camera make extracted from EXIF, or empty when absent.
+     * @returns {string}
+     */
+    get cameraMake() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.imageinspectresult_cameraMake(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Camera model extracted from EXIF, or empty when absent.
+     * @returns {string}
+     */
+    get cameraModel() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.imageinspectresult_cameraModel(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.imageinspectresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Device timestamp extracted from EXIF, valid when `hasDeviceTimestampMs` is true.
+     * @returns {bigint}
+     */
+    get deviceTimestampMs() {
+        const ret = wasm.imageinspectresult_deviceTimestampMs(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * Compact encoded canonical metadata sidecar fields.
+     * @returns {Uint8Array}
+     */
+    get encodedSidecarFields() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.imageinspectresult_encodedSidecarFields(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * Stable media format code derived from container bytes (JPEG=1, PNG=2, WebP=3, AVIF=4, HEIC=5).
+     * @returns {number}
+     */
+    get format() {
+        const ret = wasm.imageinspectresult_format(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get gpsAccuracyMeters() {
+        const ret = wasm.imageinspectresult_gpsAccuracyMeters(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get gpsAltitudeMeters() {
+        const ret = wasm.imageinspectresult_gpsAltitudeMeters(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get gpsLatMicrodegrees() {
+        const ret = wasm.imageinspectresult_gpsLatMicrodegrees(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    get gpsLonMicrodegrees() {
+        const ret = wasm.imageinspectresult_gpsLonMicrodegrees(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Whether `deviceTimestampMs` carries an extracted EXIF timestamp.
+     * @returns {boolean}
+     */
+    get hasDeviceTimestampMs() {
+        const ret = wasm.imageinspectresult_hasDeviceTimestampMs(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Whether GPS fields were extracted from EXIF.
+     * @returns {boolean}
+     */
+    get hasGps() {
+        const ret = wasm.imageinspectresult_hasGps(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Whether `subsecondsMs` carries extracted EXIF subseconds.
+     * @returns {boolean}
+     */
+    get hasSubsecondsMs() {
+        const ret = wasm.imageinspectresult_hasSubsecondsMs(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Display height after orientation normalization.
+     * @returns {number}
+     */
+    get height() {
+        const ret = wasm.imageinspectresult_height(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Trusted MIME type derived from container bytes.
+     * @returns {string}
+     */
+    get mimeType() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.imageinspectresult_mimeType(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * EXIF orientation value normalized by the Rust media parser.
+     * @returns {number}
+     */
+    get orientation() {
+        const ret = wasm.imageinspectresult_orientation(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * EXIF subseconds in milliseconds, valid when `hasSubsecondsMs` is true.
+     * @returns {number}
+     */
+    get subsecondsMs() {
+        const ret = wasm.imageinspectresult_subsecondsMs(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Display width after orientation normalization.
+     * @returns {number}
+     */
+    get width() {
+        const ret = wasm.imageinspectresult_width(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) ImageInspectResult.prototype[Symbol.dispose] = ImageInspectResult.prototype.free;
+
+/**
  * WASM-bindgen class for imported link-tier handle results.
  */
 export class LinkTierHandleResult {
@@ -1303,6 +1512,110 @@ export class LoadSnapshotResult {
     }
 }
 if (Symbol.dispose) LoadSnapshotResult.prototype[Symbol.dispose] = LoadSnapshotResult.prototype.free;
+
+/**
+ * WASM-bindgen class for one canonical media tier.
+ */
+export class MediaTierDimensions {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(MediaTierDimensions.prototype);
+        obj.__wbg_ptr = ptr;
+        MediaTierDimensionsFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        MediaTierDimensionsFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_mediatierdimensions_free(ptr, 0);
+    }
+    /**
+     * Canonical max height for this tier.
+     * @returns {number}
+     */
+    get height() {
+        const ret = wasm.mediatierdimensions_height(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Shard tier protocol byte.
+     * @returns {number}
+     */
+    get tier() {
+        const ret = wasm.mediatierdimensions_tier(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Canonical max width for this tier.
+     * @returns {number}
+     */
+    get width() {
+        const ret = wasm.mediatierdimensions_width(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) MediaTierDimensions.prototype[Symbol.dispose] = MediaTierDimensions.prototype.free;
+
+/**
+ * WASM-bindgen class for canonical media tier dimensions.
+ */
+export class MediaTierLayoutResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(MediaTierLayoutResult.prototype);
+        obj.__wbg_ptr = ptr;
+        MediaTierLayoutResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        MediaTierLayoutResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_mediatierlayoutresult_free(ptr, 0);
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.mediatierlayoutresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Canonical original tier dimensions.
+     * @returns {MediaTierDimensions}
+     */
+    get original() {
+        const ret = wasm.mediatierlayoutresult_original(this.__wbg_ptr);
+        return MediaTierDimensions.__wrap(ret);
+    }
+    /**
+     * Canonical preview tier dimensions.
+     * @returns {MediaTierDimensions}
+     */
+    get preview() {
+        const ret = wasm.mediatierlayoutresult_preview(this.__wbg_ptr);
+        return MediaTierDimensions.__wrap(ret);
+    }
+    /**
+     * Canonical thumbnail tier dimensions.
+     * @returns {MediaTierDimensions}
+     */
+    get thumbnail() {
+        const ret = wasm.mediatierlayoutresult_thumbnail(this.__wbg_ptr);
+        return MediaTierDimensions.__wrap(ret);
+    }
+}
+if (Symbol.dispose) MediaTierLayoutResult.prototype[Symbol.dispose] = MediaTierLayoutResult.prototype.free;
 
 /**
  * WASM-bindgen class for progress events.
@@ -1530,6 +1843,258 @@ export class SerializeSnapshotResult {
 if (Symbol.dispose) SerializeSnapshotResult.prototype[Symbol.dispose] = SerializeSnapshotResult.prototype.free;
 
 /**
+ * WASM-visible shard tiers pinned to the Mosaic envelope wire protocol.
+ * @enum {1 | 2 | 3}
+ */
+export const ShardTier = Object.freeze({
+    Thumbnail: 1, "1": "Thumbnail",
+    Preview: 2, "2": "Preview",
+    Original: 3, "3": "Original",
+});
+
+/**
+ * WASM-bindgen class for finalized streaming envelope results.
+ */
+export class StreamingEnvelopeResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(StreamingEnvelopeResult.prototype);
+        obj.__wbg_ptr = ptr;
+        StreamingEnvelopeResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        StreamingEnvelopeResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_streamingenveloperesult_free(ptr, 0);
+    }
+    /**
+     * Full v0x04 streaming envelope bytes: header followed by frames.
+     * @returns {Uint8Array}
+     */
+    get bytes() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.streamingenveloperesult_bytes(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.streamingenveloperesult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Plaintext byte length of the final frame.
+     * @returns {number}
+     */
+    get finalFrameSize() {
+        const ret = wasm.streamingenveloperesult_finalFrameSize(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Declared frame count.
+     * @returns {number}
+     */
+    get frameCount() {
+        const ret = wasm.streamingenveloperesult_frameCount(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Final v0x04 streaming envelope header bytes.
+     * @returns {Uint8Array}
+     */
+    get header() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.streamingenveloperesult_header(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) StreamingEnvelopeResult.prototype[Symbol.dispose] = StreamingEnvelopeResult.prototype.free;
+
+/**
+ * WASM-bindgen class for streaming encrypted/decrypted frame results.
+ */
+export class StreamingFrameResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(StreamingFrameResult.prototype);
+        obj.__wbg_ptr = ptr;
+        StreamingFrameResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        StreamingFrameResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_streamingframeresult_free(ptr, 0);
+    }
+    /**
+     * Serialized frame bytes.
+     * @returns {Uint8Array}
+     */
+    get bytes() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.streamingframeresult_bytes(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.streamingframeresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Zero-based frame index assigned by the streaming encryptor.
+     * @returns {number}
+     */
+    get frameIndex() {
+        const ret = wasm.streamingframeresult_frameIndex(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) StreamingFrameResult.prototype[Symbol.dispose] = StreamingFrameResult.prototype.free;
+
+/**
+ * Stateful v0x04 streaming shard decryptor exposed to WASM.
+ */
+export class StreamingShardDecryptor {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        StreamingShardDecryptorFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_streamingsharddecryptor_free(ptr, 0);
+    }
+    /**
+     * Decrypts one serialized streaming frame.
+     * @param {Uint8Array} _frame
+     * @returns {any}
+     */
+    decryptFrame(_frame) {
+        const ptr0 = passArray8ToWasm0(_frame, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.streamingsharddecryptor_decryptFrame(this.__wbg_ptr, ptr0, len0);
+        return takeObject(ret);
+    }
+    /**
+     * Returns a `BytesResult` whose `bytes` field is always empty by contract.
+     * Future callers should ignore `bytes` and check only `code`. Reason: the
+     * finalize step performs final-frame AAD verification only — there is no
+     * payload data to return. UniFFI mirror returns `Result<(), MosaicError>` honestly;
+     * WASM uses `BytesResult` for cross-API uniformity.
+     * @returns {any}
+     */
+    finalize() {
+        const ptr = this.__destroy_into_raw();
+        const ret = wasm.streamingsharddecryptor_finalize(ptr);
+        return takeObject(ret);
+    }
+    /**
+     * Initializes a streaming decryptor from a v0x04 envelope header.
+     * @param {bigint} _epoch_handle_id
+     * @param {Uint8Array} _envelope_header
+     */
+    constructor(_epoch_handle_id, _envelope_header) {
+        const ptr0 = passArray8ToWasm0(_envelope_header, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.streamingsharddecryptor_new(_epoch_handle_id, ptr0, len0);
+        this.__wbg_ptr = ret >>> 0;
+        StreamingShardDecryptorFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+}
+if (Symbol.dispose) StreamingShardDecryptor.prototype[Symbol.dispose] = StreamingShardDecryptor.prototype.free;
+
+/**
+ * Stateful v0x04 streaming shard encryptor exposed to WASM.
+ */
+export class StreamingShardEncryptor {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        StreamingShardEncryptorFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_streamingshardencryptor_free(ptr, 0);
+    }
+    /**
+     * Encrypts one plaintext frame.
+     * @param {Uint8Array} _plaintext
+     * @returns {any}
+     */
+    encryptFrame(_plaintext) {
+        const ptr0 = passArray8ToWasm0(_plaintext, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.streamingshardencryptor_encryptFrame(this.__wbg_ptr, ptr0, len0);
+        return takeObject(ret);
+    }
+    /**
+     * Finalizes the stream and returns the v0x04 envelope.
+     * @returns {any}
+     */
+    finalize() {
+        const ptr = this.__destroy_into_raw();
+        const ret = wasm.streamingshardencryptor_finalize(ptr);
+        return takeObject(ret);
+    }
+    /**
+     * Initializes a streaming encryptor for an existing epoch handle.
+     * @param {bigint} _epoch_handle_id
+     * @param {number} _tier
+     * @param {number | null} [_expected_frame_count]
+     */
+    constructor(_epoch_handle_id, _tier, _expected_frame_count) {
+        const ret = wasm.streamingshardencryptor_new(_epoch_handle_id, _tier, isLikeNone(_expected_frame_count) ? 0x100000001 : (_expected_frame_count) >>> 0);
+        this.__wbg_ptr = ret >>> 0;
+        StreamingShardEncryptorFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+}
+if (Symbol.dispose) StreamingShardEncryptor.prototype[Symbol.dispose] = StreamingShardEncryptor.prototype.free;
+
+/**
  * WASM-bindgen class for metadata stripping results.
  */
 export class StripResult {
@@ -1567,7 +2132,7 @@ export class StripResult {
         return ret >>> 0;
     }
     /**
-     * Image bytes after metadata stripping.
+     * Image or video bytes after metadata stripping.
      * @returns {Uint8Array}
      */
     get strippedBytes() {
@@ -1620,6 +2185,130 @@ export class VerifySnapshotResult {
     }
 }
 if (Symbol.dispose) VerifySnapshotResult.prototype[Symbol.dispose] = VerifySnapshotResult.prototype.free;
+
+/**
+ * WASM-bindgen class for video inspection results.
+ */
+export class VideoInspectResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(VideoInspectResult.prototype);
+        obj.__wbg_ptr = ptr;
+        VideoInspectResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        VideoInspectResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_videoinspectresult_free(ptr, 0);
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.videoinspectresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Trusted video container label derived from bytes.
+     * @returns {string}
+     */
+    get container() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.videoinspectresult_container(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Video duration in milliseconds.
+     * @returns {bigint}
+     */
+    get durationMs() {
+        const ret = wasm.videoinspectresult_durationMs(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * Video frame rate in frames per second, or NaN when unavailable.
+     * @returns {number}
+     */
+    get frameRateFps() {
+        const ret = wasm.videoinspectresult_frameRateFps(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Video track height in pixels.
+     * @returns {number}
+     */
+    get heightPx() {
+        const ret = wasm.videoinspectresult_heightPx(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Rotation label, or empty string when unavailable.
+     * @returns {string}
+     */
+    get orientation() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.videoinspectresult_orientation(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Trusted codec label, or empty string when unavailable.
+     * @returns {string}
+     */
+    get videoCodec() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.videoinspectresult_videoCodec(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            deferred1_0 = r0;
+            deferred1_1 = r1;
+            return getStringFromWasm0(r0, r1);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+            wasm.__wbindgen_export4(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Video track width in pixels.
+     * @returns {number}
+     */
+    get widthPx() {
+        const ret = wasm.videoinspectresult_widthPx(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) VideoInspectResult.prototype[Symbol.dispose] = VideoInspectResult.prototype.free;
 
 /**
  * WASM-bindgen class for wrapped tier key results.
@@ -1851,6 +2540,41 @@ export function buildAuthChallengeTranscript(username, timestamp_ms, timestamp_m
 }
 
 /**
+ * Builds the canonical v1 share-link URL in Rust so web callers do not
+ * duplicate route assembly logic. The fragment token is a bearer token by
+ * design and remains after `#k=` so it is never sent to the server.
+ * @param {string} base_url
+ * @param {string} album_id
+ * @param {string} link_id
+ * @param {string} link_url_token
+ * @returns {string}
+ */
+export function buildShareLinkUrl(base_url, album_id, link_id, link_url_token) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(base_url, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(link_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(link_url_token, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len3 = WASM_VECTOR_LEN;
+        wasm.buildShareLinkUrl(retptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred5_0 = r0;
+        deferred5_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export4(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
  * Builds canonical metadata sidecar bytes through WASM.
  * @param {Uint8Array} album_id
  * @param {Uint8Array} photo_id
@@ -1866,6 +2590,34 @@ export function canonicalMetadataSidecarBytes(album_id, photo_id, epoch_id, enco
     const ptr2 = passArray8ToWasm0(encoded_fields, wasm.__wbindgen_export2);
     const len2 = WASM_VECTOR_LEN;
     const ret = wasm.canonicalMetadataSidecarBytes(ptr0, len0, ptr1, len1, epoch_id, ptr2, len2);
+    return BytesResult.__wrap(ret);
+}
+
+/**
+ * Returns the canonical media tier dimensions through WASM.
+ * @returns {MediaTierLayoutResult}
+ */
+export function canonicalTierLayout() {
+    const ret = wasm.canonicalTierLayout();
+    return MediaTierLayoutResult.__wrap(ret);
+}
+
+/**
+ * Builds canonical video metadata sidecar bytes through WASM.
+ * @param {Uint8Array} album_id
+ * @param {Uint8Array} photo_id
+ * @param {number} epoch_id
+ * @param {Uint8Array} input_bytes
+ * @returns {BytesResult}
+ */
+export function canonicalVideoSidecarBytes(album_id, photo_id, epoch_id, input_bytes) {
+    const ptr0 = passArray8ToWasm0(album_id, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(photo_id, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.canonicalVideoSidecarBytes(ptr0, len0, ptr1, len1, epoch_id, ptr2, len2);
     return BytesResult.__wrap(ret);
 }
 
@@ -1938,6 +2690,36 @@ export function closeLinkShareHandle(handle) {
 export function closeLinkTierHandle(handle) {
     const ret = wasm.closeLinkTierHandle(handle);
     return ret;
+}
+
+/**
+ * Consumes a session L0 handle and returns one short-lived AES-GCM import buffer.
+ *
+ * WebCrypto cannot import a Rust-owned handle directly, so the web boundary
+ * immediately imports these 32 bytes with `extractable = false` and zeroizes
+ * the returned `Uint8Array`. The Rust handle is removed and the registry copy
+ * is zeroized before this function returns, limiting raw L0 exposure to the
+ * WebCrypto import handoff.
+ * @param {bigint} handle
+ * @returns {Uint8Array}
+ */
+export function consumeMasterKeyHandleForAesGcm(handle) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.consumeMasterKeyHandleForAesGcm(retptr, handle);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
+        var v1 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export4(r0, r1 * 1, 1);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
@@ -2024,6 +2806,19 @@ export function decryptAlbumContent(epoch_handle, nonce, ciphertext) {
 }
 
 /**
+ * Decrypts a v0x03/v0x04 envelope using the epoch-handle dispatcher surface.
+ * @param {bigint} epoch_handle_id
+ * @param {Uint8Array} envelope
+ * @returns {any}
+ */
+export function decryptEnvelope(epoch_handle_id, envelope) {
+    const ptr0 = passArray8ToWasm0(envelope, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decryptEnvelope(epoch_handle_id, ptr0, len0);
+    return takeObject(ret);
+}
+
+/**
  * Decrypts shard envelope bytes with an epoch-key handle through WASM.
  * @param {bigint} handle
  * @param {Uint8Array} envelope_bytes
@@ -2063,6 +2858,21 @@ export function decryptShardWithLinkTierHandle(link_tier_handle, envelope_bytes)
 }
 
 /**
+ * Decrypts shard envelope bytes with an epoch-key handle through WASM.
+ *
+ * The shard tier is read from the envelope header by the client core.
+ * @param {bigint} handle
+ * @param {Uint8Array} envelope_bytes
+ * @returns {BytesResult}
+ */
+export function decryptShardWithTier(handle, envelope_bytes) {
+    const ptr0 = passArray8ToWasm0(envelope_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decryptShardWithTier(handle, ptr0, len0);
+    return BytesResult.__wrap(ret);
+}
+
+/**
  * Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
  * @param {bigint} account_handle
  * @returns {AuthKeypairResult}
@@ -2092,6 +2902,63 @@ export function deriveAuthKeypairFromPassword(password, user_salt, kdf_memory_ki
     const len1 = WASM_VECTOR_LEN;
     const ret = wasm.deriveAuthKeypairFromPassword(ptr0, len0, ptr1, len1, kdf_memory_kib, kdf_iterations, kdf_parallelism);
     return AuthKeypairResult.__wrap(ret);
+}
+
+/**
+ * Derives the session L0 master key and stores it behind an opaque handle.
+ * @param {Uint8Array} password
+ * @param {Uint8Array} salt
+ * @param {number} ops_limit
+ * @param {number} mem_limit_kib
+ * @returns {bigint}
+ */
+export function deriveMasterKeyFromPassword(password, salt, ops_limit, mem_limit_kib) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(password, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(salt, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.deriveMasterKeyFromPassword(retptr, ptr0, len0, ptr1, len1, ops_limit, mem_limit_kib);
+        var r0 = getDataViewMemory0().getBigInt64(retptr + 8 * 0, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
+        return BigInt.asUintN(64, r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Derives the 16-byte deterministic session Argon2id salt.
+ * @param {string} domain
+ * @param {string} username
+ * @returns {Uint8Array}
+ */
+export function deriveSessionSaltFromUsername(domain, username) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(domain, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(username, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.deriveSessionSaltFromUsername(retptr, ptr0, len0, ptr1, len1);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
+        var v3 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export4(r0, r1 * 1, 1);
+        return v3;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
@@ -2225,6 +3092,21 @@ export function encryptShardWithEpochHandle(handle, plaintext, shard_index, tier
 }
 
 /**
+ * Encrypts shard bytes with an epoch-key handle and typed shard tier through WASM.
+ * @param {bigint} handle
+ * @param {Uint8Array} plaintext
+ * @param {number} shard_index
+ * @param {ShardTier} tier
+ * @returns {EncryptedShardResult}
+ */
+export function encryptShardWithTier(handle, plaintext, shard_index, tier) {
+    const ptr0 = passArray8ToWasm0(plaintext, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.encryptShardWithTier(handle, ptr0, len0, shard_index, tier);
+    return EncryptedShardResult.__wrap(ret);
+}
+
+/**
  * Returns epoch-key handle status through WASM.
  * @param {bigint} handle
  * @returns {EpochKeyHandleStatusResult}
@@ -2232,6 +3114,38 @@ export function encryptShardWithEpochHandle(handle, plaintext, shard_index, tier
 export function epochKeyHandleIsOpen(handle) {
     const ret = wasm.epochKeyHandleIsOpen(handle);
     return EpochKeyHandleStatusResult.__wrap(ret);
+}
+
+/**
+ * Returns the ADR-022 canonical manifest-finalize idempotency key through WASM.
+ * @param {string} job_id
+ * @returns {string}
+ */
+export function finalizeIdempotencyKey(job_id) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(job_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.finalizeIdempotencyKey(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        var ptr2 = r0;
+        var len2 = r1;
+        if (r3) {
+            ptr2 = 0; len2 = 0;
+            throw takeObject(r2);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export4(deferred3_0, deferred3_1, 1);
+    }
 }
 
 /**
@@ -2285,11 +3199,11 @@ export function identitySigningPubkey(handle) {
 
 /**
  * Imports a URL fragment seed into a share-link handle through WASM.
- * @param {Uint8Array} link_secret_for_url
+ * @param {Uint8Array} link_url_token
  * @returns {LinkTierHandleResult}
  */
-export function importLinkShareHandle(link_secret_for_url) {
-    const ptr0 = passArray8ToWasm0(link_secret_for_url, wasm.__wbindgen_export2);
+export function importLinkShareHandle(link_url_token) {
+    const ptr0 = passArray8ToWasm0(link_url_token, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.importLinkShareHandle(ptr0, len0);
     return LinkTierHandleResult.__wrap(ret);
@@ -2297,15 +3211,15 @@ export function importLinkShareHandle(link_secret_for_url) {
 
 /**
  * Imports a wrapped tier key into a link-tier handle through WASM.
- * @param {Uint8Array} link_secret_for_url
+ * @param {Uint8Array} link_url_token
  * @param {Uint8Array} nonce
  * @param {Uint8Array} encrypted_key
  * @param {string} album_id
  * @param {number} tier_byte
  * @returns {LinkTierHandleResult}
  */
-export function importLinkTierHandle(link_secret_for_url, nonce, encrypted_key, album_id, tier_byte) {
-    const ptr0 = passArray8ToWasm0(link_secret_for_url, wasm.__wbindgen_export2);
+export function importLinkTierHandle(link_url_token, nonce, encrypted_key, album_id, tier_byte) {
+    const ptr0 = passArray8ToWasm0(link_url_token, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray8ToWasm0(nonce, wasm.__wbindgen_export2);
     const len1 = WASM_VECTOR_LEN;
@@ -2384,6 +3298,82 @@ export function initUploadJob(job_id, album_id, asset_id, idempotency_key, max_r
 }
 
 /**
+ * Inspects image container metadata through the shared Rust media parser.
+ * @param {Uint8Array} input_bytes
+ * @returns {ImageInspectResult}
+ */
+export function inspectImage(input_bytes) {
+    const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.inspectImage(ptr0, len0);
+    return ImageInspectResult.__wrap(ret);
+}
+
+/**
+ * Inspects video container metadata through the shared Rust media parser.
+ * @param {Uint8Array} input_bytes
+ * @returns {VideoInspectResult}
+ */
+export function inspectVideoContainer(input_bytes) {
+    const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.inspectVideoContainer(ptr0, len0);
+    return VideoInspectResult.__wrap(ret);
+}
+
+/**
+ * Lists all protocol-supported shard tiers in ascending wire-byte order.
+ * @returns {any[]}
+ */
+export function listShardTiers() {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.listShardTiers(retptr);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v1 = getArrayJsValueFromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export4(r0, r1 * 4, 4);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Builds canonical manifest transcript bytes through WASM.
+ *
+ * `encoded_shards` is a repeated sequence of
+ * `chunk_index:u32le | tier:u8 | shard_id:16 bytes | sha256:32 bytes`.
+ * @param {Uint8Array} album_id
+ * @param {number} epoch_id
+ * @param {Uint8Array} encrypted_meta
+ * @param {Uint8Array} encoded_shards
+ * @returns {BytesResult}
+ */
+export function manifestTranscriptBytes(album_id, epoch_id, encrypted_meta, encoded_shards) {
+    const ptr0 = passArray8ToWasm0(album_id, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(encrypted_meta, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(encoded_shards, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.manifestTranscriptBytes(ptr0, len0, epoch_id, ptr1, len1, ptr2, len2);
+    return BytesResult.__wrap(ret);
+}
+
+/**
+ * Mints a link-tier handle from a raw 32-byte tier key through WASM.
+ * @param {Uint8Array} raw_key
+ * @returns {LinkTierHandleResult}
+ */
+export function mintLinkTierHandleFromRawKey(raw_key) {
+    const ptr0 = passArray8ToWasm0(raw_key, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.mintLinkTierHandleFromRawKey(ptr0, len0);
+    return LinkTierHandleResult.__wrap(ret);
+}
+
+/**
  * Opens an epoch-key handle through WASM.
  * @param {Uint8Array} wrapped_epoch_seed
  * @param {bigint} account_key_handle
@@ -2453,6 +3443,37 @@ export function sealBundleWithEpochHandle(identity_handle, epoch_handle, recipie
 }
 
 /**
+ * Returns the protocol byte pinned for a WASM shard tier.
+ * @param {ShardTier} tier
+ * @returns {number}
+ */
+export function shardTierByte(tier) {
+    const ret = wasm.shardTierByte(tier);
+    return ret;
+}
+
+/**
+ * Parses a protocol byte into a typed WASM shard tier.
+ * @param {number} byte
+ * @returns {ShardTier}
+ */
+export function shardTierFromByte(byte) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.shardTierFromByte(retptr, byte);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return r0;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
  * Signs a LocalAuth challenge transcript with an account-key handle through WASM.
  * @param {bigint} account_handle
  * @param {Uint8Array} challenge_bytes
@@ -2515,6 +3536,30 @@ export function signManifestWithIdentity(handle, transcript_bytes) {
 }
 
 /**
+ * Strips AVIF metadata through the shared Rust media parser.
+ * @param {Uint8Array} input_bytes
+ * @returns {StripResult}
+ */
+export function stripAvifMetadata(input_bytes) {
+    const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.stripAvifMetadata(ptr0, len0);
+    return StripResult.__wrap(ret);
+}
+
+/**
+ * Strips HEIC/HEIF metadata through the shared Rust media parser.
+ * @param {Uint8Array} input_bytes
+ * @returns {StripResult}
+ */
+export function stripHeicMetadata(input_bytes) {
+    const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.stripHeicMetadata(ptr0, len0);
+    return StripResult.__wrap(ret);
+}
+
+/**
  * Strips JPEG metadata through the shared Rust media parser.
  * @param {Uint8Array} input_bytes
  * @returns {StripResult}
@@ -2535,6 +3580,18 @@ export function stripPngMetadata(input_bytes) {
     const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.stripPngMetadata(ptr0, len0);
+    return StripResult.__wrap(ret);
+}
+
+/**
+ * Strips video container metadata through the shared Rust media parser.
+ * @param {Uint8Array} input_bytes
+ * @returns {StripResult}
+ */
+export function stripVideoMetadata(input_bytes) {
+    const ptr0 = passArray8ToWasm0(input_bytes, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.stripVideoMetadata(ptr0, len0);
     return StripResult.__wrap(ret);
 }
 
@@ -2650,6 +3707,32 @@ export function verifyManifestWithIdentity(transcript_bytes, signature, public_k
 }
 
 /**
+ * Verifies shard ciphertext SHA-256 through WASM.
+ * @param {Uint8Array} envelope_bytes
+ * @param {Uint8Array} expected_sha256
+ * @returns {boolean}
+ */
+export function verifyShardIntegritySha256(envelope_bytes, expected_sha256) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(envelope_bytes, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(expected_sha256, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.verifyShardIntegritySha256(retptr, ptr0, len0, ptr1, len1);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return r0 !== 0;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
  * Wraps an epoch tier for an existing share-link handle through WASM.
  * @param {bigint} link_share_handle
  * @param {bigint} epoch_handle
@@ -2677,12 +3760,37 @@ export function wrapWithAccountHandle(account_handle, plaintext) {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbg_Error_960c155d3d49e4c2: function(arg0, arg1) {
+            const ret = Error(getStringFromWasm0(arg0, arg1));
+            return addHeapObject(ret);
+        },
         __wbg___wbindgen_throw_6b64449b9b9ed33c: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
+        },
+        __wbg_bytesresult_new: function(arg0) {
+            const ret = BytesResult.__wrap(arg0);
+            return addHeapObject(ret);
+        },
+        __wbg_decryptedshardresult_new: function(arg0) {
+            const ret = DecryptedShardResult.__wrap(arg0);
+            return addHeapObject(ret);
         },
         __wbg_getRandomValues_76dfc69825c9c552: function() { return handleError(function (arg0, arg1) {
             globalThis.crypto.getRandomValues(getArrayU8FromWasm0(arg0, arg1));
         }, arguments); },
+        __wbg_streamingenveloperesult_new: function(arg0) {
+            const ret = StreamingEnvelopeResult.__wrap(arg0);
+            return addHeapObject(ret);
+        },
+        __wbg_streamingframeresult_new: function(arg0) {
+            const ret = StreamingFrameResult.__wrap(arg0);
+            return addHeapObject(ret);
+        },
+        __wbindgen_cast_0000000000000001: function(arg0) {
+            // Cast intrinsic for `F64 -> Externref`.
+            const ret = arg0;
+            return addHeapObject(ret);
+        },
         __wbindgen_object_drop_ref: function(arg0) {
             takeObject(arg0);
         },
@@ -2747,12 +3855,21 @@ const HeaderResultFinalization = (typeof FinalizationRegistry === 'undefined')
 const IdentityHandleResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_identityhandleresult_free(ptr >>> 0, 1));
+const ImageInspectResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_imageinspectresult_free(ptr >>> 0, 1));
 const LinkTierHandleResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_linktierhandleresult_free(ptr >>> 0, 1));
 const LoadSnapshotResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_loadsnapshotresult_free(ptr >>> 0, 1));
+const MediaTierDimensionsFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_mediatierdimensions_free(ptr >>> 0, 1));
+const MediaTierLayoutResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_mediatierlayoutresult_free(ptr >>> 0, 1));
 const ProgressEventFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_progressevent_free(ptr >>> 0, 1));
@@ -2765,15 +3882,30 @@ const SealedBundleResultFinalization = (typeof FinalizationRegistry === 'undefin
 const SerializeSnapshotResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_serializesnapshotresult_free(ptr >>> 0, 1));
+const StreamingEnvelopeResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_streamingenveloperesult_free(ptr >>> 0, 1));
+const StreamingFrameResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_streamingframeresult_free(ptr >>> 0, 1));
 const StripResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_stripresult_free(ptr >>> 0, 1));
 const VerifySnapshotResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_verifysnapshotresult_free(ptr >>> 0, 1));
+const VideoInspectResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_videoinspectresult_free(ptr >>> 0, 1));
 const WrappedTierKeyResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_wrappedtierkeyresult_free(ptr >>> 0, 1));
+const StreamingShardDecryptorFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_streamingsharddecryptor_free(ptr >>> 0, 1));
+const StreamingShardEncryptorFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_streamingshardencryptor_free(ptr >>> 0, 1));
 
 function addHeapObject(obj) {
     if (heap_next === heap.length) heap.push(heap.length + 1);
@@ -2788,6 +3920,16 @@ function dropObject(idx) {
     if (idx < 1028) return;
     heap[idx] = heap_next;
     heap_next = idx;
+}
+
+function getArrayJsValueFromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    const mem = getDataViewMemory0();
+    const result = [];
+    for (let i = ptr; i < ptr + 4 * len; i += 4) {
+        result.push(takeObject(mem.getUint32(i, true)));
+    }
+    return result;
 }
 
 function getArrayU32FromWasm0(ptr, len) {
@@ -2843,6 +3985,10 @@ let heap = new Array(1024).fill(undefined);
 heap.push(undefined, null, true, false);
 
 let heap_next = heap.length;
+
+function isLikeNone(x) {
+    return x === undefined || x === null;
+}
 
 function passArray8ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 1, 1) >>> 0;

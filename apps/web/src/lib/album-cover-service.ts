@@ -5,7 +5,7 @@
  * The cover photo is the first photo in the album (by taken_at date).
  */
 
-import type { PhotoMeta } from '../workers/types';
+import type { EpochHandleId, PhotoMeta } from '../workers/types';
 import { getDbClient } from './db-client';
 import { loadPhoto, releasePhoto } from './photo-service';
 
@@ -71,13 +71,13 @@ export async function getFirstPhotoForAlbum(
  * Returns null if album has no photos.
  *
  * @param albumId - Album ID
- * @param epochReadKey - Epoch read key for decryption (32 bytes)
+ * @param epochReadKey - Opaque epoch handle id for decryption
  * @returns Album cover or null if no photos
  * @throws AlbumCoverError if loading fails
  */
 export async function getAlbumCover(
   albumId: string,
-  epochReadKey: Uint8Array,
+  epochReadKey: EpochHandleId,
 ): Promise<AlbumCover | null> {
   // Check cache first
   const cached = coverCache.get(albumId);

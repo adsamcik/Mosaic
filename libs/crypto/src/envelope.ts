@@ -168,6 +168,10 @@ function parseHeader(envelope: Uint8Array): ShardHeader {
  * Uses XChaCha20-Poly1305 with the header as AAD (authenticated additional data).
  * This ensures header tampering is detected during decryption.
  *
+ * @deprecated Protocol crypto is Rust-owned. New web code must call the
+ * WASM epoch-handle API (`encryptShardWithEpochHandle`) instead of passing
+ * raw tier keys through TypeScript.
+ *
  * @param data - Plaintext data to encrypt (max 6MB)
  * @param tierKey - Tier-specific encryption key (32 bytes)
  * @param epochId - Current epoch ID
@@ -230,6 +234,10 @@ export async function encryptShard(
  * Validates header, checks reserved bytes, then decrypts.
  * Header tampering is detected via AAD verification.
  * Use peekHeader() first to determine the tier and select the correct key.
+ *
+ * @deprecated Protocol crypto is Rust-owned. New web code must call the
+ * WASM epoch-handle API (`decryptShardWithEpochHandle`) instead of passing
+ * raw tier keys through TypeScript.
  *
  * @param envelope - Complete envelope (header + ciphertext)
  * @param tierKey - Tier-specific decryption key (32 bytes)
@@ -313,6 +321,9 @@ export function parseShardHeader(envelope: Uint8Array): ShardHeader {
 
 /**
  * Verify shard integrity against expected hash.
+ *
+ * @deprecated New web code should use the Rust-backed crypto worker
+ * integrity path so shard verification stays behind the WASM boundary.
  *
  * @param envelope - Downloaded envelope
  * @param expectedSha256 - Hash from manifest (base64url)

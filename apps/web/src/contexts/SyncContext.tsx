@@ -106,7 +106,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
       const epochKey = await getOrFetchEpochKey(albumId, album.currentEpochId);
 
       // Perform sync
-      await syncEngine.sync(albumId, epochKey.epochSeed);
+      await syncEngine.sync(albumId, epochKey.epochHandleId);
 
       setLastSyncTime((prev) => new Map([...prev, [albumId, new Date()]]));
       log.info(`Auto-sync complete for album ${albumId}`);

@@ -1,0 +1,25 @@
+[package]
+name = "mosaic-parity-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+parity-tests = []
+weak-kdf = ["mosaic-crypto/weak-kdf", "mosaic-wasm/weak-kdf", "mosaic-uniffi/weak-kdf"]
+
+[dependencies]
+ciborium = "=0.2.2"
+mosaic-client = { path = "../mosaic-client", version = "0.1.0" }
+mosaic-crypto = { path = "../mosaic-crypto", version = "0.1.0" }
+mosaic-domain = { path = "../mosaic-domain", version = "0.1.0" }
+mosaic-media = { path = "../mosaic-media", version = "0.1.0" }
+mosaic-uniffi = { path = "../mosaic-uniffi", version = "0.1.0" }
+mosaic-wasm = { path = "../mosaic-wasm", version = "0.1.0" }
+
+[lints]
+workspace = true

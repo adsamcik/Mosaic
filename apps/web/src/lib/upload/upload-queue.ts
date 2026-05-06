@@ -3,6 +3,12 @@ import { createLogger } from '../logger';
 import { getMimeType, isSupportedVideoType } from '../mime-type-detection';
 import { isSupportedImageType } from '../thumbnail-generator';
 import { fileIdentity, taskIdentity } from '../upload-errors';
+import {
+  createIdempotencyKey,
+  createUuidV7,
+  legacyUploadQueueDrainer,
+  SNAPSHOT_VERSION,
+} from './legacy-drainer';
 import { UploadPersistence } from './upload-persistence';
 import { tusUpload as tusUploadFn } from './tus-upload';
 import { processTieredUpload } from './tiered-upload-handler';
@@ -16,6 +22,7 @@ import type {
   ErrorCallback,
   UploadHandlerContext,
 } from './types';
+import type { EpochHandleId } from '../../workers/types';
 import {
   CHUNK_SIZE,
   MAX_RETRIES,
@@ -35,6 +42,8 @@ class UploadQueue {
   private maxConcurrent = 2;
   private activeCount = 0;
   private persistence = new UploadPersistence();
+  private initPromise: Promise<void> | null = null;
+  private initialized = false;
 
   /** Called when upload progress updates */
   onProgress?: ProgressCallback;
@@ -49,7 +58,48 @@ class UploadQueue {
    * Initialize the upload queue (call once on app start)
    */
   async init(): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
+    if (this.initPromise !== null) {
+      return this.initPromise;
+    }
+    this.initPromise = this.initialize();
+    try {
+      await this.initPromise;
+      this.initialized = true;
+    } finally {
+      if (!this.initialized) {
+        this.initPromise = null;
+      }
+    }
+  }
+
+  private async initialize(): Promise<void> {
     await this.persistence.init();
+    const drainResult = await legacyUploadQueueDrainer.drain({
+      requeue: async (record, source) => {
+        const file = source instanceof File
+          ? source
+          : new File([source], record.fileName, { type: source.type });
+        this.queue.push({
+          id: record.id,
+          file,
+          albumId: record.albumId,
+          epochId: record.epochId,
+          epochHandleId: record.epochHandleId as EpochHandleId,
+          status: 'queued',
+          currentAction: 'pending',
+          progress: 0,
+          completedShards: [],
+          retryCount: 0,
+          lastAttemptAt: 0,
+        });
+      },
+    });
+    if (drainResult.migrated.length > 0) {
+      void this.processQueue();
+    }
   }
 
   /**
@@ -60,7 +110,7 @@ class UploadQueue {
     file: File,
     albumId: string,
     epochId: number,
-    readKey: Uint8Array,
+    epochHandleId: EpochHandleId,
   ): Promise<string> {
     log.info('UploadQueue.add called', {
       ...fileIdentity(file),
@@ -72,13 +122,16 @@ class UploadQueue {
       throw new Error('Upload queue not initialized');
     }
 
-    const taskId = crypto.randomUUID();
+    const taskId = createUuidV7();
     log.info('Created task ID', { taskId });
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
     // Persist task state for resume support
     const persisted: PersistedTask = {
       id: taskId,
+      schemaVersion: SNAPSHOT_VERSION,
+      snapshotVersion: SNAPSHOT_VERSION,
+      idempotencyKey: createIdempotencyKey(),
       albumId,
       fileName: file.name,
       fileSize: file.size,
@@ -97,7 +150,7 @@ class UploadQueue {
       file,
       albumId,
       epochId,
-      readKey,
+      epochHandleId,
       status: 'queued',
       currentAction: 'pending',
       progress: 0,
@@ -325,12 +378,16 @@ class UploadQueue {
    * Retry a permanently failed task (resets retry count)
    * @param taskId - ID of the task to retry
    * @param file - The file to upload (must be re-provided as File objects aren't persisted)
-   * @param readKey - The encryption key (must be re-provided as keys aren't persisted)
+   * @param epochHandleId - The epoch handle id (must be re-provided as handles aren't persisted)
    */
+  async resetLegacyUploadQueue(): Promise<number> {
+    return legacyUploadQueueDrainer.reset();
+  }
+
   async retryPermanentlyFailed(
     taskId: string,
     file: File,
-    readKey: Uint8Array,
+    epochHandleId: EpochHandleId,
   ): Promise<void> {
     if (!this.persistence.isInitialized) {
       throw new Error('Upload queue not initialized');
@@ -357,7 +414,7 @@ class UploadQueue {
       file,
       albumId: persisted.albumId,
       epochId: persisted.epochId,
-      readKey,
+      epochHandleId,
       status: 'queued',
       currentAction: 'pending',
       progress: persisted.completedShards.length / persisted.totalChunks,

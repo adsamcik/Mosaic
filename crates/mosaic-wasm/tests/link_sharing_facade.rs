@@ -52,7 +52,7 @@ fn create_link_share_handle_returns_url_seed_and_wrapped_tier() {
     assert_eq!(created.code, 0);
     assert_ne!(created.handle, 0);
     assert_eq!(created.link_id.len(), 16);
-    assert_eq!(created.link_secret_for_url.len(), 32);
+    assert_eq!(created.link_url_token.len(), 32);
     assert_eq!(created.tier, 1);
     assert_eq!(created.nonce.len(), 24);
     assert_eq!(created.encrypted_key.len(), 32 + 16);
@@ -72,7 +72,7 @@ fn link_tier_handle_decrypts_handle_encrypted_shard() {
     let created = create_link_share_handle("album".to_owned(), epoch.handle, 2);
     assert_eq!(created.code, 0);
     let imported = import_link_tier_handle(
-        created.link_secret_for_url.clone(),
+        created.link_url_token.clone(),
         created.nonce.clone(),
         created.encrypted_key.clone(),
         "album".to_owned(),
@@ -103,7 +103,7 @@ fn imported_link_share_handle_wraps_additional_tiers() {
 
     let created = create_link_share_handle("album".to_owned(), epoch.handle, 1);
     assert_eq!(created.code, 0);
-    let imported_share = import_link_share_handle(created.link_secret_for_url.clone());
+    let imported_share = import_link_share_handle(created.link_url_token.clone());
     assert_eq!(imported_share.code, 0);
     assert_eq!(imported_share.link_id, created.link_id);
 
@@ -112,7 +112,7 @@ fn imported_link_share_handle_wraps_additional_tiers() {
     assert_eq!(wrapped_full.tier, 3);
 
     let imported_tier = import_link_tier_handle(
-        created.link_secret_for_url,
+        created.link_url_token,
         wrapped_full.nonce,
         wrapped_full.encrypted_key,
         "album".to_owned(),

@@ -216,8 +216,6 @@ export async function fetchAndUnwrapEpochKeys(
           epochId: record.epochId,
           epochHandleId: opened.epochHandleId,
           signPublicKey: opened.signPublicKey,
-          // Slice 3 transitional placeholders — see EpochKeyBundle docs.
-          epochSeed: new Uint8Array(0),
           signKeypair: {
             publicKey: opened.signPublicKey,
             secretKey: new Uint8Array(0),
@@ -259,8 +257,6 @@ export async function fetchAndUnwrapEpochKeys(
             epochId: record.epochId,
             epochHandleId: opened.epochHandleId,
             signPublicKey: opened.signPublicKey,
-            // Slice 3 transitional placeholders — see EpochKeyBundle docs.
-            epochSeed: new Uint8Array(0),
             signKeypair: {
               publicKey: opened.signPublicKey,
               secretKey: new Uint8Array(0),

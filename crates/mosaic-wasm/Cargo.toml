@@ -15,6 +15,7 @@ mosaic-client = { path = "../mosaic-client", version = "0.1.0" }
 mosaic-crypto = { path = "../mosaic-crypto", version = "0.1.0" }
 mosaic-domain = { path = "../mosaic-domain", version = "0.1.0" }
 mosaic-media = { path = "../mosaic-media", version = "0.1.0" }
+self_cell = "=1.2.2"
 wasm-bindgen = "=0.2.118"
 zeroize = "=1.8.2"
 ciborium = "=0.2.2"
@@ -30,6 +31,7 @@ weak-kdf = ["mosaic-crypto/weak-kdf", "mosaic-client/weak-kdf"]
 mosaic-client = { path = "../mosaic-client", version = "0.1.0", features = ["__variant-introspection"] }
 mosaic-vectors = { path = "../mosaic-vectors", version = "0.1.0" }
 strum = { version = "=0.28.0", default-features = false }
+wasm-bindgen-test = "=0.3.68"
 
 [lints]
 workspace = true

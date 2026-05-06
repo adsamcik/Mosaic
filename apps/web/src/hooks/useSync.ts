@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { syncEngine } from '../lib/sync-engine';
 import type { SyncEventDetail } from '../lib/sync-engine';
 import { createLogger } from '../lib/logger';
+import type { EpochHandleId } from '../workers/types';
 
 const log = createLogger('useSync');
 
@@ -23,10 +24,10 @@ export interface UseSyncResult {
   /** Last sync error, if any */
   error: Error | null;
   /** Sync a specific album */
-  syncAlbum: (albumId: string, readKey: Uint8Array) => Promise<void>;
-  /** Sync all albums (requires album list and read keys) */
+  syncAlbum: (albumId: string, epochHandleId: EpochHandleId) => Promise<void>;
+  /** Sync all albums (requires album list and epoch handles) */
   syncAll: (
-    albums: Array<{ id: string; readKey: Uint8Array }>,
+    albums: Array<{ id: string; epochHandleId: EpochHandleId }>,
   ) => Promise<void>;
 }
 
@@ -88,9 +89,9 @@ export function useSync(): UseSyncResult {
    * Sync a specific album
    */
   const syncAlbum = useCallback(
-    async (albumId: string, readKey: Uint8Array): Promise<void> => {
+    async (albumId: string, epochHandleId: EpochHandleId): Promise<void> => {
       try {
-        await syncEngine.sync(albumId, readKey);
+        await syncEngine.sync(albumId, epochHandleId);
       } catch (err) {
         // Error is already set via event listener
         log.error('Sync failed:', err);
@@ -104,11 +105,11 @@ export function useSync(): UseSyncResult {
    */
   const syncAll = useCallback(
     async (
-      albums: Array<{ id: string; readKey: Uint8Array }>,
+      albums: Array<{ id: string; epochHandleId: EpochHandleId }>,
     ): Promise<void> => {
       for (const album of albums) {
         try {
-          await syncEngine.sync(album.id, album.readKey);
+          await syncEngine.sync(album.id, album.epochHandleId);
         } catch (err) {
           // Continue with next album on error
           log.error(`Sync failed for album ${album.id}:`, err);

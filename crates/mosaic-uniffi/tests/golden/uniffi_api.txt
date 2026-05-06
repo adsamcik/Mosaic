@@ -1,4 +1,94 @@
 mosaic-uniffi-api-shape:v1
+enum ClientErrorCode
+  Ok = 0
+  InvalidHeaderLength = 100
+  InvalidMagic = 101
+  UnsupportedVersion = 102
+  InvalidTier = 103
+  NonZeroReservedByte = 104
+  UnknownEnvelopeVersion = 106
+  EmptyContext = 200
+  InvalidKeyLength = 201
+  InvalidInputLength = 202
+  InvalidEnvelope = 203
+  MissingCiphertext = 204
+  AuthenticationFailed = 205
+  RngFailure = 206
+  WrappedKeyTooShort = 207
+  KdfProfileTooWeak = 208
+  InvalidSaltLength = 209
+  KdfFailure = 210
+  InvalidSignatureLength = 211
+  InvalidPublicKey = 212
+  InvalidUsername = 213
+  KdfProfileTooCostly = 214
+  LinkTierMismatch = 215
+  BundleSignatureInvalid = 216
+  BundleAlbumIdEmpty = 217
+  BundleAlbumIdMismatch = 218
+  BundleEpochTooOld = 219
+  BundleRecipientMismatch = 220
+  BundleJsonParse = 221
+  BundleSealOpenFailed = 222
+  ShardIntegrityFailed = 223
+  LegacyRawKeyDecryptFallback = 224
+  StreamingChunkOutOfOrder = 225
+  StreamingTotalChunkMismatch = 226
+  StreamingPlaintextDivergence = 227
+  OperationCancelled = 300
+  SecretHandleNotFound = 400
+  IdentityHandleNotFound = 401
+  HandleSpaceExhausted = 402
+  EpochHandleNotFound = 403
+  InternalStatePoisoned = 500
+  UnsupportedMediaFormat = 600
+  InvalidMediaContainer = 601
+  InvalidMediaDimensions = 602
+  MediaOutputTooLarge = 603
+  MediaMetadataMismatch = 604
+  InvalidMediaSidecar = 605
+  MediaAdapterOutputMismatch = 606
+  VideoContainerInvalid = 607
+  MediaInspectFailed = 608
+  MediaStripFailed = 609
+  SidecarFieldOverflow = 610
+  SidecarTagUnknown = 611
+  MalformedSidecar = 612
+  MakerNoteRejected = 613
+  ExifTraversalLimitExceeded = 614
+  VideoTooLargeForV1 = 615
+  VideoSourceUnreadable = 616
+  VideoTierShapeRejected = 617
+  MetadataSidecarReservedTagNotPromoted = 618
+  ClientCoreInvalidTransition = 700
+  ClientCoreMissingEventPayload = 701
+  ClientCoreRetryBudgetExhausted = 702
+  ClientCoreSyncPageDidNotAdvance = 703
+  ClientCoreManifestOutcomeUnknown = 704
+  ClientCoreUnsupportedSnapshotVersion = 705
+  ClientCoreInvalidSnapshot = 706
+  ManifestShapeRejected = 707
+  IdempotencyExpired = 708
+  ManifestSetConflict = 709
+  BackendIdempotencyConflict = 710
+  VideoPosterExtractionFailed = 711
+  DownloadInvalidPlan = 720
+  DownloadIllegalTransition = 721
+  DownloadSnapshotMigration = 722
+  DownloadSnapshotCorrupt = 723
+  DownloadSnapshotChecksumMismatch = 724
+  DownloadSnapshotTorn = 725
+  DownloadTransientNetwork = 726
+  DownloadIntegrity = 727
+  DownloadDecrypt = 728
+  DownloadNotFound = 729
+  DownloadQuota = 730
+  DownloadCancelled = 731
+  DownloadAccessRevoked = 732
+  DownloadAuthorizationChanged = 733
+  DownloadIllegalState = 734
+  PinValidationFailed = 800
+end
 record HeaderResult
   code: u16
   epoch_id: u32
@@ -17,6 +107,16 @@ end
 record BytesResult
   code: u16
   bytes: Vec<u8>
+end
+enum MediaFormat
+  Jpeg = 1
+  Png = 2
+  WebP = 3
+end
+record StripResult
+  code: u16
+  stripped_bytes: Vec<u8>
+  removed_metadata_count: u32
 end
 record AccountUnlockRequest
   user_salt: Vec<u8>
@@ -57,6 +157,10 @@ record EncryptedShardResult
   envelope_bytes: Vec<u8>
   sha256: String
 end
+record EncryptedFrame
+  frame_index: u32
+  bytes: Vec<u8>
+end
 record DecryptedShardResult
   code: u16
   plaintext: Vec<u8>
@@ -82,6 +186,18 @@ record ClientCoreUploadShardRef
   content_length: u64
   envelope_version: u8
   uploaded: bool
+end
+record ClientCoreManifestShardRef
+  tier: u8
+  shard_index: u32
+  shard_id: String
+  sha256: Vec<u8>
+end
+record ClientCoreManifestTranscriptInputs
+  album_id: Vec<u8>
+  epoch_id: u32
+  encrypted_metadata_envelope: Vec<u8>
+  shards: Vec<ClientCoreManifestShardRef>
 end
 record ClientCoreUploadJobRequest
   job_id: String
@@ -216,6 +332,36 @@ record MediaMetadataResult
   height: u32
   orientation: u8
 end
+record ImageInspectResult
+  code: u16
+  format: u8
+  mime_type: String
+  width: u32
+  height: u32
+  orientation: u8
+  encoded_sidecar_fields: Vec<u8>
+  camera_make: String
+  camera_model: String
+  device_timestamp_ms: u64
+  has_device_timestamp_ms: bool
+  subseconds_ms: u32
+  has_subseconds_ms: bool
+  gps_lat_microdegrees: i32
+  gps_lon_microdegrees: i32
+  gps_altitude_meters: i32
+  gps_accuracy_meters: u16
+  has_gps: bool
+end
+record VideoInspectResult
+  code: u16
+  container: String
+  video_codec: String
+  width_px: u32
+  height_px: u32
+  duration_ms: u64
+  frame_rate_fps: f64
+  orientation: String
+end
 record MediaTierDimensions
   tier: u8
   width: u32
@@ -228,8 +374,27 @@ record MediaTierLayoutResult
   original: MediaTierDimensions
 end
 export pub fn protocol_version() -> String
+export pub fn finalize_idempotency_key(job_id: String) -> Result<String, MosaicError>
+object StreamingEncryptor
+end
+object StreamingDecryptor
+end
+impl StreamingEncryptor
+  constructor pub fn new( epoch_handle_id: u64, tier: u8, expected_frame_count: Option<u32>, ) -> Result<Self, MosaicError>
+  method pub fn encrypt_frame(&self, plaintext: Vec<u8>) -> Result<EncryptedFrame, MosaicError>
+  method pub fn finalize(&self) -> Result<Vec<u8>, MosaicError>
+end
+impl StreamingDecryptor
+  constructor pub fn new(epoch_handle_id: u64, envelope: Vec<u8>) -> Result<Self, MosaicError>
+  method pub fn decrypt_frame(&self, frame: Vec<u8>) -> Result<Vec<u8>, MosaicError>
+  method pub fn finalize(&self) -> Result<(), MosaicError>
+end
+export pub fn decrypt_envelope(epoch_handle_id: u64, envelope: Vec<u8>) -> Result<Vec<u8>, MosaicError>
 export pub fn parse_envelope_header(bytes: Vec<u8>) -> HeaderResult
 export pub fn android_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> ProgressResult
+export pub fn derive_session_salt_from_username( domain: String, username: String, ) -> Result<Vec<u8>, MosaicError>
+export pub fn derive_master_key_from_password( password: Vec<u8>, salt: Vec<u8>, ops_limit: u32, mem_limit_kib: u32, ) -> Result<u64, MosaicError>
+export pub fn consume_master_key_handle_for_aes_gcm(handle: u64) -> Result<Vec<u8>, MosaicError>
 export pub fn unlock_account_key(password: Vec<u8>, request: AccountUnlockRequest) -> AccountUnlockResult
 export pub fn account_key_handle_is_open(handle: u64) -> AccountKeyHandleStatusResult
 export pub fn close_account_key_handle(handle: u64) -> u16
@@ -239,10 +404,18 @@ export pub fn identity_signing_pubkey(handle: u64) -> BytesResult
 export pub fn identity_encryption_pubkey(handle: u64) -> BytesResult
 export pub fn sign_manifest_with_identity(handle: u64, transcript_bytes: Vec<u8>) -> BytesResult
 export pub fn canonical_metadata_sidecar_bytes( album_id: Vec<u8>, photo_id: Vec<u8>, epoch_id: u32, encoded_fields: Vec<u8>, ) -> BytesResult
+export pub fn strip_known_metadata(format: MediaFormat, input_bytes: Vec<u8>) -> StripResult
+export pub fn strip_avif_metadata(input_bytes: Vec<u8>) -> StripResult
+export pub fn strip_heic_metadata(input_bytes: Vec<u8>) -> StripResult
+export pub fn strip_video_metadata(input_bytes: Vec<u8>) -> StripResult
 export pub fn encrypt_metadata_sidecar_with_epoch_handle( handle: u64, album_id: Vec<u8>, photo_id: Vec<u8>, epoch_id: u32, encoded_fields: Vec<u8>, shard_index: u32, ) -> EncryptedShardResult
 export pub fn inspect_media_image(bytes: Vec<u8>) -> MediaMetadataResult
+export pub fn inspect_image(input_bytes: Vec<u8>) -> ImageInspectResult
+export pub fn inspect_video_container(input_bytes: Vec<u8>) -> VideoInspectResult
 export pub fn plan_media_tier_layout(width: u32, height: u32) -> MediaTierLayoutResult
+export pub fn canonical_tier_layout() -> MediaTierLayoutResult
 export pub fn canonical_media_metadata_sidecar_bytes( album_id: Vec<u8>, photo_id: Vec<u8>, epoch_id: u32, media_bytes: Vec<u8>, ) -> BytesResult
+export pub fn canonical_video_sidecar_bytes( album_id: Vec<u8>, photo_id: Vec<u8>, epoch_id: u32, input_bytes: Vec<u8>, ) -> BytesResult
 export pub fn encrypt_media_metadata_sidecar_with_epoch_handle( handle: u64, album_id: Vec<u8>, photo_id: Vec<u8>, epoch_id: u32, media_bytes: Vec<u8>, shard_index: u32, ) -> EncryptedShardResult
 export pub fn close_identity_handle(handle: u64) -> u16
 export pub fn create_epoch_key_handle(account_key_handle: u64, epoch_id: u32) -> EpochKeyHandleResult
@@ -256,12 +429,30 @@ export pub fn crypto_domain_golden_vector_snapshot() -> CryptoDomainGoldenVector
 export pub fn client_core_state_machine_snapshot() -> String
 export pub fn init_upload_job(request: ClientCoreUploadJobRequest) -> ClientCoreUploadJobResult
 export pub fn advance_upload_job( snapshot: ClientCoreUploadJobSnapshot, event: ClientCoreUploadJobEvent, ) -> ClientCoreUploadJobTransitionResult
+export pub fn advance_upload_job_uniffi( snapshot: ClientCoreUploadJobSnapshot, event: ClientCoreUploadJobEvent, ) -> ClientCoreUploadJobTransition
 export pub fn init_album_sync(request: ClientCoreAlbumSyncRequest) -> ClientCoreAlbumSyncResult
 export pub fn advance_album_sync( snapshot: ClientCoreAlbumSyncSnapshot, event: ClientCoreAlbumSyncEvent, ) -> ClientCoreAlbumSyncTransitionResult
+export pub fn advance_album_sync_uniffi( snapshot: ClientCoreAlbumSyncSnapshot, event: ClientCoreAlbumSyncEvent, ) -> ClientCoreAlbumSyncTransition
+export pub fn manifest_transcript_bytes_uniffi( inputs: ClientCoreManifestTranscriptInputs, ) -> Result<Vec<u8>, MosaicError>
+export pub fn mint_link_tier_handle_from_raw_key(raw_key: Vec<u8>) -> LinkTierHandleFfiResult
+export pub fn verify_shard_integrity_sha256( envelope: Vec<u8>, expected_sha256: Vec<u8>, ) -> Result<bool, MosaicError>
+export pub fn client_error_code_enum_from_u16(value: u16) -> Option<ClientErrorCode>
+export pub fn client_error_code_to_u16(code: ClientErrorCode) -> u16
+export pub fn build_share_link_url( base_url: String, album_id: String, link_id: String, link_url_token: String, ) -> String
 record LinkKeysFfiResult
   code: u16
   link_id: Vec<u8>
-  wrapping_key: Vec<u8>
+  link_handle_id: u64
+end
+record LinkTierHandleFfiResult
+  code: u16
+  link_tier_handle_id: u64
+end
+record WrappedTierKeyFfiResult
+  code: u16
+  tier: u8
+  nonce: Vec<u8>
+  ciphertext: Vec<u8>
 end
 record IdentityFromSeedFfiResult
   code: u16
@@ -279,19 +470,17 @@ record OpenedBundleFfiResult
   album_id: String
   epoch_id: u32
   recipient_pubkey: Vec<u8>
-  epoch_seed: Vec<u8>
+  epoch_handle_id: u64
   sign_public_key: Vec<u8>
 end
 record ContentDecryptFfiResult
   code: u16
   plaintext: Vec<u8>
 end
-export pub fn derive_link_keys_from_raw_secret(link_secret: Vec<u8>) -> LinkKeysFfiResult
-export pub fn derive_identity_from_raw_seed( identity_seed: Vec<u8>, message: Vec<u8>, ) -> IdentityFromSeedFfiResult
+export pub fn wrap_tier_key_for_link_handle( handle_id: u64, tier_key_handle: u64, tier: u8, ) -> WrappedTierKeyFfiResult
 export pub fn build_auth_challenge_transcript_bytes( username: String, timestamp_ms: i64, challenge: Vec<u8>, ) -> BytesResult
 export pub fn sign_auth_challenge_with_raw_seed( transcript_bytes: Vec<u8>, auth_signing_seed: Vec<u8>, ) -> BytesResult
 export pub fn verify_auth_challenge_signature( transcript_bytes: Vec<u8>, signature: Vec<u8>, auth_public_key: Vec<u8>, ) -> AuthChallengeVerifyFfiResult
-export pub fn verify_and_open_bundle_with_recipient_seed( recipient_identity_seed: Vec<u8>, sealed: Vec<u8>, signature: Vec<u8>, sharer_pubkey: Vec<u8>, expected_owner_pubkey: Vec<u8>, expected_album_id: String, expected_min_epoch_id: u32, allow_legacy_empty_album_id: bool, ) -> OpenedBundleFfiResult
 export pub fn decrypt_content_with_raw_key( content_key: Vec<u8>, nonce: Vec<u8>, ciphertext: Vec<u8>, epoch_id: u32, ) -> ContentDecryptFfiResult
 record DownloadPlanShardInput
   shard_id: Vec<u8>
@@ -343,4 +532,4 @@ export pub fn init_download_job(input: DownloadInitInput) -> SnapshotBytesResult
 export pub fn apply_download_event(state_cbor: Vec<u8>, event_cbor: Vec<u8>) -> ApplyEventResult
 export pub fn load_download_snapshot(snapshot_cbor: Vec<u8>, checksum: Vec<u8>) -> LoadSnapshotResult
 export pub fn commit_download_snapshot(snapshot_cbor: Vec<u8>) -> SnapshotBytesResult
-export pub fn verify_download_snapshot( snapshot_cbor: Vec<u8>, checksum: Vec<u8>, ) -> VerifySnapshotResult
+export pub fn verify_download_snapshot(snapshot_cbor: Vec<u8>, checksum: Vec<u8>) -> VerifySnapshotResult

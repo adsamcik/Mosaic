@@ -49,7 +49,8 @@ public class ManifestExpirationControllerTests
             EncryptedMeta: TestDataBuilder.GenerateRandomBytes(16),
             Signature: Convert.ToBase64String(new byte[64]),
             SignerPubkey: Convert.ToBase64String(new byte[32]),
-            ShardIds: [shard.Id.ToString()]);
+            ShardIds: [],
+            TieredShards: [new TieredShardInfo(shard.Id.ToString(), (int)ShardTier.Original)]);
 
         var result = await controller.Create(request);
 
@@ -76,7 +77,8 @@ public class ManifestExpirationControllerTests
             EncryptedMeta: TestDataBuilder.GenerateRandomBytes(16),
             Signature: Convert.ToBase64String(new byte[64]),
             SignerPubkey: Convert.ToBase64String(new byte[32]),
-            ShardIds: [shard.Id.ToString()],
+            ShardIds: [],
+            TieredShards: [new TieredShardInfo(shard.Id.ToString(), (int)ShardTier.Original)],
             ExpiresAt: expiresAt);
 
         var result = await controller.Create(request);

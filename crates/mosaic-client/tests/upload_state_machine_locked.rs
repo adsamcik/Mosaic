@@ -265,21 +265,9 @@ fn retry_timer_elapsed_rejects_terminal_target_phase() {
 
 #[test]
 fn upload_retryable_phase_consistency_every_accepted_retry_resumes() {
-    let phases = [
-        UploadJobPhase::Queued,
-        UploadJobPhase::AwaitingPreparedMedia,
-        UploadJobPhase::AwaitingEpochHandle,
-        UploadJobPhase::EncryptingShard,
-        UploadJobPhase::CreatingShardUpload,
-        UploadJobPhase::UploadingShard,
-        UploadJobPhase::CreatingManifest,
-        UploadJobPhase::ManifestCommitUnknown,
-        UploadJobPhase::AwaitingSyncConfirmation,
-        UploadJobPhase::RetryWaiting,
-        UploadJobPhase::Confirmed,
-        UploadJobPhase::Cancelled,
-        UploadJobPhase::Failed,
-    ];
+    let phases: Vec<_> = (0..=u8::MAX)
+        .filter_map(UploadJobPhase::try_from_u8)
+        .collect();
 
     for phase in phases {
         let mut snap = snapshot(phase);
@@ -486,7 +474,7 @@ fn v1_key_list_is_subset_of_hypothetical_v2() {
 }
 
 #[test]
-fn v1_decoder_rejects_extra_key_14() {
+fn v1_decoder_rejects_non_migratable_extra_key_14() {
     let bytes = snapshot(UploadJobPhase::EncryptingShard).to_canonical_cbor();
     let mut value: ciborium::value::Value =
         ciborium::de::from_reader(std::io::Cursor::new(&bytes)).unwrap();
