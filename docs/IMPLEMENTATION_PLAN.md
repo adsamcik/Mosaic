@@ -1602,7 +1602,42 @@ than enforceable runtime invariants.
 | P-U5 | UniFFI streaming AEAD (StreamingEncryptor/Decryptor + EncryptedFrame + decrypt_envelope dispatcher; mirrors R-C4 v0x04) | Done | `0dd8f03` |
 | P-W3+P-W4+P-W5 | WASM video inspect (P-W3 covered by P-W2) + reducer locks + manifestTranscriptBytes + StreamingShardEncryptor/Decryptor + decryptEnvelope | Done | `57520ee` |
 | W-pre-1+W-I2 | Web upload-queue legacy IDB drainer (detect/drain/strand/reset + telemetry) + PNG/WebP/AVIF/HEIC strip parity (4 fixtures, JPEG flip deferred to W-I3) | Done | `abfab8b` |
-| Wave 8+9+10 ledger sweep | §11 R-C4 wire format + 2 streaming AEAD labels + §12.1 entries for waves 8-10 | Done | (this commit) |
+| Wave 8+9+10 ledger sweep | §11 R-C4 wire format + 2 streaming AEAD labels + §12.1 entries for waves 8-10 | Done | `5741446` |
+| v0x04 header layout correction | Correct phantom epoch/shard fields in §11 entry (actual layout: magic+version+tier+stream_salt+frame_count+final_frame_size+34 reserved) | Done | `eec5b45` |
+| w-canonical-tier-parity-gap | canonicalTierLayout exports (mosaic-wasm + mosaic-uniffi) + Android consumer | Done | `ab63478` |
+| wave10-cert-pinner-create-guard | MosaicHttpClient.create rejects empty CertificatePinner (security guard) | Done | `39ac090` |
+| B1 race-condition fix | Idempotency advisory locks via pg_advisory_xact_lock (production blocker fix v1) | Done | `904ab20` |
+| ci-wiring | rust-cutover-boundary into tests.yml + dotnet integration test lane | Done | `1de0329` |
+| a5-tus-large-file + a5-tus-resync | Tus session: streaming SHA-256, 2 GB int truncation, PATCH retry HEAD resync, 404/410 reset | Done | `d6c5bc3` |
+| W-S3 + w-canonical-tier-parity-web-consumer | Web upload encrypt cutover to handle API + thumbnail-generator consumes canonicalTierLayout (256/1024/4096 from WASM) | Done | `198fed4` |
+| A12 + A14 | SyncConfirmationLoop (decorrelated jitter) + PhotoPickerStagingAdapter | Done | `e9318f6` |
+| W-A5 + W-I3 | Feature flags (rustCoreUpload/Sync/Finalize) + JPEG strip parity verified (already-Rust-routed) | Done | `040eb80` |
+| W-S2 | Web download cutover to handle API (photo-service, album-download/metadata, shared-album-download) | Done | `c964714` |
+| B1 + B2 | Backend Idempotency-Key middleware + tieredShards across albums/share-link endpoints | Done | `1d13ae2` |
+| w-a2-fix-concurrency | RustUploadAdapter + RustSyncAdapter serialize concurrent submits via pendingTransition chain | Done | `99fb0e5` |
+| W-V1 + W-I1 | Web image + video container inspect routed through Rust core | Done | `51982bb` |
+| W-A1 | Web upload + sync adapter ports (UploadAdapterPort, SyncAdapterPort, WASM-backed impls) | Done | `2d85de2` |
+| Wave 11 batch 1 follow-ups | peekEnvelopeHeader tier+frame validation; canonical_tier_dimensions_pin (literal 256/1024/4096); UnknownEnvelopeVersion error code 106; finalize/SNAPSHOT_VERSION docs | Done | `6b66746` |
+| W-A2 + W-A3 | RustUploadAdapter + RustSyncAdapter (stateful, IDB persistence, effect-emitting) | Done | `f287760` |
+| B3 + B4 + B5 | Backend manifest version semantics + integration test corpus + ADR-022 finalization shape | Done | `2e77202` |
+| b1-fix-nested-tx | B1 advisory lock moved to out-of-band PG connection (PG production blocker fix v2) + Testcontainers integration tests | Done | `b3f0aec` |
+| Wave 9 follow-ups | uniffi-parity-blind-spot structural rule + MosaicApplication runCatching + TierDimensionsParityTest no-skip (subsumed) + uniffi v1 baseline hash lock | Done | `aa0e4b1` |
+| W-S4 | Web boundary-guard sweep + retired libs/crypto modules deletion (11 deleted, 3 deprecated, +rust-cutover-boundary guard) | Done | `29c1c38` |
+| Q-final-1 | Cross-platform parity test harness (crates/mosaic-parity-tests, 6 categories, scripts/run-parity-tests.ps1) | Done | `24d8f46` |
+| W-A4 | Web manifest finalization cutover (manifest-finalization.ts, RustUploadAdapter integration, Tus + finalize sequence) | Done | `24d0d43` |
+| A8 | Android ShardEncryptionWorker (UniFFI handle API + streaming AEAD threshold >256KiB + idempotency cache) | Done | `f0cdde5` |
+| A10 + A11 | Android ManifestCommitClient + AlbumSyncFetcher (kotlinx.serialization DTOs, contract snapshot parity tests) | Done | `cb0dfab` |
+| Wave 5/7/10 follow-ups bundle | bisect pair note, gps error code, iloc cm tests, manifest_transcript_bytes_uniffi error variant, PII pattern alignment, aliased DTO twin parity, P-W6 surface lock, R-C5 SPEC update | Done | `ebefd73` |
+| A3 + A5a + A5b + A6 + A7 | Android foundation: AppPrivateStagingManager + Tus client + Tus session + media tier generator + video frame extractor | Done | `9733c35` |
+| Wave 13 BLOCKERS | Idempotency-Key parity (Rust core canonical) + 409 sub-type via Idempotency-Replayed header | Done | `e183bb0` |
+| A16 | Android privacy audit automation (PrivacyAuditor + 8 PII patterns + daily WorkManager) | Done | `641649a` |
+| A15 + A17 | Android foreground service + manifest invariants permission flip | Done | `d188eed` |
+| A13a + A13b + A13c | Android reducer loop + crash-replay + retry budgets + cancellation | Done | `8256740` |
+| W-A6 | Web Playwright E2E coverage (7 scenarios + 5 fixtures) | Done | `4a1729f` |
+| A18a-g | Android E2E lifecycle suite (7 instrumented tests + multi-API matrix doc) | Done | `d509dc6` |
+| Wave 13 mediums + Wave 14 fixes + deferred bundle | A8 streaming, A9 retry classification, Q-final-1 WASM lane, web finalize 401/403/5xx, A12 backoff jitter, A13 cancel race CAS, W-A6 strict assertions, R-C8 share-link URL, R-M5.3 UI, P-W2 video tier (salvaged) | Done | `be7c6da` |
+| Q-final-3 + Q-final-4 + Q-final-5 | E2E coverage matrix + performance budgets + final freeze re-declaration (v1 IS FROZEN) | Done | `d6aa485` |
+| Wave 11+12+13+14 ledger sweep | §12.1 entries for all waves 11-14 commits | Done | (this commit) |
 
 | Work item | Scope | Status |
 |-----------|-------|--------|
