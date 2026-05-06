@@ -2,8 +2,9 @@ package org.mosaic.android.main.reducer
 
 import androidx.work.ExistingWorkPolicy
 import androidx.work.WorkManager
+import java.security.SecureRandom
 import java.time.Clock
-import kotlinx.coroutines.CancellationException
+import java.util.UUID
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import org.mosaic.android.foundation.GeneratedRustUploadApi
@@ -25,30 +26,47 @@ class UploadJobReducer(
   private val clock: Clock = Clock.systemUTC(),
 ) {
   suspend fun run(jobId: UploadJobId): UploadJobOutcome = coroutineScope {
-    var row = database.uploadJobSnapshotDao().get(jobId.value) ?: return@coroutineScope UploadJobOutcome.NotFound
+    val dao = database.uploadJobSnapshotDao()
+    var row = dao.get(jobId.value) ?: return@coroutineScope UploadJobOutcome.NotFound
 
     while (!uniffi.isTerminal(row)) {
       ensureActive()
+      val iterationRevision = row.snapshotRevision
       val effect = uniffi.getCurrentEffect(row) ?: break
       val event = try {
         effectDispatcher.dispatch(row, effect)
       } catch (error: EffectDispatchException) {
         retryOrFail(row, effect, error)
       }
-      row = uniffi.advanceUploadJob(row, event)
-      database.uploadJobSnapshotDao().upsert(row.withPersistedClock(clock.millis()))
+      val advanced = uniffi.advanceUploadJob(row, event).withPersistedClock(clock.millis())
+      val updated = dao.upsertIfRevisionMatches(advanced, previousRevision = iterationRevision)
+      row = if (updated == 1) {
+        advanced
+      } else {
+        dao.get(jobId.value) ?: return@coroutineScope UploadJobOutcome.NotFound
+      }
     }
 
     UploadJobOutcome.from(row, uniffi)
   }
 
   suspend fun cancel(jobId: UploadJobId): UploadJobOutcome {
-    val row = database.uploadJobSnapshotDao().get(jobId.value) ?: return UploadJobOutcome.NotFound
+    val dao = database.uploadJobSnapshotDao()
+    var row = dao.get(jobId.value) ?: return UploadJobOutcome.NotFound
     cancellationGateway.cancelAllForJob(jobId)
-    val event = UploadJobEvents.cancelRequested(effectId = row.cancelEffectId())
-    val cancelled = uniffi.advanceUploadJob(row, event).withPersistedClock(clock.millis())
-    database.uploadJobSnapshotDao().upsert(cancelled)
-    return UploadJobOutcome.Cancelled
+    repeat(MAX_CANCEL_CAS_ATTEMPTS) {
+      if (uniffi.isTerminal(row)) {
+        return UploadJobOutcome.from(row, uniffi)
+      }
+      val event = UploadJobEvents.cancelRequested(effectId = row.cancelEffectId())
+      val cancelled = uniffi.advanceUploadJob(row, event).withPersistedClock(clock.millis())
+      val updated = dao.upsertIfRevisionMatches(cancelled, previousRevision = row.snapshotRevision)
+      if (updated == 1) {
+        return UploadJobOutcome.Cancelled
+      }
+      row = dao.get(jobId.value) ?: return UploadJobOutcome.NotFound
+    }
+    return UploadJobOutcome.from(row, uniffi)
   }
 
   private fun retryOrFail(
@@ -57,6 +75,10 @@ class UploadJobReducer(
     error: EffectDispatchException,
   ): RustClientCoreUploadJobFfiEvent {
     val budget = RetryBudget.forEffect(effect)
+    // Rust core's RetryableFailure transition compares the pre-increment
+    // retry_count with max_retry_count, then increments for the scheduled retry.
+    // Keep Android's pre-check aligned so maxRetries means "retries allowed";
+    // the following failure after those retries is converted to NonRetryable.
     return if (error.retryable && row.retryCount(uniffi) < budget.maxRetries) {
       UploadJobEvents.retryableFailure(
         effectId = effect.effectId,
@@ -70,6 +92,10 @@ class UploadJobReducer(
         errorCode = RustClientCoreUploadStableCode.CLIENT_CORE_RETRY_BUDGET_EXHAUSTED,
       )
     }
+  }
+
+  private companion object {
+    const val MAX_CANCEL_CAS_ATTEMPTS = 8
   }
 }
 
@@ -299,9 +325,19 @@ data class RetryBudget(
 
 private fun UploadJobSnapshotRow.retryCount(uniffi: MosaicUniffi): Int = uniffi.snapshotRetryCount(this)
 
-private fun UploadJobSnapshotRow.cancelEffectId(): String = "018f05a4-8b31-7c00-8c00-00000000ca13"
+private fun UploadJobSnapshotRow.cancelEffectId(): String = generateUuidV7()
 
 private fun UploadJobSnapshotRow.withPersistedClock(nowMs: Long): UploadJobSnapshotRow = copy(updatedAtMs = nowMs)
+
+private val cancelEffectIdRandom = SecureRandom()
+
+private fun generateUuidV7(nowMs: Long = System.currentTimeMillis()): String {
+  val randomA = cancelEffectIdRandom.nextLong() and 0x0fffL
+  val randomB = cancelEffectIdRandom.nextLong() and 0x3fff_ffff_ffff_ffffL
+  val mostSignificantBits = ((nowMs and 0x0000_ffff_ffff_ffffL) shl 16) or 0x7000L or randomA
+  val leastSignificantBits = Long.MIN_VALUE or randomB
+  return UUID(mostSignificantBits, leastSignificantBits).toString()
+}
 
 object UploadJobEvents {
   fun effectAck(effectId: String): RustClientCoreUploadJobFfiEvent = event(kind = "EffectAck", effectId = effectId)

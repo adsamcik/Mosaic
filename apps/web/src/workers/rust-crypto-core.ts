@@ -533,6 +533,20 @@ export class RustHandleFacade {
 
   // ---- Link sharing ----
 
+  buildShareLinkUrl(opts: {
+    baseUrl: string;
+    albumId: string;
+    linkId: string;
+    linkUrlToken: string;
+  }): string {
+    return rustWasm.buildShareLinkUrl(
+      opts.baseUrl,
+      opts.albumId,
+      opts.linkId,
+      opts.linkUrlToken,
+    );
+  }
+
   createLinkShareHandle(
     albumId: string,
     epochHandle: bigint,

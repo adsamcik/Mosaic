@@ -34,6 +34,7 @@ const mockFetchAndUnwrapEpochKeys = vi.fn();
 // Mock link encoding helpers (pure URL encoders).
 const mockEncodeLinkSecret = vi.fn();
 const mockEncodeLinkId = vi.fn();
+const mockBuildShareLinkUrl = vi.fn();
 
 // Mock the API client
 vi.mock('../src/lib/api', () => ({
@@ -77,6 +78,10 @@ vi.mock('../src/lib/link-encoding', () => ({
   encodeLinkId: (...args: unknown[]) => mockEncodeLinkId(...args),
   LINK_SECRET_SIZE: 32,
   LINK_ID_SIZE: 16,
+}));
+
+vi.mock('../src/lib/share-link-url', () => ({
+  buildShareLinkUrl: (...args: unknown[]) => mockBuildShareLinkUrl(...args),
 }));
 
 // Helper to create mock share link response
@@ -171,6 +176,7 @@ describe('useShareLinks', () => {
 
     mockEncodeLinkSecret.mockReturnValue('encoded-secret');
     mockEncodeLinkId.mockReturnValue('encoded-link-id');
+    mockBuildShareLinkUrl.mockResolvedValue('http://localhost/s/encoded-link-id#k=encoded-secret');
 
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -265,6 +271,12 @@ describe('useShareLinks', () => {
       });
       expect(mockEncodeLinkId).toHaveBeenCalledWith(linkIdBytes);
       expect(mockEncodeLinkSecret).toHaveBeenCalledWith(linkUrlToken);
+      expect(mockBuildShareLinkUrl).toHaveBeenCalledWith({
+        baseUrl: window.location.origin,
+        albumId: 'album-1',
+        linkId: 'encoded-link-id',
+        linkUrlToken: 'encoded-secret',
+      });
       expect(mockCryptoClient.closeLinkShareHandle).toHaveBeenCalledWith(linkShareHandleId);
     });
 

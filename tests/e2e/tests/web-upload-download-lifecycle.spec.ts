@@ -141,10 +141,13 @@ async function createUserSession(
   browser: Browser,
   label: string,
   flags: FeatureFlags,
+  stubManifestFinalize = true,
 ): Promise<UiUser> {
   const context = await browser.newContext({ acceptDownloads: true });
   registerContext(context);
-  await stabilizeManifestFinalizeForE2e(context);
+  if (stubManifestFinalize) {
+    await stabilizeManifestFinalizeForE2e(context);
+  }
 
   const page = await context.newPage();
   const email = `wa6-${label}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}@e2e.local`;
@@ -375,7 +378,7 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
   });
 
   test('W-A6-1: upload happy path persists after refresh with Rust-core flag ON', async ({ browser, testContext }) => {
-    const user = await createUserSession(browser, 'rust-core-uploader', RUST_CORE_FLAGS);
+    const user = await createUserSession(browser, 'rust-core-uploader', RUST_CORE_FLAGS, false);
     const stages = observeUploadStages(user.page);
     const gallery = await openAlbumWithFreshUser(
       user,
@@ -395,7 +398,7 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
   });
 
   test('W-A6-2: upload happy path persists after refresh with legacy flag OFF', async ({ browser, testContext }) => {
-    const user = await createUserSession(browser, 'legacy-uploader', LEGACY_FLAGS);
+    const user = await createUserSession(browser, 'legacy-uploader', LEGACY_FLAGS, false);
     const stages = observeUploadStages(user.page);
     const gallery = await openAlbumWithFreshUser(
       user,
@@ -434,7 +437,7 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     expect(new Set(recordKeys).size).toBe(recordKeys.length);
 
     const versionAfter = await getAlbumContentVersion(user.page, albumId);
-    expect(versionAfter).toBeGreaterThanOrEqual(versionBefore);
+    expect(versionAfter).toBeGreaterThan(versionBefore);
   });
 
   test('W-A6-4: closing a tab mid-upload resumes staged work after reopening', async ({ browser, testContext }) => {
@@ -461,11 +464,7 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
       .clickAlbum(0)
       .then(() => true)
       .catch(() => false);
-    if (!openedAlbum) {
-      await expect(page.getByTestId('app-shell')).toBeVisible();
-      expect((await readUploadQueueRecords(page)).length).toBeGreaterThanOrEqual(0);
-      return;
-    }
+    expect(openedAlbum).toBe(true);
 
     const reopenedGallery = new GalleryPage(page);
     await reopenedGallery.waitForLoad();
@@ -473,10 +472,7 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
       .waitForStablePhotoCountAtLeast(1, CRYPTO_TIMEOUT.BATCH)
       .then(() => true)
       .catch(() => false);
-    if (!resumed) {
-      await expect(page.getByTestId('app-shell')).toBeVisible();
-      expect((await readUploadQueueRecords(page)).length).toBeGreaterThanOrEqual(0);
-    }
+    expect(resumed).toBe(true);
   });
 
   test('W-A6-5: album sync detects a new manifest in a second browser context', async ({

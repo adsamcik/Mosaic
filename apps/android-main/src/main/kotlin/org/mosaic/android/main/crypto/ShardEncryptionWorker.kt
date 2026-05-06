@@ -28,28 +28,36 @@ class ShardEncryptionWorker internal constructor(
 
     return try {
       val store = envelopeStore
-      val plaintext = store.readStagingBytes(stagingUri)
+      val plaintextLength = store.stagingLength(stagingUri)
+      val smallPlaintext = if (plaintextLength > STREAMING_THRESHOLD_BYTES) null else store.readStagingBytes(stagingUri)
+      val plaintextSha256Hex = if (smallPlaintext == null) {
+        ShardEnvelopeStore.sha256Hex(store.openStagingInputStream(stagingUri))
+      } else {
+        ShardEnvelopeStore.sha256Hex(smallPlaintext)
+      }
       val input = ShardEnvelopeInput(
         stagingUri = stagingUri,
         epochHandleId = epochHandleId,
         tier = tier,
         shardIndex = shardIndex,
-        plaintextSha256Hex = ShardEnvelopeStore.sha256Hex(plaintext),
+        plaintextSha256Hex = plaintextSha256Hex,
       )
 
       val existingEnvelopeUri = store.existingEnvelopeUri(input)
-      val envelopeUri = if (existingEnvelopeUri != null) {
-        existingEnvelopeUri
+      val (envelopeUri, sha256) = if (existingEnvelopeUri != null) {
+        existingEnvelopeUri to store.sha256HexForUri(existingEnvelopeUri)
       } else {
         val engine = cryptoEngine
-        val envelope = if (plaintext.size > STREAMING_THRESHOLD_BYTES) {
-          engine.encryptStreamingShard(epochHandleId, plaintext, tier, shardIndex)
+        val envelope = if (plaintextLength > STREAMING_THRESHOLD_BYTES) {
+          store.openStagingInputStream(stagingUri).use { plaintext ->
+            engine.encryptStreamingShard(epochHandleId, plaintext, plaintextLength, tier, shardIndex)
+          }
         } else {
-          engine.encryptShardWithEpochHandle(epochHandleId, plaintext, tier, shardIndex)
+          engine.encryptShardWithEpochHandle(epochHandleId, requireNotNull(smallPlaintext), tier, shardIndex)
         }
-        store.persistEnvelope(input, envelope)
+        val persisted = store.persistEnvelope(input, envelope)
+        persisted.uri to persisted.sha256Hex
       }
-      val sha256 = ShardEnvelopeStore.sha256Hex(store.readStagingBytes(envelopeUri))
       Result.success(
         workDataOf(
           KEY_ENVELOPE_URI to envelopeUri,

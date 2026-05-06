@@ -11,6 +11,8 @@ const SHA256_BYTES = 32;
 
 export const MANIFEST_INVALID_SIGNATURE = 400;
 export const MANIFEST_TRANSCRIPT_MISMATCH = 422;
+export const MANIFEST_AUTH_DENIED = 'AUTH_DENIED';
+export const MANIFEST_TRANSIENT_SERVER_ERROR = 'TRANSIENT_SERVER_ERROR';
 
 export interface ManifestFinalizeTieredShard {
   readonly shardId: string;
@@ -56,7 +58,16 @@ export interface FinalizeManifestEffect extends UploadEffect {
 }
 
 export interface ManifestFinalizationAdapter {
-  submit(event: UploadEvent): Promise<unknown>;
+  submit(event: UploadEvent | ManifestFinalizationFailureEvent): Promise<unknown>;
+}
+
+export interface ManifestFinalizationFailureEvent {
+  readonly kind: 'ManifestFailed';
+  readonly effectId: string;
+  readonly errorCode: typeof MANIFEST_AUTH_DENIED | typeof MANIFEST_TRANSIENT_SERVER_ERROR;
+  readonly detail: string;
+  readonly retriable?: boolean;
+  readonly targetPhase: 'Failed';
 }
 
 export interface ExecuteManifestFinalizationOptions {
@@ -244,12 +255,57 @@ export async function executeManifestFinalizationEffect(
     );
   }
 
+  if (response.status === 401 || response.status === 403) {
+    const detail = await manifestFinalizeErrorDetailFromResponse(response);
+    await options.adapter?.submit({
+      kind: 'ManifestFailed',
+      effectId: effect.effectId,
+      errorCode: MANIFEST_AUTH_DENIED,
+      detail,
+      targetPhase: 'Failed',
+    });
+    throw new ManifestFinalizationError(
+      response.status,
+      response.status,
+      `Manifest finalization failed: authorization denied${detail ? `: ${detail}` : ''}`,
+    );
+  }
+
+  if ([500, 502, 503, 504].includes(response.status)) {
+    const detail = await manifestFinalizeErrorDetailFromResponse(response);
+    await options.adapter?.submit({
+      kind: 'ManifestFailed',
+      effectId: effect.effectId,
+      errorCode: MANIFEST_TRANSIENT_SERVER_ERROR,
+      detail,
+      retriable: true,
+      targetPhase: 'Failed',
+    });
+    throw new ManifestFinalizationError(
+      response.status,
+      response.status,
+      `Manifest finalization failed with transient server error ${String(response.status)}${detail ? `: ${detail}` : ''}`,
+    );
+  }
+
   const body = await response.text().catch(() => '');
   throw new ManifestFinalizationError(
     response.status,
     response.status,
     `Manifest finalization failed with HTTP ${String(response.status)}${body ? `: ${body}` : ''}`,
   );
+}
+
+async function manifestFinalizeErrorDetailFromResponse(response: Response): Promise<string> {
+  const body = await response.text().catch(() => '');
+  if (!body) {
+    return '';
+  }
+  try {
+    return manifestFinalizeErrorDetail(JSON.parse(body) as Record<string, unknown>);
+  } catch {
+    return body;
+  }
 }
 
 export async function buildManifestTranscriptBytes(input: {

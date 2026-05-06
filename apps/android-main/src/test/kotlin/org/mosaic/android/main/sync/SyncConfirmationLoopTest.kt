@@ -33,13 +33,13 @@ class SyncConfirmationLoopTest {
       response(version = 6),
       response(version = 7),
       sleep = { delayMs -> sleeps += delayMs },
-      randomDelayMs = { 123L },
+      randomDelayMs = { 250L },
     )
 
     val result = loop.confirm(albumId, expectedVersion = 7)
 
     assertEquals(SyncConfirmationResult.Confirmed(syncResponse(version = 7)), result)
-    assertEquals(listOf(123L), sleeps)
+    assertEquals(listOf(250L), sleeps)
   }
 
   @Test
@@ -60,7 +60,7 @@ class SyncConfirmationLoopTest {
   }
 
   @Test
-  fun confirmUsesFullJitterWithinCurrentBackoffRange() = runBlocking {
+  fun confirmUsesDecorrelatedJitterWithinUpperHalfOfCurrentBackoffRange() = runBlocking {
     val bounds = mutableListOf<Long>()
     val sleeps = mutableListOf<Long>()
     val loop = loopWithResponses(
@@ -82,7 +82,7 @@ class SyncConfirmationLoopTest {
     assertEquals(listOf(500L, 1_000L), bounds)
     assertEquals(listOf(499L, 999L), sleeps)
     sleeps.zip(bounds).forEach { (delayMs, bound) ->
-      assertTrue(delayMs in 0 until bound)
+      assertTrue(delayMs in bound / 2 until bound)
     }
   }
 
@@ -131,14 +131,14 @@ class SyncConfirmationLoopTest {
       initialDelayMs = 10,
       maxDelayMs = 10,
       timeoutMs = 25,
-      randomDelayMs = { 9L },
+        randomDelayMs = { 5L },
       sleep = { delayMs -> clock.advance(delayMs) },
     )
 
     val result = loop.confirm(albumId, expectedVersion = 2)
 
     assertEquals(SyncConfirmationResult.Timeout, result)
-    assertEquals(3, fetchCount)
+    assertEquals(5, fetchCount)
   }
 
   @Test
@@ -159,7 +159,7 @@ class SyncConfirmationLoopTest {
       AlbumSyncResult.ServerError(503),
       response(version = 7),
       sleep = { },
-      randomDelayMs = { 0L },
+      randomDelayMs = { 250L },
       onFetch = { fetchCount += 1 },
     )
 
@@ -173,7 +173,7 @@ class SyncConfirmationLoopTest {
     vararg responses: AlbumSyncResult,
     initialDelayMs: Long = 500,
     maxDelayMs: Long = 30_000,
-    randomDelayMs: (Long) -> Long = { 0L },
+    randomDelayMs: (Long) -> Long = { bound -> bound / 2 },
     sleep: suspend (Long) -> Unit = { },
     onFetch: () -> Unit = { },
   ): SyncConfirmationLoop {

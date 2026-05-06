@@ -143,4 +143,61 @@ describe('upload encryption handle cutover', () => {
     expect(mocks.encryptShardWithEpochHandle).toHaveBeenNthCalledWith(2, EPOCH_HANDLE, new Uint8Array([5, 6, 7]), 3, 0);
     expect(ctx.tusUpload).toHaveBeenCalledTimes(2);
   });
+
+  it('keeps video uploads on thumb plus original tiers when no preview tier exists', async () => {
+    const task = createTask(new File([new Uint8Array([5, 6, 7])], 'clip.mp4', { type: 'video/mp4' }));
+    const ctx = createCtx();
+
+    await processVideoUpload(task, ctx);
+
+    expect(mocks.encryptShardWithEpochHandle).toHaveBeenCalledTimes(2);
+    expect(mocks.encryptShardWithEpochHandle).toHaveBeenNthCalledWith(1, EPOCH_HANDLE, new Uint8Array([7, 8]), 1, 0);
+    expect(mocks.encryptShardWithEpochHandle).toHaveBeenNthCalledWith(2, EPOCH_HANDLE, new Uint8Array([5, 6, 7]), 3, 0);
+    expect(mocks.encryptShardWithEpochHandle).not.toHaveBeenCalledWith(EPOCH_HANDLE, expect.any(Uint8Array), 2, expect.any(Number));
+    expect(task.completedShards.map((shard) => shard.tier)).toEqual([1, 3]);
+    expect(task.tieredShards?.preview).toEqual(task.tieredShards?.thumbnail);
+  });
+
+  it('fails invalid video containers gracefully through the legacy video fallback', async () => {
+    mocks.extractVideoFrame.mockRejectedValueOnce(new Error('invalid video container'));
+    const task = createTask(new File([new Uint8Array([0, 1, 2, 3])], 'broken.mp4', { type: 'video/mp4' }));
+    const ctx = createCtx();
+
+    await processVideoUpload(task, ctx);
+
+    expect(task.videoMetadata).toEqual({
+      isVideo: true,
+      duration: 0,
+      width: 0,
+      height: 0,
+    });
+    expect(mocks.encryptShardWithEpoch).not.toHaveBeenCalled();
+    expect(mocks.encryptShardWithEpochHandle).toHaveBeenCalledTimes(1);
+    expect(ctx.onComplete).toHaveBeenCalledWith(task, ['shard-id']);
+  });
+
+  it('streams very large video originals through bounded slices', async () => {
+    const size = 501 * 1024 * 1024;
+    const slices: Array<[number, number]> = [];
+    const largeVideo = {
+      name: 'large.mp4',
+      type: 'video/mp4',
+      size,
+      slice(start: number, end: number) {
+        slices.push([start, end]);
+        return new Blob([new Uint8Array([start / (6 * 1024 * 1024)])], { type: 'video/mp4' });
+      },
+    } as unknown as File;
+    const task = createTask(largeVideo);
+    const ctx = createCtx();
+
+    await processVideoUpload(task, ctx);
+
+    const expectedChunks = Math.ceil(size / (6 * 1024 * 1024));
+    expect(slices).toHaveLength(expectedChunks);
+    expect(slices[0]).toEqual([0, 6 * 1024 * 1024]);
+    expect(slices.at(-1)?.[1]).toBe(size);
+    expect(mocks.encryptShardWithEpochHandle).toHaveBeenCalledTimes(expectedChunks + 1);
+    expect(task.completedShards.filter((shard) => shard.tier === 3)).toHaveLength(expectedChunks);
+  });
 });

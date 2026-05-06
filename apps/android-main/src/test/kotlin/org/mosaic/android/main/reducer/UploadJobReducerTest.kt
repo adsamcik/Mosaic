@@ -1,7 +1,7 @@
 package org.mosaic.android.main.reducer
 
 import androidx.test.core.app.ApplicationProvider
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -188,6 +188,21 @@ class UploadJobReducerTest {
   }
 
   @Test
+  fun cancel_winsAgainstConcurrentRun() = runBlocking {
+    seed(snapshot("EncryptingShard", shards = listOf(shard(0, uploaded = false))))
+    val dispatcher = BlockingSuccessDispatcher()
+    val runJob = launch { reducer(dispatcher).run(UploadJobId(JOB_ID)) }
+    dispatcher.started.await()
+
+    val cancelOutcome = reducer(ScriptedDispatcher()).cancel(UploadJobId(JOB_ID))
+    dispatcher.release.complete(Unit)
+    runJob.join()
+
+    assertEquals(UploadJobOutcome.Cancelled, cancelOutcome)
+    assertEquals("Cancelled", persisted().decodeUploadSnapshot().phase)
+  }
+
+  @Test
   fun cancellation_missingJob_returnsNotFoundAndDoesNotCancelWorkers() = runBlocking {
     val outcome = reducer(ScriptedDispatcher()).cancel(UploadJobId(JOB_ID))
 
@@ -266,6 +281,20 @@ class UploadJobReducerTest {
     }
 
     fun uniqueEnqueueCount(kind: String): Int = if (enqueued.contains(kind)) 1 else 0
+  }
+
+  private class BlockingSuccessDispatcher : EffectDispatcher {
+    val started = CompletableDeferred<Unit>()
+    val release = CompletableDeferred<Unit>()
+
+    override suspend fun dispatch(
+      snapshot: UploadJobSnapshotRow,
+      effect: RustClientCoreUploadJobFfiEffect,
+    ): RustClientCoreUploadJobFfiEvent {
+      started.complete(Unit)
+      release.await()
+      return ScriptedDispatcher().dispatch(snapshot, effect)
+    }
   }
 
   private class FailingDispatcher(private val retryable: Boolean) : EffectDispatcher {

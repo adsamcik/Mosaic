@@ -2243,6 +2243,41 @@ export function buildAuthChallengeTranscript(username, timestamp_ms, timestamp_m
 }
 
 /**
+ * Builds the canonical v1 share-link URL in Rust so web callers do not
+ * duplicate route assembly logic. The fragment token is a bearer token by
+ * design and remains after `#k=` so it is never sent to the server.
+ * @param {string} base_url
+ * @param {string} album_id
+ * @param {string} link_id
+ * @param {string} link_url_token
+ * @returns {string}
+ */
+export function buildShareLinkUrl(base_url, album_id, link_id, link_url_token) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(base_url, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(link_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(link_url_token, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len3 = WASM_VECTOR_LEN;
+        wasm.buildShareLinkUrl(retptr, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred5_0 = r0;
+        deferred5_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export4(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
  * Builds canonical metadata sidecar bytes through WASM.
  * @param {Uint8Array} album_id
  * @param {Uint8Array} photo_id

@@ -9,6 +9,7 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import java.io.File
+import java.io.InputStream
 import java.security.MessageDigest
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -52,7 +53,8 @@ class ShardEncryptionWorkerTest {
 
   @Test
   fun largeShardUsesStreamingPath() = runBlocking {
-    val staging = stageBytes(ByteArray(ShardEncryptionWorker.STREAMING_THRESHOLD_BYTES + 1) { (it % 251).toByte() })
+    val plaintext = ByteArray(ShardEncryptionWorker.STREAMING_THRESHOLD_BYTES + 1) { (it % 251).toByte() }
+    val staging = stageBytes(plaintext)
     val crypto = RecordingCryptoEngine()
     val worker = workerFor(staging, crypto = crypto)
 
@@ -61,6 +63,8 @@ class ShardEncryptionWorkerTest {
     assertTrue(result is ListenableWorker.Result.Success)
     assertEquals(0, crypto.smallCalls)
     assertEquals(1, crypto.streamingCalls)
+    assertEquals(plaintext.size.toLong(), crypto.lastStreamingLength)
+    assertArrayEquals(plaintext, crypto.lastStreamingPlaintext)
   }
 
   @Test
@@ -187,13 +191,19 @@ class ShardEncryptionWorkerTest {
 
     override fun encryptStreamingShard(
       epochHandleId: Long,
-      plaintext: ByteArray,
+      plaintext: InputStream,
+      plaintextLength: Long,
       tier: Int,
       shardIndex: Int,
     ): ByteArray {
       streamingCalls++
+      lastStreamingLength = plaintextLength
+      lastStreamingPlaintext = plaintext.readBytes()
       return streamingEnvelope.copyOf()
     }
+
+    var lastStreamingLength: Long = -1
+    var lastStreamingPlaintext: ByteArray = ByteArray(0)
   }
 
   private object ThrowingCryptoEngine : ShardCryptoEngine {
@@ -201,7 +211,13 @@ class ShardEncryptionWorkerTest {
       error("boom")
     }
 
-    override fun encryptStreamingShard(epochHandleId: Long, plaintext: ByteArray, tier: Int, shardIndex: Int): ByteArray {
+    override fun encryptStreamingShard(
+      epochHandleId: Long,
+      plaintext: InputStream,
+      plaintextLength: Long,
+      tier: Int,
+      shardIndex: Int,
+    ): ByteArray {
       error("boom")
     }
   }

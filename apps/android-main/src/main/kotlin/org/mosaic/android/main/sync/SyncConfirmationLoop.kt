@@ -31,7 +31,11 @@ class SyncConfirmationLoop internal constructor(
     initialDelayMs = initialDelayMs,
     maxDelayMs = maxDelayMs,
     timeoutMs = timeoutMs,
-    randomDelayMs = { bound -> Random.nextLong(bound) },
+    randomDelayMs = { bound ->
+      val baseDelay = bound / 2
+      val jitterRange = bound - baseDelay
+      baseDelay + Random.nextLong(jitterRange)
+    },
     sleep = { delayMs -> coroutineDelay(delayMs) },
   )
 
@@ -63,9 +67,9 @@ class SyncConfirmationLoop internal constructor(
         is AlbumSyncResult.UnexpectedStatus -> return@coroutineScope SyncConfirmationResult.Failed(result.toString())
       }
 
-      val jitterMs = randomDelayMs(delayMs)
-      require(jitterMs in 0 until delayMs) { "jitter delay must be in [0, currentDelayMs)" }
-      sleep(jitterMs)
+      val sleepMs = randomDelayMs(delayMs)
+      require(sleepMs in delayMs / 2 until delayMs) { "jitter delay must be in [currentDelayMs / 2, currentDelayMs)" }
+      sleep(sleepMs)
       delayMs = (delayMs * 2).coerceAtMost(maxDelayMs)
     }
 

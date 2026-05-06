@@ -1,5 +1,6 @@
 package org.mosaic.android.main.crypto
 
+import java.io.InputStream
 import org.mosaic.android.foundation.RustShardStableCode
 import org.mosaic.android.main.bridge.AndroidRustShardApi
 import uniffi.mosaic_uniffi.StreamingEncryptor
@@ -14,7 +15,8 @@ internal interface ShardCryptoEngine {
 
   fun encryptStreamingShard(
     epochHandleId: Long,
-    plaintext: ByteArray,
+    plaintext: InputStream,
+    plaintextLength: Long,
     tier: Int,
     shardIndex: Int,
   ): ByteArray
@@ -47,11 +49,12 @@ internal class AndroidShardCryptoEngine(
 
   override fun encryptStreamingShard(
     epochHandleId: Long,
-    plaintext: ByteArray,
+    plaintext: InputStream,
+    plaintextLength: Long,
     tier: Int,
     shardIndex: Int,
   ): ByteArray {
-    val frameCount = ((plaintext.size + ShardEncryptionWorker.STREAMING_FRAME_BYTES - 1) /
+    val frameCount = ((plaintextLength + ShardEncryptionWorker.STREAMING_FRAME_BYTES - 1) /
       ShardEncryptionWorker.STREAMING_FRAME_BYTES).coerceAtLeast(1)
     val encryptor = StreamingEncryptor(
       epochHandleId = epochHandleId.toULong(),
@@ -59,11 +62,11 @@ internal class AndroidShardCryptoEngine(
       expectedFrameCount = frameCount.toUInt(),
     )
     try {
-      var offset = 0
-      while (offset < plaintext.size) {
-        val end = minOf(offset + ShardEncryptionWorker.STREAMING_FRAME_BYTES, plaintext.size)
-        encryptor.encryptFrame(plaintext.copyOfRange(offset, end))
-        offset = end
+      val buffer = ByteArray(ShardEncryptionWorker.STREAMING_FRAME_BYTES)
+      while (true) {
+        val read = plaintext.read(buffer)
+        if (read <= 0) break
+        encryptor.encryptFrame(buffer.copyOf(read))
       }
       return encryptor.finalize()
     } finally {

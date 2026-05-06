@@ -19,6 +19,7 @@ import { getCryptoClient } from '../lib/crypto-client';
 import { fetchAndUnwrapEpochKeys } from '../lib/epoch-key-service';
 import { getCachedEpochIds, getEpochKey } from '../lib/epoch-key-store';
 import { encodeLinkId, encodeLinkSecret } from '../lib/link-encoding';
+import { buildShareLinkUrl } from '../lib/share-link-url';
 import type { LinkShareHandleId } from '../workers/types';
 
 /** Error thrown by share link operations */
@@ -337,7 +338,12 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
         const baseUrl = window.location.origin;
         const encodedLinkId = encodeLinkId(linkId);
         const encodedSecret = encodeLinkSecret(linkSecret);
-        const shareUrl = `${baseUrl}/s/${encodedLinkId}#k=${encodedSecret}`;
+        const shareUrl = await buildShareLinkUrl({
+          baseUrl,
+          albumId,
+          linkId: encodedLinkId,
+          linkUrlToken: encodedSecret,
+        });
 
         // Add to list
         setShareLinks((prev) => [shareLink, ...prev]);

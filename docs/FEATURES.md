@@ -506,6 +506,30 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 
 ## Encryption & Security
 
+### Rust-Owned Share-Link URL Assembly
+
+**Purpose:** Ensure web and Android construct share-link URLs through the Rust core boundary instead of duplicating URL assembly locally.
+
+**Implementation:**
+| Layer | Location |
+|-------|----------|
+| Rust core | `crates/mosaic-client/src/lib.rs` |
+| WASM | `crates/mosaic-wasm/src/lib.rs` |
+| UniFFI | `crates/mosaic-uniffi/src/lib.rs` |
+| Frontend | `apps/web/src/lib/share-link-url.ts` |
+| Android | `apps/android-main/src/main/kotlin/org/mosaic/android/main/sharelink/MosaicShareLinkUrls.kt` |
+
+**Features:**
+- Keeps the bearer `link_url_token` in the URL fragment so it is not sent to the server.
+- Preserves the v1 `/s/{linkId}#k={token}` visitor route while Rust owns string assembly.
+
+**Tests:**
+- Rust: `crates/mosaic-parity-tests/tests/cross_platform_parity.rs`
+- Frontend: `apps/web/tests/share-link-url.test.ts`
+- Android: `apps/android-main/src/test/kotlin/org/mosaic/android/main/sharelink/MosaicShareLinkUrlsTest.kt`
+
+---
+
 ### Key Hierarchy
 
 **Documentation:** See `libs/crypto/.instructions.md`
@@ -626,6 +650,25 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 ---
 
 ## UI/UX Features
+
+### Privacy Class Metadata Error Banner
+
+**Purpose:** Show a clear upload/decode error when a sidecar decoder rejects a forbidden metadata field.
+
+**Implementation:**
+| Layer | Location |
+|-------|----------|
+| Frontend | `apps/web/src/components/Privacy/PrivacyClassErrorBanner.tsx` |
+
+**Features:**
+- Displays guidance to remove unsupported metadata and re-upload.
+- Logs the canonicalized field name for support without logging photo content or key material.
+- v1 placeholder integration: the banner accepts the `ForbiddenTagError` shape until the deferred sidecar decoder flow is promoted.
+
+**Tests:**
+- Frontend: `apps/web/src/components/Privacy/PrivacyClassErrorBanner.test.tsx`
+
+---
 
 ### Theme Support
 
@@ -968,6 +1011,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-05-06 | Deferred Ticket Bundle (P-W2, R-C8, R-M5.3) | Added | Added Rust-owned share-link URL assembly, video tier pipeline edge coverage, and privacy class forbidden-tag banner placeholder |
 | 2026-05-06 | Android Sync Confirmation and Photo Picker Staging | Added | Added album sync confirmation polling with jittered backoff/cancellation plus Photo Picker staging adapter preserving MIME types |
 | 2026-05-05 | Web Upload Queue Migration  | Added    | Added legacy IndexedDB upload task detection/drain/reset telemetry and PNG/WebP/AVIF/HEIC strip parity coverage |
 | 2026-05-04 | Web Metadata Strip Parity (M0) | Added | Web JPEG/PNG/WebP stripping now delegates to Rust `mosaic-media` WASM; HEIC/AVIF/video source originals reject until parser support lands |

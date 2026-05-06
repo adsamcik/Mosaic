@@ -1879,6 +1879,16 @@ class CryptoWorker implements CryptoWorkerApi {
   // Link Sharing Operations (P-W7.6 � Rust handle contract)
   // =========================================================================
 
+  async buildShareLinkUrl(opts: {
+    baseUrl: string;
+    albumId: string;
+    linkId: string;
+    linkUrlToken: string;
+  }): Promise<string> {
+    const facade = await getRustFacade();
+    return facade.buildShareLinkUrl(opts);
+  }
+
   async createLinkShareHandle(
     albumId: string,
     epochHandleId: EpochHandleId,

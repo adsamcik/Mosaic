@@ -55,6 +55,37 @@ fn finalize_idempotency_key_parity() {
 }
 
 #[test]
+fn share_link_url_builder_matches_wasm_and_uniffi() {
+    let base_url = "https://photos.example.test/";
+    let album_id = ALBUM_ID;
+    let link_id = "AbCdEf0123456789_-link";
+    let link_url_token = "token-fragment_123";
+
+    let album_uuid = mosaic_client::Uuid::from_bytes(ALBUM_ID_BYTES);
+    let client =
+        mosaic_client::build_share_link_url(base_url, &album_uuid, link_id, link_url_token);
+    let wasm = mosaic_wasm::build_share_link_url(
+        base_url.to_owned(),
+        album_id.to_owned(),
+        link_id.to_owned(),
+        link_url_token.to_owned(),
+    );
+    let uniffi = mosaic_uniffi::build_share_link_url(
+        base_url.to_owned(),
+        album_id.to_owned(),
+        link_id.to_owned(),
+        link_url_token.to_owned(),
+    );
+
+    assert_eq!(client, wasm);
+    assert_eq!(client, uniffi);
+    assert_eq!(
+        client,
+        "https://photos.example.test/s/AbCdEf0123456789_-link#k=token-fragment_123"
+    );
+}
+
+#[test]
 fn manifest_transcript_bytes_match_wasm_and_uniffi() {
     let encrypted_meta = vec![0xaa, 0xbb, 0xcc];
     let encoded_shards = encoded_manifest_shards();

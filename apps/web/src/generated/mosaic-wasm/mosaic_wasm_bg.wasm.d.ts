@@ -32,6 +32,7 @@ export const advanceUploadJob: (a: number, b: number, c: number, d: number, e: n
 export const authkeypairresult_authPublicKey: (a: number, b: number) => void;
 export const authkeypairresult_code: (a: number) => number;
 export const buildAuthChallengeTranscript: (a: number, b: number, c: bigint, d: number, e: number, f: number) => number;
+export const buildShareLinkUrl: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
 export const canonicalMetadataSidecarBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
 export const canonicalTierLayout: () => number;
 export const canonicalVideoSidecarBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;

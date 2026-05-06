@@ -1209,6 +1209,48 @@ pub fn finalize_idempotency_key(job_id: &Uuid) -> String {
     )
 }
 
+fn format_uuid_for_url(uuid: &Uuid) -> String {
+    let bytes = uuid.as_bytes();
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4],
+        bytes[5],
+        bytes[6],
+        bytes[7],
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15]
+    )
+}
+
+/// Builds the canonical v1 share-link URL from public route identifiers and the
+/// bearer URL fragment token.
+///
+/// The `link_url_token` is intentionally placed after `#k=` so browsers never
+/// send it to the server in HTTP requests. `album_id` is accepted to keep Rust
+/// core as the cross-platform owner of the full share-link context even though
+/// the v1 web route uses the server-visible link identifier as the lookup key.
+#[must_use]
+pub fn build_share_link_url(
+    base_url: &str,
+    album_id: &Uuid,
+    link_id: &str,
+    link_url_token: &str,
+) -> String {
+    let _album_id = format_uuid_for_url(album_id);
+    let trimmed = base_url.trim_end_matches('/');
+    format!("{trimmed}/s/{link_id}#k={link_url_token}")
+}
+
 /// Returns deterministic public crypto/domain vectors for wrapper parity tests.
 #[must_use]
 pub fn crypto_domain_golden_vector_snapshot() -> CryptoDomainGoldenVectorSnapshot {

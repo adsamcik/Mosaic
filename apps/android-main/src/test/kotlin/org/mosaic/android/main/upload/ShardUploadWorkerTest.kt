@@ -10,6 +10,7 @@ import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import java.io.File
 import java.security.MessageDigest
+import kotlinx.serialization.SerializationException
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -24,6 +25,7 @@ import org.mosaic.android.main.staging.AppPrivateStagingManager
 import org.mosaic.android.main.staging.StagedFile
 import org.mosaic.android.main.tus.ShardManifestEntry
 import org.mosaic.android.main.tus.TusClientFactory
+import org.mosaic.android.main.tus.TusUploadException
 import org.mosaic.android.main.tus.TusUploadSession
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -111,6 +113,38 @@ class ShardUploadWorkerTest {
     val output = (result as ListenableWorker.Result.Failure).outputData
     assertEquals(ShardUploadWorker.FAILURE_RETRY_EXHAUSTED, output.getString(ShardUploadWorker.KEY_FAILURE_REASON))
     assertTrue(envelope.exists())
+  }
+
+  @Test
+  fun offsetMismatchFailsWithoutRetry() {
+    assertNonRetryableUploadFailure(TusUploadException.OffsetMismatch(expectedOffset = 14, actualOffset = 7))
+  }
+
+  @Test
+  fun missingUploadOffsetFailsWithoutRetry() {
+    assertNonRetryableUploadFailure(TusUploadException.MissingUploadOffset("https://uploads.invalid/shard"))
+  }
+
+  @Test
+  fun headClientErrorFailsWithoutRetryExceptThrottleStatuses() {
+    assertNonRetryableUploadFailure(TusUploadException.HeadFailed(401))
+  }
+
+  @Test
+  fun patchClientErrorFailsWithoutRetryExceptThrottleStatuses() {
+    assertNonRetryableUploadFailure(TusUploadException.PatchFailed(409))
+  }
+
+  @Test
+  fun serializationFailureFailsWithoutRetry() {
+    assertNonRetryableUploadFailure(SerializationException("bad response body"))
+  }
+
+  @Test
+  fun throttledHeadFailureRetriesBeforeMaxRetries() {
+    val result = workerThrowing(TusUploadException.HeadFailed(429)).doWorkBlocking()
+
+    assertTrue(result is ListenableWorker.Result.Retry)
   }
 
   @Test
@@ -248,6 +282,25 @@ class ShardUploadWorkerTest {
   private fun ListenableWorker.doWorkBlocking(): ListenableWorker.Result =
     kotlinx.coroutines.runBlocking { (this@doWorkBlocking as ShardUploadWorker).doWork() }
 
+  private fun assertNonRetryableUploadFailure(exception: Exception) {
+    val result = workerThrowing(exception).doWorkBlocking()
+
+    assertTrue(result is ListenableWorker.Result.Failure)
+    val output = (result as ListenableWorker.Result.Failure).outputData
+    assertEquals(ShardUploadWorker.FAILURE_NON_RETRYABLE_UPLOAD, output.getString(ShardUploadWorker.KEY_FAILURE_REASON))
+  }
+
+  private fun workerThrowing(exception: Exception): ShardUploadWorker {
+    val envelope = envelopeFile("terminal-error")
+    return workerFor(
+      envelope = envelope,
+      expectedSha256 = sha256Hex(envelope.readBytes()),
+      shardId = "terminal-shard",
+      tusEndpoint = "https://uploads.invalid/files",
+      tusSessionFactory = ThrowingTusSessionFactory(exception),
+    )
+  }
+
   private fun envelopeFile(value: String): File {
     val dir = File(context.filesDir, "encrypted-shards").also { it.mkdirs() }
     return File(dir, "envelope-${System.nanoTime()}.bin").apply { writeText(value) }
@@ -280,6 +333,12 @@ class ShardUploadWorkerTest {
     private val manifestEntry: ShardManifestEntry,
   ) : ShardTusSessionFactory {
     override fun create(endpointUrl: String): ShardTusSession = ShardTusSession { _, _ -> manifestEntry }
+  }
+
+  private class ThrowingTusSessionFactory(
+    private val exception: Exception,
+  ) : ShardTusSessionFactory {
+    override fun create(endpointUrl: String): ShardTusSession = ShardTusSession { _, _ -> throw exception }
   }
 
   private object ThrowingStagingCleaner : ShardStagingCleaner {

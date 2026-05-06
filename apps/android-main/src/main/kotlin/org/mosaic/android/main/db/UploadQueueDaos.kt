@@ -72,8 +72,40 @@ interface UploadJobSnapshotDao {
     upsertValidated(row)
   }
 
+  @Transaction
+  fun upsertIfRevisionMatches(row: UploadJobSnapshotRow, previousRevision: Long): Int {
+    PrivacyPatternValidator.validateUploadJobSnapshot(row)
+    return updateIfRevisionMatches(
+      jobId = row.jobId,
+      schemaVersion = row.schemaVersion,
+      canonicalCborBytes = row.canonicalCborBytes,
+      updatedAtMs = row.updatedAtMs,
+      snapshotRevision = row.snapshotRevision,
+      previousRevision = previousRevision,
+    )
+  }
+
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   fun upsertValidated(row: UploadJobSnapshotRow)
+
+  @Query(
+    """
+      UPDATE upload_job_snapshots
+      SET schema_version = :schemaVersion,
+          canonical_cbor_bytes = :canonicalCborBytes,
+          updated_at_ms = :updatedAtMs,
+          snapshot_revision = :snapshotRevision
+      WHERE job_id = :jobId AND snapshot_revision = :previousRevision
+    """,
+  )
+  fun updateIfRevisionMatches(
+    jobId: String,
+    schemaVersion: Int,
+    canonicalCborBytes: ByteArray,
+    updatedAtMs: Long,
+    snapshotRevision: Long,
+    previousRevision: Long,
+  ): Int
 
   @Query("SELECT * FROM upload_job_snapshots WHERE job_id = :jobId")
   fun get(jobId: String): UploadJobSnapshotRow?

@@ -1002,6 +1002,17 @@ export interface CryptoWorkerApi {
 
   // ---- Link sharing (P-W7.6 handle-based) ----
 
+  /**
+   * Build the canonical share-link URL through the Rust/WASM facade.
+   * The linkUrlToken is a bearer fragment token and must remain after #k=.
+   */
+  buildShareLinkUrl(opts: {
+    baseUrl: string;
+    albumId: string;
+    linkId: string;
+    linkUrlToken: string;
+  }): Promise<string>;
+
   createLinkShareHandle(
     albumId: string,
     epochHandleId: EpochHandleId,

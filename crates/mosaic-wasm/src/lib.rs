@@ -833,6 +833,47 @@ impl fmt::Debug for DecryptedContentResult {
     }
 }
 
+fn parse_uuid_string(input: &str) -> Result<mosaic_client::Uuid, ()> {
+    let mut hex = String::with_capacity(32);
+    for ch in input.chars() {
+        if ch == '-' {
+            continue;
+        }
+        if !ch.is_ascii_hexdigit() {
+            return Err(());
+        }
+        hex.push(ch);
+    }
+    if hex.len() != 32 {
+        return Err(());
+    }
+    let mut bytes = [0_u8; 16];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        let start = index * 2;
+        *byte = u8::from_str_radix(&hex[start..start + 2], 16).map_err(|_| ())?;
+    }
+    Ok(mosaic_client::Uuid::from_bytes(bytes))
+}
+
+/// Builds the canonical v1 share-link URL in Rust so web callers do not
+/// duplicate route assembly logic. The fragment token is a bearer token by
+/// design and remains after `#k=` so it is never sent to the server.
+#[wasm_bindgen(js_name = buildShareLinkUrl)]
+#[must_use]
+pub fn build_share_link_url(
+    base_url: String,
+    album_id: String,
+    link_id: String,
+    link_url_token: String,
+) -> String {
+    match parse_uuid_string(&album_id) {
+        Ok(album_uuid) => {
+            mosaic_client::build_share_link_url(&base_url, &album_uuid, &link_id, &link_url_token)
+        }
+        Err(()) => String::new(),
+    }
+}
+
 /// WASM-bindgen class for header parse results.
 #[wasm_bindgen(js_name = HeaderResult)]
 pub struct JsHeaderResult {

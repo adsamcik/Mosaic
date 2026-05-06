@@ -3123,6 +3123,46 @@ fn map_crypto_error_uniffi(error: mosaic_crypto::MosaicCryptoError) -> u16 {
 // Keep this graveyard close to the legacy vector-only FFI block so future
 // audit passes can identify intentionally removed pre-v1 raw-secret fields.
 
+fn parse_uuid_string(input: &str) -> Result<mosaic_client::Uuid, ()> {
+    let mut hex = String::with_capacity(32);
+    for ch in input.chars() {
+        if ch == '-' {
+            continue;
+        }
+        if !ch.is_ascii_hexdigit() {
+            return Err(());
+        }
+        hex.push(ch);
+    }
+    if hex.len() != 32 {
+        return Err(());
+    }
+    let mut bytes = [0_u8; 16];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        let start = index * 2;
+        *byte = u8::from_str_radix(&hex[start..start + 2], 16).map_err(|_| ())?;
+    }
+    Ok(mosaic_client::Uuid::from_bytes(bytes))
+}
+
+/// Builds the canonical v1 share-link URL in Rust for Android and other UniFFI
+/// consumers. Returns an empty string for malformed album UUID input.
+#[uniffi::export]
+#[must_use]
+pub fn build_share_link_url(
+    base_url: String,
+    album_id: String,
+    link_id: String,
+    link_url_token: String,
+) -> String {
+    match parse_uuid_string(&album_id) {
+        Ok(album_uuid) => {
+            mosaic_client::build_share_link_url(&base_url, &album_uuid, &link_id, &link_url_token)
+        }
+        Err(()) => String::new(),
+    }
+}
+
 /// UniFFI record for link-key derivation results.
 ///
 /// `link_id` is server-visible (16 bytes); the derived wrapping key is retained

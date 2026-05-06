@@ -12,11 +12,13 @@ import java.net.URL
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
 import org.mosaic.android.main.crypto.ShardEncryptionWorker
 import org.mosaic.android.main.staging.AppPrivateStagingManager
 import org.mosaic.android.main.staging.StagedFile
 import org.mosaic.android.main.tus.ShardManifestEntry
 import org.mosaic.android.main.tus.TusClientFactory
+import org.mosaic.android.main.tus.TusUploadException
 import org.mosaic.android.main.tus.TusUploadSession
 
 class ShardUploadWorker internal constructor(
@@ -81,12 +83,18 @@ class ShardUploadWorker internal constructor(
           KEY_FINAL_SHA256 to uploadResult.sha256,
         ),
       )
+    } catch (e: TusUploadException.OffsetMismatch) {
+      failure(FAILURE_NON_RETRYABLE_UPLOAD)
+    } catch (e: TusUploadException.MissingUploadOffset) {
+      failure(FAILURE_NON_RETRYABLE_UPLOAD)
+    } catch (e: TusUploadException.HeadFailed) {
+      retryForHttpStatus(e.statusCode)
+    } catch (e: TusUploadException.PatchFailed) {
+      retryForHttpStatus(e.statusCode)
+    } catch (e: SerializationException) {
+      failure(FAILURE_NON_RETRYABLE_UPLOAD)
     } catch (e: Exception) {
-      if (runAttemptCount < MAX_RETRIES) {
-        Result.retry()
-      } else {
-        failure(FAILURE_RETRY_EXHAUSTED)
-      }
+      retryOrExhausted()
     }
   }
 
@@ -111,6 +119,18 @@ class ShardUploadWorker internal constructor(
   }
 
   private fun failure(reason: String): Result = Result.failure(workDataOf(KEY_FAILURE_REASON to reason))
+
+  private fun retryForHttpStatus(statusCode: Int): Result = when (statusCode) {
+    408, 429 -> retryOrExhausted()
+    in 400..499 -> failure(FAILURE_NON_RETRYABLE_UPLOAD)
+    else -> retryOrExhausted()
+  }
+
+  private fun retryOrExhausted(): Result = if (runAttemptCount < MAX_RETRIES) {
+    Result.retry()
+  } else {
+    failure(FAILURE_RETRY_EXHAUSTED)
+  }
 
   private fun String.toStagedFile(shardId: String): StagedFile {
     val uri = Uri.parse(this)
@@ -145,6 +165,7 @@ class ShardUploadWorker internal constructor(
     const val FAILURE_MISSING_INPUT: String = "missing-input"
     const val FAILURE_RETRY_EXHAUSTED: String = "retry-exhausted"
     const val FAILURE_SHA256_MISMATCH: String = "sha256-mismatch"
+    const val FAILURE_NON_RETRYABLE_UPLOAD: String = "non-retryable-upload"
     const val MAX_RETRIES: Int = 5
 
     private const val LOG_TAG = "ShardUploadWorker"

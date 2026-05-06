@@ -744,6 +744,13 @@ export function advanceUploadJob(job_id: string, album_id: string, idempotency_k
 export function buildAuthChallengeTranscript(username: string, timestamp_ms: bigint, timestamp_ms_present: boolean, challenge: Uint8Array): BytesResult;
 
 /**
+ * Builds the canonical v1 share-link URL in Rust so web callers do not
+ * duplicate route assembly logic. The fragment token is a bearer token by
+ * design and remains after `#k=` so it is never sent to the server.
+ */
+export function buildShareLinkUrl(base_url: string, album_id: string, link_id: string, link_url_token: string): string;
+
+/**
  * Builds canonical metadata sidecar bytes through WASM.
  */
 export function canonicalMetadataSidecarBytes(album_id: Uint8Array, photo_id: Uint8Array, epoch_id: number, encoded_fields: Uint8Array): BytesResult;
@@ -1117,6 +1124,7 @@ export interface InitOutput {
     readonly authkeypairresult_authPublicKey: (a: number, b: number) => void;
     readonly authkeypairresult_code: (a: number) => number;
     readonly buildAuthChallengeTranscript: (a: number, b: number, c: bigint, d: number, e: number, f: number) => number;
+    readonly buildShareLinkUrl: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
     readonly canonicalMetadataSidecarBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly canonicalTierLayout: () => number;
     readonly canonicalVideoSidecarBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
