@@ -3,6 +3,7 @@ package org.mosaic.android.main
 import android.app.Application
 import android.util.Log
 import org.mosaic.android.main.bridge.AndroidRustCoreLibraryLoader
+import org.mosaic.android.main.service.UploadForegroundService
 import org.mosaic.android.main.work.AutoImportRuntime
 import org.mosaic.android.main.work.AutoImportWorkScheduler
 import org.mosaic.android.main.work.ShellStubRecordMigration
@@ -28,6 +29,7 @@ class MosaicApplication : Application() {
     runCatching { ShellStubRecordMigration.clearOnFirstLaunch(this) }
       .onFailure { Log.w(TAG, "A-pre-1 cleanup failed", it) }
     installAutoImportRuntime(this)
+    registerUploadNotificationChannel(this)
     enqueueAutoImportIfPolicyAllows(this)
   }
 
@@ -38,6 +40,9 @@ class MosaicApplication : Application() {
     internal var installAutoImportRuntime: (MosaicApplication) -> Unit = { application ->
       AutoImportRuntime.installRuntimeProvider(AutoImportRuntime.systemRuntimeProvider(application))
     }
+    internal var registerUploadNotificationChannel: (MosaicApplication) -> Unit = { application ->
+      UploadForegroundService.ensureNotificationChannel(application)
+    }
     internal var enqueueAutoImportIfPolicyAllows: (MosaicApplication) -> Unit = { application ->
       AutoImportWorkScheduler.enqueueIfPolicyAllows(application)
     }
@@ -46,6 +51,9 @@ class MosaicApplication : Application() {
       rustCoreWarmUp = AndroidRustCoreLibraryLoader::warmUp
       installAutoImportRuntime = { application ->
         AutoImportRuntime.installRuntimeProvider(AutoImportRuntime.systemRuntimeProvider(application))
+      }
+      registerUploadNotificationChannel = { application ->
+        UploadForegroundService.ensureNotificationChannel(application)
       }
       enqueueAutoImportIfPolicyAllows = { application ->
         AutoImportWorkScheduler.enqueueIfPolicyAllows(application)

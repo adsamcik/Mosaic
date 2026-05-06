@@ -52,10 +52,7 @@ class MergedManifestInvariantsTest {
 
   @Test
   fun forbiddenInternetPermissionAbsent() {
-    when (INTERNET_PERMISSION_MODE) {
-      InternetPermissionMode.ABSENT_UNTIL_A17 -> forbidPermission("android.permission.INTERNET")
-      InternetPermissionMode.PRESENT_AFTER_A17 -> requirePermission("android.permission.INTERNET")
-    }
+    forbidPermission("android.permission.INTERNET")
   }
 
   @Test
@@ -186,9 +183,9 @@ class MergedManifestInvariantsTest {
 
   @Test
   fun foregroundServiceDataSyncPermissionDeclared() {
-    // Required by Android 14+ to promote a worker to a `dataSync` foreground
-    // service. Without this the WorkManager `setForeground` call from
-    // AutoImportWorker would throw on API 34+.
+    // Required by Android 14+ to promote upload work to a `dataSync`
+    // foreground service. Without this the runtime foreground promotion would
+    // throw on API 34+.
     requirePermission("android.permission.FOREGROUND_SERVICE_DATA_SYNC")
   }
 
@@ -201,18 +198,34 @@ class MergedManifestInvariantsTest {
 
   @Test
   fun systemForegroundServiceDeclaresDataSyncType() {
-    val services = applicationElement.getElementsByTagName("service")
-    val foregroundService = (0 until services.length)
-      .map { services.item(it) as Element }
-      .firstOrNull { it.getAttributeNS(ANDROID_NAMESPACE, "name") == SYSTEM_FOREGROUND_SERVICE }
-    assertNotNull(
+    val foregroundService = requireService(
+      SYSTEM_FOREGROUND_SERVICE,
       "WorkManager's SystemForegroundService must be present in the merged manifest " +
         "(merged from work-runtime); auto-import worker depends on it.",
-      foregroundService,
     )
-    val type = foregroundService!!.getAttributeNS(ANDROID_NAMESPACE, "foregroundServiceType")
+    val type = foregroundService.getAttributeNS(ANDROID_NAMESPACE, "foregroundServiceType")
     assertEquals(
       "auto-import worker requires foregroundServiceType=dataSync per ADR-007; got '$type'",
+      "dataSync",
+      type,
+    )
+  }
+
+  @Test
+  fun uploadForegroundServiceDeclaresDataSyncType() {
+    val uploadService = requireService(
+      UPLOAD_FOREGROUND_SERVICE,
+      "UploadForegroundService must be declared in the merged manifest so long-running " +
+        "uploads can run with a persistent user-cancellable notification.",
+    )
+    assertEquals(
+      "UploadForegroundService must not be exported",
+      "false",
+      uploadService.getAttributeNS(ANDROID_NAMESPACE, "exported"),
+    )
+    val type = uploadService.getAttributeNS(ANDROID_NAMESPACE, "foregroundServiceType")
+    assertEquals(
+      "UploadForegroundService requires foregroundServiceType=dataSync; got '$type'",
       "dataSync",
       type,
     )
@@ -221,31 +234,23 @@ class MergedManifestInvariantsTest {
   // -- Lane D2 (SPEC-CrossPlatformHardening Android shell checklist) extensions --
 
   /**
-   * Stronger version of the existing `systemForegroundServiceDeclaresDataSyncType`
-   * test: assert the merged manifest declares exactly ONE service with
-   * `foregroundServiceType="dataSync"`. Multiple dataSync services would mean
-   * either a misconfigured `tools:node="merge"` directive or an unreviewed
-   * additional foreground promotion, both of which expand the foreground-
-   * privilege blast radius beyond AutoImportWorker.
+   * Stronger version of the per-service foreground type tests: assert the
+   * merged manifest declares exactly the reviewed `dataSync` services. Any
+   * additional dataSync service would expand the foreground-privilege blast
+   * radius beyond AutoImportWorker and UploadForegroundService.
    */
   @Test
-  fun dataSyncForegroundServiceDeclaredExactlyOnce() {
+  fun dataSyncForegroundServicesAreReviewedSet() {
     val services = applicationElement.getElementsByTagName("service")
     val dataSyncServices = (0 until services.length)
       .map { services.item(it) as Element }
       .filter { it.getAttributeNS(ANDROID_NAMESPACE, "foregroundServiceType") == "dataSync" }
     val names = dataSyncServices.map { it.getAttributeNS(ANDROID_NAMESPACE, "name") }
     assertEquals(
-      "merged manifest must declare exactly one foregroundServiceType=dataSync service " +
-        "(found: $names); ADR-007 scopes the promotion to AutoImportWorker via WorkManager's " +
-        "SystemForegroundService and any extra dataSync promotion is unreviewed.",
-      1,
-      dataSyncServices.size,
-    )
-    assertEquals(
-      "the single dataSync service must be WorkManager's SystemForegroundService",
-      SYSTEM_FOREGROUND_SERVICE,
-      names.first(),
+      "merged manifest must declare exactly the reviewed foregroundServiceType=dataSync services " +
+        "(found: $names)",
+      setOf(SYSTEM_FOREGROUND_SERVICE, UPLOAD_FOREGROUND_SERVICE),
+      names.toSet(),
     )
   }
 
@@ -381,6 +386,15 @@ class MergedManifestInvariantsTest {
     }
   }
 
+  private fun requireService(name: String, message: String): Element {
+    val services = applicationElement.getElementsByTagName("service")
+    val service = (0 until services.length)
+      .map { services.item(it) as Element }
+      .firstOrNull { it.getAttributeNS(ANDROID_NAMESPACE, "name") == name }
+    assertNotNull(message, service)
+    return service!!
+  }
+
   private fun assertContainsAction(filter: Element, action: String) {
     val actions = filter.getElementsByTagName("action")
     val found = (0 until actions.length).any {
@@ -398,21 +412,8 @@ class MergedManifestInvariantsTest {
   }
 
   companion object {
-    /**
-     * ADR-012 permits the future Android upload trust boundary, but the manifest
-     * permission flip is gated by A15 (foreground-service UX) and A16 (privacy
-     * audit). Keep the current no-network invariant until A17 performs that
-     * gated flip.
-     */
-    private val INTERNET_PERMISSION_MODE = InternetPermissionMode.ABSENT_UNTIL_A17
-
     private const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
     private const val SYSTEM_FOREGROUND_SERVICE = "androidx.work.impl.foreground.SystemForegroundService"
-  }
-
-  private enum class InternetPermissionMode {
-    ABSENT_UNTIL_A17,
-    // TODO(A17): switch INTERNET_PERMISSION_MODE to PRESENT_AFTER_A17 when A15 and A16 are complete.
-    PRESENT_AFTER_A17,
+    private const val UPLOAD_FOREGROUND_SERVICE = "org.mosaic.android.main.service.UploadForegroundService"
   }
 }

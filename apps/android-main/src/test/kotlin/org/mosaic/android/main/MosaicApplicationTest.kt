@@ -31,6 +31,7 @@ class MosaicApplicationTest {
     )
     MosaicApplication.rustCoreWarmUp = {}
     MosaicApplication.installAutoImportRuntime = {}
+    MosaicApplication.registerUploadNotificationChannel = {}
     MosaicApplication.enqueueAutoImportIfPolicyAllows = {}
     ShellStubRecordMigration.sharedPreferencesOpener = { _, name ->
       when (name) {
