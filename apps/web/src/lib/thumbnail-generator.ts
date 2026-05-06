@@ -24,12 +24,7 @@
  */
 
 import { rgbaToThumbHash } from 'thumbhash';
-import {
-  encryptShard,
-  ShardTier,
-  type EncryptedShard,
-  type EpochKey,
-} from '@mosaic/crypto';
+import { ShardTier } from '@mosaic/crypto';
 import {
   prepareForBitmap,
   safeCreateImageBitmap,
@@ -228,20 +223,6 @@ export interface TierImageData {
 }
 
 /**
- * Encrypted shard with metadata for a single tier
- */
-export interface TierShard {
-  /** Encrypted shard data (envelope format) */
-  encrypted: EncryptedShard;
-  /** Width in pixels */
-  width: number;
-  /** Height in pixels */
-  height: number;
-  /** Shard tier (THUMB, PREVIEW, ORIGINAL) */
-  tier: ShardTier;
-}
-
-/**
  * Result of three-tier image generation
  */
 export interface TieredImageResult {
@@ -251,22 +232,6 @@ export interface TieredImageResult {
   preview: TierImageData;
   /** Original: unchanged source file */
   original: TierImageData;
-  /** Original image width (before any resizing) */
-  originalWidth: number;
-  /** Original image height (before any resizing) */
-  originalHeight: number;
-}
-
-/**
- * Result of three-tier encrypted shard generation
- */
-export interface TieredShardResult {
-  /** Encrypted thumbnail shard */
-  thumbnail: TierShard;
-  /** Encrypted preview shard */
-  preview: TierShard;
-  /** Encrypted original shard */
-  original: TierShard;
   /** Original image width (before any resizing) */
   originalWidth: number;
   /** Original image height (before any resizing) */
@@ -910,156 +875,5 @@ export async function generateTieredImages(
       throw error;
     }
     throw new ThumbnailError('Tiered image generation failed', error);
-  }
-}
-
-/**
- * Encrypt already-converted tiered images.
- *
- * Takes the output of generateTieredImages and encrypts each tier
- * with its corresponding key from the EpochKey.
- *
- * @param tieredImages - Pre-converted tiered images
- * @param epochKey - Epoch key with thumbKey, previewKey, fullKey
- * @param shardIndex - Shard index within photo (typically 0 for single-shard photos)
- * @returns Three-tier encrypted shards with metadata
- * @throws ThumbnailError if encryption fails
- */
-export async function encryptTieredImages(
-  tieredImages: TieredImageResult,
-  epochKey: EpochKey,
-  shardIndex: number = 0,
-): Promise<TieredShardResult> {
-  try {
-    // Encrypt each tier with its corresponding key
-    const [thumbEncrypted, previewEncrypted, originalEncrypted] =
-      await Promise.all([
-        encryptShard(
-          tieredImages.thumbnail.data,
-          epochKey.thumbKey,
-          epochKey.epochId,
-          shardIndex,
-          ShardTier.THUMB,
-        ),
-        encryptShard(
-          tieredImages.preview.data,
-          epochKey.previewKey,
-          epochKey.epochId,
-          shardIndex,
-          ShardTier.PREVIEW,
-        ),
-        encryptShard(
-          tieredImages.original.data,
-          epochKey.fullKey,
-          epochKey.epochId,
-          shardIndex,
-          ShardTier.ORIGINAL,
-        ),
-      ]);
-
-    return {
-      thumbnail: {
-        encrypted: thumbEncrypted,
-        width: tieredImages.thumbnail.width,
-        height: tieredImages.thumbnail.height,
-        tier: ShardTier.THUMB,
-      },
-      preview: {
-        encrypted: previewEncrypted,
-        width: tieredImages.preview.width,
-        height: tieredImages.preview.height,
-        tier: ShardTier.PREVIEW,
-      },
-      original: {
-        encrypted: originalEncrypted,
-        width: tieredImages.original.width,
-        height: tieredImages.original.height,
-        tier: ShardTier.ORIGINAL,
-      },
-      originalWidth: tieredImages.originalWidth,
-      originalHeight: tieredImages.originalHeight,
-    };
-  } catch (error) {
-    if (error instanceof ThumbnailError) {
-      throw error;
-    }
-    throw new ThumbnailError('Failed to encrypt tiered shards', error);
-  }
-}
-
-/**
- * Generate three-tier encrypted shards from a photo file.
- *
- * Creates and encrypts thumbnail, preview, and original tiers.
- * Each tier is encrypted with its corresponding key from the EpochKey.
- *
- * @param file - Image file to process
- * @param epochKey - Epoch key with thumbKey, previewKey, fullKey
- * @param shardIndex - Shard index within photo (typically 0 for single-shard photos)
- * @returns Three-tier encrypted shards with metadata
- * @throws ThumbnailError if generation or encryption fails
- */
-export async function generateTieredShards(
-  file: File,
-  epochKey: EpochKey,
-  shardIndex: number = 0,
-): Promise<TieredShardResult> {
-  // Generate the three tiers
-  const tieredImages = await generateTieredImages(file);
-
-  try {
-    // Encrypt each tier with its corresponding key
-    const [thumbEncrypted, previewEncrypted, originalEncrypted] =
-      await Promise.all([
-        encryptShard(
-          tieredImages.thumbnail.data,
-          epochKey.thumbKey,
-          epochKey.epochId,
-          shardIndex,
-          ShardTier.THUMB,
-        ),
-        encryptShard(
-          tieredImages.preview.data,
-          epochKey.previewKey,
-          epochKey.epochId,
-          shardIndex,
-          ShardTier.PREVIEW,
-        ),
-        encryptShard(
-          tieredImages.original.data,
-          epochKey.fullKey,
-          epochKey.epochId,
-          shardIndex,
-          ShardTier.ORIGINAL,
-        ),
-      ]);
-
-    return {
-      thumbnail: {
-        encrypted: thumbEncrypted,
-        width: tieredImages.thumbnail.width,
-        height: tieredImages.thumbnail.height,
-        tier: ShardTier.THUMB,
-      },
-      preview: {
-        encrypted: previewEncrypted,
-        width: tieredImages.preview.width,
-        height: tieredImages.preview.height,
-        tier: ShardTier.PREVIEW,
-      },
-      original: {
-        encrypted: originalEncrypted,
-        width: tieredImages.original.width,
-        height: tieredImages.original.height,
-        tier: ShardTier.ORIGINAL,
-      },
-      originalWidth: tieredImages.originalWidth,
-      originalHeight: tieredImages.originalHeight,
-    };
-  } catch (error) {
-    if (error instanceof ThumbnailError) {
-      throw error;
-    }
-    throw new ThumbnailError('Failed to encrypt tiered shards', error);
   }
 }

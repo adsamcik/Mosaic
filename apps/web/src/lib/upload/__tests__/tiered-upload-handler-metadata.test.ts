@@ -10,11 +10,6 @@ const mocks = vi.hoisted(() => ({
   shouldStoreOriginalsAsAvif: vi.fn().mockReturnValue(false),
   getThumbnailQualityValue: vi.fn().mockReturnValue(0.8),
   stripExifFromBlob: vi.fn(),
-  deriveTierKeys: vi.fn().mockReturnValue({
-    thumbKey: new Uint8Array(32).fill(1),
-    previewKey: new Uint8Array(32).fill(2),
-    fullKey: new Uint8Array(32).fill(3),
-  }),
 }));
 
 vi.mock('../../logger', () => ({

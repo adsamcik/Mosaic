@@ -30,7 +30,6 @@ const captured = vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
   generateTieredImages: vi.fn(),
-  encryptTieredImages: vi.fn(),
   generateThumbnail: vi.fn(),
   shouldStripExifFromOriginals: vi.fn().mockReturnValue(false),
   shouldStoreOriginalsAsAvif: vi.fn().mockReturnValue(false),
@@ -39,11 +38,6 @@ const mocks = vi.hoisted(() => ({
   extractVideoFrame: vi.fn(),
   getCryptoClient: vi.fn().mockResolvedValue({
     encryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([9, 9, 9])),
-  }),
-  deriveTierKeys: vi.fn().mockReturnValue({
-    thumbKey: new Uint8Array(32).fill(1),
-    previewKey: new Uint8Array(32).fill(2),
-    fullKey: new Uint8Array(32).fill(3),
   }),
   encryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([7, 7, 7])),
 }));
@@ -70,7 +64,6 @@ vi.mock('../../logger', () => ({
 
 vi.mock('../../thumbnail-generator', () => ({
   generateTieredImages: (...a: unknown[]) => mocks.generateTieredImages(...a),
-  encryptTieredImages: (...a: unknown[]) => mocks.encryptTieredImages(...a),
   generateThumbnail: (...a: unknown[]) => mocks.generateThumbnail(...a),
   isSupportedImageType: () => true,
 }));
@@ -91,12 +84,6 @@ vi.mock('../../video-frame-extractor', () => ({
 
 vi.mock('../../crypto-client', () => ({
   getCryptoClient: () => mocks.getCryptoClient(),
-}));
-
-vi.mock('@mosaic/crypto', () => ({
-  deriveTierKeys: (...a: unknown[]) => mocks.deriveTierKeys(...a),
-  encryptShard: (...a: unknown[]) => mocks.encryptShardWithEpochHandle(...a),
-  ShardTier: { THUMB: 1, PREVIEW: 2, ORIGINAL: 3 },
 }));
 
 // ---------------------------------------------------------------------------
