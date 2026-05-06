@@ -1321,6 +1321,14 @@ export interface SidecarPeerHandle {
   readonly sessionId: string;
   /** Push finalized plaintext bytes for one photo. Resolves once the bytes are queued/flushed. */
   send(bytes: Uint8Array, filename: string, photoIdx: number): Promise<void>;
+  /**
+   * Streaming variant of {@link send}. The implementation pulls from the
+   * stream lazily (one chunk at a time), so callers can pipe a multi-GB
+   * photo without buffering it whole in memory. Optional: implementations
+   * MAY fall back to draining the stream into `send()` if absent — but the
+   * coordinator prefers this method when available.
+   */
+  sendStream?(stream: ReadableStream<Uint8Array>, filename: string, photoIdx: number, size: bigint): Promise<void>;
   /** Resolves once the receiver acknowledges (or the sink finalized). */
   endPhoto(photoIdx: number): Promise<void>;
   /** Cleanly close the session. */

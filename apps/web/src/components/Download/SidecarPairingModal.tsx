@@ -139,8 +139,31 @@ function buildPeerHandle(deps: PeerHandleAdapterDeps): SidecarPeerHandle {
   // ReadableStream so the chunker remains the single producer of frames.
   // Memory peak is bounded by the chunker's internal carry buffer (one
   // upstream chunk worth of bytes), not the whole photo.
+  const maxChunk = Math.max(
+    1024,
+    SCTP_DEFAULT_MAX_BYTES - AEAD_OVERHEAD_BYTES - FRAME_HEADER_OVERHEAD_BYTES,
+  );
+  // Drains a stream through the chunker, sealing and forwarding each frame.
+  // The chunker emits fileStart -> fileChunk* -> fileEnd; the receive sink
+  // is idempotent against a follow-up endPhoto() that re-sends fileEnd.
+  const pumpStream = async (
+    stream: ReadableStream<Uint8Array>,
+    filename: string,
+    photoIdx: number,
+    size: bigint,
+  ): Promise<void> => {
+    for await (const frame of chunkPhoto(photoIdx, filename, size, stream, { maxChunkBytes: maxChunk })) {
+      const sealed = await deps.tunnel.send.seal(encodeFrame(frame));
+      await deps.peer.sendFrame(sealed);
+    }
+  };
+
   return {
     sessionId,
+    // Per-photo streaming send via the chunker. The stream is pulled lazily —
+    // memory peak is bounded by one upstream chunk worth of bytes, not the
+    // whole photo. The single-buffer `send` adapter wraps the Uint8Array in
+    // a one-shot stream so the chunker is the only producer of frames.
     async send(bytes, filename, photoIdx): Promise<void> {
       const stream = new ReadableStream<Uint8Array>({
         start(controller): void {
@@ -148,14 +171,10 @@ function buildPeerHandle(deps: PeerHandleAdapterDeps): SidecarPeerHandle {
           controller.close();
         },
       });
-      const maxChunk = Math.max(
-        1024,
-        SCTP_DEFAULT_MAX_BYTES - AEAD_OVERHEAD_BYTES - FRAME_HEADER_OVERHEAD_BYTES,
-      );
-      for await (const frame of chunkPhoto(photoIdx, filename, BigInt(bytes.byteLength), stream, { maxChunkBytes: maxChunk })) {
-        const sealed = await deps.tunnel.send.seal(encodeFrame(frame));
-        await deps.peer.sendFrame(sealed);
-      }
+      await pumpStream(stream, filename, photoIdx, BigInt(bytes.byteLength));
+    },
+    async sendStream(stream, filename, photoIdx, size): Promise<void> {
+      await pumpStream(stream, filename, photoIdx, size);
     },
     async endPhoto(photoIdx): Promise<void> {
       // chunkPhoto already emits fileEnd, but the public contract of

@@ -1515,24 +1515,31 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     const photoIdx = job.plan.findIndex((e) => e.photoId === photoId);
     try {
       const stream = await opfsStaging.readPhotoStream(jobId, photoId);
-      const reader = stream.getReader();
-      const chunks: Uint8Array[] = [];
-      let total = 0;
-      // Note: copies the photo into memory before send. Acceptable for
-      // typical photo sizes; a future iteration can stream chunks via the
-      // existing chunker if peerHandle grows a streaming API.
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value) {
-          chunks.push(value);
-          total += value.byteLength;
+      const size = BigInt(planEntry.totalBytes);
+      // Prefer the streaming API when the peer handle exposes it: the chunker
+      // pulls from OPFS lazily so memory peak is bounded by one upstream
+      // chunk worth of bytes (typically <= 64 KiB), regardless of photo size.
+      // Fallback path drains the stream into a single buffer for handles
+      // that predate sendStream — kept for backwards compatibility only.
+      if (typeof mode.peerHandle.sendStream === 'function') {
+        await mode.peerHandle.sendStream(stream, planEntry.filename, photoIdx, size);
+      } else {
+        const reader = stream.getReader();
+        const chunks: Uint8Array[] = [];
+        let total = 0;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            total += value.byteLength;
+          }
         }
+        const merged = new Uint8Array(total);
+        let off = 0;
+        for (const ch of chunks) { merged.set(ch, off); off += ch.byteLength; }
+        await mode.peerHandle.send(merged, planEntry.filename, photoIdx);
       }
-      const merged = new Uint8Array(total);
-      let off = 0;
-      for (const ch of chunks) { merged.set(ch, off); off += ch.byteLength; }
-      await mode.peerHandle.send(merged, planEntry.filename, photoIdx);
       await mode.peerHandle.endPhoto(photoIdx);
     } catch (err) {
       log.warn('Sidecar pump failed; engaging fallback', {

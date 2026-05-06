@@ -1255,6 +1255,47 @@ describe('CoordinatorWorker', () => {
       expect(peer.close).toHaveBeenCalledWith('success');
     });
 
+
+    it('prefers peerHandle.sendStream when available (streaming path)', async () => {
+      // 100 MB synthetic photo split into 1 MB upstream chunks. The handle's
+      // sendStream must observe the stream lazily and the legacy buffered
+      // send() must NOT be called.
+      const totalChunks = 100;
+      const chunkSize = 1024 * 1024;
+      let pulls = 0;
+      const mocked = opfsStaging as unknown as { readPhotoStream: ReturnType<typeof vi.fn> };
+      mocked.readPhotoStream.mockImplementation(async () => new ReadableStream<Uint8Array>({
+        pull(controller): void {
+          if (pulls < totalChunks) {
+            controller.enqueue(new Uint8Array(chunkSize));
+            pulls += 1;
+          } else {
+            controller.close();
+          }
+        },
+      }));
+      const sendStream = vi.fn(async (s: ReadableStream<Uint8Array>): Promise<void> => {
+        // Drain the stream to mimic the real transport.
+        const reader = s.getReader();
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { done } = await reader.read();
+          if (done) break;
+        }
+      });
+      const peer = { ...makeStubPeer(), sendStream };
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      const { jobId } = await worker.startJob({
+        ...validInput(),
+        outputMode: { kind: 'sidecar', peerHandle: peer, fallback: 'zip' },
+      });
+      await cbor.awaitScheduledDriver(worker, jobId);
+      expect(sendStream).toHaveBeenCalledTimes(1);
+      expect(peer.send).not.toHaveBeenCalled();
+      expect(peer.endPhoto).toHaveBeenCalledWith(0);
+    });
+
     it('falls back to zip finalizer when peer disconnects mid-job', async () => {
       const zipFinalizer = vi.fn(async () => undefined);
       cbor.setRunZipFinalizer(zipFinalizer as unknown as Parameters<typeof cbor.setRunZipFinalizer>[0]);
