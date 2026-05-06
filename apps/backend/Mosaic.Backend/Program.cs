@@ -296,6 +296,7 @@ app.MapTus("/api/files", async httpContext => new tusdotnet.Models.DefaultTusCon
 });
 
 app.MapSidecarSignaling();
+app.MapSidecarTelemetry();
 app.MapControllers();
 
 // Apply migrations on startup (dev mode or RUN_MIGRATIONS=true)
