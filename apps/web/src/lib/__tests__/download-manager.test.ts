@@ -95,6 +95,7 @@ describe('download-manager', () => {
     await disposeDownloadManager();
     await expect(getDownloadManager()).resolves.toBe(secondApi);
 
+    expect(firstApi.clear).toHaveBeenCalledTimes(1);
     expect(firstApi[releaseProxy]).toHaveBeenCalledTimes(1);
     expect(terminateMock).toHaveBeenCalledTimes(1);
     expect(workerConstructCount).toBe(2);
@@ -119,5 +120,6 @@ describe('download-manager', () => {
     expect(api.computeAlbumDiff).toHaveBeenCalledWith('job', { albumId: 'album', photos: [] });
   });
 });
+
 
 
