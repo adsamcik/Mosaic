@@ -1293,7 +1293,41 @@ export interface PerFilePhotoMeta {
 export type DownloadOutputMode =
   | { readonly kind: 'zip'; readonly fileName: string }
   | { readonly kind: 'keepOffline' }
-  | { readonly kind: 'perFile'; readonly strategy: PerFileStrategy };
+  | { readonly kind: 'perFile'; readonly strategy: PerFileStrategy }
+  | { readonly kind: 'sidecar'; readonly peerHandle: SidecarPeerHandle; readonly fallback: SidecarFallbackKind };
+
+/**
+ * Fallback finalizer to engage if the sidecar peer disconnects mid-job. The
+ * primary always stages plaintext to OPFS so a fallback finalizer can pick up
+ * over the same bytes:
+ *
+ * - `zip`     run the ZIP finalizer over OPFS-staged bytes
+ * - `perFile` run the per-file finalizer over OPFS-staged bytes
+ * - `none`    leave the job in a terminal state with a "sidecar may be incomplete" warning
+ */
+export type SidecarFallbackKind = 'zip' | 'perFile' | 'none';
+
+/**
+ * Bridge handle the React tree (where {@link pairSidecar} resolved) hands to
+ * the coordinator. The coordinator pushes finalized photo bytes through this
+ * sink in addition to OPFS staging.
+ *
+ * NOTE: when this handle is created in the main thread but the coordinator
+ * runs in a worker, the consumer is expected to wrap it with `Comlink.proxy`
+ * before passing it through the worker boundary.
+ */
+export interface SidecarPeerHandle {
+  /** Stable identifier for log scoping (NEVER full hex of the room id). */
+  readonly sessionId: string;
+  /** Push finalized plaintext bytes for one photo. Resolves once the bytes are queued/flushed. */
+  send(bytes: Uint8Array, filename: string, photoIdx: number): Promise<void>;
+  /** Resolves once the receiver acknowledges (or the sink finalized). */
+  endPhoto(photoIdx: number): Promise<void>;
+  /** Cleanly close the session. */
+  close(reason: 'success' | 'aborted' | 'failed'): Promise<void>;
+  /** Subscribe to peer-disconnected events so the coordinator can fall back. Returns an unsubscribe fn. */
+  onDisconnect(handler: (reason: string) => void): () => void;
+}
 
 /**
  * Worker-friendly byte sink the coordinator writes streamed finalizer output
