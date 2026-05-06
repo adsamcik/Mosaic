@@ -55,6 +55,10 @@ export interface CompletedShard {
   sha256: string; // Base64url hash for verification
   /** Shard tier: 1=thumb, 2=preview, 3=original */
   tier?: number;
+  /** Encrypted envelope byte length uploaded to TUS. */
+  contentLength?: number;
+  /** Shard envelope format version. */
+  envelopeVersion?: number;
 }
 
 /** Tiered shard result from upload (3 tiers) */

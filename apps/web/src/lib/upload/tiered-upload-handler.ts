@@ -210,6 +210,8 @@ export async function processTieredUpload(
       shardId: thumbShardId,
       sha256: thumbnailEncrypted.sha256,
       tier: 1,
+      contentLength: thumbnailEncrypted.envelopeBytes.byteLength,
+      envelopeVersion: 3,
     });
     task.progress = 0.33;
     ctx.onProgress?.(task);
@@ -227,6 +229,8 @@ export async function processTieredUpload(
       shardId: previewShardId,
       sha256: previewEncrypted.sha256,
       tier: 2,
+      contentLength: previewEncrypted.envelopeBytes.byteLength,
+      envelopeVersion: 3,
     });
     task.progress = 0.66;
     ctx.onProgress?.(task);
@@ -244,6 +248,8 @@ export async function processTieredUpload(
       shardId: originalShardId,
       sha256: originalEncrypted.sha256,
       tier: 3,
+      contentLength: originalEncrypted.envelopeBytes.byteLength,
+      envelopeVersion: 3,
     });
     task.progress = 1;
     ctx.onProgress?.(task);

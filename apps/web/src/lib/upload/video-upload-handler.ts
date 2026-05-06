@@ -151,6 +151,8 @@ export async function processVideoUpload(
       shardId: thumbShardId,
       sha256: thumbEncrypted.sha256,
       tier: 1,
+      contentLength: thumbEncrypted.envelopeBytes.byteLength,
+      envelopeVersion: 3,
     });
     task.progress = 0.2;
     ctx.onProgress?.(task);
@@ -193,6 +195,8 @@ export async function processVideoUpload(
         shardId: chunkShardId,
         sha256: chunkEncrypted.sha256,
         tier: 3,
+        contentLength: chunkEncrypted.envelopeBytes.byteLength,
+        envelopeVersion: 3,
       };
       task.completedShards.push(completedShard);
       originalShards.push(completedShard);
