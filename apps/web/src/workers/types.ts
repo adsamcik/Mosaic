@@ -1470,6 +1470,8 @@ export interface CoordinatorWorkerApi {
   initialize(opts: { readonly nowMs: number }): Promise<{ reconstructedJobs: number }>;
   /** Build a Rust download plan and create a new persisted job. */
   startJob(input: StartJobInput): Promise<{ jobId: string }>;
+  /** Clear coordinator-local state and terminate cached crypto workers (logout/teardown). */
+  clear(): Promise<void>;
   /** Apply a Rust download event, persist the updated snapshot, and emit progress. */
   sendEvent(jobId: string, event: DownloadEventInput): Promise<{ phase: DownloadPhase }>;
   /** Pause a running job. */

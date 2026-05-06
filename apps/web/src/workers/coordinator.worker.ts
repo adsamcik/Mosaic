@@ -94,9 +94,23 @@ interface ByteProgressTimer {
 }
 
 let getCryptoPoolForCoordinator = getCryptoPool;
+let cachedCryptoPoolForCoordinator: Promise<CryptoPool> | null = null;
 let executePhotoTaskForCoordinator = executePhotoTask;
 let runZipFinalizerForCoordinator: typeof defaultRunZipFinalizer = defaultRunZipFinalizer;
 let runPerFileFinalizerForCoordinator: typeof defaultRunPerFileFinalizer = defaultRunPerFileFinalizer;
+
+
+async function acquireCryptoPoolForCoordinator(): Promise<CryptoPool> {
+  cachedCryptoPoolForCoordinator ??= getCryptoPoolForCoordinator();
+  return cachedCryptoPoolForCoordinator;
+}
+
+async function shutdownCryptoPoolForCoordinator(): Promise<void> {
+  const poolPromise = cachedCryptoPoolForCoordinator;
+  cachedCryptoPoolForCoordinator = null;
+  const pool = await poolPromise;
+  await pool?.shutdown();
+}
 
 interface InMemoryJob {
   readonly jobId: string;
@@ -736,8 +750,8 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
         return src.resolveKey(albumId, Number.isFinite(epoch) ? epoch : 0);
       },
       decryptShard: async (bytes, key): Promise<Uint8Array> => {
-        const pool = await getCryptoPoolForCoordinator();
-        return pool.decryptShard(bytes, key);
+        const pool = await acquireCryptoPoolForCoordinator();
+        return pool.decryptShard(bytes, key, 1);
       },
       resolveJobThumbnails: async function* (jobId: string) {
         const manifest = self.jobThumbnailManifests.get(jobId) ?? [];
@@ -757,6 +771,41 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       },
     });
     return this.thumbnailStreamerInstance;
+  }
+
+  /** Clear coordinator-local state and terminate cached crypto workers (logout/teardown). */
+  async clear(): Promise<void> {
+    for (const abortController of this.jobAborts.values()) {
+      abortController.abort();
+    }
+    for (const timer of this.byteProgressTimers.values()) {
+      if (timer.pendingWrite) {
+        clearTimeout(timer.pendingWrite);
+      }
+    }
+    this.thumbnailStreamerInstance?.clear();
+    this.scheduleManagerInstance?.stop();
+    this.jobs.clear();
+    this.subscribers.clear();
+    this.jobMutations.clear();
+    this.jobAborts.clear();
+    this.jobDrivers.clear();
+    this.byteProgressTimers.clear();
+    this.jobOutputModes.clear();
+    this.jobSources.clear();
+    this.jobExportFailures.clear();
+    this.pausedNoSourceVisitorJobs.clear();
+    this.decryptCache.clear();
+    this.lastEvaluations.clear();
+    this.scheduledAt.clear();
+    this.jobThumbnailManifests.clear();
+    this.thumbnailStreamerInstance = null;
+    this.scheduleManagerInstance = null;
+    this.defaultAuthSource = null;
+    this.saveTargetProvider = null;
+    this.initialized = false;
+    this.initializePromise = null;
+    await shutdownCryptoPoolForCoordinator();
   }
 
   /** Garbage-collect stale OPFS jobs. */
@@ -961,7 +1010,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     if (!job || job.state.phase !== 'Running') {
       return;
     }
-    const pool = await getCryptoPoolForCoordinator();
+    const pool = await acquireCryptoPoolForCoordinator();
     const abortController = new AbortController();
     this.jobAborts.set(jobId, abortController);
     try {
@@ -2255,6 +2304,7 @@ export const __coordinatorWorkerTestUtils = {
   uintValue,
   phaseCodeByPhase: PHASE_CODE_BY_PHASE,
   setCryptoPoolFactory(factory: typeof getCryptoPool): void {
+    cachedCryptoPoolForCoordinator = null;
     getCryptoPoolForCoordinator = factory;
   },
   setExecutePhotoTask(fn: typeof executePhotoTask): void {
@@ -2273,6 +2323,7 @@ export const __coordinatorWorkerTestUtils = {
     interface SourceMapHolder { readonly jobSources: Map<string, SourceStrategy> }
     return (worker as unknown as SourceMapHolder).jobSources.get(jobId) ?? null;
   },
+  shutdownCryptoPoolForCoordinator,
   awaitScheduledDriver(worker: CoordinatorWorker, jobId: string): Promise<void> {
     interface DriverMapHolder { readonly jobDrivers: Map<string, Promise<void>> }
     const map = (worker as unknown as DriverMapHolder).jobDrivers;
@@ -2287,3 +2338,4 @@ export const __coordinatorWorkerTestUtils = {
     (worker as unknown as EvalHolder).lastEvaluations.set(jobId, evaluation);
   },
 };
+
