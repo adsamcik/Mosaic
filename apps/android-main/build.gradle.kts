@@ -206,6 +206,7 @@ dependencies {
   testImplementation(libs.junit4)
   testImplementation("androidx.room:room-testing:2.6.1")
   testImplementation("androidx.test:core-ktx:1.6.1")
+  testImplementation(libs.androidx.work.testing)
   testImplementation("org.robolectric:robolectric:4.13")
   testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
   testImplementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
