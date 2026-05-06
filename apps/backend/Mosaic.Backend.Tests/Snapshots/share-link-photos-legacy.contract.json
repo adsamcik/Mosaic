@@ -1,0 +1,11 @@
+{
+  "id": "string",
+  "versionCreated": "number",
+  "isDeleted": "boolean",
+  "encryptedMeta": "string",
+  "signature": "string",
+  "signerPubkey": "string",
+  "shardIds": [
+    "string"
+  ]
+}

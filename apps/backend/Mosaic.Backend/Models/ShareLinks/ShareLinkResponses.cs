@@ -1,3 +1,5 @@
+using Mosaic.Backend.Models.Photos;
+
 namespace Mosaic.Backend.Models.ShareLinks;
 
 /// <summary>
@@ -65,14 +67,4 @@ public class LinkEpochKeyResponse
 /// <summary>
 /// Response for photo metadata accessed via share link
 /// </summary>
-public class ShareLinkPhotoResponse
-{
-    public Guid Id { get; set; }
-    public long VersionCreated { get; set; }
-    public bool IsDeleted { get; set; }
-    public required byte[] EncryptedMeta { get; set; }
-    public required string Signature { get; set; }
-    public required string SignerPubkey { get; set; }
-    public DateTimeOffset? ExpiresAt { get; set; }
-    public required List<Guid> ShardIds { get; set; }
-}
+public class ShareLinkPhotoResponse : PhotoResponse;

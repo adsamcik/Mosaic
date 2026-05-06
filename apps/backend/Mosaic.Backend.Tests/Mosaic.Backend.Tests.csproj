@@ -27,4 +27,8 @@
     <ProjectReference Include="..\Mosaic.Backend\Mosaic.Backend.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Snapshots\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

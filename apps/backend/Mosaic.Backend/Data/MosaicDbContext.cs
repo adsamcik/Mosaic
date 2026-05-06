@@ -24,6 +24,7 @@ public class MosaicDbContext : DbContext
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     public DbSet<AlbumLimits> AlbumLimits => Set<AlbumLimits>();
     public DbSet<AlbumContent> AlbumContents => Set<AlbumContent>();
+    public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -241,6 +242,19 @@ public class MosaicDbContext : DbContext
 
             e.HasIndex(r => r.ExpiresAt);
             e.HasIndex(r => r.UserId);
+        });
+
+        // IdempotencyRecord
+        modelBuilder.Entity<IdempotencyRecord>(e =>
+        {
+            e.HasKey(r => new { r.UserId, r.IdempotencyKey });
+
+            e.HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(r => r.CreatedAt);
         });
 
         // Session
