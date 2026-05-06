@@ -32,6 +32,7 @@ $ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 Set-Location $ProjectRoot
 
 $ForbiddenNames = @(
+  'decryptShardWithEpoch',
   'verifyAndOpenBundle',
   'sealAndSignBundle',
   'importEpochKeyHandleFromBundle',
@@ -122,6 +123,24 @@ function Invoke-AllowlistRationaleQualityCheck([hashtable[]]$AllowlistTables) {
   }
 }
 
+function Assert-ForbiddenImportFixtureCaught([string]$Name, [string]$Source, [string]$ExpectedName) {
+  $fixtureViolations = New-Object System.Collections.Generic.List[string]
+  $matches = [regex]::Matches($Source, $ImportPattern)
+  foreach ($match in $matches) {
+    $module = $match.Groups['module'].Value
+    if ($module -notmatch $TargetModulePattern) { continue }
+    $clause = $match.Groups['clause'].Value
+    foreach ($forbiddenName in $ForbiddenNames) {
+      if ($clause -match "\b$([regex]::Escape($forbiddenName))\b") {
+        $fixtureViolations.Add("fixture:${Name}: forbidden raw-input WASM import '$forbiddenName' from '$module'")
+      }
+    }
+  }
+  if (-not ($fixtureViolations | Where-Object { $_ -match [regex]::Escape($ExpectedName) })) {
+    throw "forbidden import negative fixture '$Name' did not catch expected name '$ExpectedName'. Violations: $($fixtureViolations -join '; ')"
+  }
+}
+
 function Convert-ToRepoPath([string]$Path) {
   return [System.IO.Path]::GetRelativePath($ProjectRoot, $Path).Replace('\', '/')
 }
@@ -156,6 +175,7 @@ Assert-RationaleQualityFixtureCaught 'rationale-tbd' 'tbd' 'banned phrase check'
 Assert-RationaleQualityFixtureCaught 'rationale-short' 'short' 'length check'
 Assert-RationaleQualityFixtureCaught 'rationale-missing-classifier' 'Returns placeholder bytes with a long enough rationale for classifier validation.' 'missing classifier check'
 Assert-RationaleQualityFixtureCaught 'rationale-unknown-classifier' 'BACKWARD-COMPAT-LEGACY: Returns placeholder bytes with a long enough rationale for classifier validation.' 'classifier check'
+Assert-ForbiddenImportFixtureCaught 'legacy-decrypt-shard-with-epoch-import' "import { decryptShardWithEpoch } from '@mosaic/wasm';" 'decryptShardWithEpoch'
 Invoke-AllowlistRationaleQualityCheck @($AllowlistedFiles)
 
 $violations = New-Object System.Collections.Generic.List[string]

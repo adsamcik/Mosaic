@@ -43,8 +43,13 @@ $publicKeyName = '(public_?key|pub_?key|PublicKey|PubKey|pubkey)'
 $forbiddenRawBundleApis = @(
   'seal_and_sign_bundle',
   'seal_and_sign_bundle_js',
+  'decrypt_shard_with_epoch',
+  'decrypt_shard_with_epoch_js',
   'import_epoch_key_handle_from_bundle',
   'import_epoch_key_handle_from_bundle_js'
+)
+$forbiddenLegacyDtsFunctions = @(
+  'decryptShardWithEpoch'
 )
 $allowlist = @{
   'crates/mosaic-wasm/src/lib.rs::wrapped_account_key' = 'SAFE: Returns L2 account key encrypted under password-derived L1; unwrap requires password and account salt.'
@@ -181,6 +186,22 @@ function Assert-NegativeFixtureCaught([string]$Name, [string]$Source, [string]$E
   }
 }
 
+function Assert-DtsNegativeFixtureCaught([string]$Name, [string]$Source, [string]$ExpectedSymbol) {
+  $fixtureViolations = New-Object System.Collections.Generic.List[string]
+  $fixtureLines = $Source -split "`r?`n"
+  for ($i = 0; $i -lt $fixtureLines.Count; $i++) {
+    if ($fixtureLines[$i] -match '^\s*export\s+function\s+([A-Za-z0-9_]+)\(') {
+      $name = $Matches[1]
+      if ($forbiddenLegacyDtsFunctions -contains $name) {
+        $fixtureViolations.Add("tests/architecture/negative-fixtures/$Name.d.ts`:$($i + 1): forbidden legacy raw-seed WASM function '$name'")
+      }
+    }
+  }
+  if (-not ($fixtureViolations | Where-Object { $_ -match [regex]::Escape($ExpectedSymbol) })) {
+    throw "d.ts negative fixture '$Name' did not catch expected symbol '$ExpectedSymbol'. Violations: $($fixtureViolations -join '; ')"
+  }
+}
+
 function Invoke-NegativeFixtures {
   Assert-NegativeFixtureCaught 'cousin-verb-export-account-seed' 'pub fn export_account_seed() -> BytesResult { unimplemented!() }' 'export_account_seed'
   Assert-NegativeFixtureCaught 'exotic-return-box-u8' 'pub fn get_epoch_key() -> Box<[u8]> { unimplemented!() }' 'get_epoch_key'
@@ -189,6 +210,8 @@ function Invoke-NegativeFixtures {
   Assert-NegativeFixtureCaught 'exotic-return-arraybuffer' 'pub fn get_account_key() -> js_sys::ArrayBuffer { unimplemented!() }' 'get_account_key'
   Assert-NegativeFixtureCaught 'exotic-return-jsvalue' 'pub fn get_identity_key() -> JsValue { unimplemented!() }' 'get_identity_key'
   Assert-NegativeFixtureCaught 'wasm-bare-name-cow-u8' "pub fn leak() -> Cow<'static, [u8]> { unimplemented!() }" 'leak' 'crates/mosaic-wasm/src/lib.rs'
+  Assert-NegativeFixtureCaught 'legacy-raw-epoch-decrypt-export' 'pub fn decrypt_shard_with_epoch() -> BytesResult { unimplemented!() }' 'decrypt_shard_with_epoch'
+  Assert-DtsNegativeFixtureCaught 'legacy-raw-epoch-decrypt-dts' 'export function decryptShardWithEpoch(handle: bigint, envelope: Uint8Array): Uint8Array;' 'decryptShardWithEpoch'
   Assert-RationaleQualityFixtureCaught 'rationale-reviewed-existing-api' 'reviewed existing api' 'banned phrase check'
   Assert-RationaleQualityFixtureCaught 'rationale-internal-use' 'internal use' 'banned phrase check'
   Assert-RationaleQualityFixtureCaught 'rationale-not-a-secret' 'not a secret' 'banned phrase check'
@@ -271,6 +294,12 @@ foreach ($path in $dtsFiles) {
       $name = $Matches[1]
       if (Test-SecretName $name) {
         $violations.Add("$path`:$($i + 1): forbidden secret-shaped Uint8Array WASM function return '$name'")
+      }
+    }
+    if ($lines[$i] -match '^\s*export\s+function\s+([A-Za-z0-9_]+)\(') {
+      $name = $Matches[1]
+      if ($forbiddenLegacyDtsFunctions -contains $name) {
+        $violations.Add("$path`:$($i + 1): forbidden legacy raw-seed WASM function '$name'")
       }
     }
   }
