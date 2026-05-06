@@ -11,6 +11,7 @@ import java.util.Locale
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.android)
+  id("org.jetbrains.kotlin.plugin.serialization") version "2.0.21"
   id("com.google.devtools.ksp") version "2.0.21-1.0.28"
 }
 
@@ -189,6 +190,8 @@ dependencies {
   // maintained Android OkHttp-first artifact; keep OkHttp pinned for the A5a
   // spike and avoid adding a URLConnection-based Tus dependency.
   implementation("com.squareup.okhttp3:okhttp:4.12.0")
+  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
   // WorkManager powers the auto-import foreground (`dataSync`) worker. See
   // `apps/android-main/src/main/kotlin/org/mosaic/android/main/work/`.
   implementation(libs.androidx.work.runtime)
