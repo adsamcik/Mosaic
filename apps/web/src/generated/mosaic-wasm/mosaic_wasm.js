@@ -673,6 +673,55 @@ export class CryptoDomainGoldenVectorSnapshot {
 if (Symbol.dispose) CryptoDomainGoldenVectorSnapshot.prototype[Symbol.dispose] = CryptoDomainGoldenVectorSnapshot.prototype.free;
 
 /**
+ * WASM-bindgen class for stateless seed-based decrypted shard results.
+ */
+export class DecryptShardResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(DecryptShardResult.prototype);
+        obj.__wbg_ptr = ptr;
+        DecryptShardResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        DecryptShardResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_decryptshardresult_free(ptr, 0);
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.decryptshardresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Client-local plaintext bytes on successful decryption.
+     * @returns {Uint8Array}
+     */
+    get plaintext() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.decryptshardresult_plaintext(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) DecryptShardResult.prototype[Symbol.dispose] = DecryptShardResult.prototype.free;
+
+/**
  * WASM-bindgen class for decrypted album content results.
  */
 export class DecryptedContentResult {
@@ -2151,6 +2200,38 @@ export class StripResult {
 }
 if (Symbol.dispose) StripResult.prototype[Symbol.dispose] = StripResult.prototype.free;
 
+/**
+ * WASM-bindgen class for stateless shard integrity verification results.
+ */
+export class VerifyShardResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(VerifyShardResult.prototype);
+        obj.__wbg_ptr = ptr;
+        VerifyShardResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        VerifyShardResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_verifyshardresult_free(ptr, 0);
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.verifyshardresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) VerifyShardResult.prototype[Symbol.dispose] = VerifyShardResult.prototype.free;
+
 export class VerifySnapshotResult {
     static __wrap(ptr) {
         ptr = ptr >>> 0;
@@ -2855,6 +2936,21 @@ export function decryptShardWithLinkTierHandle(link_tier_handle, envelope_bytes)
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.decryptShardWithLinkTierHandle(link_tier_handle, ptr0, len0);
     return DecryptedShardResult.__wrap(ret);
+}
+
+/**
+ * Stateless seed-based shard decrypt through WASM.
+ * @param {Uint8Array} envelope
+ * @param {Uint8Array} key
+ * @returns {DecryptShardResult}
+ */
+export function decryptShardWithSeedV1(envelope, key) {
+    const ptr0 = passArray8ToWasm0(envelope, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(key, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.decryptShardWithSeedV1(ptr0, len0, ptr1, len1);
+    return DecryptShardResult.__wrap(ret);
 }
 
 /**
@@ -3733,6 +3829,21 @@ export function verifyShardIntegritySha256(envelope_bytes, expected_sha256) {
 }
 
 /**
+ * Stateless shard integrity verification through WASM.
+ * @param {Uint8Array} envelope
+ * @param {Uint8Array} expected_hash
+ * @returns {VerifyShardResult}
+ */
+export function verifyShardIntegrityV1(envelope, expected_hash) {
+    const ptr0 = passArray8ToWasm0(envelope, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(expected_hash, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.verifyShardIntegrityV1(ptr0, len0, ptr1, len1);
+    return VerifyShardResult.__wrap(ret);
+}
+
+/**
  * Wraps an epoch tier for an existing share-link handle through WASM.
  * @param {bigint} link_share_handle
  * @param {bigint} epoch_handle
@@ -3831,6 +3942,9 @@ const CreateLinkShareHandleResultFinalization = (typeof FinalizationRegistry ===
 const CryptoDomainGoldenVectorSnapshotFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_cryptodomaingoldenvectorsnapshot_free(ptr >>> 0, 1));
+const DecryptShardResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_decryptshardresult_free(ptr >>> 0, 1));
 const DecryptedContentResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_decryptedcontentresult_free(ptr >>> 0, 1));
@@ -3891,6 +4005,9 @@ const StreamingFrameResultFinalization = (typeof FinalizationRegistry === 'undef
 const StripResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_stripresult_free(ptr >>> 0, 1));
+const VerifyShardResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_verifyshardresult_free(ptr >>> 0, 1));
 const VerifySnapshotResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_verifysnapshotresult_free(ptr >>> 0, 1));

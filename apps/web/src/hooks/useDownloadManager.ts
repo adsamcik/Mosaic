@@ -2,10 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
 import { getDownloadManager } from '../lib/download-manager';
+import { defaultSaveTargetProvider } from '../lib/save-target-bridge';
 import type {
+  AlbumDiff,
   CoordinatorWorkerApi,
+  CurrentAlbumManifest,
   DownloadJobsBroadcastMessage,
+  DownloadOutputMode,
+  DownloadPhase,
   JobSummary,
+  ResumableJobSummary,
 } from '../workers/types';
 
 const log = createLogger('useDownloadManager');
@@ -15,10 +21,23 @@ const CHANNEL_NAME = 'mosaic-download-jobs';
 export interface UseDownloadManagerResult {
   readonly ready: boolean;
   readonly jobs: ReadonlyArray<JobSummary>;
+  readonly resumableJobs: ReadonlyArray<ResumableJobSummary>;
   readonly api: CoordinatorWorkerApi | null;
   readonly error: Error | null;
   /** Subscribe to a specific job and refresh jobs on progress; returns a cleanup callback. */
   subscribe(jobId: string): () => void;
+  /** Pause a running job through the coordinator. */
+  pauseJob(jobId: string): Promise<{ phase: DownloadPhase }>;
+  /**
+   * Resume a job through the coordinator. For reconstructed (post-restart)
+   * jobs the caller must pass `mode` so the worker can rebuild the
+   * in-memory output mode that was lost on restart.
+   */
+  resumeJob(jobId: string, opts?: { readonly mode?: DownloadOutputMode }): Promise<{ phase: DownloadPhase }>;
+  /** Cancel a job through the coordinator; hard cancel discards persisted progress. */
+  cancelJob(jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }>;
+  /** Compute a local manifest diff for a persisted download plan. */
+  computeAlbumDiff(jobId: string, current: CurrentAlbumManifest): Promise<AlbumDiff>;
 }
 
 /**
@@ -30,6 +49,7 @@ export interface UseDownloadManagerResult {
 export function useDownloadManager(): UseDownloadManagerResult {
   const [ready, setReady] = useState(false);
   const [jobs, setJobs] = useState<ReadonlyArray<JobSummary>>([]);
+  const [resumableJobs, setResumableJobs] = useState<ReadonlyArray<ResumableJobSummary>>([]);
   const [api, setApi] = useState<CoordinatorWorkerApi | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const apiRef = useRef<CoordinatorWorkerApi | null>(null);
@@ -39,8 +59,12 @@ export function useDownloadManager(): UseDownloadManagerResult {
     if (!currentApi) {
       return;
     }
-    const nextJobs = await currentApi.listJobs();
+    const [nextJobs, nextResumableJobs] = await Promise.all([
+      currentApi.listJobs(),
+      currentApi.listResumableJobs(),
+    ]);
     setJobs(nextJobs);
+    setResumableJobs(nextResumableJobs);
   }, []);
 
   useEffect(() => {
@@ -52,8 +76,25 @@ export function useDownloadManager(): UseDownloadManagerResult {
           return;
         }
         apiRef.current = manager;
+        // Register a single, app-shell-scoped save-target provider for the
+        // whole tab. Previously this was done per-mount inside
+        // useAlbumDownload, which let one Gallery unmount kill an in-flight
+        // finalizer's provider proxy. The DownloadManager singleton owns
+        // exactly one provider registration for its lifetime.
+        try {
+          await manager.setSaveTargetProvider(Comlink.proxy(defaultSaveTargetProvider));
+        } catch (caught) {
+          log.warn('Save-target provider registration failed', {
+            errorName: caught instanceof Error ? caught.name : 'Unknown',
+          });
+        }
         setApi(manager);
-        setJobs(await manager.listJobs());
+        const [initialJobs, initialResumableJobs] = await Promise.all([
+          manager.listJobs(),
+          manager.listResumableJobs(),
+        ]);
+        setJobs(initialJobs);
+        setResumableJobs(initialResumableJobs);
         setReady(true);
         setError(null);
       } catch (caught) {
@@ -117,7 +158,38 @@ export function useDownloadManager(): UseDownloadManagerResult {
     };
   }, [refreshJobs]);
 
-  return { ready, jobs, api, error, subscribe };
+
+  const requireApi = useCallback((): CoordinatorWorkerApi => {
+    const currentApi = apiRef.current;
+    if (!currentApi) {
+      throw new Error('Download manager is not ready');
+    }
+    return currentApi;
+  }, []);
+
+  const pauseJob = useCallback(async (jobId: string): Promise<{ phase: DownloadPhase }> => {
+    const result = await requireApi().pauseJob(jobId);
+    await refreshJobs();
+    return result;
+  }, [refreshJobs, requireApi]);
+
+  const resumeJob = useCallback(async (jobId: string, opts?: { readonly mode?: DownloadOutputMode }): Promise<{ phase: DownloadPhase }> => {
+    const result = opts === undefined ? await requireApi().resumeJob(jobId) : await requireApi().resumeJob(jobId, opts);
+    await refreshJobs();
+    return result;
+  }, [refreshJobs, requireApi]);
+
+  const cancelJob = useCallback(async (jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }> => {
+    const result = await requireApi().cancelJob(jobId, opts);
+    await refreshJobs();
+    return result;
+  }, [refreshJobs, requireApi]);
+
+  const computeAlbumDiff = useCallback((jobId: string, current: CurrentAlbumManifest): Promise<AlbumDiff> => {
+    return requireApi().computeAlbumDiff(jobId, current);
+  }, [requireApi]);
+
+  return { ready, jobs, resumableJobs, api, error, subscribe, pauseJob, resumeJob, cancelJob, computeAlbumDiff };
 }
 
 function isDownloadJobsBroadcastMessage(value: unknown): value is DownloadJobsBroadcastMessage {

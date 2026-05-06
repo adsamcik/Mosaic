@@ -1,0 +1,164 @@
+.download-tray {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  left: 1rem;
+  z-index: 900;
+  max-width: 960px;
+  margin: 0 auto;
+  color: var(--color-text, #e0e0e0);
+  background: var(--color-surface, #1a1a2e);
+  border: 1px solid var(--color-border, #2a2a4a);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+}
+
+.download-tray-strip {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+}
+
+.download-tray-summary {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.download-tray-title-text { font-weight: 700; }
+.download-tray-muted { color: var(--color-text-secondary, #a0a0b0); }
+.download-tray-live { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+.download-tray-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  color: var(--color-primary, #6c63ff);
+  background: var(--color-surface-elevated, #252545);
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.download-tray-status-icon--running,
+.download-tray-status-icon--preparing,
+.download-tray-status-icon--finalizing { animation: download-tray-pulse 1.5s ease-in-out infinite; }
+.download-tray-status-icon--done { color: var(--color-success, #4caf50); }
+.download-tray-status-icon--errored { color: var(--color-error, #dc2626); }
+
+@keyframes download-tray-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+.download-tray-strip-actions,
+.download-tray-job-actions,
+.download-tray-resume-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.download-tray-button,
+.download-tray-caret,
+.download-tray-link-button {
+  border: 1px solid var(--color-border, #2a2a4a);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text, #e0e0e0);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  padding: 0.35rem 0.6rem;
+}
+
+.download-tray-button:hover,
+.download-tray-caret:hover,
+.download-tray-link-button:hover,
+.download-tray-summary:hover { background: var(--color-surface-elevated, #252545); }
+.download-tray-button:disabled { cursor: wait; opacity: 0.65; }
+.download-tray-button--danger { color: var(--color-error, #dc2626); }
+.download-tray-caret { width: 2rem; }
+.download-tray-link-button { border: 0; color: var(--color-primary, #6c63ff); }
+
+.download-tray-panel {
+  border-top: 1px solid var(--color-border, #2a2a4a);
+  max-height: min(60vh, 28rem);
+  overflow: auto;
+  padding: 0.5rem;
+}
+
+.download-tray-job,
+.download-tray-resumable-row,
+.download-tray-resume-item {
+  border: 1px solid var(--color-border, #2a2a4a);
+  border-radius: 10px;
+  margin-bottom: 0.5rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.download-tray-job-main,
+.download-tray-resumable-row {
+  display: grid;
+  grid-template-columns: auto minmax(5rem, 1fr) auto auto minmax(10rem, 1.2fr);
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  cursor: pointer;
+}
+
+.download-tray-job-actions { padding: 0 0.6rem 0.6rem; justify-content: flex-end; }
+.download-tray-job-album,
+.download-tray-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+.download-tray-phase-badge,
+.download-tray-wake-badge,
+.download-tray-failure-badge,
+.download-tray-completed-badge {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+  background: var(--color-surface-elevated, #252545);
+  color: var(--color-text-secondary, #a0a0b0);
+  white-space: nowrap;
+}
+.download-tray-wake-badge { color: #fbbf24; }
+.download-tray-failure-badge { color: var(--color-error, #dc2626); }
+.download-tray-completed-badge { color: var(--color-success, #4caf50); }
+
+.download-tray-job-progress { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.download-tray-progressbar { flex: 1; height: 0.5rem; min-width: 4rem; border-radius: 999px; background: var(--color-surface-elevated, #252545); overflow: hidden; }
+.download-tray-progressbar-fill { height: 100%; min-width: 2%; border-radius: inherit; background: var(--color-primary, #6c63ff); transition: width 0.2s ease; }
+
+.download-tray-job-details { padding: 0 0.75rem 0.75rem 2.6rem; }
+.download-tray-counts { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 0 0 0.5rem; }
+.download-tray-counts div { display: flex; gap: 0.25rem; color: var(--color-text-secondary, #a0a0b0); }
+.download-tray-counts dd { margin: 0; color: var(--color-text, #e0e0e0); }
+
+.download-tray-failures { margin-top: 0.5rem; }
+.download-tray-failures-header { display: flex; align-items: center; justify-content: space-between; }
+.download-tray-failure-list { list-style: none; margin: 0.4rem 0 0; padding: 0; }
+.download-tray-failure { display: grid; grid-template-columns: 6rem 1fr auto; gap: 0.5rem; padding: 0.25rem 0; color: var(--color-text-secondary, #a0a0b0); }
+
+.download-tray-modal-backdrop { position: fixed; inset: 0; z-index: 1100; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, 0.45); }
+.download-tray-resume { width: min(42rem, calc(100vw - 2rem)); margin: 1rem; border: 1px solid var(--color-border, #2a2a4a); border-radius: 14px; background: var(--color-surface, #1a1a2e); padding: 1rem; }
+.download-tray-resume-list { list-style: none; margin: 0; padding: 0; }
+.download-tray-resume-item { padding: 0.75rem; display: grid; gap: 0.5rem; }
+.download-tray-diff { display: flex; flex-wrap: wrap; gap: 0.5rem; color: var(--color-text-secondary, #a0a0b0); }
+.download-tray-error { color: var(--color-error, #dc2626); }
+
+@media (max-width: 720px) {
+  .download-tray { right: 0.5rem; bottom: 0.5rem; left: 0.5rem; }
+  .download-tray-summary { flex-wrap: wrap; }
+  .download-tray-job-main,
+  .download-tray-resumable-row { grid-template-columns: auto 1fr; }
+  .download-tray-job-progress { grid-column: 1 / -1; }
+}

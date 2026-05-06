@@ -102,6 +102,13 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
     },
   ],
   [
+    'workers/crypto.worker-pool-member.ts',
+    {
+      rationale: 'pool members derive tier keys for legacy epoch-seed compatibility and zeroize derived key material; per-shard verify/decrypt routes through Rust WASM',
+      allowedSymbols: ['deriveTierKeys', 'memzero'],
+    },
+  ],
+  [
     'workers/types.ts',
     {
       rationale: 'temporary EncryptedShard worker API type (shell-class)',
@@ -273,7 +280,11 @@ describe('web Rust crypto cutover boundaries', () => {
   it('keeps the Rust crypto facade behind Comlink workers', () => {
     expect(
       importersMatching(/from\s+['"][^'"]*rust-crypto-core['"]/),
-    ).toEqual(['workers/coordinator.worker.ts', 'workers/crypto.worker.ts']);
+    ).toEqual([
+        'workers/coordinator.worker.ts',
+        'workers/crypto.worker-pool-member.ts',
+        'workers/crypto.worker.ts',
+      ]);
   });
 
   it('classifies every production @mosaic/crypto import as compatibility debt', () => {
@@ -619,3 +630,5 @@ describe('Rust cutover slice retirement guards', () => {
     });
   }
 });
+
+

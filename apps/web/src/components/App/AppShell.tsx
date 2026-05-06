@@ -9,7 +9,10 @@ import { ErrorBoundary } from '../ErrorBoundary';
 import { Gallery } from '../Gallery/Gallery';
 import { SectionErrorFallback } from '../SectionErrorFallback';
 import { SettingsPage } from '../Settings/SettingsPage';
+import { DownloadTray } from '../Download/DownloadTray';
+import { DownloadResumePrompt } from '../Download/DownloadResumePrompt';
 import { getApi } from '../../lib/api';
+import type { CurrentAlbumManifest } from '../../workers/types';
 
 /**
  * Main Application Shell
@@ -262,7 +265,20 @@ export function AppShell() {
             </ErrorBoundary>
           )}
         </main>
+        <DownloadTray />
+        <DownloadResumePrompt getCurrentManifest={getEmptyManifest} />
       </div>
     </SyncProvider>
   );
+}
+
+/**
+ * Phase 2 placeholder: AppShell does not yet have a path to the freshly
+ * decrypted album manifest at the moment the resume prompt opens. The diff
+ * UX is informational only; passing an empty manifest produces a diff with
+ * everything in 'removed', which is acceptable until album content is wired.
+ * Tracked as a Phase 3 follow-up.
+ */
+function getEmptyManifest(albumId: string): Promise<CurrentAlbumManifest> {
+  return Promise.resolve({ albumId, photos: [] });
 }

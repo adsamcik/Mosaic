@@ -1145,7 +1145,10 @@ export interface DownloadJobStateView {
 
 /** TS-side mirror of the minimal Rust per-photo state needed by progress summaries. */
 export interface DownloadPhotoStateView {
+  readonly photoId: string;
   readonly status: keyof DownloadPhotoCounts;
+  readonly bytesWritten: number;
+  readonly retryCount: number;
 }
 
 /** TS-side mirror of a Rust failure-log entry; intentionally omits photo ids. */
@@ -1186,9 +1189,68 @@ export interface DownloadBuildPlanInput {
   readonly photos: readonly DownloadBuildPlanPhotoInput[];
 }
 
+
+/** Per-file save strategy selected by browser capability detection. */
+export type PerFileStrategy =
+  | 'webShare'
+  | 'fsAccessPerFile'
+  | 'blobAnchor';
+
+/** Metadata the main thread needs before opening per-file save targets. */
+export interface PerFilePhotoMeta {
+  readonly photoId: string;
+  readonly filename: string;
+  readonly sizeBytes: number;
+}
+
+/**
+ * Output mode for a download job. Determines what (if anything) the
+ * coordinator does with OPFS-staged photo bytes once all photo tasks complete.
+ *
+ * - `zip`         emit a streaming ZIP archive to a user-provided save target
+ * - `keepOffline` no file output; bytes stay in OPFS so future browse-time
+ *                 viewers can stream from local storage
+ * - `perFile`     emit one file per staged photo using a capability-detected strategy
+ */
+export type DownloadOutputMode =
+  | { readonly kind: 'zip'; readonly fileName: string }
+  | { readonly kind: 'keepOffline' }
+  | { readonly kind: 'perFile'; readonly strategy: PerFileStrategy };
+
+/**
+ * Worker-friendly byte sink the coordinator writes streamed finalizer output
+ * into. The main thread implements this by adapting a real `WritableStream`
+ * (returned by `openZipSaveTarget`); the worker writes through it via Comlink.
+ */
+export interface RemoteByteSink {
+  write(chunk: Uint8Array): Promise<void>;
+  close(): Promise<void>;
+  abort(reason?: string): Promise<void>;
+}
+
+/** Main-thread per-file save target factory proxied to the coordinator worker. */
+export interface RemotePerFileSaveSink {
+  openOne(photoId: string, filename: string, sizeBytes: number): Promise<RemoteByteSink>;
+  finalize(): Promise<void>;
+  abort(): Promise<void>;
+}
+
+/** Main-thread save-target factory proxied to the coordinator worker. */
+export interface RemoteSaveTargetProvider {
+  openZipSaveTarget(fileName: string): Promise<RemoteByteSink>;
+  openPerFileSaveTarget(strategy: PerFileStrategy, photos: ReadonlyArray<PerFilePhotoMeta>): Promise<RemotePerFileSaveSink>;
+}
+
+
 /** Raw input accepted by Rust's `DownloadPlanBuilder`, plus the owning album id. */
 export interface StartJobInput extends DownloadBuildPlanInput {
   readonly albumId: string;
+  /**
+   * Optional output mode the coordinator drives during the Finalizing phase.
+   * Defaults to `keepOffline` when omitted. Phase 2 stores this in-memory only
+   * (not in the Rust snapshot); see top-of-file comment in coordinator.worker.ts.
+   */
+  readonly outputMode?: DownloadOutputMode;
 }
 
 /** Stable JS event shape for the Rust `DownloadJobEvent` transition table. */
@@ -1210,6 +1272,33 @@ export interface JobSummary {
   readonly failureCount: number;
   readonly createdAtMs: number;
   readonly lastUpdatedAtMs: number;
+}
+
+/** Job summary useful for resuming a partially completed non-terminal download. */
+export interface ResumableJobSummary extends JobSummary {
+  readonly photosDone: number;
+  readonly photosTotal: number;
+  readonly bytesWritten: number;
+  readonly lastUpdatedAtMs: number;
+}
+
+/** Freshly decrypted current album manifest supplied by the caller for local diffing. */
+export interface CurrentAlbumManifest {
+  readonly albumId: string;
+  readonly photos: ReadonlyArray<{
+    readonly photoId: string;
+    readonly epochId: number;
+    readonly tier3ShardIds: ReadonlyArray<string>;
+  }>;
+}
+
+/** Local comparison between a persisted download plan and the current album manifest. */
+export interface AlbumDiff {
+  readonly removed: ReadonlyArray<string>;
+  readonly added: ReadonlyArray<string>;
+  readonly rekeyed: ReadonlyArray<string>;
+  readonly unchanged: ReadonlyArray<string>;
+  readonly shardChanged: ReadonlyArray<string>;
 }
 
 /** Observe-only progress event delivered through worker subscriptions. */
@@ -1235,16 +1324,27 @@ export interface CoordinatorWorkerApi {
   initialize(opts: { readonly nowMs: number }): Promise<{ reconstructedJobs: number }>;
   /** Build a Rust download plan and create a new persisted job. */
   startJob(input: StartJobInput): Promise<{ jobId: string }>;
+  /** Clear coordinator-local state and terminate cached crypto workers (logout/teardown). */
+  clear(): Promise<void>;
   /** Apply a Rust download event, persist the updated snapshot, and emit progress. */
   sendEvent(jobId: string, event: DownloadEventInput): Promise<{ phase: DownloadPhase }>;
   /** Pause a running job. */
   pauseJob(jobId: string): Promise<{ phase: DownloadPhase }>;
-  /** Resume a paused job. */
-  resumeJob(jobId: string): Promise<{ phase: DownloadPhase }>;
+  /**
+   * Resume a job. Pass `mode` for reconstructed (post-restart) jobs whose
+   * in-memory output mode was lost; the coordinator registers it before
+   * scheduling the driver / re-running the finalizer. For Paused jobs whose
+   * mode is already in-memory, `opts` may be omitted.
+   */
+  resumeJob(jobId: string, opts?: { readonly mode?: DownloadOutputMode }): Promise<{ phase: DownloadPhase }>;
   /** Cancel a job; hard cancel also purges OPFS staging. */
   cancelJob(jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }>;
   /** List all known in-memory jobs. */
   listJobs(): Promise<JobSummary[]>;
+  /** List non-terminal jobs with at least one completed photo for resume prompts. */
+  listResumableJobs(): Promise<ResumableJobSummary[]>;
+  /** Compute a local diff between a persisted plan and a freshly decrypted manifest. */
+  computeAlbumDiff(jobId: string, current: CurrentAlbumManifest): Promise<AlbumDiff>;
   /** Return an in-memory job summary without re-reading OPFS. */
   getJob(jobId: string): Promise<JobSummary | null>;
   /** Subscribe to progress events for one job. Caller must unsubscribe. */
@@ -1255,4 +1355,10 @@ export interface CoordinatorWorkerApi {
     readonly maxAgeMs: number;
     readonly preserveJobIds?: ReadonlyArray<string>;
   }): Promise<{ purged: string[] }>;
+  /**
+   * Register/clear the main-thread save-target factory used by the ZIP finalizer.
+   * The factory must be registered before `startJob` is called with
+   * `outputMode.kind === 'zip'` or `perFile`; otherwise finalization fails with IllegalState.
+   */
+  setSaveTargetProvider(provider: RemoteSaveTargetProvider | null): Promise<void>;
 }

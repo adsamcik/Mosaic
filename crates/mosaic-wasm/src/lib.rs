@@ -20,7 +20,7 @@ use ciborium::value::{Integer, Value};
 
 use self_cell::self_cell;
 use wasm_bindgen::prelude::{JsError, JsValue, wasm_bindgen};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use mosaic_domain::{
     MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier as DomainShardTier,
@@ -349,6 +349,32 @@ impl fmt::Debug for DecryptedShardResult {
     }
 }
 
+/// Rust-side WASM facade result for stateless seed-based shard decrypt.
+///
+/// Carries client-local plaintext bytes on success and zeroizes them on drop.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DecryptShardResult {
+    /// 0 on success; [`mosaic_client::ClientErrorCode`] otherwise.
+    pub code: u32,
+    /// Plaintext bytes on success. Empty on error.
+    pub plaintext: Vec<u8>,
+}
+
+impl Drop for DecryptShardResult {
+    fn drop(&mut self) {
+        self.plaintext.zeroize();
+    }
+}
+
+impl fmt::Debug for DecryptShardResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DecryptShardResult")
+            .field("code", &self.code)
+            .field("plaintext_len", &self.plaintext.len())
+            .finish()
+    }
+}
+
 /// Rust-side WASM facade streaming encrypted frame result.
 #[derive(Clone, PartialEq, Eq)]
 pub struct StreamingFrameResult {
@@ -365,6 +391,13 @@ impl fmt::Debug for StreamingFrameResult {
             .field("bytes_len", &self.bytes.len())
             .finish()
     }
+}
+
+/// Rust-side WASM facade result for stateless shard integrity verification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VerifyShardResult {
+    /// 0 on success; [`mosaic_client::ClientErrorCode`] otherwise.
+    pub code: u32,
 }
 
 /// Rust-side WASM facade finalized streaming envelope result.
@@ -1594,6 +1627,52 @@ impl JsDecryptedShardResult {
     }
 }
 
+/// WASM-bindgen class for stateless seed-based decrypted shard results.
+#[wasm_bindgen(js_name = DecryptShardResult)]
+pub struct JsDecryptShardResult {
+    code: u32,
+    plaintext: Vec<u8>,
+}
+
+impl Drop for JsDecryptShardResult {
+    fn drop(&mut self) {
+        self.plaintext.zeroize();
+    }
+}
+
+#[wasm_bindgen(js_class = DecryptShardResult)]
+impl JsDecryptShardResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+
+    /// Client-local plaintext bytes on successful decryption.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn plaintext(&self) -> Vec<u8> {
+        self.plaintext.clone()
+    }
+}
+
+/// WASM-bindgen class for stateless shard integrity verification results.
+#[wasm_bindgen(js_name = VerifyShardResult)]
+pub struct JsVerifyShardResult {
+    code: u32,
+}
+
+#[wasm_bindgen(js_class = VerifyShardResult)]
+impl JsVerifyShardResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+}
+
 /// WASM-bindgen class for streaming encrypted/decrypted frame results.
 #[wasm_bindgen(js_name = StreamingFrameResult)]
 pub struct JsStreamingFrameResult {
@@ -2267,7 +2346,6 @@ pub const fn protocol_version() -> &'static str {
 }
 
 /// Returns the ADR-022 canonical manifest-finalize idempotency key.
-#[must_use]
 pub fn finalize_idempotency_key(job_id: String) -> Result<String, u16> {
     let uuid = uuid_from_string(&job_id)?;
     Ok(mosaic_client::finalize_idempotency_key(&uuid))
@@ -3205,6 +3283,55 @@ pub fn decrypt_shard_with_legacy_raw_key_handle(
     }
 }
 
+/// Stateless seed-based shard decrypt. Used by stateless crypto worker pool members.
+///
+/// Key is the 32-byte `SecretKey` (epoch tier seed for authenticated viewers;
+/// tier key for share-link viewers). Plaintext is zeroized when the result is dropped.
+#[must_use]
+pub fn decrypt_shard_with_seed_v1(envelope: &[u8], key: &[u8]) -> DecryptShardResult {
+    let mut key_bytes = Zeroizing::new(key.to_vec());
+    let secret_key = match mosaic_crypto::SecretKey::from_bytes(key_bytes.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => {
+            return DecryptShardResult {
+                code: download_decrypt_error_code(error),
+                plaintext: Vec::new(),
+            };
+        }
+    };
+
+    match mosaic_crypto::decrypt_shard(envelope, &secret_key) {
+        Ok(plaintext) => DecryptShardResult {
+            code: client_ok(),
+            plaintext: plaintext.to_vec(),
+        },
+        Err(error) => DecryptShardResult {
+            code: download_decrypt_error_code(error),
+            plaintext: Vec::new(),
+        },
+    }
+}
+
+/// Stateless shard integrity verification against the expected envelope SHA-256.
+#[must_use]
+pub fn verify_shard_integrity_v1(envelope: &[u8], expected_hash: &[u8]) -> VerifyShardResult {
+    let expected = match <[u8; 32]>::try_from(expected_hash) {
+        Ok(value) => mosaic_crypto::ShardSha256(value),
+        Err(_) => {
+            return VerifyShardResult {
+                code: client_code(mosaic_client::ClientErrorCode::InvalidInputLength),
+            };
+        }
+    };
+
+    match mosaic_crypto::verify_shard_integrity(envelope, &expected) {
+        Ok(()) => VerifyShardResult { code: client_ok() },
+        Err(error) => VerifyShardResult {
+            code: shard_integrity_error_code(error),
+        },
+    }
+}
+
 /// Returns deterministic public crypto/domain golden vectors for Rust-side wrapper tests.
 #[must_use]
 pub fn crypto_domain_golden_vector_snapshot() -> CryptoDomainGoldenVectorSnapshot {
@@ -3987,16 +4114,34 @@ const fn media_tier_dimensions(dimensions: mosaic_media::TierDimensions) -> Medi
 }
 
 fn canonical_tier_layout_result() -> MediaTierLayoutResult {
-    let layout = mosaic_media::plan_tier_layout(
+    match mosaic_media::plan_tier_layout(
         mosaic_media::ORIGINAL_MAX_DIMENSION,
         mosaic_media::ORIGINAL_MAX_DIMENSION,
-    )
-    .expect("canonical original dimensions must be valid");
-    MediaTierLayoutResult {
-        code: mosaic_client::ClientErrorCode::Ok.as_u16(),
-        thumbnail: media_tier_dimensions(layout.thumbnail),
-        preview: media_tier_dimensions(layout.preview),
-        original: media_tier_dimensions(layout.original),
+    ) {
+        Ok(layout) => MediaTierLayoutResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            thumbnail: media_tier_dimensions(layout.thumbnail),
+            preview: media_tier_dimensions(layout.preview),
+            original: media_tier_dimensions(layout.original),
+        },
+        Err(error) => MediaTierLayoutResult {
+            code: media_error_code(error),
+            thumbnail: MediaTierDimensions {
+                tier: ShardTier::Thumbnail as u8,
+                width: 0,
+                height: 0,
+            },
+            preview: MediaTierDimensions {
+                tier: ShardTier::Preview as u8,
+                width: 0,
+                height: 0,
+            },
+            original: MediaTierDimensions {
+                tier: ShardTier::Original as u8,
+                width: 0,
+                height: 0,
+            },
+        },
     }
 }
 
@@ -4459,6 +4604,23 @@ pub fn decrypt_shard_with_legacy_raw_key_handle_js(
         handle,
         envelope_bytes,
     ))
+}
+
+/// Stateless seed-based shard decrypt through WASM.
+#[wasm_bindgen(js_name = decryptShardWithSeedV1)]
+#[must_use]
+pub fn decrypt_shard_with_seed_v1_js(envelope: Vec<u8>, key: Vec<u8>) -> JsDecryptShardResult {
+    js_decrypt_shard_result_from_rust(decrypt_shard_with_seed_v1(&envelope, &key))
+}
+
+/// Stateless shard integrity verification through WASM.
+#[wasm_bindgen(js_name = verifyShardIntegrityV1)]
+#[must_use]
+pub fn verify_shard_integrity_v1_js(
+    envelope: Vec<u8>,
+    expected_hash: Vec<u8>,
+) -> JsVerifyShardResult {
+    js_verify_shard_result_from_rust(verify_shard_integrity_v1(&envelope, &expected_hash))
 }
 
 /// Returns deterministic public crypto/domain golden vectors through WASM.
@@ -5087,6 +5249,17 @@ fn decrypted_shard_result_from_client(
         code: result.code.as_u16(),
         plaintext: std::mem::take(&mut result.plaintext),
     }
+}
+
+fn js_decrypt_shard_result_from_rust(mut result: DecryptShardResult) -> JsDecryptShardResult {
+    JsDecryptShardResult {
+        code: result.code,
+        plaintext: std::mem::take(&mut result.plaintext),
+    }
+}
+
+fn js_verify_shard_result_from_rust(result: VerifyShardResult) -> JsVerifyShardResult {
+    JsVerifyShardResult { code: result.code }
 }
 
 fn auth_keypair_result_from_client(result: mosaic_client::AuthKeypairResult) -> AuthKeypairResult {
@@ -5998,6 +6171,38 @@ fn client_ok() -> u32 {
 
 fn client_code(code: mosaic_client::ClientErrorCode) -> u32 {
     u32::from(code.as_u16())
+}
+
+fn download_decrypt_error_code(error: mosaic_crypto::MosaicCryptoError) -> u32 {
+    let code = match error {
+        mosaic_crypto::MosaicCryptoError::InvalidEnvelope
+        | mosaic_crypto::MosaicCryptoError::MissingCiphertext => {
+            mosaic_client::ClientErrorCode::InvalidEnvelope
+        }
+        mosaic_crypto::MosaicCryptoError::AuthenticationFailed => {
+            mosaic_client::ClientErrorCode::DownloadDecrypt
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidKeyLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidKeyLength
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidInputLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidInputLength
+        }
+        _ => mosaic_client::ClientErrorCode::DownloadDecrypt,
+    };
+    client_code(code)
+}
+
+fn shard_integrity_error_code(error: mosaic_crypto::ShardIntegrityError) -> u32 {
+    let code = match error {
+        mosaic_crypto::ShardIntegrityError::InvalidEnvelopeLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidEnvelope
+        }
+        mosaic_crypto::ShardIntegrityError::DigestMismatch => {
+            mosaic_client::ClientErrorCode::DownloadIntegrity
+        }
+    };
+    client_code(code)
 }
 
 fn apply_event_error(code: mosaic_client::ClientErrorCode) -> ApplyEventResult {
