@@ -40,7 +40,7 @@ about the pairing code.
 | P4-B  | WebSocket signaling relay (server) + client wrapper     | ✅ landed |
 | P4-C  | WebRTC peer + framing + chunker + receive sink + pairSidecar() | ✅ landed |
 | P4-D  | DownloadOutputMode integration + UI + /pair receive page | ✅ landed |
-| P4-E  | QR pairing URL, streaming sender, tray badge | ✅ landed |
+| P4-E  | QR pairing URL, streaming sender, tray badge, ZK telemetry, broadcast suppression, beta-rollout docs | ✅ landed |
 
 ## P4-B — signaling relay
 
@@ -171,3 +171,83 @@ pairSidecar({ role: 'initiator' }) is preserved as a thin wrapper
 ### ZK-safe logging
 
 All new files (`SidecarPairingModal`, `SidecarReceivePage`, coordinator sidecar helpers) follow the existing logger conventions: never log the pairing code, full room id, file bytes, file sizes, or peer SDP/ICE candidate details. The `sessionId` exposed to the coordinator is a derived 6-char tag, not the room id.
+
+## P4-E - telemetry, suppression, beta-rollout polish
+
+### ZK-safe telemetry (`apps/web/src/lib/sidecar/telemetry.ts` + `SidecarTelemetryEndpoint.cs`)
+
+Coarse counters only. The collector ONLY admits the public schema:
+
+- `event` enum (7 values)
+- `errCode` enum (6 values)
+- `turnUsed` boolean
+- `photoCountBucket` / `bytesBucket` / `throughputBucket` / `durationBucket` enums
+
+Continuous numeric values (raw bytes, raw durations) are bucketed
+client-side via `bucketBytes` / `bucketDuration` / `bucketThroughput`
+/ `bucketPhotoCount` BEFORE they leave the module. The `sanitizeEvent()`
+gate strips every property not in the schema, so smuggle vectors
+(roomId, code, msg1, sessionId, raw byte counts) cannot leave the tab.
+
+Two-flag gating: collector is a no-op unless BOTH `featureFlags.sidecar`
+AND `featureFlags.sidecarTelemetry` are on. Telemetry is OFF by default
+even when the feature itself is enabled, so devs can disable telemetry
+independently.
+
+Backend endpoint (`POST /api/sidecar/telemetry/v1`) re-validates the
+schema strictly, rejects malformed JSON / oversized batches / unknown
+bucket values, and emits one structured-log line per event with a
+fixed message template. NO IPs, NO user ids, NO request timestamps
+beyond the implicit log-line time.
+
+### Cross-tab broadcast suppression
+
+Sidecar jobs are per-tab (the `SidecarPeerHandle` is unreachable from
+siblings). The coordinator's `broadcast()` early-returns when the
+job's in-memory outputMode kind is `'sidecar'`, reducing noise on
+tray subscribers. Once a sidecar job engages its fallback (zip /
+perFile), broadcasting resumes naturally because the kind is no
+longer `'sidecar'`.
+
+This is a polish, not a leak: sibling tabs already filter cross-scope
+messages via `scopeKey`, so a stray broadcast would be dropped on
+the receive side anyway.
+
+### Cross-device integration tests
+
+`apps/web/src/lib/sidecar/__tests__/sidecar-cross-device.test.ts`
+exercises the full sender + receiver pipeline in-process (mocked
+WebRTC + signaling) for:
+
+- 50 synthetic photos x 256 KiB - byte-equal verification per file
+- PAKE confirm-mismatch -> `PairingError(WrongCode)`
+- AbortSignal during handshake -> `PairingError(Aborted)` on both sides
+- Three sequential sessions on the same code without state leaks
+
+Larger sizes (5 MB / 1000 photos) and real-network scenarios are
+covered by the manual `docs/sidecar-test-matrix.md` checklist run
+by QA before flipping the flag from beta to GA.
+
+### Known TS gaps (pre-existing, not P4-introduced)
+
+After the P4-E TypeScript cleanup commit, `tsc --noEmit` from
+`apps/web` reports 21 errors. ALL of them pre-date the sidecar work;
+they are kept here as the running tally so the next agent can verify
+they have not regressed.
+
+Distribution at HEAD of `feat/sidecar-beacon`:
+
+| File / area                                                   | Count | Nature |
+|---------------------------------------------------------------|-------|--------|
+| `libs/crypto/src/*.ts` (libsodium-wrappers types missing)   |  13   | Build dependency missing types in the workspace tsconfig path |
+| `src/workers/__tests__/coordinator-schedule.test.ts`        |   3   | CborValue narrowing + an unused `readPhase` |
+| `src/components/Download/__tests__/DownloadResumePrompt.test.tsx` | 1 | UseDownloadManagerResult missing two new fields |
+| `src/components/Download/DownloadJobRow.tsx`                |   1   | i18next `TFunction` shape mismatch |
+| `src/components/Gallery/__tests__/Gallery.test.tsx`         |   1   | DownloadOutputMode `schedule` not assignable |
+| `src/lib/download-schedule.ts`                              |   1   | Unused `isWifiLike` helper |
+| `src/workers/coordinator/__tests__/source-strategy.test.ts` |   1   | `ApiError` value used as a type |
+
+P4 itself introduced 35 errors that have been fixed in commit
+`fix(web): clean up P4-introduced TypeScript strict-mode gaps`. No
+new errors are added by P4-E.
+
