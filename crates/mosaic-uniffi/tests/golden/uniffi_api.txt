@@ -72,6 +72,21 @@ enum ClientErrorCode
   ManifestSetConflict = 709
   BackendIdempotencyConflict = 710
   VideoPosterExtractionFailed = 711
+  DownloadInvalidPlan = 720
+  DownloadIllegalTransition = 721
+  DownloadSnapshotMigration = 722
+  DownloadSnapshotCorrupt = 723
+  DownloadSnapshotChecksumMismatch = 724
+  DownloadSnapshotTorn = 725
+  DownloadTransientNetwork = 726
+  DownloadIntegrity = 727
+  DownloadDecrypt = 728
+  DownloadNotFound = 729
+  DownloadQuota = 730
+  DownloadCancelled = 731
+  DownloadAccessRevoked = 732
+  DownloadAuthorizationChanged = 733
+  DownloadIllegalState = 734
   PinValidationFailed = 800
 end
 record HeaderResult
@@ -467,3 +482,54 @@ export pub fn build_auth_challenge_transcript_bytes( username: String, timestamp
 export pub fn sign_auth_challenge_with_raw_seed( transcript_bytes: Vec<u8>, auth_signing_seed: Vec<u8>, ) -> BytesResult
 export pub fn verify_auth_challenge_signature( transcript_bytes: Vec<u8>, signature: Vec<u8>, auth_public_key: Vec<u8>, ) -> AuthChallengeVerifyFfiResult
 export pub fn decrypt_content_with_raw_key( content_key: Vec<u8>, nonce: Vec<u8>, ciphertext: Vec<u8>, epoch_id: u32, ) -> ContentDecryptFfiResult
+record DownloadPlanShardInput
+  shard_id: Vec<u8>
+  epoch_id: u32
+  tier: u8
+  expected_hash: Vec<u8>
+  declared_size: u64
+end
+record DownloadPlanEntryInput
+  photo_id: String
+  filename: String
+  shards: Vec<DownloadPlanShardInput>
+end
+record DownloadPlanInput
+  album_id: Vec<u8>
+  entries: Vec<DownloadPlanEntryInput>
+end
+record DownloadPlanResult
+  code: u16
+  plan_cbor: Vec<u8>
+  error_detail: Option<String>
+end
+record DownloadInitInput
+  job_id: Vec<u8>
+  album_id: Vec<u8>
+  plan_cbor: Vec<u8>
+  now_ms: u64
+end
+record SnapshotBytesResult
+  code: u16
+  body: Vec<u8>
+  checksum: Vec<u8>
+end
+record ApplyEventResult
+  code: u16
+  new_state_cbor: Vec<u8>
+end
+record LoadSnapshotResult
+  code: u16
+  snapshot_cbor: Vec<u8>
+  schema_version_loaded: u32
+end
+record VerifySnapshotResult
+  code: u16
+  valid: bool
+end
+export pub fn build_download_plan(input: DownloadPlanInput) -> DownloadPlanResult
+export pub fn init_download_job(input: DownloadInitInput) -> SnapshotBytesResult
+export pub fn apply_download_event(state_cbor: Vec<u8>, event_cbor: Vec<u8>) -> ApplyEventResult
+export pub fn load_download_snapshot(snapshot_cbor: Vec<u8>, checksum: Vec<u8>) -> LoadSnapshotResult
+export pub fn commit_download_snapshot(snapshot_cbor: Vec<u8>) -> SnapshotBytesResult
+export pub fn verify_download_snapshot(snapshot_cbor: Vec<u8>, checksum: Vec<u8>) -> VerifySnapshotResult

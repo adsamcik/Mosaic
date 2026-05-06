@@ -815,3 +815,81 @@ fn build_webp_vp8l(width: u32, height: u32) -> Vec<u8> {
     }
     bytes
 }
+
+// ---------------------------------------------------------------------------
+// Download orchestrator UniFFI edge-case coverage.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn uniffi_build_download_plan_accepts_empty_entries_and_returns_empty_plan_cbor_array() {
+    use mosaic_uniffi::{DownloadPlanInput, build_download_plan};
+    let result = build_download_plan(DownloadPlanInput {
+        album_id: vec![0_u8; 16],
+        entries: Vec::new(),
+    });
+    assert_eq!(result.code, ClientErrorCode::Ok.as_u16());
+    assert!(result.error_detail.is_none());
+    // An empty plan canonically encodes as a single byte CBOR empty array (0x80).
+    assert_eq!(result.plan_cbor, vec![0x80]);
+}
+
+#[test]
+fn uniffi_build_download_plan_rejects_photo_with_no_shards() {
+    use mosaic_uniffi::{DownloadPlanEntryInput, DownloadPlanInput, build_download_plan};
+    let result = build_download_plan(DownloadPlanInput {
+        album_id: vec![0_u8; 16],
+        entries: vec![DownloadPlanEntryInput {
+            photo_id: "photo-empty".to_owned(),
+            filename: "empty.jpg".to_owned(),
+            shards: Vec::new(),
+        }],
+    });
+    assert_eq!(result.code, ClientErrorCode::DownloadInvalidPlan.as_u16());
+    let detail = result.error_detail.unwrap_or_default();
+    assert!(
+        detail.starts_with("PhotoHasNoShards:"),
+        "expected PhotoHasNoShards, got {detail:?}"
+    );
+}
+
+#[test]
+fn uniffi_apply_download_event_rejects_zero_length_state_cbor() {
+    use mosaic_uniffi::apply_download_event;
+    let result = apply_download_event(Vec::new(), Vec::new());
+    assert_eq!(
+        result.code,
+        ClientErrorCode::DownloadSnapshotCorrupt.as_u16()
+    );
+    assert!(result.new_state_cbor.is_empty());
+}
+
+#[test]
+fn uniffi_load_download_snapshot_rejects_zero_length_snapshot_cbor() {
+    use mosaic_uniffi::load_download_snapshot;
+    let result = load_download_snapshot(Vec::new(), vec![0_u8; 32]);
+    assert_eq!(
+        result.code,
+        ClientErrorCode::DownloadSnapshotChecksumMismatch.as_u16()
+    );
+}
+
+#[test]
+fn uniffi_commit_download_snapshot_rejects_garbage_bytes() {
+    use mosaic_uniffi::commit_download_snapshot;
+    let result = commit_download_snapshot(vec![0xff_u8, 0x00, 0xde, 0xad]);
+    assert_eq!(
+        result.code,
+        ClientErrorCode::DownloadSnapshotCorrupt.as_u16()
+    );
+    assert!(result.body.is_empty());
+    assert!(result.checksum.is_empty());
+}
+
+#[test]
+fn uniffi_verify_download_snapshot_returns_ok_code_with_invalid_flag_for_empty_inputs() {
+    use mosaic_uniffi::verify_download_snapshot;
+    // Empty body with empty checksum: code is Ok (constant-time path), valid is false.
+    let result = verify_download_snapshot(Vec::new(), Vec::new());
+    assert_eq!(result.code, ClientErrorCode::Ok.as_u16());
+    assert!(!result.valid);
+}
