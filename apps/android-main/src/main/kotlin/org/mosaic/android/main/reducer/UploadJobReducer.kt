@@ -483,4 +483,3 @@ fun RustClientCoreUploadJobFfiSnapshot.toUploadJobSnapshotRow(updatedAtMs: Long)
 
 fun UploadJobSnapshotRow.decodeUploadSnapshot(): RustClientCoreUploadJobFfiSnapshot =
   UploadJobSnapshotCodec.decode(canonicalCborBytes)
-

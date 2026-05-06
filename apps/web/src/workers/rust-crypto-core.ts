@@ -16,6 +16,7 @@
  */
 
 import initRustWasm, * as rustWasm from '../generated/mosaic-wasm/mosaic_wasm.js';
+import type { DownloadSchedule } from '../lib/download-schedule';
 import { WorkerCryptoError, WorkerCryptoErrorCode } from './types';
 
 const RUST_OK = 0;
@@ -156,6 +157,8 @@ export class RustHandleFacade {
     readonly albumId: string;
     readonly planBytes: Uint8Array;
     readonly nowMs: number;
+    readonly scopeKey: string;
+    readonly schedule?: DownloadSchedule | null;
   }): { bodyBytes: Uint8Array; checksum: Uint8Array } {
     const result = rustWasm.downloadInitSnapshotV1(
       encodeDownloadInitSnapshotInput(input),
@@ -905,6 +908,8 @@ export async function rustInitDownloadSnapshot(input: {
   readonly albumId: string;
   readonly planBytes: Uint8Array;
   readonly nowMs: number;
+  readonly scopeKey: string;
+  readonly schedule?: DownloadSchedule | null;
 }): Promise<{ bodyBytes: Uint8Array; checksum: Uint8Array }> {
   return (await getRustFacade()).initDownloadSnapshot(input);
 }
@@ -956,6 +961,93 @@ export async function rustVerifyShardIntegrity(
   const result = rustWasm.verifyShardIntegrityV1(envelope, expectedHash);
   consumeResult(result, 'verifyShardIntegrityV1', () => undefined);
 }
+const STREAMING_CHUNK_TAG_BYTES = 16;
+
+export interface StreamingShardDecryptor {
+  /** Process a wire-format chunk; returns plaintext bytes. Pass isFinal=true for the last chunk. */
+  processChunk(chunk: Uint8Array, isFinal: boolean): Promise<Uint8Array>;
+  /** Release WASM resources. Idempotent. */
+  close(): Promise<void>;
+  /** Plaintext chunk size declared in the envelope header (bytes). */
+  readonly chunkSizeBytes: number;
+}
+
+class StreamingShardDecryptorImpl implements StreamingShardDecryptor {
+  private handleId: number | null;
+  public readonly chunkSizeBytes: number;
+
+  constructor(handleId: number, chunkSizeBytes: number) {
+    this.handleId = handleId;
+    this.chunkSizeBytes = chunkSizeBytes;
+  }
+
+  async processChunk(chunk: Uint8Array, isFinal: boolean): Promise<Uint8Array> {
+    if (this.handleId === null) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.StaleHandle,
+        'streamingShardProcessChunkV1 called after close',
+      );
+    }
+    await ensureRustReady();
+    const result = rustWasm.streamingShardProcessChunkV1(
+      this.handleId,
+      chunk,
+      isFinal,
+    );
+    try {
+      const plaintext = consumeResult(result, 'streamingShardProcessChunkV1', (r) =>
+        copyBytes(r.plaintext),
+      );
+      if (isFinal) {
+        // The Rust side already finalized the streaming state; drop the handle
+        // reference so close() is a no-op (idempotent).
+        this.handleId = null;
+      }
+      return plaintext;
+    } catch (error) {
+      // On any chunk failure the Rust handle is now in an unrecoverable state;
+      // clear our reference so close() is idempotent and won't double-free.
+      this.handleId = null;
+      throw error;
+    }
+  }
+
+  async close(): Promise<void> {
+    if (this.handleId === null) {
+      return;
+    }
+    const handleId = this.handleId;
+    this.handleId = null;
+    await ensureRustReady();
+    const code = rustWasm.streamingShardCloseV1(handleId);
+    // Close is best-effort: it MUST be safe to call from a finally block even
+    // if the Rust side already finalized. We tolerate non-OK codes silently
+    // so the original error (if any) bubbles up.
+    // Best-effort: a non-zero close code (e.g. handle already finalized
+    // by a prior isFinal=true chunk) is swallowed so close() in a finally
+    // block never masks the original error.
+    void code;
+  }
+}
+
+/**
+ * Open a streaming-AEAD decryptor over a shard envelope (Reserved[0] == 1).
+ *
+ * Caller MUST call close() (e.g., in a finally block) regardless of whether
+ * processChunk succeeded — close() is idempotent.
+ */
+export async function rustOpenStreamingShard(
+  envelopeHeader: Uint8Array,
+  key: Uint8Array,
+): Promise<StreamingShardDecryptor> {
+  await ensureRustReady();
+  const result = rustWasm.openStreamingShardV1(envelopeHeader, key);
+  return consumeResult(result, 'openStreamingShardV1', (r) => {
+    return new StreamingShardDecryptorImpl(r.handleId, r.chunkSizeBytes);
+  });
+}
+
+export const STREAMING_CHUNK_TAG_BYTES_V1 = STREAMING_CHUNK_TAG_BYTES;
 // ---------------------------------------------------------------------------
 // Legacy compatibility surface — used by Slice 0 wiring and the existing
 // rust-crypto-core unit tests. Slices 2-9 will replace each caller; for now
@@ -1074,6 +1166,8 @@ function encodeDownloadInitSnapshotInput(input: {
   readonly albumId: string;
   readonly planBytes: Uint8Array;
   readonly nowMs: number;
+  readonly scopeKey: string;
+  readonly schedule?: DownloadSchedule | null;
 }): Uint8Array {
   if (input.jobId.length !== 16) {
     throw new WorkerCryptoError(
@@ -1081,12 +1175,89 @@ function encodeDownloadInitSnapshotInput(input: {
       'downloadInitSnapshotV1 requires a 16-byte jobId',
     );
   }
-  return cborMap([
+  if (input.scopeKey.length === 0) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidInputLength,
+      'downloadInitSnapshotV1 requires a non-empty scopeKey',
+    );
+  }
+  const entries: Array<readonly [number, Uint8Array]> = [
     [0, cborBytes(input.jobId)],
     [1, cborText(input.albumId)],
     [2, cborBytes(input.planBytes)],
     [3, cborUint(input.nowMs)],
-  ]);
+    [4, cborText(input.scopeKey)],
+  ];
+  // Plan-input key 5 (v3): optional download schedule. Absent and `null`
+  // both decode to Immediate on the Rust side, so we only encode the
+  // entry when the caller passed a non-trivial schedule.
+  const schedule = input.schedule;
+  if (schedule && schedule.kind !== 'immediate') {
+    entries.push([5, encodeDownloadScheduleValue(schedule)]);
+  }
+  return cborMap(entries);
+}
+
+/**
+ * Encode a {@link DownloadSchedule} as canonical CBOR matching the
+ * Rust-side `download_schedule_kind_codes` + `download_schedule_keys`.
+ *
+ * Wire format (all kinds):
+ *   { 0: kind_code, 3: max_delay_ms ?? null }
+ * Window adds keys 1 (start_hour) + 2 (end_hour).
+ *
+ * The Rust validator strictly requires the per-kind key set; encode
+ * exactly what is needed.
+ */
+function encodeDownloadScheduleValue(schedule: DownloadSchedule): Uint8Array {
+  const maxDelay = schedule.maxDelayMs;
+  const maxDelayValue = maxDelay === undefined ? cborNull() : cborUint(maxDelay);
+  switch (schedule.kind) {
+    case 'wifi':
+      return cborMap([
+        [0, cborUint(1)],
+        [3, maxDelayValue],
+      ]);
+    case 'wifi-charging':
+      return cborMap([
+        [0, cborUint(2)],
+        [3, maxDelayValue],
+      ]);
+    case 'idle':
+      return cborMap([
+        [0, cborUint(3)],
+        [3, maxDelayValue],
+      ]);
+    case 'window': {
+      const start = schedule.windowStartHour ?? 0;
+      const end = schedule.windowEndHour ?? 0;
+      return cborMap([
+        [0, cborUint(4)],
+        [1, cborUint(start)],
+        [2, cborUint(end)],
+        [3, maxDelayValue],
+      ]);
+    }
+    case 'immediate':
+      // The caller filters this out before reaching here, but keep the
+      // exhaustiveness guard so the type-checker catches future kinds.
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidInputLength,
+        'encodeDownloadScheduleValue called with kind=immediate',
+      );
+    default: {
+      const _exhaustive: never = schedule.kind;
+      void _exhaustive;
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidInputLength,
+        'encodeDownloadScheduleValue: unknown kind',
+      );
+    }
+  }
+}
+
+function cborNull(): Uint8Array {
+  return new Uint8Array([0xf6]);
 }
 
 function cborMap(entries: readonly (readonly [number, Uint8Array])[]): Uint8Array {

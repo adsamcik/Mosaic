@@ -9,6 +9,9 @@ const managerMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../lib/download-manager', () => managerMocks);
+vi.mock('../useDownloadScopeKey', () => ({
+  useDownloadScopeKey: () => 'auth:00000000000000000000000000000000',
+}));
 vi.mock('comlink', () => ({ proxy: (value: unknown): unknown => value }));
 vi.mock('../../lib/logger', () => ({
   createLogger: () => ({
@@ -47,6 +50,9 @@ const baseJob: JobSummary = {
   failureCount: 0,
   createdAtMs: 1,
   lastUpdatedAtMs: 1,
+  scopeKey: 'auth:00000000000000000000000000000000',
+  lastErrorReason: null,
+  schedule: null,
 };
 
 function phaseResult(phase: DownloadPhase): Promise<{ phase: DownloadPhase }> {
@@ -59,6 +65,7 @@ const api: CoordinatorWorkerApi = {
   sendEvent: vi.fn(() => phaseResult('Running')),
   pauseJob: vi.fn(() => phaseResult('Paused')),
   resumeJob: vi.fn(() => phaseResult('Running')),
+  rebindJobSource: vi.fn(async () => undefined),
   cancelJob: vi.fn(() => phaseResult('Cancelled')),
   listJobs: vi.fn(async () => jobs),
   listResumableJobs: vi.fn(async () => resumableJobs),
@@ -80,6 +87,9 @@ const api: CoordinatorWorkerApi = {
   gc: vi.fn(async () => ({ purged: [] })),
   clear: vi.fn(async () => undefined),
   setSaveTargetProvider: vi.fn(async () => undefined),
+  forceStartJob: vi.fn(async () => undefined),
+  updateJobSchedule: vi.fn(async () => undefined),
+  subscribeToThumbnails: vi.fn(async () => ({ unsubscribe: vi.fn() })),
 };
 
 class MockBroadcastChannel {
@@ -215,7 +225,7 @@ describe('useDownloadManager', () => {
     const hook = await renderHook();
     jobs = [baseJob];
     await act(async () => {
-      emitBroadcast({ kind: 'job-changed', jobId: baseJob.jobId, phase: 'Preparing', lastUpdatedAtMs: 1 });
+      emitBroadcast({ kind: 'job-changed', jobId: baseJob.jobId, phase: 'Preparing', lastUpdatedAtMs: 1, scopeKey: 'auth:00000000000000000000000000000000' });
       await flushMicrotasks();
     });
     expect(hook.result().jobs).toEqual([baseJob]);
@@ -236,7 +246,7 @@ describe('useDownloadManager', () => {
     const running: JobSummary = { ...baseJob, phase: 'Running', lastUpdatedAtMs: 2 };
     jobs = [running];
     await act(async () => {
-      emitBroadcast({ kind: 'job-changed', jobId: running.jobId, phase: 'Running', lastUpdatedAtMs: 2 });
+      emitBroadcast({ kind: 'job-changed', jobId: running.jobId, phase: 'Running', lastUpdatedAtMs: 2, scopeKey: 'auth:00000000000000000000000000000000' });
       await flushMicrotasks();
     });
     expect(hook.result().jobs).toEqual([running]);
@@ -252,11 +262,12 @@ describe('useDownloadManager', () => {
       photosDone: 1,
       photosTotal: 2,
       bytesWritten: 123,
+      pausedNoSource: false,
       lastUpdatedAtMs: 2,
     };
     resumableJobs = [resumable];
     await act(async () => {
-      emitBroadcast({ kind: 'job-changed', jobId: resumable.jobId, phase: 'Paused', lastUpdatedAtMs: 2 });
+      emitBroadcast({ kind: 'job-changed', jobId: resumable.jobId, phase: 'Paused', lastUpdatedAtMs: 2, scopeKey: 'auth:00000000000000000000000000000000' });
       await flushMicrotasks();
     });
     expect(hook.result().resumableJobs).toEqual([resumable]);

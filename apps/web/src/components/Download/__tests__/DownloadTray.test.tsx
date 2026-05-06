@@ -26,6 +26,8 @@ const api = vi.hoisted(() => ({
   cancelJob: vi.fn(),
   listJobs: vi.fn(),
   listResumableJobs: vi.fn(),
+  forceStartJob: vi.fn(),
+  updateJobSchedule: vi.fn(),
   computeAlbumDiff: vi.fn(),
   getJob: vi.fn(),
   subscribe: vi.fn(),
@@ -36,6 +38,10 @@ let jobs: ReadonlyArray<JobSummary> = [];
 let resumableJobs: ReadonlyArray<ResumableJobSummary> = [];
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: translate }) }));
+let mockScopeKey: string | null = 'auth:00000000000000000000000000000000';
+vi.mock('../../../hooks/useDownloadScopeKey', () => ({
+  useDownloadScopeKey: (): string | null => mockScopeKey,
+}));
 vi.mock('../../../hooks/useDownloadManager', () => ({
   useDownloadManager: (): UseDownloadManagerResult => {
     useSyncExternalStore(
@@ -56,6 +62,8 @@ vi.mock('../../../hooks/useDownloadManager', () => ({
       resumeJob: api.resumeJob,
       cancelJob: api.cancelJob,
       computeAlbumDiff: api.computeAlbumDiff,
+      forceStartJob: api.forceStartJob,
+      updateJobSchedule: api.updateJobSchedule,
       subscribe: (jobId: string): (() => void) => {
         let callbacks = store.subscribers.get(jobId);
         if (!callbacks) {
@@ -78,6 +86,9 @@ const baseJob: JobSummary = {
   failureCount: 0,
   createdAtMs: 1,
   lastUpdatedAtMs: 1,
+  scopeKey: 'auth:00000000000000000000000000000000',
+  lastErrorReason: null,
+  schedule: null,
 };
 
 beforeEach(() => {
@@ -88,6 +99,8 @@ beforeEach(() => {
   api.pauseJob.mockResolvedValue({ phase: 'Paused' });
   api.resumeJob.mockResolvedValue({ phase: 'Running' });
   api.cancelJob.mockResolvedValue({ phase: 'Cancelled' });
+  api.forceStartJob.mockResolvedValue(undefined);
+  api.updateJobSchedule.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -148,6 +161,157 @@ describe('DownloadTray', () => {
     expect(rendered.container.querySelector('.download-tray-panel')).toBeNull();
     await rendered.unmount();
   });
+
+  // ----- Scope filtering (Phase 3 visitor tray) -----
+  describe('scope filtering', () => {
+    const authScope = 'auth:00000000000000000000000000000000';
+    const otherAuthScope = 'auth:11111111111111111111111111111111';
+    const visitorScope = 'visitor:22222222222222222222222222222222';
+    const otherVisitorScope = 'visitor:33333333333333333333333333333333';
+
+    afterEach(() => {
+      mockScopeKey = authScope;
+    });
+
+    it('hides jobs when currentScope is null', async () => {
+      mockScopeKey = null;
+      jobs = [baseJob];
+      const rendered = await render(<DownloadTray />);
+      expect(rendered.container.querySelector('[role="region"]')).toBeNull();
+      await rendered.unmount();
+    });
+
+    it('shows jobs whose scopeKey exactly matches the current scope', async () => {
+      mockScopeKey = authScope;
+      jobs = [baseJob];
+      const rendered = await render(<DownloadTray />);
+      expect(rendered.container.querySelector('[role="region"]')).not.toBeNull();
+      await rendered.unmount();
+    });
+
+    it('hides jobs from a different auth scope', async () => {
+      mockScopeKey = authScope;
+      jobs = [{ ...baseJob, scopeKey: otherAuthScope }];
+      const rendered = await render(<DownloadTray />);
+      expect(rendered.container.querySelector('[role="region"]')).toBeNull();
+      await rendered.unmount();
+    });
+
+    it('hides jobs from a different visitor scope', async () => {
+      mockScopeKey = visitorScope;
+      jobs = [{ ...baseJob, scopeKey: otherVisitorScope }];
+      const rendered = await render(<DownloadTray />);
+      expect(rendered.container.querySelector('[role="region"]')).toBeNull();
+      await rendered.unmount();
+    });
+
+    it('auth scope sees legacy: jobs (v1 migration safety net)', async () => {
+      mockScopeKey = authScope;
+      jobs = [{ ...baseJob, scopeKey: 'legacy:abcdef0123456789abcdef0123456789' }];
+      const rendered = await render(<DownloadTray />);
+      expect(rendered.container.querySelector('[role="region"]')).not.toBeNull();
+      await rendered.unmount();
+    });
+
+    it('visitor scope does NOT see legacy: jobs', async () => {
+      mockScopeKey = visitorScope;
+      jobs = [{ ...baseJob, scopeKey: 'legacy:abcdef0123456789abcdef0123456789' }];
+      const rendered = await render(<DownloadTray />);
+      expect(rendered.container.querySelector('[role="region"]')).toBeNull();
+      await rendered.unmount();
+    });
+
+    it('visitor sees only their visitor:* jobs', async () => {
+      mockScopeKey = visitorScope;
+      jobs = [
+        { ...baseJob, jobId: 'a'.repeat(32), scopeKey: visitorScope },
+        { ...baseJob, jobId: 'b'.repeat(32), scopeKey: otherVisitorScope },
+        { ...baseJob, jobId: 'c'.repeat(32), scopeKey: authScope },
+      ];
+      const rendered = await render(<DownloadTray />);
+      const rows = rendered.container.querySelectorAll('[data-testid="download-job-row"]');
+      // Tray collapsed by default; expand to see rows.
+      await click(requireElement(rendered.container.querySelector('.download-tray-summary')));
+      const expandedRows = rendered.container.querySelectorAll('[data-testid="download-job-row"]');
+      expect(rows.length + expandedRows.length).toBeGreaterThan(0);
+      // Only the matching visitor scope is in the summary count.
+      expect(textContent(rendered.container)).toContain('1 downloading');
+      await rendered.unmount();
+    });
+
+    it('visitor pausedNoSource renders Discard only and an open-share-link hint', async () => {
+      mockScopeKey = visitorScope;
+      jobs = [];
+      resumableJobs = [{
+        ...baseJob,
+        phase: 'Paused',
+        scopeKey: visitorScope,
+        photoCounts: { pending: 1, inflight: 0, done: 1, failed: 0, skipped: 0 },
+        photosDone: 1,
+        photosTotal: 2,
+        bytesWritten: 100,
+        pausedNoSource: true,
+      }];
+      const rendered = await render(<DownloadTray forceVisible />);
+      // Expand to inspect resumable rows.
+      await click(requireElement(rendered.container.querySelector('.download-tray-summary')));
+      const row = rendered.container.querySelector('[data-testid="resumable-paused-no-source"]');
+      expect(row).not.toBeNull();
+      // Resume button is hidden; only Discard is offered.
+      const buttons = (row as HTMLElement).querySelectorAll('button');
+      expect(buttons.length).toBe(1);
+      expect((buttons[0] as HTMLButtonElement).textContent).toContain('Discard');
+      expect(textContent(rendered.container)).toContain('Visitor download paused');
+      await rendered.unmount();
+    });
+
+    it('non-pausedNoSource resumable rows still show Resume', async () => {
+      mockScopeKey = visitorScope;
+      jobs = [];
+      resumableJobs = [{
+        ...baseJob,
+        phase: 'Paused',
+        scopeKey: visitorScope,
+        photoCounts: { pending: 1, inflight: 0, done: 1, failed: 0, skipped: 0 },
+        photosDone: 1,
+        photosTotal: 2,
+        bytesWritten: 100,
+        pausedNoSource: false,
+      }];
+      const rendered = await render(<DownloadTray forceVisible />);
+      await click(requireElement(rendered.container.querySelector('.download-tray-summary')));
+      expect(rendered.container.querySelector('[data-testid="resumable-paused-no-source"]')).toBeNull();
+      await rendered.unmount();
+    });
+  });
+
+  it('renders Scheduled badge for Idle jobs with a schedule', async () => {
+    jobs = [{
+      ...baseJob,
+      phase: 'Idle',
+      schedule: { kind: 'wifi' },
+      scheduleEvaluation: { canStart: false, reason: 'connection too slow', retryAfterMs: 30_000 },
+    }];
+    const r = await render(<DownloadTray forceVisible />);
+    await click(requireElement(r.container.querySelector('.download-tray-summary')));
+    expect(textContent(r.container)).toContain('Scheduled');
+    await r.unmount();
+  });
+
+  it('Start now invokes forceStartJob', async () => {
+    jobs = [{
+      ...baseJob,
+      phase: 'Idle',
+      schedule: { kind: 'wifi' },
+      scheduleEvaluation: null,
+    }];
+    const r = await render(<DownloadTray forceVisible />);
+    await click(requireElement(r.container.querySelector('.download-tray-summary')));
+    await click(requireElement(r.container.querySelector('[data-testid="download-tray-start-now"]')));
+    await flushMicrotasks();
+    expect(api.forceStartJob).toHaveBeenCalledWith(baseJob.jobId);
+    await r.unmount();
+  });
 });
 
 async function actProgress(jobId: string, event: JobProgressEvent): Promise<void> {
@@ -164,6 +328,13 @@ async function actProgress(jobId: string, event: JobProgressEvent): Promise<void
 
 function translate(key: string, values?: Record<string, unknown>): string {
   const map: Record<string, string> = {
+    'download.tray.scheduledBadge': 'Scheduled',
+    'download.tray.scheduledStartNow': 'Start now',
+    'download.tray.scheduledEdit': 'Edit schedule',
+    'download.tray.scheduledReason': 'Waiting: {{reason}}',
+    'download.tray.scheduledReasons.connectionTooSlow': 'connection too slow',
+    'download.tray.phase.Idle': 'Idle',
+
     'download.tray.title': 'Downloads',
     'download.tray.active': '{{count}} downloading',
     'download.tray.completed': 'Completed',
@@ -182,6 +353,13 @@ function translate(key: string, values?: Record<string, unknown>): string {
     'download.tray.screenOnRequired': 'Keep screen on',
     'download.tray.phase.Running': 'Running',
     'download.tray.progressAria': 'Download progress {{percent}} percent',
+    'download.tray.discard': 'Discard',
+    'download.tray.resumeFromYesterday': 'Resume from yesterday',
+    'download.tray.resumePromptBody': '{{done}} of {{total}} photos completed last time.',
+    'download.tray.visitorPausedNoSourceBody': 'Visitor download paused — {{done}} of {{total}} photos saved. Re-open the share link to resume.',
+    'download.tray.visitorPausedNoSourceHint': 'We could not keep your share-link credentials across tabs. Open the original link to continue.',
+    'download.tray.openShareLinkToResume': 'Open the share link to resume',
+    'download.tray.failureBadge': '{{count}} failure',
   };
   return interpolate(map[key] ?? key, values);
 }

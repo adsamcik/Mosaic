@@ -102,6 +102,14 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
     },
   ],
   [
+    'workers/coordinator/photo-pipeline.ts',
+    {
+      rationale:
+        'download photo pipeline derives legacy tier keys and zeroizes key material; per-shard streaming decrypt routes through Rust WASM',
+      allowedSymbols: ['deriveTierKeys', 'memzero'],
+    },
+  ],
+  [
     'workers/crypto.worker-pool-member.ts',
     {
       rationale: 'pool members derive tier keys for legacy epoch-seed compatibility and zeroize derived key material; per-shard verify/decrypt routes through Rust WASM',
@@ -123,8 +131,20 @@ const directSodiumPrimitiveAllowlist = new Map<string, string>([
     'download staging checksum verification compatibility pending Rust download coordinator cutover',
   ],
   [
+    'lib/scope-key.ts',
+    'tray scope key derivation (BLAKE2b-128) needs sync access on the main thread + workers; non-secret inputs only',
+  ],
+  [
     'lib/session.ts',
     'Argon2id salt-encryption KDF runs on main thread before crypto worker is initialized (security fix H1/H2)',
+  ],
+  [
+    'workers/coordinator/decrypt-cache.ts',
+    'sodium.memzero used to wipe cached epoch keys on eviction / clear (memory hygiene only; no protocol primitives)',
+  ],
+  [
+    'workers/coordinator/shard-mirror.ts',
+    'sodium.crypto_hash_sha256 fallback for content-hash verification when SubtleCrypto is unavailable; encrypted bytes only',
   ],
   ['workers/crypto.worker.ts', 'central TypeScript crypto compatibility facade'],
 ]);
@@ -282,6 +302,7 @@ describe('web Rust crypto cutover boundaries', () => {
       importersMatching(/from\s+['"][^'"]*rust-crypto-core['"]/),
     ).toEqual([
         'workers/coordinator.worker.ts',
+        'workers/coordinator/photo-pipeline.ts',
         'workers/crypto.worker-pool-member.ts',
         'workers/crypto.worker.ts',
       ]);

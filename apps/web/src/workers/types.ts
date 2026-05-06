@@ -1,7 +1,13 @@
 /**
  * Shared types for worker communication
  */
+import type { EncryptedShard } from '@mosaic/crypto';
 import { WorkerCryptoErrorCode } from './worker-crypto-error-code.generated';
+import type { SourceStrategy } from './coordinator/source-strategy';
+import type { DownloadSchedule, ScheduleEvaluation } from '../lib/download-schedule';
+
+// Re-export EncryptedShard from crypto lib (single source of truth)
+export type { EncryptedShard };
 
 export type ShardTier = import('../generated/mosaic-wasm/mosaic_wasm.js').ShardTier;
 export type ManifestTranscriptBytesBinding =
@@ -1154,6 +1160,11 @@ export interface DownloadPhotoStateView {
 /** TS-side mirror of a Rust failure-log entry; intentionally omits photo ids. */
 export interface DownloadFailureView {
   readonly atMs: number;
+  /**
+   * Stable error code for the failure (CBOR snapshot key 1 in failure-log entries).
+   * `null` when the persisted snapshot omits the reason (legacy snapshots).
+   */
+  readonly reason: DownloadErrorReason | null;
 }
 
 /** Stable download error reasons accepted by the Phase 1 coordinator event API. */
@@ -1194,6 +1205,7 @@ export interface DownloadBuildPlanInput {
 export type PerFileStrategy =
   | 'webShare'
   | 'fsAccessPerFile'
+  | 'fsAccessDirectory'
   | 'blobAnchor';
 
 /** Metadata the main thread needs before opening per-file save targets. */
@@ -1251,6 +1263,38 @@ export interface StartJobInput extends DownloadBuildPlanInput {
    * (not in the Rust snapshot); see top-of-file comment in coordinator.worker.ts.
    */
   readonly outputMode?: DownloadOutputMode;
+  /**
+   * Source strategy for fetching shards + resolving per-epoch keys.
+   * Defaults to authenticated when omitted. NOT persisted across worker
+   * restart; reconstructed jobs fall back to the authenticated source.
+   * See top-of-file comment in coordinator.worker.ts.
+   */
+  readonly source?: SourceStrategy;
+  /**
+   * Optional conditional schedule. When omitted (or kind === 'immediate'),
+   * the job dispatches as soon as the worker is ready. Non-trivial schedules
+   * are persisted into the v3 snapshot and gate the transition out of the
+   * Scheduled phase via the in-worker {@link ScheduleManager}.
+   */
+  readonly schedule?: DownloadSchedule;
+  /**
+   * Optional in-app thumbnail manifest. When provided, the coordinator
+   * exposes per-photo tier-1 thumbnail bytes via `subscribeToThumbnails`.
+   * Thumbnails are NEVER persisted into snapshots and NEVER reach any
+   * export pipeline (zip / per-file / fsAccessDirectory). They live only as
+   * Blob URLs scoped to the in-page session for tray previews.
+   */
+  readonly thumbnails?: ReadonlyArray<JobThumbnailManifestEntry>;
+}
+
+/**
+ * One entry in a job's in-app thumbnail manifest. Identifies the tier-1
+ * shard that backs a single photo's preview thumbnail.
+ */
+export interface JobThumbnailManifestEntry {
+  readonly photoId: string;
+  readonly epochId: string;
+  readonly thumbShardId: string;
 }
 
 /** Stable JS event shape for the Rust `DownloadJobEvent` transition table. */
@@ -1272,6 +1316,29 @@ export interface JobSummary {
   readonly failureCount: number;
   readonly createdAtMs: number;
   readonly lastUpdatedAtMs: number;
+  /**
+   * Tray scope key partitioning this job by identity. Format
+   * `<prefix>:<32-hex>` where prefix is `auth`/`visitor`/`legacy`.
+   * Only the prefix is safe to log; treat the hex tail as opaque.
+   */
+  readonly scopeKey: string;
+  /**
+   * Most recent failure reason (mirrors the tail of the persisted failure log).
+   * Used by the tray to surface visitor-specific copy for `AccessRevoked`.
+   */
+  readonly lastErrorReason: DownloadErrorReason | null;
+  /**
+   * Conditional schedule attached to the job, or null for plain immediate
+   * downloads. Mirrors the persisted DownloadSchedule round-tripped through
+   * the v3 snapshot.
+   */
+  readonly schedule: DownloadSchedule | null;
+  /**
+   * Latest schedule evaluation snapshot from the in-worker ScheduleManager.
+   * null when the job has no schedule, or the manager has not yet produced
+   * an evaluation. undefined is reserved for older serialized summaries.
+   */
+  readonly scheduleEvaluation?: ScheduleEvaluation | null;
 }
 
 /** Job summary useful for resuming a partially completed non-terminal download. */
@@ -1280,6 +1347,13 @@ export interface ResumableJobSummary extends JobSummary {
   readonly photosTotal: number;
   readonly bytesWritten: number;
   readonly lastUpdatedAtMs: number;
+  /**
+   * True for visitor-scope jobs reconstructed from OPFS that have lost their
+   * `SourceStrategy` (in-memory only). The tray must offer Discard only; the
+   * job becomes resumable again after `rebindJobSource()` when the user
+   * re-opens the matching share link.
+   */
+  readonly pausedNoSource: boolean;
 }
 
 /** Freshly decrypted current album manifest supplied by the caller for local diffing. */
@@ -1316,6 +1390,12 @@ export type DownloadJobsBroadcastMessage = {
   readonly jobId: string;
   readonly phase: DownloadPhase;
   readonly lastUpdatedAtMs: number;
+  /**
+   * Tray scope key the job belongs to (mirrors `JobSummary.scopeKey`).
+   * Subscribers MUST drop messages whose scopeKey is not visible to the
+   * viewer so visitor tabs are not woken up by authenticated-tab events.
+   */
+  readonly scopeKey: string;
 };
 
 /** Public Comlink API exposed by `coordinator.worker.ts`. */
@@ -1339,6 +1419,13 @@ export interface CoordinatorWorkerApi {
   resumeJob(jobId: string, opts?: { readonly mode?: DownloadOutputMode }): Promise<{ phase: DownloadPhase }>;
   /** Cancel a job; hard cancel also purges OPFS staging. */
   cancelJob(jobId: string, opts: { readonly soft: boolean }): Promise<{ phase: DownloadPhase }>;
+  /**
+   * Re-attach an in-memory `SourceStrategy` to a reconstructed visitor job.
+   * Required after a worker restart for visitor jobs whose source was lost.
+   * The supplied source's `getScopeKey()` MUST match the persisted job's
+   * scope key; otherwise the call rejects with `DownloadIllegalState`.
+   */
+  rebindJobSource(jobId: string, source: SourceStrategy): Promise<void>;
   /** List all known in-memory jobs. */
   listJobs(): Promise<JobSummary[]>;
   /** List non-terminal jobs with at least one completed photo for resume prompts. */
@@ -1349,6 +1436,17 @@ export interface CoordinatorWorkerApi {
   getJob(jobId: string): Promise<JobSummary | null>;
   /** Subscribe to progress events for one job. Caller must unsubscribe. */
   subscribe(jobId: string, callback: (event: JobProgressEvent) => void): Promise<{ unsubscribe: () => void }>;
+  /**
+   * Subscribe to in-app thumbnail Blob URLs for one job. Returns an
+   * `unsubscribe` Comlink-proxied handle. The worker is the authoritative
+   * owner of the underlying blob URLs and revokes them when:
+   *   - the last subscriber unsubscribes,
+   *   - the job transitions to Done / Cancelled / Errored,
+   *   - or the worker is cleared.
+   *
+   * Thumbnails are NEVER persisted and NEVER part of any export output.
+   */
+  subscribeToThumbnails(jobId: string, callback: (photoId: string, blobUrl: string) => void): Promise<{ unsubscribe: () => void }>;
   /** Garbage-collect stale OPFS jobs. */
   gc(opts: {
     readonly nowMs: number;
@@ -1361,4 +1459,17 @@ export interface CoordinatorWorkerApi {
    * `outputMode.kind === 'zip'` or `perFile`; otherwise finalization fails with IllegalState.
    */
   setSaveTargetProvider(provider: RemoteSaveTargetProvider | null): Promise<void>;
+  /**
+   * Override a Scheduled job's gate and dispatch it immediately. Removes
+   * the job from the ScheduleManager. No-op (resolves) when the job is
+   * not currently scheduled, so the tray's Start-now button is idempotent.
+   */
+  forceStartJob(jobId: string): Promise<void>;
+  /**
+   * Replace a job's conditional schedule. The coordinator re-encodes the
+   * snapshot, re-registers with the ScheduleManager, and re-evaluates
+   * immediately. Pass null (or an immediate schedule) to clear the gate
+   * and dispatch.
+   */
+  updateJobSchedule(jobId: string, schedule: DownloadSchedule | null): Promise<void>;
 }

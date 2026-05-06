@@ -63,7 +63,7 @@ describe('runPerFileFinalizer', () => {
     expect(sink.finalize).toHaveBeenCalledTimes(1);
   });
 
-  it.each<PerFileStrategy>(['fsAccessPerFile', 'blobAnchor'])('exports all photos for %s', async (strategy) => {
+  it.each<PerFileStrategy>(['fsAccessPerFile', 'fsAccessDirectory', 'blobAnchor'])('exports all photos for %s', async (strategy) => {
     const { deps, sink } = makeDeps();
     await runPerFileFinalizer({ jobId: 'job-1', entries }, strategy, deps, new AbortController().signal);
     expect(sink.writeOne).toHaveBeenCalledTimes(3);

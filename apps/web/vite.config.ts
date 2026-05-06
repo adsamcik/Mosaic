@@ -82,6 +82,19 @@ export default defineConfig(({ mode }) => {
     build: {
       target: 'es2022',
       sourcemap: mode !== 'production',
+      rollupOptions: {
+        // Multi-entry build: the SPA from index.html plus the Background-Fetch
+        // service worker. The SW MUST be served from /sw.js at the site
+        // root (scope /), so we override entryFileNames to keep it there
+        // instead of under /assets/.
+        input: {
+          main: resolve(__dirname, 'index.html'),
+          sw: resolve(__dirname, 'src/service-worker/sw.ts'),
+        },
+        output: {
+          entryFileNames: (chunk) => (chunk.name === 'sw' ? 'sw.js' : 'assets/[name]-[hash].js'),
+        },
+      },
     },
 
     // Dependency optimization

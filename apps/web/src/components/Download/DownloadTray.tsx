@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDownloadManager } from '../../hooks/useDownloadManager';
+import { useDownloadScopeKey } from '../../hooks/useDownloadScopeKey';
 import type { DownloadPhase, JobSummary, ResumableJobSummary } from '../../workers/types';
+import type { DownloadSchedule } from '../../lib/download-schedule';
 import { DownloadJobRow, shortId } from './DownloadJobRow';
+import { EditScheduleDialog } from './EditScheduleDialog';
 import '../../styles/download-tray.css';
 
 export interface DownloadTrayProps {
@@ -18,10 +21,23 @@ export function DownloadTray(props: DownloadTrayProps = {}): JSX.Element | null 
   const { forceVisible = false } = props;
   const { t } = useTranslation();
   const manager = useDownloadManager();
+  const currentScope = useDownloadScopeKey();
+  // Tray scope filtering: jobs are partitioned per identity. Auth users
+  // additionally see legacy:* jobs migrated from snapshot v1 (one-shot
+  // backwards-compat). Visitor scopes never see legacy jobs.
+  const scopeFilteredJobs = useMemo(
+    () => filterJobsByScope(manager.jobs, currentScope),
+    [manager.jobs, currentScope],
+  );
+  const scopeFilteredResumableJobs = useMemo(
+    () => filterJobsByScope(manager.resumableJobs, currentScope),
+    [manager.resumableJobs, currentScope],
+  );
   const [expanded, setExpanded] = useState(false);
   const [dismissedJobIds, setDismissedJobIds] = useState<ReadonlySet<string>>(new Set());
   const [recentDoneJobIds, setRecentDoneJobIds] = useState<ReadonlySet<string>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
+  const [editingScheduleJobId, setEditingScheduleJobId] = useState<string | null>(null);
   const previousPhasesRef = useRef<Map<string, DownloadPhase>>(new Map());
   const doneTimersRef = useRef<Map<string, number>>(new Map());
 
@@ -74,21 +90,21 @@ export function DownloadTray(props: DownloadTrayProps = {}): JSX.Element | null 
   }, []);
 
   const displayedJobs = useMemo(() => {
-    return manager.jobs.filter((job) => {
+    return scopeFilteredJobs.filter((job) => {
       if (dismissedJobIds.has(job.jobId)) return false;
       if (!isTerminal(job.phase)) return true;
       if (job.phase === 'Done') return forceVisible || recentDoneJobIds.has(job.jobId);
       return forceVisible;
     });
-  }, [dismissedJobIds, forceVisible, manager.jobs, recentDoneJobIds]);
+  }, [dismissedJobIds, forceVisible, scopeFilteredJobs, recentDoneJobIds]);
 
   const displayedResumableJobs = useMemo(() => {
     const displayedJobIds = new Set(displayedJobs.map((job) => job.jobId));
-    return manager.resumableJobs.filter((job) => !dismissedJobIds.has(job.jobId) && !displayedJobIds.has(job.jobId));
-  }, [dismissedJobIds, displayedJobs, manager.resumableJobs]);
+    return scopeFilteredResumableJobs.filter((job) => !dismissedJobIds.has(job.jobId) && !displayedJobIds.has(job.jobId));
+  }, [dismissedJobIds, displayedJobs, scopeFilteredResumableJobs]);
 
   const hasJobsToDisplay = displayedJobs.length > 0 || displayedResumableJobs.length > 0;
-  const hasSourceJobs = manager.jobs.length > 0 || manager.resumableJobs.length > 0;
+  const hasSourceJobs = scopeFilteredJobs.length > 0 || scopeFilteredResumableJobs.length > 0;
   if ((!hasSourceJobs && !forceVisible) || (!hasJobsToDisplay && !forceVisible)) {
     return null;
   }
@@ -112,6 +128,17 @@ export function DownloadTray(props: DownloadTrayProps = {}): JSX.Element | null 
   const pauseJob = (jobId: string): void => runAction(async () => manager.pauseJob(jobId));
   const resumeJob = (jobId: string): void => runAction(async () => manager.resumeJob(jobId));
   const cancelSoft = (jobId: string): void => runAction(async () => manager.cancelJob(jobId, { soft: true }));
+  const forceStart = (jobId: string): void => runAction(async () => manager.forceStartJob(jobId));
+  const openEditSchedule = (jobId: string): void => { setEditingScheduleJobId(jobId); };
+  const closeEditSchedule = (): void => { setEditingScheduleJobId(null); };
+  const saveEditSchedule = async (schedule: DownloadSchedule): Promise<void> => {
+    const jobId = editingScheduleJobId;
+    if (jobId === null) return;
+    setEditingScheduleJobId(null);
+    await manager.updateJobSchedule(jobId, schedule).catch((caught: unknown) => {
+      setActionError(caught instanceof Error ? caught.message : String(caught));
+    });
+  };
   const cancelHard = (jobId: string): void => {
     setDismissedJobIds((current) => new Set(current).add(jobId));
     runAction(async () => manager.cancelJob(jobId, { soft: false }));
@@ -180,6 +207,8 @@ export function DownloadTray(props: DownloadTrayProps = {}): JSX.Element | null 
                 onResume={resumeJob}
                 onCancelSoft={cancelSoft}
                 onCancelHard={cancelHard}
+                onForceStart={forceStart}
+                onEditSchedule={openEditSchedule}
               />
               {job.phase === 'Done' && (
                 <button type="button" className="download-tray-link-button" onClick={() => dismissCompleted(job.jobId)}>
@@ -193,6 +222,16 @@ export function DownloadTray(props: DownloadTrayProps = {}): JSX.Element | null 
           ))}
         </div>
       )}
+      <EditScheduleDialog
+        open={editingScheduleJobId !== null}
+        initialSchedule={
+          editingScheduleJobId === null
+            ? null
+            : displayedJobs.find((job) => job.jobId === editingScheduleJobId)?.schedule ?? null
+        }
+        onClose={closeEditSchedule}
+        onConfirm={saveEditSchedule}
+      />
     </aside>
   );
 }
@@ -203,6 +242,33 @@ function ResumableRow({ job, onResume, onDiscard }: {
   readonly onDiscard: (jobId: string) => void;
 }): JSX.Element {
   const { t } = useTranslation();
+  // Visitor jobs reconstructed from OPFS lose their in-memory SourceStrategy
+  // (link-id + grant token + tier-3 key resolver are not persisted). Until
+  // the user re-opens the matching share link the only safe action is
+  // Discard. Resume is hidden behind a help tooltip.
+  if (job.pausedNoSource) {
+    return (
+      <div className="download-tray-resumable-row" data-testid="resumable-paused-no-source">
+        <span className="download-tray-status-icon" aria-hidden="true">↻</span>
+        <span>{shortId(job.albumId)}</span>
+        <span>{t('download.tray.visitorPausedNoSourceBody', { done: job.photosDone, total: job.photosTotal })}</span>
+        <span
+          className="download-tray-muted"
+          title={t('download.tray.visitorPausedNoSourceHint')}
+          aria-label={t('download.tray.visitorPausedNoSourceHint')}
+        >
+          {t('download.tray.openShareLinkToResume')}
+        </span>
+        <button
+          type="button"
+          className="download-tray-button download-tray-button--danger"
+          onClick={() => onDiscard(job.jobId)}
+        >
+          {t('download.tray.discard')}
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="download-tray-resumable-row">
       <span className="download-tray-status-icon" aria-hidden="true">↻</span>
@@ -231,4 +297,30 @@ function summaryIcon(activeJobs: ReadonlyArray<JobSummary>, completedCount: numb
   if (activeJobs.some((job) => job.phase === 'Paused')) return 'Ⅱ';
   if (completedCount > 0) return '✓';
   return '↻';
+}
+
+/**
+ * Filter a job list by the viewer's current tray scope.
+ *
+ * - `null` scope: never visible (no identity ⇒ empty tray).
+ * - Exact match: always visible.
+ * - `legacy:*` jobs are visible to `auth:*` viewers as a one-shot v1→v2
+ *   migration safety net so users don't lose downloads on schema upgrade.
+ *   Visitor (`visitor:*`) scopes never see legacy jobs.
+ *
+ * ZK-safety: the scope key is treated as opaque bytes; only the prefix
+ * portion would ever be safe to log. We do not log inside this function.
+ */
+function filterJobsByScope<T extends { readonly scopeKey: string }>(
+  jobs: ReadonlyArray<T>,
+  currentScope: string | null,
+): T[] {
+  if (currentScope === null) return [];
+  return jobs.filter((job) => {
+    if (job.scopeKey === currentScope) return true;
+    if (job.scopeKey.startsWith('legacy:') && currentScope.startsWith('auth:')) {
+      return true;
+    }
+    return false;
+  });
 }

@@ -28,7 +28,9 @@ use crate::download::plan::{DownloadPlan, DownloadPlanEntry, PhotoId, ShardId};
 use crate::download::state::{DownloadJobState, PhotoStatus, SkipReason};
 
 pub const DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1: u32 = 1;
-pub const CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION: u32 = DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1;
+pub const DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V2: u32 = 2;
+pub const DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3: u32 = 3;
+pub const CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION: u32 = DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3;
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
 const MAX_DOWNLOAD_SNAPSHOT_BYTES: usize = 1_500_000;
 
@@ -71,6 +73,66 @@ pub mod download_job_state_codes {
     ];
 }
 
+
+pub mod download_schedule_kind_codes {
+    pub const IMMEDIATE: u8 = 0;
+    pub const WIFI: u8 = 1;
+    pub const WIFI_CHARGING: u8 = 2;
+    pub const IDLE: u8 = 3;
+    pub const WINDOW: u8 = 4;
+
+    pub const KNOWN_DOWNLOAD_SCHEDULE_KINDS: &[(&str, u8)] = &[
+        ("IMMEDIATE", IMMEDIATE),
+        ("WIFI", WIFI),
+        ("WIFI_CHARGING", WIFI_CHARGING),
+        ("IDLE", IDLE),
+        ("WINDOW", WINDOW),
+    ];
+}
+
+pub mod download_schedule_keys {
+    /// Schedule kind code, see [`super::download_schedule_kind_codes`].
+    pub const KIND: u32 = 0;
+    /// `Window` start hour (0..=23). Required for `Window`, absent otherwise.
+    pub const WINDOW_START_HOUR: u32 = 1;
+    /// `Window` end hour (0..=23, exclusive). Required for `Window`, absent otherwise.
+    pub const WINDOW_END_HOUR: u32 = 2;
+    /// Optional max-delay-before-force-start (ms). `Null` when unset.
+    pub const MAX_DELAY_MS: u32 = 3;
+
+    pub const KNOWN_DOWNLOAD_SCHEDULE_KEYS: &[(&str, u32)] = &[
+        ("KIND", KIND),
+        ("WINDOW_START_HOUR", WINDOW_START_HOUR),
+        ("WINDOW_END_HOUR", WINDOW_END_HOUR),
+        ("MAX_DELAY_MS", MAX_DELAY_MS),
+    ];
+}
+
+/// Conditional download schedule. Mirrors the TypeScript `DownloadSchedule`.
+///
+/// `Immediate` is represented by [`Option::None`] in [`DownloadJobSnapshot::schedule`];
+/// only non-trivial schedules are persisted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DownloadSchedule {
+    Wifi { max_delay_ms: Option<u64> },
+    WifiCharging { max_delay_ms: Option<u64> },
+    Idle { max_delay_ms: Option<u64> },
+    Window { start_hour: u8, end_hour: u8, max_delay_ms: Option<u64> },
+}
+
+impl DownloadSchedule {
+    /// Returns the `download_schedule_kind_codes` byte for this schedule.
+    #[must_use]
+    pub const fn kind_code(&self) -> u8 {
+        match self {
+            Self::Wifi { .. } => download_schedule_kind_codes::WIFI,
+            Self::WifiCharging { .. } => download_schedule_kind_codes::WIFI_CHARGING,
+            Self::Idle { .. } => download_schedule_kind_codes::IDLE,
+            Self::Window { .. } => download_schedule_kind_codes::WINDOW,
+        }
+    }
+}
+
 pub mod download_job_snapshot_keys {
     pub const SCHEMA_VERSION: u32 = 0;
     pub const JOB_ID: u32 = 1;
@@ -82,6 +144,8 @@ pub mod download_job_snapshot_keys {
     pub const PHOTOS: u32 = 7;
     pub const FAILURE_LOG: u32 = 8;
     pub const LEASE_TOKEN: u32 = 9;
+    pub const SCOPE_KEY: u32 = 10;
+    pub const SCHEDULE: u32 = 11;
 
     pub const KNOWN_DOWNLOAD_JOB_KEYS: &[(&str, u32)] = &[
         ("SCHEMA_VERSION", SCHEMA_VERSION),
@@ -94,6 +158,8 @@ pub mod download_job_snapshot_keys {
         ("PHOTOS", PHOTOS),
         ("FAILURE_LOG", FAILURE_LOG),
         ("LEASE_TOKEN", LEASE_TOKEN),
+        ("SCOPE_KEY", SCOPE_KEY),
+        ("SCHEDULE", SCHEDULE),
     ];
 
     pub const DOWNLOAD_JOB_KEYS_V1: &[u32] = &[
@@ -107,6 +173,40 @@ pub mod download_job_snapshot_keys {
         PHOTOS,
         FAILURE_LOG,
         LEASE_TOKEN,
+    ];
+
+    pub const DOWNLOAD_JOB_KEYS_V2: &[u32] = &[
+        SCHEMA_VERSION,
+        JOB_ID,
+        ALBUM_ID,
+        CREATED_AT_MS,
+        LAST_UPDATED_AT_MS,
+        STATE,
+        PLAN,
+        PHOTOS,
+        FAILURE_LOG,
+        LEASE_TOKEN,
+        SCOPE_KEY,
+    ];
+
+    /// Keys for v3 snapshots WITHOUT a schedule. The schedule field is
+    /// optional; encoders omit key 11 when no schedule is set.
+    pub const DOWNLOAD_JOB_KEYS_V3_NO_SCHEDULE: &[u32] = DOWNLOAD_JOB_KEYS_V2;
+
+    /// Keys for v3 snapshots that include a schedule.
+    pub const DOWNLOAD_JOB_KEYS_V3_WITH_SCHEDULE: &[u32] = &[
+        SCHEMA_VERSION,
+        JOB_ID,
+        ALBUM_ID,
+        CREATED_AT_MS,
+        LAST_UPDATED_AT_MS,
+        STATE,
+        PLAN,
+        PHOTOS,
+        FAILURE_LOG,
+        LEASE_TOKEN,
+        SCOPE_KEY,
+        SCHEDULE,
     ];
 }
 
@@ -122,6 +222,13 @@ pub struct DownloadJobSnapshot {
     pub photos: Vec<PhotoState>,
     pub failure_log: Vec<DownloadFailureEntry>,
     pub lease_token: Option<LeaseToken>,
+    /// Tray scope key partitioning this job by identity. Format
+    /// `<prefix>:<32-hex>` where prefix is `auth`/`visitor`/`legacy`.
+    /// Derived via [`crate::download::scope`]; ZK-safe to log only the prefix.
+    pub scope_key: String,
+    /// Conditional schedule controlling when this job may transition out
+    /// of `Scheduled`. `None` means "start immediately".
+    pub schedule: Option<DownloadSchedule>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -260,7 +367,7 @@ pub fn repair_snapshot_for_resume(
 impl DownloadJobSnapshot {
     pub fn to_canonical_cbor(&self) -> Result<Vec<u8>, DownloadSnapshotError> {
         validate_snapshot(self)?;
-        let value = Value::Map(vec![
+        let mut entries = vec![
             kv(
                 download_job_snapshot_keys::SCHEMA_VERSION,
                 uint(self.schema_version),
@@ -295,7 +402,20 @@ impl DownloadJobSnapshot {
                 download_job_snapshot_keys::LEASE_TOKEN,
                 option_lease(self.lease_token),
             ),
-        ]);
+            kv(
+                download_job_snapshot_keys::SCOPE_KEY,
+                Value::Text(self.scope_key.clone()),
+            ),
+        ];
+        // Optional v3 schedule. Omitted entirely when `None` so that
+        // unscheduled jobs continue to round-trip with the v2 key set.
+        if let Some(schedule) = &self.schedule {
+            entries.push(kv(
+                download_job_snapshot_keys::SCHEDULE,
+                schedule_value(schedule),
+            ));
+        }
+        let value = Value::Map(entries);
         let mut out = Vec::new();
         ciborium::ser::into_writer(&value, &mut out)
             .map_err(|_| DownloadSnapshotError::SchemaCorrupt)?;
@@ -366,13 +486,35 @@ fn decode_snapshot_value(value: &Value) -> Result<DownloadJobSnapshot, DownloadS
             max_supported: CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION,
         });
     }
-    validate_exact_keys(entries, download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V1)?;
+    // V3 admits two key shapes: with or without the optional `schedule`
+    // entry at key 11. We pick the right one by the entries length, then
+    // run `validate_exact_keys` for strict positional verification.
+    let expected_keys: &[u32] = match schema_version {
+        DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1 => download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V1,
+        DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V2 => download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V2,
+        DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3 => {
+            if entries.len() == download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V3_WITH_SCHEDULE.len() {
+                download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V3_WITH_SCHEDULE
+            } else {
+                download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V3_NO_SCHEDULE
+            }
+        }
+        _ => return Err(DownloadSnapshotError::SchemaCorrupt),
+    };
+    validate_exact_keys(entries, expected_keys)?;
+    let job_id = JobId(required_bytes_16(
+        entries,
+        download_job_snapshot_keys::JOB_ID,
+    )?);
+    let scope_key = match schema_version {
+        DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1 => crate::download::scope::legacy_scope_for(&job_id),
+        _ => required_text(entries, download_job_snapshot_keys::SCOPE_KEY)?,
+    };
     let snapshot = DownloadJobSnapshot {
-        schema_version,
-        job_id: JobId(required_bytes_16(
-            entries,
-            download_job_snapshot_keys::JOB_ID,
-        )?),
+        // Migration: in-memory snapshots are always normalized to the
+        // current schema. Re-encoding a v1/v2 input therefore writes v3.
+        schema_version: CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION,
+        job_id,
         album_id: Uuid::from_bytes(required_bytes_16(
             entries,
             download_job_snapshot_keys::ALBUM_ID,
@@ -398,6 +540,15 @@ fn decode_snapshot_value(value: &Value) -> Result<DownloadJobSnapshot, DownloadS
                 .ok_or(DownloadSnapshotError::SchemaCorrupt)?,
         )?,
         lease_token: optional_lease(entries, download_job_snapshot_keys::LEASE_TOKEN)?,
+        scope_key,
+        schedule: match schema_version {
+            DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3 => match entry(entries, download_job_snapshot_keys::SCHEDULE) {
+                Some(value) => Some(decode_schedule(value)?),
+                None => None,
+            },
+            // v1 + v2 snapshots predate the schedule field; carry as None.
+            _ => None,
+        },
     };
     validate_snapshot(&snapshot)?;
     Ok(snapshot)
@@ -696,6 +847,81 @@ fn decode_skip(value: &Value) -> Result<SkipReason, DownloadSnapshotError> {
     }
 }
 
+
+fn schedule_value(schedule: &DownloadSchedule) -> Value {
+    match schedule {
+        DownloadSchedule::Wifi { max_delay_ms }
+        | DownloadSchedule::WifiCharging { max_delay_ms }
+        | DownloadSchedule::Idle { max_delay_ms } => Value::Map(vec![
+            kv(download_schedule_keys::KIND, uint(schedule.kind_code())),
+            kv(download_schedule_keys::MAX_DELAY_MS, option_u64(*max_delay_ms)),
+        ]),
+        DownloadSchedule::Window { start_hour, end_hour, max_delay_ms } => Value::Map(vec![
+            kv(download_schedule_keys::KIND, uint(schedule.kind_code())),
+            kv(download_schedule_keys::WINDOW_START_HOUR, uint(*start_hour)),
+            kv(download_schedule_keys::WINDOW_END_HOUR, uint(*end_hour)),
+            kv(download_schedule_keys::MAX_DELAY_MS, option_u64(*max_delay_ms)),
+        ]),
+    }
+}
+
+fn decode_schedule(value: &Value) -> Result<DownloadSchedule, DownloadSnapshotError> {
+    let Value::Map(fields) = value else {
+        return Err(DownloadSnapshotError::SchemaCorrupt);
+    };
+    let kind = required_u8(fields, download_schedule_keys::KIND)
+        .ok_or(DownloadSnapshotError::SchemaCorrupt)?;
+    match kind {
+        download_schedule_kind_codes::WIFI => {
+            validate_exact_keys(fields, &[download_schedule_keys::KIND, download_schedule_keys::MAX_DELAY_MS])?;
+            Ok(DownloadSchedule::Wifi {
+                max_delay_ms: optional_u64(fields, download_schedule_keys::MAX_DELAY_MS)?,
+            })
+        }
+        download_schedule_kind_codes::WIFI_CHARGING => {
+            validate_exact_keys(fields, &[download_schedule_keys::KIND, download_schedule_keys::MAX_DELAY_MS])?;
+            Ok(DownloadSchedule::WifiCharging {
+                max_delay_ms: optional_u64(fields, download_schedule_keys::MAX_DELAY_MS)?,
+            })
+        }
+        download_schedule_kind_codes::IDLE => {
+            validate_exact_keys(fields, &[download_schedule_keys::KIND, download_schedule_keys::MAX_DELAY_MS])?;
+            Ok(DownloadSchedule::Idle {
+                max_delay_ms: optional_u64(fields, download_schedule_keys::MAX_DELAY_MS)?,
+            })
+        }
+        download_schedule_kind_codes::WINDOW => {
+            validate_exact_keys(
+                fields,
+                &[
+                    download_schedule_keys::KIND,
+                    download_schedule_keys::WINDOW_START_HOUR,
+                    download_schedule_keys::WINDOW_END_HOUR,
+                    download_schedule_keys::MAX_DELAY_MS,
+                ],
+            )?;
+            let start_hour =
+                required_u8(fields, download_schedule_keys::WINDOW_START_HOUR)
+                    .ok_or(DownloadSnapshotError::SchemaCorrupt)?;
+            let end_hour =
+                required_u8(fields, download_schedule_keys::WINDOW_END_HOUR)
+                    .ok_or(DownloadSnapshotError::SchemaCorrupt)?;
+            if start_hour > 23 || end_hour > 23 {
+                return Err(DownloadSnapshotError::SchemaCorrupt);
+            }
+            Ok(DownloadSchedule::Window {
+                start_hour,
+                end_hour,
+                max_delay_ms: optional_u64(fields, download_schedule_keys::MAX_DELAY_MS)?,
+            })
+        }
+        // IMMEDIATE is not persisted; encountering it on the wire means a
+        // peer encoded a redundant schedule. Treat as schema-corrupt to keep
+        // the on-disk representation canonical.
+        _ => Err(DownloadSnapshotError::SchemaCorrupt),
+    }
+}
+
 fn kv(key: u32, value: Value) -> (Value, Value) {
     (Value::Integer(Integer::from(key)), value)
 }
@@ -892,3 +1118,4 @@ fn validate_cbor_value(value: &Value, depth: usize) -> Result<(), DownloadSnapsh
         _ => Err(DownloadSnapshotError::SchemaCorrupt),
     }
 }
+

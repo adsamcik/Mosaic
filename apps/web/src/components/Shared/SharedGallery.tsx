@@ -6,16 +6,23 @@
  * based on the access tier granted by the link.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useAlbumDownload } from '../../hooks/useAlbumDownload';
+import { useCallback, useEffect, useState } from 'react';
+import { AccessTier as AccessTierConst } from '../../lib/api-types';
+import { useVisitorAlbumDownload } from '../../hooks/useVisitorAlbumDownload';
+import { useAlbumDownloadModePicker } from '../../hooks/useAlbumDownloadModePicker';
 import type { TierKey } from '../../hooks/useLinkKeys';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import { createLogger } from '../../lib/logger';
-import { createShareLinkOriginalResolver } from '../../lib/shared-album-download';
 import type { LinkDecryptionKey, PhotoMeta } from '../../workers/types';
-import { DownloadProgressOverlay } from '../Gallery/DownloadProgressOverlay';
+import { DownloadTray } from '../Download/DownloadTray';
+import { useDownloadManager } from '../../hooks/useDownloadManager';
+import { useTranslation } from 'react-i18next';
+import { DownloadScopeProvider } from '../../contexts/DownloadScopeContext';
+import { deriveVisitorScopeKey, ensureScopeKeySodiumReady, scopeKeyPrefix } from '../../lib/scope-key';
+import { useVisitorDownloadDisclosure } from '../../hooks/useVisitorDownloadDisclosure';
 import { SharedMosaicPhotoGrid } from './SharedMosaicPhotoGrid';
 import { SharedPhotoGrid } from './SharedPhotoGrid';
+import { VisitorDownloadDisclosure } from './VisitorDownloadDisclosure';
 
 const log = createLogger('SharedGallery');
 
@@ -64,6 +71,21 @@ export function SharedGallery({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'mosaic'>('grid');
+
+  // Visitor tray scope key. Derived once libsodium is ready; until then the
+  // tray sees `null` and renders no jobs (preventing brief auth/visitor leaks
+  // on first render). Recomputed when linkId or grantToken change.
+  const [visitorScopeKey, setVisitorScopeKey] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void ensureScopeKeySodiumReady().then(() => {
+      if (cancelled) return;
+      setVisitorScopeKey(deriveVisitorScopeKey(linkId, grantToken ?? null));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [linkId, grantToken]);
 
   // Determine default layout based on metadata when photos load
   useEffect(() => {
@@ -237,7 +259,7 @@ export function SharedGallery({
               fallbackEpoch: fallbackEpochId,
               tier,
             });
-            return key.linkTierHandleId;
+            return key.linkTierHandleId ?? key.key;
           }
         }
         log.warn('No tier key found', { epochId, tier });
@@ -251,7 +273,7 @@ export function SharedGallery({
           epochId,
           tier,
         });
-        return tierKey.linkTierHandleId;
+        return tierKey.linkTierHandleId ?? tierKey.key;
       }
 
       // Fall back to highest available
@@ -263,7 +285,7 @@ export function SharedGallery({
             requestedTier: tier,
             actualTier: t,
           });
-          return key.linkTierHandleId;
+          return key.linkTierHandleId ?? key.key;
         }
       }
       log.warn('No tier key found after fallback', { epochId, tier });
@@ -272,32 +294,110 @@ export function SharedGallery({
     [tierKeys],
   );
 
-  const albumDownload = useAlbumDownload();
+  // Visitor (share-link) download — drives the coordinator worker through a
+  // `share-link` SourceStrategy. The tier-3 gate below is the access
+  // contract: only links granting full-access expose the download UI.
+  const albumDownload = useVisitorAlbumDownload({
+    linkId,
+    grantToken: grantToken ?? null,
+    getTier3Key: useCallback(
+      (epochId: number): LinkDecryptionKey | undefined =>
+        getTierKey(epochId, AccessTierConst.FULL),
+      [getTierKey],
+    ),
+  });
+  const modePicker = useAlbumDownloadModePicker();
 
-  const downloadResolver = useMemo(
-    () =>
-      createShareLinkOriginalResolver({
-        linkId,
-        grantToken: grantToken ?? undefined,
-        getTierKeyHandle: getTierKey,
-      }),
-    [linkId, grantToken, getTierKey],
-  );
-
-  const handleDownloadAll = useCallback(() => {
-    if (photos.length === 0) return;
-    void albumDownload.startDownload(
-      albumId,
-      albumName ?? 'Shared Album',
-      photos,
-      downloadResolver,
+  // Per-share-link disclosure gate. Acknowledgement is keyed off the
+  // visitor scope key, so consenting on link A does NOT leak trust onto
+  // link B. While visitorScopeKey is null (libsodium still warming up)
+  // the hook reports acknowledged as false and the gate cannot be
+  // opened — clicks are no-ops.
+  const disclosure = useVisitorDownloadDisclosure(visitorScopeKey);
+  // Surface AccessRevoked clearly: if any job in this visitor scope has
+  // failed with AccessRevoked, show a non-blocking banner so the viewer
+  // understands why the download stalled and that the link is dead. We
+  // do NOT auto-redirect; cached thumbnails remain viewable.
+  const downloadManager = useDownloadManager();
+  const { t: translate } = useTranslation();
+  const shareLinkRevoked =
+    visitorScopeKey !== null &&
+    downloadManager.jobs.some(
+      (job) =>
+        job.scopeKey === visitorScopeKey &&
+        job.phase === 'Errored' &&
+        job.lastErrorReason === 'AccessRevoked',
     );
-  }, [photos, albumId, albumName, albumDownload, downloadResolver]);
+  const [showDisclosure, setShowDisclosure] = useState(false);
+
+  // Run the actual download flow (mode picker -> coordinator). Split out
+  // so both the post-acknowledge path and the already-acknowledged path
+  // share one implementation.
+  const proceedToDownload = useCallback(async (): Promise<void> => {
+    if (photos.length === 0) return;
+    const name = albumName ?? 'Shared Album';
+    // `keepOffline` is hidden for visitors: anonymous viewers have no
+    // per-account scope key (tracked as `p3-visitor-job-scope`).
+    const picked = await modePicker.prompt({
+      albumId,
+      suggestedFileName: name,
+      photos,
+      hideKeepOffline: true,
+    });
+    if (picked === null) return;
+    // Visitor v1: schedule is intentionally NOT forwarded — visitor jobs are
+    // always immediate. See plan `pp-cron-wire` step 4.
+    await albumDownload.startDownload(albumId, name, photos, picked.mode);
+  }, [photos, albumId, albumName, albumDownload, modePicker]);
+
+  const handleDownloadAll = useCallback(async (): Promise<void> => {
+    if (photos.length === 0) return;
+    if (visitorScopeKey === null) {
+      // Scope key not yet derived — wait for it. The button will become
+      // responsive once libsodium initialises.
+      log.debug('Download click ignored: visitor scope key not ready');
+      return;
+    }
+    if (!disclosure.acknowledged) {
+      log.info('Showing visitor disclosure gate', {
+        scopePrefix: scopeKeyPrefix(visitorScopeKey),
+      });
+      setShowDisclosure(true);
+      return;
+    }
+    await proceedToDownload();
+  }, [photos.length, visitorScopeKey, disclosure.acknowledged, proceedToDownload]);
+
+  const handleDisclosureAcknowledge = useCallback((): void => {
+    setShowDisclosure(false);
+    void proceedToDownload();
+  }, [proceedToDownload]);
+
+  const handleDisclosureCancel = useCallback((): void => {
+    if (visitorScopeKey !== null) {
+      log.info('Visitor disclosure cancelled', {
+        scopePrefix: scopeKeyPrefix(visitorScopeKey),
+      });
+    }
+    setShowDisclosure(false);
+  }, [visitorScopeKey]);
+
+  const revokedBanner = shareLinkRevoked ? (
+    <div
+      role="status"
+      className="shared-gallery-revoked-banner"
+      data-testid="shared-gallery-revoked-banner"
+    >
+      <strong>{translate('download.tray.shareLinkRevoked')}</strong>
+      <span> {translate('download.tray.shareLinkRevokedBody')}</span>
+    </div>
+  ) : null;
 
   // Loading state
   if (isLoading || isLoadingKeys) {
     return (
       <div className="shared-gallery" data-testid="shared-gallery">
+        {revokedBanner}
         <div className="gallery-loading">
           <div className="loading-spinner" />
           <p>
@@ -312,6 +412,7 @@ export function SharedGallery({
   if (error) {
     return (
       <div className="shared-gallery" data-testid="shared-gallery">
+        {revokedBanner}
         <div className="gallery-error">
           <span className="error-icon">⚠️</span>
           <p>Failed to load photos: {error.message}</p>
@@ -324,6 +425,7 @@ export function SharedGallery({
   if (photos.length === 0) {
     return (
       <div className="shared-gallery" data-testid="shared-gallery">
+        {revokedBanner}
         <div className="gallery-empty">
           <span className="empty-icon">📷</span>
           <p>No photos in this album.</p>
@@ -333,7 +435,9 @@ export function SharedGallery({
   }
 
   return (
+    <DownloadScopeProvider scopeKey={visitorScopeKey}>
     <div className="shared-gallery" data-testid="shared-gallery">
+      {revokedBanner}
       <div className="gallery-header">
         <h2 className="gallery-title">
           {albumName || 'Shared Album'}
@@ -351,14 +455,14 @@ export function SharedGallery({
           )}
         </div>
 
-        {accessTier === 3 && photos.length > 0 && (
+        {accessTier === AccessTierConst.FULL && photos.length > 0 && (
           <button
             type="button"
             className="button-secondary gallery-download-all-btn"
-            onClick={handleDownloadAll}
+            onClick={(): void => { void handleDownloadAll(); }}
             disabled={albumDownload.isDownloading}
             data-testid="shared-gallery-download-all"
-            title="Download all photos as ZIP"
+            title="Download all photos"
           >
             {albumDownload.isDownloading
               ? 'Downloading...'
@@ -445,12 +549,16 @@ export function SharedGallery({
         )}
       </div>
 
-      {albumDownload.isDownloading && albumDownload.progress && (
-        <DownloadProgressOverlay
-          progress={albumDownload.progress}
-          onCancel={albumDownload.cancel}
+      {modePicker.pickerElement}
+      {showDisclosure && visitorScopeKey !== null && (
+        <VisitorDownloadDisclosure
+          scopeKey={visitorScopeKey}
+          onAcknowledge={handleDisclosureAcknowledge}
+          onCancel={handleDisclosureCancel}
         />
       )}
+      <DownloadTray />
     </div>
+    </DownloadScopeProvider>
   );
 }

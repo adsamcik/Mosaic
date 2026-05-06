@@ -62,9 +62,9 @@ function GalleryDownloadHarness(props: {
 
   const handleDownloadAll = useCallback(async () => {
     if (photos.length === 0) return;
-    const mode = await picker.prompt({ albumId, suggestedFileName: albumName, photos });
-    if (mode === null) return;
-    await albumDownload.startDownload(albumId, albumName, photos, { mode });
+    const picked = await picker.prompt({ albumId, suggestedFileName: albumName, photos });
+    if (picked === null) return;
+    await albumDownload.startDownload(albumId, albumName, photos, { mode: picked.mode, schedule: picked.schedule });
   }, [albumId, albumName, photos, albumDownload, picker]);
 
   return (
@@ -109,10 +109,10 @@ describe('Gallery download integration (C1 wiring)', () => {
     await flushMicrotasks();
 
     expect(albumDownload.startDownload).toHaveBeenCalledTimes(1);
-    const calls = albumDownload.startDownload.mock.calls as unknown as ReadonlyArray<readonly [string, string, ReadonlyArray<PhotoMeta>, { readonly mode: DownloadOutputMode }]>;
+    const calls = albumDownload.startDownload.mock.calls as unknown as ReadonlyArray<readonly [string, string, ReadonlyArray<PhotoMeta>, { readonly mode: DownloadOutputMode; readonly schedule?: unknown }]>;
     expect(calls[0]?.[0]).toBe('alb');
     expect(calls[0]?.[1]).toBe('My Album');
-    expect(calls[0]?.[3]).toEqual({ mode: { kind: 'keepOffline' } });
+    expect(calls[0]?.[3]).toEqual({ mode: { kind: 'keepOffline' }, schedule: { kind: 'immediate' } });
     await r.unmount();
   });
 

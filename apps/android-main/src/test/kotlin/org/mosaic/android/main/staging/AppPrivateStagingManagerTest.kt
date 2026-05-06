@@ -66,4 +66,3 @@ class AppPrivateStagingManagerTest {
     assertFalse(File(context.filesDir, "staging/${staged.id}.properties").exists())
   }
 }
-

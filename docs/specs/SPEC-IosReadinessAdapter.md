@@ -1,6 +1,6 @@
 # SPEC-IosReadinessAdapter
 
-> **Status**: v1.  
+> **Status**: v1.
 > **Source**: Q-final-2.
 
 ## 1. Purpose

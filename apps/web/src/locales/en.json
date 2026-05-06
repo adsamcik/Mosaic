@@ -297,6 +297,11 @@
       "resumePromptTitle": "Resume your previous download?",
       "resumePromptBody": "{{done}} of {{total}} photos completed last time.",
       "resumeFromYesterday": "Resume from yesterday",
+      "visitorPausedNoSourceBody": "Visitor download paused — {{done}} of {{total}} photos saved. Re-open the share link to resume.",
+      "visitorPausedNoSourceHint": "We could not keep your share-link credentials across tabs. Open the original link to continue.",
+      "openShareLinkToResume": "Open the share link to resume",
+      "shareLinkRevoked": "Share link revoked or expired",
+      "shareLinkRevokedBody": "This share link has been revoked. Photos can no longer be downloaded.",
       "photoProgress": "{{done}} / {{total}} photos",
       "etaSimple": "about {{remaining}} photos left",
       "etaPending": "estimating time left",
@@ -322,6 +327,26 @@
         "Done": "Done",
         "Errored": "Error",
         "Cancelled": "Cancelled"
+      },
+      "scheduledBadge": "Scheduled",
+      "scheduledStartNow": "Start now",
+      "scheduledEdit": "Edit schedule",
+      "scheduledReason": "Waiting: {{reason}}",
+      "scheduledReasons": {
+        "offline": "offline",
+        "dataSaver": "data saver enabled",
+        "connectionTooSlow": "connection too slow",
+        "notCharging": "not charging",
+        "userActive": "user active",
+        "outsideWindow": "outside time window",
+        "windowMisconfigured": "schedule misconfigured",
+        "unknown": "waiting"
+      },
+      "editScheduleTitle": "Edit download schedule",
+      "thumbnails": {
+        "empty": "Previews will appear as photos download",
+        "morePhotos": "+{{count}} more",
+        "error": "Preview unavailable"
       }
     },
     "diff": {
@@ -367,11 +392,48 @@
       },
       "perFileWebShare": "Save individual files (via Share menu)",
       "perFileFsAccess": "Save individual files ({{count}} prompts)",
+      "perFileDirectory": "Save individual files (one prompt — choose a folder)",
+      "perFileDirectoryNotSupported": "Folder save not supported in this browser",
+      "perFileDirectoryNonEmpty": "This folder contains other files. They won't be overwritten.",
+      "perFileDirectoryDisclosure": "We'll open a folder picker and write each photo into it.",
       "perFileBlobAnchor": "Save individual files (browser may warn)",
       "perFileBlobAnchorRefusal": "Too many photos ({{count}}) for individual downloads in this browser. Try Save as ZIP.",
       "perFileNotSupported": "Per-file save not supported in this browser",
       "perFilePromptCountOne": "1 prompt",
       "perFilePromptCountMany": "{{count}} prompts"
+    },
+    "persistencePrompt": {
+      "title": "Keep your offline photos safe",
+      "body": "Keeping photos offline uses your browser's storage. Without permission your browser may delete them automatically when storage is low. Granting permission keeps them safe.",
+      "allow": "Allow",
+      "notNow": "Not now",
+      "neverAsk": "Don't ask again"
+    },
+    "visitorDisclosure": {
+      "title": "Before you start the download",
+      "body1": "To download this album, your browser will temporarily save the decrypted photos in this device's local storage (OPFS) while the download runs.",
+      "body2": "The decrypted photos stay on this device until the download finishes and the file is saved. You can safely close the tab — the download is resumable when you come back.",
+      "body3": "On a shared device, anyone using this browser profile could potentially access the staging area while a download is in progress. Continue only if that is acceptable.",
+      "acknowledge": "I understand, continue",
+      "cancel": "Cancel"
+    },
+    "schedule": {
+      "title": "Schedule",
+      "kind": {
+        "immediate": "As soon as possible",
+        "wifi": "Only on Wi-Fi",
+        "wifiCharging": "Only on Wi-Fi while charging",
+        "idle": "When the device is idle",
+        "window": "During a daily window"
+      },
+      "windowStart": "Start",
+      "windowEnd": "End",
+      "maxDelay": "Max delay (hours)",
+      "maxDelayHelp": "Force-start after this many hours regardless of conditions.",
+      "startNow": "Start now",
+      "editSchedule": "Edit schedule",
+      "cancel": "Cancel",
+      "save": "Save"
     }
   },
   "lightbox": {

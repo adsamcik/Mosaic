@@ -16,7 +16,8 @@ const mocks = vi.hoisted(() => ({
   decryptShardWithTierKey: vi.fn(),
   startDownload: vi.fn(),
   cancelDownload: vi.fn(),
-  createShareLinkOriginalResolver: vi.fn(),
+  visitorHookOpts: null as null | { linkId: string; grantToken: string | null; getTier3Key: (e: number) => unknown },
+  modePickerPrompt: vi.fn(async (_args: unknown) => ({ mode: { kind: 'zip' as const, fileName: 'a.zip' }, schedule: { kind: 'immediate' as const } })),
   albumDownloadState: {
     isDownloading: false,
     progress: null as null | {
@@ -52,33 +53,39 @@ vi.mock('@mosaic/crypto', () => ({
   toBase64: (arr: Uint8Array) => btoa(String.fromCharCode(...arr)),
 }));
 
-vi.mock('../src/hooks/useAlbumDownload', () => ({
-  useAlbumDownload: () => ({
-    isDownloading: mocks.albumDownloadState.isDownloading,
-    progress: mocks.albumDownloadState.progress,
-    error: mocks.albumDownloadState.error,
-    startDownload: mocks.startDownload,
-    cancel: mocks.cancelDownload,
-    supportsStreaming: false,
+// useAlbumDownload is no longer used by SharedGallery (visitor path uses
+// useVisitorAlbumDownload). The mock above replaces it.
+
+vi.mock('../src/hooks/useVisitorAlbumDownload', () => ({
+  useVisitorAlbumDownload: (opts: {
+    linkId: string; grantToken: string | null;
+    getTier3Key: (epochId: number) => unknown;
+  }) => {
+    mocks.visitorHookOpts = opts;
+    return {
+      isDownloading: mocks.albumDownloadState.isDownloading,
+      jobProgress: null,
+      error: mocks.albumDownloadState.error,
+      startDownload: mocks.startDownload,
+      cancel: mocks.cancelDownload,
+      supportsStreaming: false,
+    };
+  },
+}));
+
+vi.mock('../src/hooks/useAlbumDownloadModePicker', () => ({
+  useAlbumDownloadModePicker: () => ({
+    pickerElement: null,
+    prompt: mocks.modePickerPrompt,
   }),
 }));
 
-vi.mock('../src/lib/shared-album-download', () => ({
-  createShareLinkOriginalResolver: mocks.createShareLinkOriginalResolver,
+vi.mock('../src/components/Download/DownloadTray', () => ({
+  DownloadTray: () => createElement('div', { 'data-testid': 'download-tray' }),
 }));
 
-vi.mock('../src/components/Gallery/DownloadProgressOverlay', () => ({
-  DownloadProgressOverlay: ({
-    progress,
-  }: {
-    progress: { phase: string };
-  }) =>
-    createElement(
-      'div',
-      { 'data-testid': 'download-progress-overlay' },
-      progress.phase,
-    ),
-}));
+// DownloadProgressOverlay is no longer rendered by SharedGallery; the
+// persistent DownloadTray (mocked above) replaces it.
 
 // Mock SharedPhotoGrid
 vi.mock('../src/components/Shared/SharedPhotoGrid', () => ({
@@ -195,9 +202,8 @@ describe('SharedGallery', () => {
     mocks.albumDownloadState.progress = null;
     mocks.albumDownloadState.error = null;
     mocks.startDownload.mockResolvedValue(undefined);
-    mocks.createShareLinkOriginalResolver.mockReturnValue(
-      async () => new Uint8Array([1, 2, 3]),
-    );
+    mocks.modePickerPrompt.mockResolvedValue({ mode: { kind: 'zip' as const, fileName: 'a.zip' }, schedule: { kind: 'immediate' as const } });
+    mocks.visitorHookOpts = null;
 
     // Default successful photo response
     mocks.fetch.mockResolvedValue({
@@ -694,13 +700,11 @@ describe('SharedGallery', () => {
       });
       const fullPage = Array.from({ length: 100 }, (_, i) => makePhoto(i));
       const tailPage = Array.from({ length: 50 }, (_, i) => makePhoto(100 + i));
-      const resolver = async () => new Uint8Array([9, 8, 7]);
       let decryptIndex = 0;
 
       mocks.fetch
         .mockResolvedValueOnce({ ok: true, json: async () => fullPage })
         .mockResolvedValueOnce({ ok: true, json: async () => tailPage });
-      mocks.createShareLinkOriginalResolver.mockReturnValue(resolver);
       mocks.decryptShardWithTierKey.mockImplementation(async () => {
         const id = `photo-${decryptIndex++}`;
         return new TextEncoder().encode(
@@ -736,37 +740,60 @@ describe('SharedGallery', () => {
       const button = getByTestId(
         'shared-gallery-download-all',
       ) as HTMLButtonElement;
-      act(() => {
+      await act(async () => {
         button.click();
+        await Promise.resolve();
+        await Promise.resolve();
       });
 
-      expect(mocks.createShareLinkOriginalResolver).toHaveBeenCalledWith(
-        expect.objectContaining({
-          linkId: 'test-link-id',
-          grantToken: 'grant-token-123',
-          getTierKeyHandle: expect.any(Function),
-        }),
+      // Visitor flow now gates downloads behind a per-share-link disclosure.
+      // Acknowledge it so the mode-picker assertions below run.
+      await waitFor(
+        () => getByTestId('visitor-download-disclosure-acknowledge') !== null,
       );
+      const ackButton = getByTestId(
+        'visitor-download-disclosure-acknowledge',
+      ) as HTMLButtonElement;
+      await act(async () => {
+        ackButton.click();
+        // Let the mode-picker prompt + startDownload promises settle.
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // The visitor hook is configured with the share-link inputs.
+      expect(mocks.visitorHookOpts).not.toBeNull();
+      expect(mocks.visitorHookOpts!.linkId).toBe('test-link-id');
+      expect(mocks.visitorHookOpts!.grantToken).toBe('grant-token-123');
+      expect(typeof mocks.visitorHookOpts!.getTier3Key).toBe('function');
+
+      // The mode-picker is prompted with `hideKeepOffline: true` (visitors
+      // have no per-account scope key).
+      expect(mocks.modePickerPrompt).toHaveBeenCalledTimes(1);
+      const promptArgs = mocks.modePickerPrompt.mock.calls[0]![0] as {
+        readonly albumId: string; readonly suggestedFileName: string;
+        readonly photos: ReadonlyArray<unknown>; readonly hideKeepOffline?: boolean;
+      };
+      expect(promptArgs.albumId).toBe('album-123');
+      expect(promptArgs.hideKeepOffline).toBe(true);
+      expect(promptArgs.photos).toHaveLength(150);
+
+      // After the user picks a mode, the visitor download is dispatched.
       expect(mocks.startDownload).toHaveBeenCalledTimes(1);
-      const [albumId, albumName, photos, resolveOriginal] =
+      const [albumId, albumName, photos, mode] =
         mocks.startDownload.mock.calls[0]!;
       expect(albumId).toBe('album-123');
       expect(albumName).toBe('Shared Album');
       expect(photos).toHaveLength(150);
-      expect(resolveOriginal).toBe(resolver);
+      expect(mode).toEqual({ kind: 'zip', fileName: 'a.zip' });
 
       cleanup();
     });
 
-    it('renders download progress while the shared album ZIP is downloading', async () => {
-      mocks.albumDownloadState.isDownloading = true;
-      mocks.albumDownloadState.progress = {
-        phase: 'downloading',
-        currentFileName: 'photo-1.jpg',
-        completedFiles: 1,
-        totalFiles: 2,
-      };
-
+    it('mounts the persistent DownloadTray for visitor jobs', async () => {
+      // Visitor jobs surface progress through the persistent DownloadTray
+      // (DownloadProgressOverlay was removed when SharedGallery moved to the
+      // coordinator-driven flow).
       const { getByTestId, cleanup } = renderComponent({
         linkId: 'test-link-id',
         albumId: 'album-123',
@@ -777,7 +804,7 @@ describe('SharedGallery', () => {
 
       await waitFor(() => getByTestId('shared-photo-grid') !== null);
 
-      expect(getByTestId('download-progress-overlay')).not.toBeNull();
+      expect(getByTestId('download-tray')).not.toBeNull();
 
       cleanup();
     });

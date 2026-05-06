@@ -13,6 +13,9 @@ const baseJob: JobSummary = {
   failureCount: 0,
   createdAtMs: 1,
   lastUpdatedAtMs: 1,
+  scopeKey: 'auth:00000000000000000000000000000000',
+  lastErrorReason: null,
+  schedule: null,
 };
 
 afterEach(() => document.body.replaceChildren());
@@ -42,6 +45,102 @@ describe('DownloadJobRow', () => {
     expect(textContent(rendered.container)).toContain('2 failures');
     await rendered.unmount();
   });
+
+  it('shows "Share link revoked or expired" for visitor jobs Errored with AccessRevoked', async () => {
+    const visitorJob: JobSummary = {
+      ...baseJob,
+      phase: 'Errored',
+      lastErrorReason: 'AccessRevoked',
+  schedule: null,
+      scopeKey: 'visitor:11111111111111111111111111111111',
+    };
+    const rendered = await render(
+      <DownloadJobRow
+        job={visitorJob}
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onCancelSoft={vi.fn()}
+        onCancelHard={vi.fn()}
+      />,
+    );
+    expect(textContent(rendered.container)).toContain('Share link revoked or expired');
+    await rendered.unmount();
+  });
+
+  it('renders Scheduled badge + Start now + Edit schedule for Idle+schedule jobs', async () => {
+    const scheduledJob: JobSummary = {
+      ...baseJob,
+      phase: 'Idle',
+      schedule: { kind: 'wifi' },
+      scheduleEvaluation: { canStart: false, reason: 'connection too slow', retryAfterMs: 30_000 },
+    };
+    const onForceStart = vi.fn();
+    const onEditSchedule = vi.fn();
+    const r = await render(
+      <DownloadJobRow
+        job={scheduledJob}
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onCancelSoft={vi.fn()}
+        onCancelHard={vi.fn()}
+        onForceStart={onForceStart}
+        onEditSchedule={onEditSchedule}
+      />,
+    );
+    expect(textContent(r.container)).toContain('Scheduled');
+    expect(textContent(r.container)).toContain('Waiting: connection too slow');
+    await click(requireElement(r.container.querySelector('[data-testid="download-tray-start-now"]')));
+    await click(requireElement(r.container.querySelector('[data-testid="download-tray-edit-schedule"]')));
+    expect(onForceStart).toHaveBeenCalledWith(scheduledJob.jobId);
+    expect(onEditSchedule).toHaveBeenCalledWith(scheduledJob.jobId);
+    // a11y: scheduled-reason is a polite live region.
+    const reason = requireElement(r.container.querySelector('[data-testid="download-tray-scheduled-reason"]'));
+    expect(reason.getAttribute('role')).toBe('status');
+    expect(reason.getAttribute('aria-live')).toBe('polite');
+    await r.unmount();
+  });
+
+  it('does NOT render Start now / Edit schedule when callbacks are absent', async () => {
+    const scheduledJob: JobSummary = {
+      ...baseJob,
+      phase: 'Idle',
+      schedule: { kind: 'wifi' },
+      scheduleEvaluation: null,
+    };
+    const r = await render(
+      <DownloadJobRow
+        job={scheduledJob}
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onCancelSoft={vi.fn()}
+        onCancelHard={vi.fn()}
+      />,
+    );
+    expect(r.container.querySelector('[data-testid="download-tray-start-now"]')).toBeNull();
+    expect(r.container.querySelector('[data-testid="download-tray-edit-schedule"]')).toBeNull();
+    await r.unmount();
+  });
+
+  it('does NOT use the share-link copy for AUTH jobs Errored with AccessRevoked', async () => {
+    const authJob: JobSummary = {
+      ...baseJob,
+      phase: 'Errored',
+      lastErrorReason: 'AccessRevoked',
+  schedule: null,
+      scopeKey: 'auth:00000000000000000000000000000000',
+    };
+    const rendered = await render(
+      <DownloadJobRow
+        job={authJob}
+        onPause={vi.fn()}
+        onResume={vi.fn()}
+        onCancelSoft={vi.fn()}
+        onCancelHard={vi.fn()}
+      />,
+    );
+    expect(textContent(rendered.container)).not.toContain('Share link revoked');
+    await rendered.unmount();
+  });
 });
 
 function translate(key: string, values?: Record<string, unknown>): string {
@@ -55,6 +154,17 @@ function translate(key: string, values?: Record<string, unknown>): string {
     'download.tray.cancelJob': 'Cancel download job',
     'download.tray.pause': 'Pause',
     'download.tray.cancel': 'Cancel',
+    'download.tray.shareLinkRevoked': 'Share link revoked or expired',
+    'download.tray.phase.Errored': 'Error',
+    'download.tray.discardJob': 'Discard download progress',
+    'download.tray.discard': 'Discard',
+    'download.tray.scheduledBadge': 'Scheduled',
+    'download.tray.scheduledStartNow': 'Start now',
+    'download.tray.scheduledEdit': 'Edit schedule',
+    'download.tray.scheduledReason': 'Waiting: {{reason}}',
+    'download.tray.scheduledReasons.connectionTooSlow': 'connection too slow',
+    'download.tray.scheduledReasons.notCharging': 'not charging',
+    'download.tray.phase.Idle': 'Idle',
   };
   let output = map[key] ?? key;
   for (const [name, value] of Object.entries(values ?? {})) {

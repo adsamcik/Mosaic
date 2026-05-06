@@ -219,4 +219,3 @@ class TusUploadSessionTest {
     return runtime.totalMemory() - runtime.freeMemory()
   }
 }
-

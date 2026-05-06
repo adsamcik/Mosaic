@@ -1,9 +1,17 @@
 /**
  * Background-Fetch shard cache lookup.
  *
- * Encrypted shard responses may be written to `mosaic-bgfetch-cache` by a
- * Service Worker or worker-side Background Fetch integration. Foreground
- * shard downloads consult the cache before falling back to the network.
+ * The Service Worker (see `src/service-worker/sw-handlers.ts`) and worker-side
+ * Background Fetch integrations store encrypted shard responses in a single
+ * named cache (`mosaic-bgfetch-cache`). Foreground shard downloads consult this
+ * cache before falling back to the network, so a BG-Fetch completed while the
+ * tab was closed gets reused.
+ *
+ * - Works in both window and worker contexts (Cache API is available in
+ *   DedicatedWorker / SharedWorker scopes too).
+ * - Pure peek; never writes. Writes happen outside this foreground helper.
+ * - All errors are caught and treated as cache misses; correctness must always
+ *   fall through to the network.
  */
 export const BG_FETCH_CACHE_NAME = 'mosaic-bgfetch-cache';
 

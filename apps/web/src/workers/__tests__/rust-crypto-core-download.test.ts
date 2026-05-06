@@ -153,6 +153,7 @@ describe('rust download facade wrappers', () => {
       albumId,
       planBytes: built.planBytes,
       nowMs: 1_700_000_000_000,
+      scopeKey: 'legacy:00000000000000000000000000000000',
     });
     await expect(rustCommitDownloadSnapshot(initialized.bodyBytes)).resolves.toEqual({ checksum });
     await expect(rustLoadDownloadSnapshot(bodyBytes, checksum)).resolves.toEqual({

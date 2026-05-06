@@ -8,7 +8,7 @@ use std::{
     io::Cursor,
     sync::{
         Mutex, OnceLock,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
     },
 };
 
@@ -23,11 +23,13 @@ use wasm_bindgen::prelude::{JsError, JsValue, wasm_bindgen};
 use zeroize::{Zeroize, Zeroizing};
 
 use mosaic_domain::{
-    MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier as DomainShardTier,
+    MetadataSidecar, MetadataSidecarError, MetadataSidecarField, SHARD_ENVELOPE_HEADER_LEN,
+    ShardTier as DomainShardTier,
 };
 
 type CryptoStreamingEncryptor<'a> = mosaic_crypto::StreamingEncryptor<'a>;
 type CryptoStreamingDecryptor<'a> = mosaic_crypto::StreamingDecryptor<'a>;
+type CryptoStreamingShardDecryptor = mosaic_crypto::StreamingShardDecryptor;
 
 struct CryptoStreamingEncryptorState<'a>(Option<CryptoStreamingEncryptor<'a>>);
 struct CryptoStreamingDecryptorState<'a>(Option<CryptoStreamingDecryptor<'a>>);
@@ -2478,6 +2480,8 @@ pub fn download_init_snapshot_v1(input_cbor: &[u8]) -> SerializeSnapshotResult {
         photos,
         failure_log: Vec::new(),
         lease_token: None,
+        scope_key: input.scope_key,
+        schedule: input.schedule,
     };
     match mosaic_client::download::snapshot::prepare_snapshot_bytes(&snapshot) {
         Ok(bytes) => SerializeSnapshotResult {
@@ -6163,6 +6167,14 @@ struct DownloadInitSnapshotInput {
     album_id: mosaic_client::Uuid,
     plan: mosaic_client::download::plan::DownloadPlan,
     now_ms: u64,
+    /// Tray scope key produced by the host (TS) side. Format is
+    /// `<prefix>:<32-hex>` where prefix is one of `auth`/`visitor`/`legacy`.
+    /// Required so jobs can be partitioned per identity.
+    scope_key: String,
+    /// Optional v3 schedule. Threaded through opaquely; the plan-input
+    /// CBOR contributes only `None` until the host wires schedule
+    /// selection (Step 5/6).
+    schedule: Option<mosaic_client::download::snapshot::DownloadSchedule>,
 }
 
 fn client_ok() -> u32 {
@@ -6299,12 +6311,104 @@ fn download_init_snapshot_input_from_cbor(
     let plan_bytes = bytes_from_value(required_entry(entries, 2)?)?;
     let plan = download_plan_from_cbor(&plan_bytes)?;
     let now_ms = u64_from_value(required_entry(entries, 3)?)?;
+    // Plan-input key 4: scope_key (text). Required so jobs are partitioned by
+    // tray identity. Must be non-empty and prefixed with `auth:`, `visitor:`
+    // or `legacy:` to match `mosaic_client::download::scope` derivation.
+    let scope_key = text_from_value(required_entry(entries, 4)?)?;
+    if !is_valid_scope_key(&scope_key) {
+        return Err(mosaic_client::ClientErrorCode::DownloadInvalidPlan);
+    }
+    // Plan-input key 5: optional v3 schedule. Wire format mirrors the
+    // canonical snapshot encoding in mosaic_client::download::snapshot::
+    // schedule_value (key 0=KIND, 1=WINDOW_START_HOUR, 2=WINDOW_END_HOUR,
+    // 3=MAX_DELAY_MS). Absent or Null => Immediate (None).
+    let schedule = match optional_entry(entries, 5)? {
+        Some(value) => decode_download_schedule_value(value)?,
+        None => None,
+    };
     Ok(DownloadInitSnapshotInput {
         job_id,
         album_id,
         plan,
         now_ms,
+        scope_key,
+        schedule,
     })
+}
+
+fn optional_entry(
+    entries: &[(Value, Value)],
+    key: u32,
+) -> Result<Option<&Value>, mosaic_client::ClientErrorCode> {
+    let found = entries.iter().find_map(|(candidate, value)| {
+        match candidate
+            .as_integer()
+            .and_then(|integer| u32::try_from(integer).ok())
+        {
+            Some(found) if found == key => Some(value),
+            _ => None,
+        }
+    });
+    match found {
+        Some(Value::Null) | None => Ok(None),
+        Some(value) => Ok(Some(value)),
+    }
+}
+
+/// Decodes the optional v3 schedule value sitting at key 5 of the plan-input
+/// CBOR map. Mirrors mosaic_client::download::snapshot::decode_schedule
+/// (private to the snapshot module). Returns Ok(None) when the caller
+/// supplies CBOR null or the IMMEDIATE kind code.
+fn decode_download_schedule_value(
+    value: &Value,
+) -> Result<
+    Option<mosaic_client::download::snapshot::DownloadSchedule>,
+    mosaic_client::ClientErrorCode,
+> {
+    use mosaic_client::download::snapshot::DownloadSchedule;
+    use mosaic_client::download::snapshot::download_schedule_keys as keys;
+    use mosaic_client::download::snapshot::download_schedule_kind_codes as kinds;
+
+    if matches!(value, Value::Null) {
+        return Ok(None);
+    }
+    let fields = map_entries(value)?;
+    let kind = u8_from_value(required_entry(fields, keys::KIND)?)?;
+    let max_delay_ms = match optional_entry(fields, keys::MAX_DELAY_MS)? {
+        Some(value) => Some(u64_from_value(value)?),
+        None => None,
+    };
+    match kind {
+        kinds::IMMEDIATE => Ok(None),
+        kinds::WIFI => Ok(Some(DownloadSchedule::Wifi { max_delay_ms })),
+        kinds::WIFI_CHARGING => Ok(Some(DownloadSchedule::WifiCharging { max_delay_ms })),
+        kinds::IDLE => Ok(Some(DownloadSchedule::Idle { max_delay_ms })),
+        kinds::WINDOW => {
+            let start_hour = u8_from_value(required_entry(fields, keys::WINDOW_START_HOUR)?)?;
+            let end_hour = u8_from_value(required_entry(fields, keys::WINDOW_END_HOUR)?)?;
+            if start_hour > 23 || end_hour > 23 {
+                return Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt);
+            }
+            Ok(Some(DownloadSchedule::Window {
+                start_hour,
+                end_hour,
+                max_delay_ms,
+            }))
+        }
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn is_valid_scope_key(value: &str) -> bool {
+    // Accept `<prefix>:<32-hex>`; prefix one of auth/visitor/legacy. ZK-safe:
+    // we only validate shape, never log the value itself.
+    let Some((prefix, suffix)) = value.split_once(':') else {
+        return false;
+    };
+    if !matches!(prefix, "auth" | "visitor" | "legacy") {
+        return false;
+    }
+    suffix.len() == 32 && suffix.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 fn download_plan_to_cbor(
@@ -7203,6 +7307,291 @@ fn js_verify_snapshot_result_from_rust(result: VerifySnapshotResult) -> JsVerify
         valid: result.valid,
     }
 }
+
+// ---------------------------------------------------------------------------
+// Streaming-AEAD shard decryptor (envelope variant 1).
+//
+// A simple Mutex<HashMap<u32, CryptoStreamingShardDecryptor>> registry keyed by an
+// AtomicU32 id. Lifetime is owned by the worker; callers MUST invoke
+// streaming_shard_close_v1 (or successfully reach the final chunk, which
+// removes the entry automatically) to avoid leaking decryptors.
+// ---------------------------------------------------------------------------
+
+
+fn streaming_registry() -> &'static Mutex<HashMap<u32, CryptoStreamingShardDecryptor>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<u32, CryptoStreamingShardDecryptor>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn streaming_next_handle_id() -> u32 {
+    static NEXT_ID: AtomicU32 = AtomicU32::new(1);
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamingShardOpenResult {
+    pub code: u32,
+    pub handle_id: u32,
+    pub chunk_size_bytes: u32,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct StreamingShardChunkResult {
+    pub code: u32,
+    pub plaintext: Vec<u8>,
+}
+
+impl Drop for StreamingShardChunkResult {
+    fn drop(&mut self) {
+        self.plaintext.zeroize();
+    }
+}
+
+impl fmt::Debug for StreamingShardChunkResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StreamingShardChunkResult")
+            .field("code", &self.code)
+            .field("plaintext_len", &self.plaintext.len())
+            .finish()
+    }
+}
+
+#[must_use]
+pub fn open_streaming_shard_v1(envelope_header: &[u8], key: &[u8]) -> StreamingShardOpenResult {
+    let header_array = match <[u8; SHARD_ENVELOPE_HEADER_LEN]>::try_from(envelope_header) {
+        Ok(value) => value,
+        Err(_) => {
+            return StreamingShardOpenResult {
+                code: client_code(mosaic_client::ClientErrorCode::InvalidHeaderLength),
+                handle_id: 0,
+                chunk_size_bytes: 0,
+            };
+        }
+    };
+
+    let mut key_bytes = Zeroizing::new(key.to_vec());
+    let secret_key = match mosaic_crypto::SecretKey::from_bytes(key_bytes.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => {
+            return StreamingShardOpenResult {
+                code: download_decrypt_error_code(error),
+                handle_id: 0,
+                chunk_size_bytes: 0,
+            };
+        }
+    };
+
+    let decryptor = match mosaic_crypto::open_streaming_shard(&header_array, &secret_key) {
+        Ok(value) => value,
+        Err(error) => {
+            return StreamingShardOpenResult {
+                code: download_decrypt_error_code(error),
+                handle_id: 0,
+                chunk_size_bytes: 0,
+            };
+        }
+    };
+    let chunk_size_bytes = decryptor.chunk_size_bytes();
+
+    let handle_id = streaming_next_handle_id();
+    let registry = streaming_registry();
+    match registry.lock() {
+        Ok(mut guard) => {
+            guard.insert(handle_id, decryptor);
+        }
+        Err(_) => {
+            return StreamingShardOpenResult {
+                code: client_code(mosaic_client::ClientErrorCode::InternalStatePoisoned),
+                handle_id: 0,
+                chunk_size_bytes: 0,
+            };
+        }
+    }
+
+    StreamingShardOpenResult {
+        code: client_ok(),
+        handle_id,
+        chunk_size_bytes,
+    }
+}
+
+#[must_use]
+pub fn streaming_shard_process_chunk_v1(
+    handle_id: u32,
+    chunk: &[u8],
+    is_final: bool,
+) -> StreamingShardChunkResult {
+    let registry = streaming_registry();
+
+    if is_final {
+        let mut decryptor = {
+            let mut guard = match registry.lock() {
+                Ok(value) => value,
+                Err(_) => {
+                    return StreamingShardChunkResult {
+                        code: client_code(mosaic_client::ClientErrorCode::InternalStatePoisoned),
+                        plaintext: Vec::new(),
+                    };
+                }
+            };
+            match guard.remove(&handle_id) {
+                Some(value) => value,
+                None => {
+                    return StreamingShardChunkResult {
+                        code: client_code(mosaic_client::ClientErrorCode::SecretHandleNotFound),
+                        plaintext: Vec::new(),
+                    };
+                }
+            }
+        };
+        match decryptor.finish_chunk(chunk) {
+            Ok(plaintext) => StreamingShardChunkResult {
+                code: client_ok(),
+                plaintext: plaintext.to_vec(),
+            },
+            Err(error) => StreamingShardChunkResult {
+                code: download_decrypt_error_code(error),
+                plaintext: Vec::new(),
+            },
+        }
+    } else {
+        let mut guard = match registry.lock() {
+            Ok(value) => value,
+            Err(_) => {
+                return StreamingShardChunkResult {
+                    code: client_code(mosaic_client::ClientErrorCode::InternalStatePoisoned),
+                    plaintext: Vec::new(),
+                };
+            }
+        };
+        let decryptor = match guard.get_mut(&handle_id) {
+            Some(value) => value,
+            None => {
+                return StreamingShardChunkResult {
+                    code: client_code(mosaic_client::ClientErrorCode::SecretHandleNotFound),
+                    plaintext: Vec::new(),
+                };
+            }
+        };
+        match decryptor.process_chunk(chunk) {
+            Ok(plaintext) => StreamingShardChunkResult {
+                code: client_ok(),
+                plaintext: plaintext.to_vec(),
+            },
+            Err(error) => {
+                guard.remove(&handle_id);
+                StreamingShardChunkResult {
+                    code: download_decrypt_error_code(error),
+                    plaintext: Vec::new(),
+                }
+            }
+        }
+    }
+}
+
+#[must_use]
+pub fn streaming_shard_close_v1(handle_id: u32) -> u32 {
+    let registry = streaming_registry();
+    match registry.lock() {
+        Ok(mut guard) => {
+            guard.remove(&handle_id);
+            client_ok()
+        }
+        Err(_) => client_code(mosaic_client::ClientErrorCode::InternalStatePoisoned),
+    }
+}
+
+#[wasm_bindgen(js_name = StreamingShardOpenResult)]
+#[derive(Clone, Copy)]
+pub struct JsStreamingShardOpenResult {
+    code: u32,
+    handle_id: u32,
+    chunk_size_bytes: u32,
+}
+
+#[wasm_bindgen(js_class = StreamingShardOpenResult)]
+impl JsStreamingShardOpenResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+
+    #[wasm_bindgen(getter, js_name = handleId)]
+    #[must_use]
+    pub fn handle_id(&self) -> u32 {
+        self.handle_id
+    }
+
+    #[wasm_bindgen(getter, js_name = chunkSizeBytes)]
+    #[must_use]
+    pub fn chunk_size_bytes(&self) -> u32 {
+        self.chunk_size_bytes
+    }
+}
+
+#[wasm_bindgen(js_name = StreamingShardChunkResult)]
+pub struct JsStreamingShardChunkResult {
+    code: u32,
+    plaintext: Vec<u8>,
+}
+
+impl Drop for JsStreamingShardChunkResult {
+    fn drop(&mut self) {
+        self.plaintext.zeroize();
+    }
+}
+
+#[wasm_bindgen(js_class = StreamingShardChunkResult)]
+impl JsStreamingShardChunkResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn plaintext(&self) -> Vec<u8> {
+        self.plaintext.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = openStreamingShardV1)]
+#[must_use]
+pub fn open_streaming_shard_v1_js(
+    envelope_header: Vec<u8>,
+    key: Vec<u8>,
+) -> JsStreamingShardOpenResult {
+    let result = open_streaming_shard_v1(&envelope_header, &key);
+    JsStreamingShardOpenResult {
+        code: result.code,
+        handle_id: result.handle_id,
+        chunk_size_bytes: result.chunk_size_bytes,
+    }
+}
+
+#[wasm_bindgen(js_name = streamingShardProcessChunkV1)]
+#[must_use]
+pub fn streaming_shard_process_chunk_v1_js(
+    handle_id: u32,
+    chunk: Vec<u8>,
+    is_final: bool,
+) -> JsStreamingShardChunkResult {
+    let mut result = streaming_shard_process_chunk_v1(handle_id, &chunk, is_final);
+    let plaintext = std::mem::take(&mut result.plaintext);
+    JsStreamingShardChunkResult {
+        code: result.code,
+        plaintext,
+    }
+}
+
+#[wasm_bindgen(js_name = streamingShardCloseV1)]
+#[must_use]
+pub fn streaming_shard_close_v1_js(handle_id: u32) -> u32 {
+    streaming_shard_close_v1(handle_id)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -7372,3 +7761,5 @@ mod tests {
         }
     }
 }
+
+// ---------------------------------------------------------------------------

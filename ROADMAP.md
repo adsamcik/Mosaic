@@ -161,7 +161,7 @@ WASM regen chain ────┤              │
                                           ├─ W-V1 (video inspect wired; needs P-W3)
                                           │
                                           └─ P-W3 (video container inspect; needs R-M6 ✅)
-            
+
                      ┌─ B1 ─┬─ B3 ─┬─ B4 ─┬─ B5 (manifest finalization shape; needs R-ADR-022 ✅)
 Backend chain ───────┤      │      │      │
                      └─ B2 ─┘      │      │

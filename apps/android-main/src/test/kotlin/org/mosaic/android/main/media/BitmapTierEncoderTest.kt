@@ -63,4 +63,3 @@ class BitmapTierEncoderTest {
 
   private fun ByteArray.containsAscii(value: String): Boolean = toString(Charsets.ISO_8859_1).contains(value)
 }
-

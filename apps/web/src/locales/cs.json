@@ -308,6 +308,11 @@
       "resumePromptTitle": "Pokračovat v předchozím stahování?",
       "resumePromptBody": "Minule bylo dokončeno {{done}} z {{total}} fotek.",
       "resumeFromYesterday": "Pokračovat ze včerejška",
+      "visitorPausedNoSourceBody": "Stahování návštěvníka pozastaveno — uloženo {{done}} z {{total}} fotek. Pro pokračování znovu otevřete sdílený odkaz.",
+      "visitorPausedNoSourceHint": "Pověření sdíleného odkazu se mezi kartami nezachovalo. Otevřete původní odkaz pro pokračování.",
+      "openShareLinkToResume": "Otevřít sdílený odkaz pro pokračování",
+      "shareLinkRevoked": "Sdílený odkaz byl zrušen nebo vypršel",
+      "shareLinkRevokedBody": "Tento sdílený odkaz byl zrušen. Fotografie již nelze stahovat.",
       "photoProgress": "{{done}} / {{total}} fotek",
       "etaSimple": "zbývá asi {{remaining}} fotek",
       "etaPending": "odhaduje se zbývající čas",
@@ -333,6 +338,26 @@
         "Done": "Hotovo",
         "Errored": "Chyba",
         "Cancelled": "Zrušeno"
+      },
+      "scheduledBadge": "Naplánováno",
+      "scheduledStartNow": "Spustit teď",
+      "scheduledEdit": "Upravit plán",
+      "scheduledReason": "Čeká: {{reason}}",
+      "scheduledReasons": {
+        "offline": "offline",
+        "dataSaver": "úsporný režim dat",
+        "connectionTooSlow": "pomalé připojení",
+        "notCharging": "bez nabíjení",
+        "userActive": "uživatel aktivní",
+        "outsideWindow": "mimo časové okno",
+        "windowMisconfigured": "plán nesprávně nastaven",
+        "unknown": "čeká"
+      },
+      "editScheduleTitle": "Upravit plán stahování",
+      "thumbnails": {
+        "empty": "Náhledy se zobrazí během stahování fotek",
+        "morePhotos": "+{{count}} dalších",
+        "error": "Náhled není k dispozici"
       }
     },
     "diff": {
@@ -378,11 +403,48 @@
       },
       "perFileWebShare": "Uložit jednotlivé soubory (přes nabídku sdílení)",
       "perFileFsAccess": "Uložit jednotlivé soubory ({{count}} výzev)",
+      "perFileDirectory": "Uložit jednotlivé soubory (jedna výzva — vyberte složku)",
+      "perFileDirectoryNotSupported": "Ukládání do složky není v tomto prohlížeči podporováno",
+      "perFileDirectoryNonEmpty": "Tato složka obsahuje další soubory. Nebudou přepsány.",
+      "perFileDirectoryDisclosure": "Otevřeme výběr složky a zapíšeme do ní každou fotku.",
       "perFileBlobAnchor": "Uložit jednotlivé soubory (prohlížeč může varovat)",
       "perFileBlobAnchorRefusal": "Příliš mnoho fotek ({{count}}) pro jednotlivá stažení v tomto prohlížeči. Zkuste uložit jako ZIP.",
       "perFileNotSupported": "Ukládání po jednotlivých souborech není v tomto prohlížeči podporováno",
       "perFilePromptCountOne": "1 výzva",
       "perFilePromptCountMany": "{{count}} výzev"
+    },
+    "persistencePrompt": {
+      "title": "Uchovejte offline fotky v bezpečí",
+      "body": "Offline fotky se ukládají do úložiště prohlížeče. Bez oprávnění je může prohlížeč automaticky smazat, když dochází místo. Udělení oprávnění je ochrání.",
+      "allow": "Povolit",
+      "notNow": "Teď ne",
+      "neverAsk": "Příště se neptat"
+    },
+    "visitorDisclosure": {
+      "title": "Než začnete stahovat",
+      "body1": "Při stahování tohoto alba prohlížeč dočasně uloží dešifrované fotky do lokálního úložiště tohoto zařízení (OPFS).",
+      "body2": "Dešifrované fotky zůstanou v tomto zařízení, dokud stahování neskončí a soubor se neuloží. Záložku můžete bezpečně zavřít — stahování lze po návratu obnovit.",
+      "body3": "Na sdíleném zařízení by k odkládacímu úložišti mohl po dobu stahování přistupovat kdokoli, kdo používá tento profil prohlížeče. Pokračujte, jen pokud je to v pořádku.",
+      "acknowledge": "Rozumím, pokračovat",
+      "cancel": "Zrušit"
+    },
+    "schedule": {
+      "title": "Plán",
+      "kind": {
+        "immediate": "Co nejdříve",
+        "wifi": "Pouze na Wi-Fi",
+        "wifiCharging": "Pouze na Wi-Fi při nabíjení",
+        "idle": "Když je zařízení nečinné",
+        "window": "V denním okně"
+      },
+      "windowStart": "Začátek",
+      "windowEnd": "Konec",
+      "maxDelay": "Maximální zpoždění (hodiny)",
+      "maxDelayHelp": "Po tomto počtu hodin spustit bez ohledu na podmínky.",
+      "startNow": "Spustit teď",
+      "editSchedule": "Upravit plán",
+      "cancel": "Zrušit",
+      "save": "Uložit"
     }
   },
   "lightbox": {

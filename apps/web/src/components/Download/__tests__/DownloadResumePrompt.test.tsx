@@ -43,9 +43,13 @@ const resumableJob: ResumableJobSummary = {
   failureCount: 0,
   createdAtMs: 1,
   lastUpdatedAtMs: 1,
+  scopeKey: 'auth:00000000000000000000000000000000',
+  lastErrorReason: null,
+  schedule: null,
   photosDone: 5,
   photosTotal: 10,
   bytesWritten: 2048,
+  pausedNoSource: false,
 };
 
 const manifest: CurrentAlbumManifest = { albumId: resumableJob.albumId, photos: [] };

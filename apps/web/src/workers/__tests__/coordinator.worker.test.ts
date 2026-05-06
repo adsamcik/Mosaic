@@ -6,7 +6,7 @@ const rustMocks = vi.hoisted(() => ({
   rustApplyDownloadEvent: vi.fn<(stateBytes: Uint8Array, eventBytes: Uint8Array) => Promise<{ newStateBytes: Uint8Array }>>(),
   rustBuildDownloadPlan: vi.fn<(input: { readonly photos: readonly { readonly shards: readonly { readonly tier: number }[] }[] }) => Promise<{ planBytes: Uint8Array }>>(),
   rustCommitDownloadSnapshot: vi.fn<(snapshotBytes: Uint8Array) => Promise<{ checksum: Uint8Array }>>(),
-  rustInitDownloadSnapshot: vi.fn<(input: { readonly jobId: Uint8Array; readonly albumId: string; readonly planBytes: Uint8Array; readonly nowMs: number }) => Promise<{ bodyBytes: Uint8Array; checksum: Uint8Array }>>(),
+  rustInitDownloadSnapshot: vi.fn<(input: { readonly jobId: Uint8Array; readonly albumId: string; readonly planBytes: Uint8Array; readonly nowMs: number; readonly scopeKey: string }) => Promise<{ bodyBytes: Uint8Array; checksum: Uint8Array }>>(),
   rustLoadDownloadSnapshot: vi.fn<(snapshotBytes: Uint8Array, checksum: Uint8Array) => Promise<{ snapshotBytes: Uint8Array; schemaVersionLoaded: number }>>(),
   rustVerifyDownloadSnapshot: vi.fn<(snapshotBytes: Uint8Array, checksum: Uint8Array) => Promise<{ valid: boolean }>>(),
 }));
@@ -138,6 +138,7 @@ vi.mock('../../lib/opfs-staging', () => ({
 
 import { CoordinatorWorker, __coordinatorWorkerTestUtils as cbor } from '../coordinator.worker';
 import * as opfsStaging from '../../lib/opfs-staging';
+import type { SourceStrategy } from '../coordinator/source-strategy';
 
 const albumId = '018f0000-0000-7000-8000-000000000002';
 const nowMs = 1_700_000_000_000;
@@ -252,6 +253,7 @@ function snapshotBody(opts: {
   readonly lastUpdatedAtMs: number;
   readonly photoCount: number;
   readonly photos?: readonly SnapshotPhotoSpec[];
+  readonly scopeKey?: string;
 }): Uint8Array {
   const photos = opts.photos ?? Array.from({ length: opts.photoCount }, (): SnapshotPhotoSpec => ({
     photoId: '018f0000-0000-7000-8000-000000000101',
@@ -281,6 +283,9 @@ function snapshotBody(opts: {
     ])) }),
     mapEntry(8, { kind: 'array', value: [] }),
     mapEntry(9, { kind: 'null' }),
+    ...(opts.scopeKey === undefined
+      ? []
+      : [mapEntry(10, { kind: 'text' as const, value: opts.scopeKey })]),
   ]));
 }
 
@@ -355,7 +360,12 @@ function photoSpecs(doneCount: number, totalCount: number): SnapshotPhotoSpec[] 
   }));
 }
 
-function persistSnapshotJob(seed: number, phase: DownloadPhase, photos: readonly SnapshotPhotoSpec[]): string {
+function persistSnapshotJob(
+  seed: number,
+  phase: DownloadPhase,
+  photos: readonly SnapshotPhotoSpec[],
+  options: { readonly scopeKey?: string; readonly lastUpdatedAtMs?: number } = {},
+): string {
   const jobIdBytes = testJobIdBytes(seed);
   const jobId = hex(jobIdBytes);
   opfsState.dirs.add(jobId);
@@ -364,9 +374,10 @@ function persistSnapshotJob(seed: number, phase: DownloadPhase, photos: readonly
       jobIdBytes,
       phase,
       createdAtMs: nowMs - seed,
-      lastUpdatedAtMs: nowMs + seed,
+      lastUpdatedAtMs: options.lastUpdatedAtMs ?? nowMs + seed,
       photoCount: photos.length,
       photos,
+      ...(options.scopeKey === undefined ? {} : { scopeKey: options.scopeKey }),
     }),
     checksum: checksum(seed),
   });
@@ -398,6 +409,7 @@ beforeEach(() => {
       createdAtMs: input.nowMs,
       lastUpdatedAtMs: input.nowMs,
       photoCount: planPhotoCount,
+      scopeKey: input.scopeKey,
     }),
     checksum: checksum(),
   }));
@@ -424,6 +436,61 @@ afterEach(() => {
 });
 
 describe('CoordinatorWorker', () => {
+  it('subscribeToThumbnails emits each thumbnail from the in-memory manifest', async () => {
+    vi.useRealTimers();
+    // Mock crypto pool so decryptShard returns the input bytes (identity).
+    const decrypt = vi.fn(async (bytes: Uint8Array) => bytes);
+    cbor.setCryptoPoolFactory(async () => ({
+      size: 1,
+      decryptShard: decrypt,
+      decryptShardWithTierKey: vi.fn(),
+    } as unknown as Awaited<ReturnType<typeof cryptoPoolMocks.getCryptoPool>>));
+    const fetched: string[] = [];
+    const fakeSource: SourceStrategy = {
+      kind: 'authenticated',
+      getScopeKey: (): string => 'auth:00000000000000000000000000000000',
+      fetchShard: async (id: string): Promise<Uint8Array> => { fetched.push(id); return new Uint8Array([id.charCodeAt(0)]); },
+      fetchShards: async (): Promise<Uint8Array[]> => [],
+      resolveKey: async (): Promise<Uint8Array> => new Uint8Array(32),
+    };
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const { jobId } = await worker.startJob({
+      ...validInput(),
+      source: fakeSource,
+      thumbnails: [
+        { photoId: 'p-A', epochId: '7', thumbShardId: 'shard-aaaa' },
+        { photoId: 'p-B', epochId: '7', thumbShardId: 'shard-bbbb' },
+      ],
+    });
+    // Provide URL.createObjectURL stub for the test environment.
+    const created: string[] = [];
+    const revoked: string[] = [];
+    let n = 0;
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = (_b: Blob): string => { n += 1; const u = 'blob:int#' + n; created.push(u); return u; };
+    URL.revokeObjectURL = (u: string): void => { revoked.push(u); };
+    try {
+      const received: Array<{ photoId: string; blobUrl: string }> = [];
+      const sub = await worker.subscribeToThumbnails(jobId, (photoId, blobUrl): void => {
+        received.push({ photoId, blobUrl });
+      });
+      await vi.waitFor(() => {
+        expect(received.length).toBe(2);
+      });
+      expect(received.map((r) => r.photoId).sort()).toEqual(['p-A', 'p-B']);
+      expect(fetched.sort()).toEqual(['shard-aaaa', 'shard-bbbb']);
+      sub.unsubscribe();
+      // Allow stop's microtask to revoke.
+      await new Promise((r) => setTimeout(r, 10));
+      expect(revoked.length).toBe(created.length);
+    } finally {
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+    }
+  });
+
   it('initializes empty state', async () => {
     const worker = new CoordinatorWorker();
     await expect(worker.initialize({ nowMs })).resolves.toEqual({ reconstructedJobs: 0 });
@@ -775,7 +842,7 @@ describe('CoordinatorWorker', () => {
   });
 
 
-  it.each(['webShare', 'fsAccessPerFile', 'blobAnchor'] as const)('dispatches perFile finalizer for %s strategy', async (strategy) => {
+  it.each(['webShare', 'fsAccessPerFile', 'fsAccessDirectory', 'blobAnchor'] as const)('dispatches perFile finalizer for %s strategy', async (strategy) => {
     const perFileFinalizer = vi.fn(async () => undefined);
     cbor.setRunPerFileFinalizer(perFileFinalizer as unknown as Parameters<typeof cbor.setRunPerFileFinalizer>[0]);
     const provider = {
@@ -958,6 +1025,207 @@ describe('CoordinatorWorker', () => {
       rekeyed: [],
       unchanged: [],
       shardChanged: ['a'],
+    });
+  });
+
+  // ----- SourceStrategy integration -----
+  it('routes pipeline shard + key requests through the provided source strategy', async () => {
+    interface FullDeps {
+      readonly fetchShards: (ids: ReadonlyArray<string>, signal: AbortSignal) => Promise<Uint8Array[]>;
+      readonly getEpochSeed: (albumId: string, epochId: number) => Promise<Uint8Array>;
+    }
+    const fetchSpy = vi.fn(async (_ids: ReadonlyArray<string>, _signal: AbortSignal): Promise<Uint8Array[]> => [new Uint8Array([1, 2, 3])]);
+    const resolveSpy = vi.fn(async (_albumId: string, _epochId: number): Promise<Uint8Array> => new Uint8Array(32).fill(9));
+    const customSource: SourceStrategy = {
+      kind: 'share-link',
+      fetchShard: vi.fn(async (): Promise<Uint8Array> => new Uint8Array()),
+      fetchShards: fetchSpy,
+      resolveKey: resolveSpy,
+      getScopeKey: () => 'visitor:00000000000000000000000000000000',
+    };
+    pipelineMocks.executePhotoTask.mockImplementation(async (_input, deps) => {
+      const full = deps as unknown as FullDeps;
+      const shards = await full.fetchShards(['shard-x'], new AbortController().signal);
+      const key = await full.getEpochSeed(albumId, 7);
+      expect(shards).toHaveLength(1);
+      expect(key).toHaveLength(32);
+      return { kind: 'done', bytesWritten: 123 };
+    });
+    cbor.setExecutePhotoTask(pipelineMocks.executePhotoTask);
+
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const { jobId } = await worker.startJob({ ...validInput(), source: customSource });
+    await cbor.awaitScheduledDriver(worker, jobId);
+
+    expect(cbor.getJobSource(worker, jobId)).toBe(customSource);
+    expect(fetchSpy).toHaveBeenCalledWith(['shard-x'], expect.any(AbortSignal));
+    expect(resolveSpy).toHaveBeenCalledWith(albumId, 7);
+    expect((await worker.getJob(jobId))?.phase).toBe('Done');
+  });
+
+  it('defaults to the authenticated source when StartJobInput.source is omitted', async () => {
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const { jobId } = await worker.startJob(validInput());
+    await cbor.awaitScheduledDriver(worker, jobId);
+    // No per-job source registered: pipelineDeps will resolve via the lazy
+    // default authenticated source on each driver tick.
+    expect(cbor.getJobSource(worker, jobId)).toBeNull();
+    expect((await worker.getJob(jobId))?.phase).toBe('Done');
+    expect(pipelineMocks.executePhotoTask).toHaveBeenCalled();
+  });
+
+  it('reconstructed jobs have no per-job source and fall back to authenticated on resume', async () => {
+    const reconstructedJobId = persistSnapshotJob(42, 'Running', photoSpecs(0, 1));
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    // No per-job source survives a worker restart.
+    expect(cbor.getJobSource(worker, reconstructedJobId)).toBeNull();
+    // Resume re-spins the driver using the default authenticated source.
+    pipelineMocks.executePhotoTask.mockResolvedValue({ kind: 'done', bytesWritten: 50 });
+    cbor.setExecutePhotoTask(pipelineMocks.executePhotoTask);
+    await worker.resumeJob(reconstructedJobId);
+    await cbor.awaitScheduledDriver(worker, reconstructedJobId);
+    expect(cbor.getJobSource(worker, reconstructedJobId)).toBeNull();
+    expect(pipelineMocks.executePhotoTask).toHaveBeenCalled();
+  });
+
+  // ----- Scope key persistence (Phase 3 visitor tray) -----
+  it('persists scope_key from input source onto the snapshot and JobSummary', async () => {
+    const visitorScope = 'visitor:11111111111111111111111111111111';
+    const visitorSource: SourceStrategy = {
+      kind: 'share-link',
+      fetchShard: vi.fn(async (): Promise<Uint8Array> => new Uint8Array()),
+      fetchShards: vi.fn(async (): Promise<Uint8Array[]> => []),
+      resolveKey: vi.fn(async (): Promise<Uint8Array> => new Uint8Array(32)),
+      getScopeKey: () => visitorScope,
+    };
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const { jobId } = await worker.startJob({ ...validInput(), source: visitorSource });
+    const summaries = await worker.listJobs();
+    const summary = summaries.find((s) => s.jobId === jobId);
+    expect(summary?.scopeKey).toBe(visitorScope);
+    // Verify the scope_key was passed through to the WASM init call.
+    expect(rustMocks.rustInitDownloadSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ scopeKey: visitorScope }),
+    );
+  });
+
+  it('falls back to the configured accountId scope when source is omitted', async () => {
+    const worker = new CoordinatorWorker({ accountId: 'acct-xyz' });
+    await worker.initialize({ nowMs });
+    const { jobId } = await worker.startJob(validInput());
+    const summary = (await worker.getJob(jobId)) ?? null;
+    expect(summary?.scopeKey).toMatch(/^auth:[0-9a-f]{32}$/u);
+  });
+
+  // ----- Visitor cluster: pause + rebind on reconstruct (Phase 3) -----
+  describe('visitor reconstruct: pause-no-source + rebind', () => {
+    const visitorScope = 'visitor:11111111111111111111111111111111';
+    const otherVisitorScope = 'visitor:22222222222222222222222222222222';
+
+    function makeSource(scopeKey: string): SourceStrategy {
+      return {
+        kind: 'share-link',
+        fetchShard: vi.fn(async (): Promise<Uint8Array> => new Uint8Array()),
+        fetchShards: vi.fn(async (): Promise<Uint8Array[]> => []),
+        resolveKey: vi.fn(async (): Promise<Uint8Array> => new Uint8Array(32)),
+        getScopeKey: () => scopeKey,
+      };
+    }
+
+    it('marks reconstructed visitor jobs as pausedNoSource and surfaces them in resume prompt', async () => {
+      const jobId = persistSnapshotJob(50, 'Paused', photoSpecs(1, 2), { scopeKey: visitorScope });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      const resumable = await worker.listResumableJobs();
+      const item = resumable.find((s) => s.jobId === jobId);
+      expect(item).toBeDefined();
+      expect(item?.pausedNoSource).toBe(true);
+    });
+
+    it('does NOT mark auth or legacy reconstructed jobs as pausedNoSource', async () => {
+      const authId = persistSnapshotJob(51, 'Paused', photoSpecs(1, 2), { scopeKey: 'auth:00000000000000000000000000000000' });
+      const legacyId = persistSnapshotJob(52, 'Paused', photoSpecs(1, 2));
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      const resumable = await worker.listResumableJobs();
+      const auth = resumable.find((s) => s.jobId === authId);
+      const legacy = resumable.find((s) => s.jobId === legacyId);
+      expect(auth?.pausedNoSource).toBe(false);
+      expect(legacy?.pausedNoSource).toBe(false);
+    });
+
+    it('resumeJob rejects DownloadIllegalState until rebind succeeds', async () => {
+      const jobId = persistSnapshotJob(53, 'Paused', photoSpecs(1, 2), { scopeKey: visitorScope });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      await expect(worker.resumeJob(jobId)).rejects.toBeInstanceOf(WorkerCryptoError);
+      await worker.rebindJobSource(jobId, makeSource(visitorScope));
+      const resumable = await worker.listResumableJobs();
+      expect(resumable.find((s) => s.jobId === jobId)?.pausedNoSource).toBe(false);
+    });
+
+    it('rebindJobSource rejects when supplied source scope does not match the job scope', async () => {
+      const jobId = persistSnapshotJob(54, 'Paused', photoSpecs(1, 2), { scopeKey: visitorScope });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      await expect(
+        worker.rebindJobSource(jobId, makeSource(otherVisitorScope)),
+      ).rejects.toBeInstanceOf(WorkerCryptoError);
+      // Still paused-no-source after a failed rebind.
+      const resumable = await worker.listResumableJobs();
+      expect(resumable.find((s) => s.jobId === jobId)?.pausedNoSource).toBe(true);
+    });
+
+    it('hard-cancel of a paused-no-source visitor job clears the flag and purges OPFS', async () => {
+      const jobId = persistSnapshotJob(55, 'Paused', photoSpecs(1, 2), { scopeKey: visitorScope });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      await worker.cancelJob(jobId, { soft: false });
+      expect(opfsState.snapshots.has(jobId)).toBe(false);
+    });
+  });
+
+  // ----- Visitor cluster: GC sweep on initialize (Phase 3) -----
+  describe('visitor GC on startup', () => {
+    const visitorScope = 'visitor:99999999999999999999999999999999';
+    const ONE_DAY = 24 * 60 * 60 * 1_000;
+
+    it('sweeps a visitor terminal job older than the TTL', async () => {
+      const oldJobId = persistSnapshotJob(60, 'Done', photoSpecs(1, 1), {
+        scopeKey: visitorScope,
+        lastUpdatedAtMs: nowMs - 30 * ONE_DAY,
+      });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      const jobs = await worker.listJobs();
+      expect(jobs.find((s) => s.jobId === oldJobId)).toBeUndefined();
+      expect(opfsState.snapshots.has(oldJobId)).toBe(false);
+    });
+
+    it('keeps an auth terminal job at the same age (visitor rule does not apply)', async () => {
+      const authJobId = persistSnapshotJob(61, 'Done', photoSpecs(1, 1), {
+        scopeKey: 'auth:00000000000000000000000000000000',
+        lastUpdatedAtMs: nowMs - 30 * ONE_DAY,
+      });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      const jobs = await worker.listJobs();
+      expect(jobs.find((s) => s.jobId === authJobId)).toBeDefined();
+      expect(opfsState.snapshots.has(authJobId)).toBe(true);
+    });
+
+    it('keeps a recent visitor non-terminal job', async () => {
+      const fresh = persistSnapshotJob(62, 'Paused', photoSpecs(1, 2), {
+        scopeKey: visitorScope,
+        lastUpdatedAtMs: nowMs - 1 * ONE_DAY,
+      });
+      const worker = new CoordinatorWorker();
+      await worker.initialize({ nowMs });
+      expect(opfsState.snapshots.has(fresh)).toBe(true);
     });
   });
 });

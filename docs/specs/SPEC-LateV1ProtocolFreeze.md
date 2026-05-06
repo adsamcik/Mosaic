@@ -106,5 +106,3 @@ Release evidence for this declaration includes:
 3. `pwsh tests/architecture/no-raw-secret-ffi-export.ps1`.
 4. Q-final-3 E2E coverage evidence from `docs/specs/SPEC-E2ECoverageMatrix.md`.
 5. Q-final-4 performance budget evidence from `docs/specs/SPEC-PerformanceBudgets.md` and `scripts/run-perf-budgets.ps1`.
-
-
