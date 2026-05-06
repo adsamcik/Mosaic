@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -58,14 +59,7 @@ public sealed class IdempotencyMiddleware
 
         if (string.Equals(db.Database.ProviderName, PostgreSqlProviderName, StringComparison.Ordinal))
         {
-            await using var transaction = await db.Database.BeginTransactionAsync(context.RequestAborted);
-            await AcquirePostgreSqlAdvisoryLockAsync(db, user.Id, idempotencyKey, context.RequestAborted);
-            var pendingResponse = await HandleSerializedAsync(context, db, user.Id, idempotencyKey, requestHash, now, expiresBefore, deferExecutedResponse: true);
-            await transaction.CommitAsync(CancellationToken.None);
-            if (pendingResponse != null)
-            {
-                await pendingResponse.CopyToAsync(context.RequestAborted);
-            }
+            await InvokeWithPostgreSqlAdvisoryLockAsync(context, db, user.Id, idempotencyKey, requestHash, now, expiresBefore);
             return;
         }
 
@@ -257,24 +251,71 @@ public sealed class IdempotencyMiddleware
         return JsonSerializer.Deserialize<Dictionary<string, string[]>>(json) ?? [];
     }
 
-    private static Task AcquirePostgreSqlAdvisoryLockAsync(
+    private async Task InvokeWithPostgreSqlAdvisoryLockAsync(
+        HttpContext context,
         MosaicDbContext db,
         Guid userId,
         string idempotencyKey,
-        CancellationToken cancellationToken)
+        byte[] requestHash,
+        DateTimeOffset now,
+        DateTimeOffset expiresBefore)
     {
         var lockKey = ComputeAdvisoryLockKey(userId, idempotencyKey);
-        return db.Database.ExecuteSqlRawAsync(
-            "SELECT pg_advisory_xact_lock({0})",
-            [lockKey],
-            cancellationToken);
+        var connectionString = db.Database.GetConnectionString()
+            ?? throw new InvalidOperationException("PostgreSQL idempotency advisory lock requires a database connection string.");
+        PendingResponseCopy? pendingResponse = null;
+
+        await using var lockConnection = new Npgsql.NpgsqlConnection(connectionString);
+        await lockConnection.OpenAsync(context.RequestAborted);
+
+        try
+        {
+            await ExecuteAdvisoryLockCommandAsync(lockConnection, "SELECT pg_advisory_lock(@key)", lockKey, context.RequestAborted);
+            pendingResponse = await HandleSerializedAsync(
+                context,
+                db,
+                userId,
+                idempotencyKey,
+                requestHash,
+                now,
+                expiresBefore,
+                deferExecutedResponse: true);
+        }
+        finally
+        {
+            try
+            {
+                await ExecuteAdvisoryLockCommandAsync(lockConnection, "SELECT pg_advisory_unlock(@key)", lockKey, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to release PostgreSQL idempotency advisory lock {LockKey}", lockKey);
+            }
+        }
+
+        if (pendingResponse != null)
+        {
+            await pendingResponse.CopyToAsync(context.RequestAborted);
+        }
     }
 
-    private static long ComputeAdvisoryLockKey(Guid userId, string idempotencyKey)
+    private static async Task ExecuteAdvisoryLockCommandAsync(
+        Npgsql.NpgsqlConnection connection,
+        string commandText,
+        long lockKey,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        command.Parameters.AddWithValue("key", lockKey);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    internal static long ComputeAdvisoryLockKey(Guid userId, string idempotencyKey)
     {
         var bytes = Encoding.UTF8.GetBytes($"{userId:N}:{idempotencyKey}");
         var hash = SHA256.HashData(bytes);
-        return BitConverter.ToInt64(hash, 0);
+        return BinaryPrimitives.ReadInt64LittleEndian(hash);
     }
 
     private static async Task<InProcessLockLease> AcquireInProcessLockAsync(string key, CancellationToken cancellationToken)
