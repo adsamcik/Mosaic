@@ -76,6 +76,14 @@ export interface VideoUploadMetadata {
   height: number;
   /** Video codec (e.g., "h264", "vp9") — best-effort detection */
   videoCodec?: string;
+  /** Trusted video container label from Rust inspection (e.g., "mp4", "mov", "webm") */
+  videoContainer?: string;
+  /** Video frame rate in frames per second, when available */
+  frameRateFps?: number;
+  /** Rotation/orientation label from the container, when available */
+  videoOrientation?: string;
+  /** Active canonical metadata sidecar tags emitted by Rust inspection */
+  metadataSidecarTags?: string[];
   /** Base64-encoded embedded thumbnail extracted from video frame */
   thumbnail?: string;
   /** Embedded thumbnail width */

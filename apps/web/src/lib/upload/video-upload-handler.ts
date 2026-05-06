@@ -85,6 +85,18 @@ export async function processVideoUpload(
   if (frameResult.metadata.codec) {
     videoMeta.videoCodec = frameResult.metadata.codec;
   }
+  if (frameResult.metadata.container) {
+    videoMeta.videoContainer = frameResult.metadata.container;
+  }
+  if (frameResult.metadata.frameRateFps !== undefined) {
+    videoMeta.frameRateFps = frameResult.metadata.frameRateFps;
+  }
+  if (frameResult.metadata.orientation) {
+    videoMeta.videoOrientation = frameResult.metadata.orientation;
+  }
+  if (frameResult.metadata.sidecarTags) {
+    videoMeta.metadataSidecarTags = frameResult.metadata.sidecarTags;
+  }
   task.videoMetadata = videoMeta;
 
   // Also set top-level fields used by manifest-service

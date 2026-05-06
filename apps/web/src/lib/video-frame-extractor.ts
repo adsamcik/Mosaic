@@ -1,7 +1,8 @@
 /**
  * Video Frame Extractor
  *
- * Extracts thumbnails and metadata from video files using HTMLVideoElement.
+ * Extracts thumbnails with HTMLVideoElement and inspects video container
+ * metadata through Rust `mosaic-media` WASM.
  * Used during upload to generate preview images before encryption.
  *
  * This runs on the main thread (not in a Worker) because HTMLVideoElement
@@ -12,7 +13,12 @@
 
 import { rgbaToThumbHash } from 'thumbhash';
 import { getPreferredImageFormat } from './thumbnail-generator';
-import { getCanonicalTierMaxSizes } from './exif-stripper';
+import {
+  getCanonicalTierMaxSizes,
+  inspectVideoContainerBytes,
+  type CanonicalSidecarTag,
+  type InspectVideoContainerResult,
+} from './exif-stripper';
 import { createLogger } from './logger';
 
 const log = createLogger('VideoFrameExtractor');
@@ -43,8 +49,16 @@ export interface VideoMetadata {
   width: number;
   /** Video height in pixels */
   height: number;
-  /** Detected codec string from the browser (if available) */
+  /** Trusted codec label from Rust inspection (if available) */
   codec?: string;
+  /** Trusted container label from Rust inspection, e.g. mp4, mov, webm. */
+  container?: string;
+  /** Video frame rate in frames per second, when available. */
+  frameRateFps?: number;
+  /** Rotation/orientation label from the container, when available. */
+  orientation?: string;
+  /** Active canonical metadata sidecar tags emitted by Rust inspection. */
+  sidecarTags?: CanonicalSidecarTag[];
 }
 
 export interface VideoFrameResult {
@@ -76,6 +90,12 @@ export class VideoFrameError extends Error {
     super(message);
     this.name = 'VideoFrameError';
   }
+}
+
+export interface VideoContainerInspection extends VideoMetadata {
+  durationMs: bigint;
+  container: string;
+  sidecarTags: CanonicalSidecarTag[];
 }
 
 // =============================================================================
@@ -205,24 +225,15 @@ function generateThumbHash(canvas: HTMLCanvasElement): string {
   return uint8ArrayToBase64(hashBytes);
 }
 
-/**
- * Detect the video codec from a loaded HTMLVideoElement (best-effort).
- * Uses the browser's MediaCapabilities API hint from the video element.
- */
-function detectCodec(video: HTMLVideoElement): string | undefined {
-  // Some browsers expose videoTracks with codec info
+
+export async function inspectVideoContainerBlob(blob: Blob): Promise<VideoContainerInspection> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
   try {
-    const tracks = (video as unknown as { videoTracks?: { length: number; getTrackById: (id: string) => unknown; 0?: { id?: string; label?: string } } }).videoTracks;
-    if (tracks && tracks.length > 0 && tracks[0]) {
-      const track = tracks[0] as { id?: string; label?: string };
-      if (track.label) {
-        return track.label;
-      }
-    }
-  } catch {
-    // Not available in all browsers
+    const inspected: InspectVideoContainerResult = await inspectVideoContainerBytes(bytes);
+    return inspected;
+  } catch (error) {
+    throw new VideoFrameError('Rust video container inspection failed before frame extraction', error);
   }
-  return undefined;
 }
 
 // =============================================================================
@@ -246,6 +257,7 @@ export async function extractVideoFrame(file: File): Promise<VideoFrameResult> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
   try {
+    const containerInspection = await inspectVideoContainerBlob(file);
     const result = await new Promise<VideoFrameResult>((resolve, reject) => {
       // Timeout guard
       timeoutId = setTimeout(() => {
@@ -274,9 +286,9 @@ export async function extractVideoFrame(file: File): Promise<VideoFrameResult> {
       currentVideo.addEventListener(
         'loadedmetadata',
         () => {
-          const duration = currentVideo.duration;
-          const width = currentVideo.videoWidth;
-          const height = currentVideo.videoHeight;
+          const duration = containerInspection.duration;
+          const width = containerInspection.width;
+          const height = containerInspection.height;
 
           // Validate metadata
           if (!width || !height) {
@@ -289,8 +301,6 @@ export async function extractVideoFrame(file: File): Promise<VideoFrameResult> {
             return;
           }
 
-          const codec = detectCodec(currentVideo);
-
           // Seek to representative frame: 1s or 10% of duration, whichever is less
           currentVideo.currentTime = Math.min(1, duration * 0.1);
 
@@ -302,7 +312,11 @@ export async function extractVideoFrame(file: File): Promise<VideoFrameResult> {
                   duration,
                   width,
                   height,
-                  ...(codec ? { codec } : {}),
+                  ...(containerInspection.codec ? { codec: containerInspection.codec } : {}),
+                  container: containerInspection.container,
+                  ...(containerInspection.frameRateFps !== undefined ? { frameRateFps: containerInspection.frameRateFps } : {}),
+                  ...(containerInspection.orientation ? { orientation: containerInspection.orientation } : {}),
+                  sidecarTags: containerInspection.sidecarTags,
                 };
 
                 const outputFormat = getPreferredImageFormat();

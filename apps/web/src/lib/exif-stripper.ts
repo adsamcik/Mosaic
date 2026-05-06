@@ -7,14 +7,18 @@
 
 import initRustWasm, {
   canonicalTierLayout,
+  inspectImage,
+  inspectVideoContainer,
   stripAvifMetadata,
   stripHeicMetadata,
   stripJpegMetadata,
   stripPngMetadata,
   stripVideoMetadata,
   stripWebpMetadata,
+  type ImageInspectResult as WasmImageInspectResult,
   type MediaTierDimensions,
   type StripResult,
+  type VideoInspectResult as WasmVideoInspectResult,
 } from '../generated/mosaic-wasm/mosaic_wasm.js';
 
 export interface StripExifResult {
@@ -26,12 +30,100 @@ export interface StripExifResult {
   skippedReason?: string;
 }
 
+export type CanonicalSidecarTag =
+  | 'orientation'
+  | 'original_dimensions'
+  | 'device_timestamp_ms'
+  | 'mime_override'
+  | 'camera_make'
+  | 'camera_model'
+  | 'subseconds_ms'
+  | 'gps'
+  | 'codec_fourcc'
+  | 'duration_ms'
+  | 'frame_rate_x100'
+  | 'video_orientation'
+  | 'video_dimensions'
+  | 'video_container_format';
+
+export interface InspectImageResult {
+  format: Exclude<SupportedFormat, 'video'>;
+  mimeType: string;
+  width: number;
+  height: number;
+  orientation: number;
+  encodedSidecarFields: Uint8Array;
+  sidecarTags: CanonicalSidecarTag[];
+  cameraMake?: string;
+  cameraModel?: string;
+  deviceTimestampMs?: bigint;
+  subsecondsMs?: number;
+  gps?: {
+    latitudeMicrodegrees: number;
+    longitudeMicrodegrees: number;
+    altitudeMeters: number;
+    accuracyMeters: number;
+  };
+}
+
+export class ImageInspectionError extends Error {
+  constructor(
+    message: string,
+    public readonly reason: string,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = 'ImageInspectionError';
+  }
+}
+
+export interface InspectVideoContainerResult {
+  duration: number;
+  durationMs: bigint;
+  width: number;
+  height: number;
+  container: string;
+  sidecarTags: CanonicalSidecarTag[];
+  codec?: string;
+  frameRateFps?: number;
+  orientation?: string;
+}
+
+export class VideoContainerInspectionError extends Error {
+  constructor(
+    message: string,
+    public readonly reason: string,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = 'VideoContainerInspectionError';
+  }
+}
+
 const RUST_OK = 0;
 const JPEG_MIME_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/pjpeg']);
 const PNG_MIME_TYPES = new Set(['image/png']);
 const WEBP_MIME_TYPES = new Set(['image/webp']);
 const HEIC_MIME_TYPES = new Set(['image/heic', 'image/heif']);
 const AVIF_MIME_TYPES = new Set(['image/avif']);
+
+// Canonical active sidecar tag registry per ADR-017 / SPEC-CanonicalSidecarTags.
+export const CANONICAL_SIDECAR_TAGS: ReadonlyMap<number, CanonicalSidecarTag> = new Map([
+  [1, 'orientation'],
+  [2, 'original_dimensions'],
+  [3, 'device_timestamp_ms'],
+  [4, 'mime_override'],
+  [5, 'camera_make'],
+  [7, 'camera_model'],
+  [8, 'subseconds_ms'],
+  [9, 'gps'],
+  [10, 'codec_fourcc'],
+  [11, 'duration_ms'],
+  [12, 'frame_rate_x100'],
+  [13, 'video_orientation'],
+  [14, 'video_dimensions'],
+  [15, 'video_container_format'],
+]);
 
 
 export interface CanonicalTierDimensions {
@@ -108,6 +200,47 @@ function formatForMimeType(mimeType: string): SupportedFormat | null {
   return null;
 }
 
+function imageFormatForCode(format: number): InspectImageResult['format'] {
+  switch (format) {
+    case 1:
+      return 'jpeg';
+    case 2:
+      return 'png';
+    case 3:
+      return 'webp';
+    case 4:
+      return 'avif';
+    case 5:
+      return 'heic';
+    default:
+      throw new ImageInspectionError(`Unsupported Rust image format code: ${String(format)}`, 'unsupported-format-code');
+  }
+}
+
+function decodeSidecarTags(encodedSidecarFields: Uint8Array): CanonicalSidecarTag[] {
+  const tags: CanonicalSidecarTag[] = [];
+  let offset = 0;
+  while (offset + 6 <= encodedSidecarFields.byteLength) {
+    const tag = encodedSidecarFields[offset]! | (encodedSidecarFields[offset + 1]! << 8);
+    const length =
+      encodedSidecarFields[offset + 2]!
+      | (encodedSidecarFields[offset + 3]! << 8)
+      | (encodedSidecarFields[offset + 4]! << 16)
+      | (encodedSidecarFields[offset + 5]! << 24);
+    const unsignedLength = length >>> 0;
+    const name = CANONICAL_SIDECAR_TAGS.get(tag);
+    if (name && !tags.includes(name)) {
+      tags.push(name);
+    }
+    const nextOffset = offset + 6 + unsignedLength;
+    if (nextOffset <= offset || nextOffset > encodedSidecarFields.byteLength) {
+      break;
+    }
+    offset = nextOffset;
+  }
+  return tags;
+}
+
 function unsupportedReasonForMimeType(): string {
   return 'unsupported-mime';
 }
@@ -140,6 +273,141 @@ function consumeStripResult(input: Uint8Array, format: SupportedFormat, result: 
       : { bytes: input, stripped: false };
   } finally {
     result.free();
+  }
+}
+
+function consumeImageInspectResult(formatHint: SupportedFormat, result: WasmImageInspectResult): InspectImageResult {
+  try {
+    if (formatHint === 'video') {
+      throw new ImageInspectionError('Video inputs are not valid image inspection inputs', 'unsupported-mime');
+    }
+    if (result.code !== RUST_OK) {
+      throw new ImageInspectionError(`Malformed ${formatHint} image cannot be inspected`, `malformed-${formatHint}`);
+    }
+    const encodedSidecarFields = new Uint8Array(result.encodedSidecarFields);
+    const inspected: InspectImageResult = {
+      format: imageFormatForCode(result.format),
+      mimeType: result.mimeType,
+      width: result.width,
+      height: result.height,
+      orientation: result.orientation,
+      encodedSidecarFields,
+      sidecarTags: decodeSidecarTags(encodedSidecarFields),
+    };
+    if (result.cameraMake !== '') {
+      inspected.cameraMake = result.cameraMake;
+    }
+    if (result.cameraModel !== '') {
+      inspected.cameraModel = result.cameraModel;
+    }
+    if (result.hasDeviceTimestampMs) {
+      inspected.deviceTimestampMs = result.deviceTimestampMs;
+    }
+    if (result.hasSubsecondsMs) {
+      inspected.subsecondsMs = result.subsecondsMs;
+    }
+    if (result.hasGps) {
+      inspected.gps = {
+        latitudeMicrodegrees: result.gpsLatMicrodegrees,
+        longitudeMicrodegrees: result.gpsLonMicrodegrees,
+        altitudeMeters: result.gpsAltitudeMeters,
+        accuracyMeters: result.gpsAccuracyMeters,
+      };
+    }
+    return inspected;
+  } finally {
+    result.free();
+  }
+}
+
+function sidecarTagsForVideoInspection(result: WasmVideoInspectResult): CanonicalSidecarTag[] {
+  const tags: CanonicalSidecarTag[] = [];
+  const addTag = (tagNumber: number): void => {
+    const tag = CANONICAL_SIDECAR_TAGS.get(tagNumber);
+    if (tag && !tags.includes(tag)) {
+      tags.push(tag);
+    }
+  };
+  if (result.videoCodec !== '') addTag(10);
+  if (result.durationMs > 0n) addTag(11);
+  if (Number.isFinite(result.frameRateFps)) addTag(12);
+  if (result.orientation !== '') addTag(13);
+  if (result.widthPx > 0 && result.heightPx > 0) addTag(14);
+  if (result.container !== '') addTag(15);
+  return tags;
+}
+
+function consumeVideoInspectResult(result: WasmVideoInspectResult): InspectVideoContainerResult {
+  try {
+    if (result.code !== RUST_OK) {
+      throw new VideoContainerInspectionError('Malformed video container cannot be inspected', 'malformed-video');
+    }
+    if (result.widthPx <= 0 || result.heightPx <= 0) {
+      throw new VideoContainerInspectionError(
+        'Video container has no valid dimensions (width=0 or height=0)',
+        'invalid-video-dimensions',
+      );
+    }
+    if (result.durationMs <= 0n) {
+      throw new VideoContainerInspectionError(
+        `Video container has invalid duration: ${String(result.durationMs)}ms`,
+        'invalid-video-duration',
+      );
+    }
+    const inspected: InspectVideoContainerResult = {
+      duration: Number(result.durationMs) / 1000,
+      durationMs: result.durationMs,
+      width: result.widthPx,
+      height: result.heightPx,
+      container: result.container,
+      sidecarTags: sidecarTagsForVideoInspection(result),
+    };
+    if (result.videoCodec !== '') {
+      inspected.codec = result.videoCodec;
+    }
+    if (Number.isFinite(result.frameRateFps)) {
+      inspected.frameRateFps = result.frameRateFps;
+    }
+    if (result.orientation !== '') {
+      inspected.orientation = result.orientation;
+    }
+    return inspected;
+  } finally {
+    result.free();
+  }
+}
+
+export async function inspectImageBlob(blob: Blob, mimeType: string): Promise<InspectImageResult> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const normalizedMimeType = mimeType.trim().toLowerCase();
+  const format = formatForMimeType(normalizedMimeType);
+  if (format === null || format === 'video') {
+    throw new ImageInspectionError(`Unsupported image MIME type for inspection: ${normalizedMimeType}`, 'unsupported-mime');
+  }
+  try {
+    await ensureRustReady();
+    return consumeImageInspectResult(format, inspectImage(bytes));
+  } catch (error) {
+    if (error instanceof ImageInspectionError) {
+      throw error;
+    }
+    throw new ImageInspectionError('Rust image inspection failed before metadata extraction', 'wasm-inspect-failed', error);
+  }
+}
+
+export async function inspectVideoContainerBytes(bytes: Uint8Array): Promise<InspectVideoContainerResult> {
+  try {
+    await ensureRustReady();
+    return consumeVideoInspectResult(inspectVideoContainer(bytes));
+  } catch (error) {
+    if (error instanceof VideoContainerInspectionError) {
+      throw error;
+    }
+    throw new VideoContainerInspectionError(
+      'Rust video container inspection failed before metadata extraction',
+      'wasm-inspect-failed',
+      error,
+    );
   }
 }
 
