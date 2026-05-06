@@ -25,6 +25,23 @@ generated WASM init function plus state-machine exports to `WasmUploadAdapterPor
 and `WasmSyncAdapterPort`; tests can inject fake port implementations or fake
 WASM bindings.
 
+## Business-logic adapters
+
+`RustUploadAdapter` and `RustSyncAdapter` are thin stateful layers over the
+ports. They require an injected port because the WASM-backed ports need generated
+bindings from the composition root. Both adapters persist snapshots after each
+state transition and return pending effects as data; they do not dispatch HTTP,
+IndexedDB, worker, or other state-machine side effects. `resume(snapshotId)`
+returns `null` when no persisted snapshot exists; when it does load a snapshot,
+it sets the adapter's current snapshot and re-surfaces any pending effect from
+that snapshot.
+
+`IdbUploadSnapshotPersistence` stores records in the legacy upload queue database
+(`mosaic-upload-queue`, `tasks`) with `id`, `schemaVersion`, `snapshotVersion`,
+`jobId`, `albumId`, `idempotencyKey`, `status`, `retryCount`, and
+`rustCoreSnapshot` fields so the record shape remains compatible with the
+existing queue drainer/current-record side.
+
 ## Contract tests
 
 The co-located Vitest tests exercise the same contract Android receives through
