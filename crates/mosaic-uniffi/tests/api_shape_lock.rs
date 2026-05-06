@@ -60,7 +60,7 @@ fn uniffi_exported_api_shape_matches_golden() {
 
 #[test]
 fn uniffi_api_v1_baseline_signature_unchanged() {
-    let v1_baseline_blake3 = "9d7bda24edf7e8bcacf09e94dd187f334c71d62145b9130be258f2de170a339a";
+    let v1_baseline_blake3 = "e49b7ec6151c7413c665b4e749c1cc5d7fce3ae59f0352d249e4ed9f6365089b";
     let actual = blake3::hash(canonical_uniffi_api_shape(SOURCE).as_bytes()).to_hex();
 
     assert_eq!(
@@ -68,6 +68,38 @@ fn uniffi_api_v1_baseline_signature_unchanged() {
         v1_baseline_blake3,
         "v1 API surface changed — review IRREVERSIBILITY before regenerating"
     );
+}
+
+#[test]
+fn link_handle_mint_and_sha256_exports_are_locked() {
+    let actual = canonical_uniffi_api_shape(SOURCE);
+
+    for declaration in [
+        "export pub fn mint_link_tier_handle_from_raw_key(raw_key: Vec<u8>) -> LinkTierHandleFfiResult",
+        "export pub fn verify_shard_integrity_sha256( envelope: Vec<u8>, expected_sha256: Vec<u8>, ) -> Result<bool, MosaicError>",
+        "record LinkTierHandleFfiResult",
+    ] {
+        assert!(
+            actual.contains(declaration),
+            "UniFFI W-S5/R-C10 shape is missing pinned declaration: {declaration}"
+        );
+    }
+}
+
+#[test]
+fn session_master_key_uniffi_exports_are_locked() {
+    let actual = canonical_uniffi_api_shape(SOURCE);
+
+    for declaration in [
+        "export pub fn derive_session_salt_from_username( domain: String, username: String, ) -> Result<Vec<u8>, MosaicError>",
+        "export pub fn derive_master_key_from_password( password: Vec<u8>, salt: Vec<u8>, ops_limit: u32, mem_limit_kib: u32, ) -> Result<u64, MosaicError>",
+        "export pub fn consume_master_key_handle_for_aes_gcm(handle: u64) -> Result<Vec<u8>, MosaicError>",
+    ] {
+        assert!(
+            actual.contains(declaration),
+            "UniFFI session-key shape is missing pinned declaration: {declaration}"
+        );
+    }
 }
 
 fn canonical_uniffi_api_shape(source: &str) -> String {

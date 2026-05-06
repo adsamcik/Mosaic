@@ -377,6 +377,9 @@ end
 export pub fn decrypt_envelope(epoch_handle_id: u64, envelope: Vec<u8>) -> Result<Vec<u8>, MosaicError>
 export pub fn parse_envelope_header(bytes: Vec<u8>) -> HeaderResult
 export pub fn android_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> ProgressResult
+export pub fn derive_session_salt_from_username( domain: String, username: String, ) -> Result<Vec<u8>, MosaicError>
+export pub fn derive_master_key_from_password( password: Vec<u8>, salt: Vec<u8>, ops_limit: u32, mem_limit_kib: u32, ) -> Result<u64, MosaicError>
+export pub fn consume_master_key_handle_for_aes_gcm(handle: u64) -> Result<Vec<u8>, MosaicError>
 export pub fn unlock_account_key(password: Vec<u8>, request: AccountUnlockRequest) -> AccountUnlockResult
 export pub fn account_key_handle_is_open(handle: u64) -> AccountKeyHandleStatusResult
 export pub fn close_account_key_handle(handle: u64) -> u16
@@ -416,6 +419,8 @@ export pub fn init_album_sync(request: ClientCoreAlbumSyncRequest) -> ClientCore
 export pub fn advance_album_sync( snapshot: ClientCoreAlbumSyncSnapshot, event: ClientCoreAlbumSyncEvent, ) -> ClientCoreAlbumSyncTransitionResult
 export pub fn advance_album_sync_uniffi( snapshot: ClientCoreAlbumSyncSnapshot, event: ClientCoreAlbumSyncEvent, ) -> ClientCoreAlbumSyncTransition
 export pub fn manifest_transcript_bytes_uniffi( inputs: ClientCoreManifestTranscriptInputs, ) -> Result<Vec<u8>, MosaicError>
+export pub fn mint_link_tier_handle_from_raw_key(raw_key: Vec<u8>) -> LinkTierHandleFfiResult
+export pub fn verify_shard_integrity_sha256( envelope: Vec<u8>, expected_sha256: Vec<u8>, ) -> Result<bool, MosaicError>
 export pub fn client_error_code_enum_from_u16(value: u16) -> Option<ClientErrorCode>
 export pub fn client_error_code_to_u16(code: ClientErrorCode) -> u16
 export pub fn build_share_link_url( base_url: String, album_id: String, link_id: String, link_url_token: String, ) -> String
@@ -423,6 +428,10 @@ record LinkKeysFfiResult
   code: u16
   link_id: Vec<u8>
   link_handle_id: u64
+end
+record LinkTierHandleFfiResult
+  code: u16
+  link_tier_handle_id: u64
 end
 record WrappedTierKeyFfiResult
   code: u16

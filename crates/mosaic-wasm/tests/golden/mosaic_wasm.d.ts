@@ -796,6 +796,17 @@ export function closeLinkShareHandle(handle: bigint): number;
 export function closeLinkTierHandle(handle: bigint): number;
 
 /**
+ * Consumes a session L0 handle and returns one short-lived AES-GCM import buffer.
+ *
+ * WebCrypto cannot import a Rust-owned handle directly, so the web boundary
+ * immediately imports these 32 bytes with `extractable = false` and zeroizes
+ * the returned `Uint8Array`. The Rust handle is removed and the registry copy
+ * is zeroized before this function returns, limiting raw L0 exposure to the
+ * WebCrypto import handoff.
+ */
+export function consumeMasterKeyHandleForAesGcm(handle: bigint): Uint8Array;
+
+/**
  * Creates a fresh account-key handle through the generated WASM binding
  * surface. Returns the opaque handle plus the wrapped account key the
  * caller must persist on the server for future logins.
@@ -867,6 +878,16 @@ export function deriveAuthKeypairFromAccount(account_handle: bigint): AuthKeypai
  * key crosses the WASM boundary.
  */
 export function deriveAuthKeypairFromPassword(password: Uint8Array, user_salt: Uint8Array, kdf_memory_kib: number, kdf_iterations: number, kdf_parallelism: number): AuthKeypairResult;
+
+/**
+ * Derives the session L0 master key and stores it behind an opaque handle.
+ */
+export function deriveMasterKeyFromPassword(password: Uint8Array, salt: Uint8Array, ops_limit: number, mem_limit_kib: number): bigint;
+
+/**
+ * Derives the 16-byte deterministic session Argon2id salt.
+ */
+export function deriveSessionSaltFromUsername(domain: string, username: string): Uint8Array;
 
 /**
  * Encrypts album content with an epoch handle through WASM.
@@ -961,6 +982,11 @@ export function listShardTiers(): any[];
  * `chunk_index:u32le | tier:u8 | shard_id:16 bytes | sha256:32 bytes`.
  */
 export function manifestTranscriptBytes(album_id: Uint8Array, epoch_id: number, encrypted_meta: Uint8Array, encoded_shards: Uint8Array): BytesResult;
+
+/**
+ * Mints a link-tier handle from a raw 32-byte tier key through WASM.
+ */
+export function mintLinkTierHandleFromRawKey(raw_key: Uint8Array): LinkTierHandleResult;
 
 /**
  * Opens an epoch-key handle through WASM.
@@ -1079,6 +1105,11 @@ export function verifyManifestWithEpoch(transcript_bytes: Uint8Array, signature:
 export function verifyManifestWithIdentity(transcript_bytes: Uint8Array, signature: Uint8Array, public_key: Uint8Array): number;
 
 /**
+ * Verifies shard ciphertext SHA-256 through WASM.
+ */
+export function verifyShardIntegritySha256(envelope_bytes: Uint8Array, expected_sha256: Uint8Array): boolean;
+
+/**
  * Wraps an epoch tier for an existing share-link handle through WASM.
  */
 export function wrapLinkTierHandle(link_share_handle: bigint, epoch_handle: bigint, tier_byte: number): WrappedTierKeyResult;
@@ -1134,6 +1165,7 @@ export interface InitOutput {
     readonly closeIdentityHandle: (a: bigint) => number;
     readonly closeLinkShareHandle: (a: bigint) => number;
     readonly closeLinkTierHandle: (a: bigint) => number;
+    readonly consumeMasterKeyHandleForAesGcm: (a: number, b: bigint) => void;
     readonly createAccount: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly createEpochKeyHandle: (a: bigint, b: number) => number;
     readonly createIdentityHandle: (a: bigint) => number;
@@ -1168,6 +1200,8 @@ export interface InitOutput {
     readonly decryptShardWithTier: (a: bigint, b: number, c: number) => number;
     readonly deriveAuthKeypairFromAccount: (a: bigint) => number;
     readonly deriveAuthKeypairFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly deriveMasterKeyFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly deriveSessionSaltFromUsername: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly encryptAlbumContent: (a: bigint, b: number, c: number) => number;
     readonly encryptMetadataSidecarWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly encryptShardWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number) => number;
@@ -1231,6 +1265,7 @@ export interface InitOutput {
     readonly mediatierlayoutresult_original: (a: number) => number;
     readonly mediatierlayoutresult_preview: (a: number) => number;
     readonly mediatierlayoutresult_thumbnail: (a: number) => number;
+    readonly mintLinkTierHandleFromRawKey: (a: number, b: number) => number;
     readonly openEpochKeyHandle: (a: number, b: number, c: bigint, d: number) => number;
     readonly openIdentityHandle: (a: number, b: number, c: bigint) => number;
     readonly parseEnvelopeHeader: (a: number, b: number) => number;
@@ -1275,6 +1310,7 @@ export interface InitOutput {
     readonly verifyAndImportEpochBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly verifyManifestWithEpoch: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly verifyManifestWithIdentity: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly verifyShardIntegritySha256: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly videoinspectresult_code: (a: number) => number;
     readonly videoinspectresult_container: (a: number, b: number) => void;
     readonly videoinspectresult_durationMs: (a: number) => bigint;
@@ -1286,33 +1322,33 @@ export interface InitOutput {
     readonly wrapLinkTierHandle: (a: bigint, b: bigint, c: number) => number;
     readonly wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly wrappedtierkeyresult_tier: (a: number) => number;
+    readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
     readonly __wbg_epochkeyhandlestatusresult_free: (a: number, b: number) => void;
     readonly __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
     readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
     readonly __wbg_bytesresult_free: (a: number, b: number) => void;
-    readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_stripresult_free: (a: number, b: number) => void;
-    readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
-    readonly encryptedshardresult_code: (a: number) => number;
-    readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
+    readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
     readonly epochkeyhandlestatusresult_code: (a: number) => number;
     readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
+    readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
     readonly wrappedtierkeyresult_code: (a: number) => number;
     readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
-    readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
-    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
-    readonly decryptedcontentresult_code: (a: number) => number;
+    readonly encryptedshardresult_code: (a: number) => number;
+    readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
     readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
-    readonly bytesresult_code: (a: number) => number;
-    readonly decryptedshardresult_code: (a: number) => number;
+    readonly decryptedcontentresult_code: (a: number) => number;
     readonly bytesresult_bytes: (a: number, b: number) => void;
+    readonly bytesresult_code: (a: number) => number;
+    readonly linktierhandleresult_handle: (a: number) => bigint;
+    readonly linktierhandleresult_linkId: (a: number, b: number) => void;
+    readonly linktierhandleresult_code: (a: number) => number;
     readonly stripresult_removedMetadataCount: (a: number) => number;
     readonly stripresult_code: (a: number) => number;
     readonly stripresult_strippedBytes: (a: number, b: number) => void;
-    readonly linktierhandleresult_code: (a: number) => number;
-    readonly linktierhandleresult_linkId: (a: number, b: number) => void;
-    readonly linktierhandleresult_handle: (a: number) => bigint;
+    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
+    readonly decryptedshardresult_code: (a: number) => number;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export2: (a: number, b: number) => number;

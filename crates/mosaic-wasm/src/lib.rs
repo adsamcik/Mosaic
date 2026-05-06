@@ -2,7 +2,14 @@
 
 #![forbid(unsafe_code)]
 
-use std::{fmt, sync::Mutex};
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::{
+        Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 use self_cell::self_cell;
 use wasm_bindgen::prelude::{JsError, JsValue, wasm_bindgen};
@@ -17,6 +24,10 @@ type CryptoStreamingDecryptor<'a> = mosaic_crypto::StreamingDecryptor<'a>;
 
 struct CryptoStreamingEncryptorState<'a>(Option<CryptoStreamingEncryptor<'a>>);
 struct CryptoStreamingDecryptorState<'a>(Option<CryptoStreamingDecryptor<'a>>);
+
+static NEXT_MASTER_KEY_HANDLE_ID: AtomicU64 = AtomicU64::new(1);
+static MASTER_KEY_HANDLES: OnceLock<Mutex<HashMap<u64, mosaic_crypto::SecretKey>>> =
+    OnceLock::new();
 
 self_cell!(
     struct StreamingEncryptorCell {
@@ -2075,6 +2086,43 @@ pub fn wasm_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> Progr
     progress_result_from_client(mosaic_client::run_progress_probe(total_steps, cancel_after))
 }
 
+/// Derives the 16-byte deterministic session Argon2id salt.
+#[wasm_bindgen(js_name = deriveSessionSaltFromUsername)]
+pub fn derive_session_salt_from_username(
+    domain: String,
+    username: String,
+) -> Result<Vec<u8>, JsError> {
+    mosaic_crypto::derive_session_salt(&domain, &username)
+        .map(|salt| salt.to_vec())
+        .map_err(js_error_from_crypto)
+}
+
+/// Derives the session L0 master key and stores it behind an opaque handle.
+#[wasm_bindgen(js_name = deriveMasterKeyFromPassword)]
+pub fn derive_master_key_from_password(
+    password: Vec<u8>,
+    salt: Vec<u8>,
+    ops_limit: u32,
+    mem_limit_kib: u32,
+) -> Result<u64, JsError> {
+    let password = Zeroizing::new(password);
+    let key = mosaic_crypto::derive_session_master_key(password, &salt, ops_limit, mem_limit_kib)
+        .map_err(js_error_from_crypto)?;
+    open_master_key_handle(key)
+}
+
+/// Consumes a session L0 handle and returns one short-lived AES-GCM import buffer.
+///
+/// WebCrypto cannot import a Rust-owned handle directly, so the web boundary
+/// immediately imports these 32 bytes with `extractable = false` and zeroizes
+/// the returned `Uint8Array`. The Rust handle is removed and the registry copy
+/// is zeroized before this function returns, limiting raw L0 exposure to the
+/// WebCrypto import handoff.
+#[wasm_bindgen(js_name = consumeMasterKeyHandleForAesGcm)]
+pub fn consume_master_key_handle_for_aes_gcm(handle: u64) -> Result<Vec<u8>, JsError> {
+    consume_master_key_handle(handle).map_err(|error| JsError::new(&error))
+}
+
 /// Unwraps an account key into a Rust-owned opaque account-key handle.
 #[must_use]
 pub fn unlock_account_key(password: Vec<u8>, request: AccountUnlockRequest) -> AccountUnlockResult {
@@ -3063,6 +3111,13 @@ pub fn import_link_tier_handle(
     ))
 }
 
+/// Mints a Rust-owned link-tier handle from a raw 32-byte tier key.
+#[must_use]
+pub fn mint_link_tier_handle_from_raw_key(raw_key: Vec<u8>) -> LinkTierHandleResult {
+    let raw_key = Zeroizing::new(raw_key);
+    link_tier_handle_result_from_client(mosaic_client::mint_link_tier_handle_from_raw_key(&raw_key))
+}
+
 /// Decrypts a shard using a Rust-owned share-link tier handle.
 #[must_use]
 pub fn decrypt_shard_with_link_tier_handle(
@@ -3073,6 +3128,15 @@ pub fn decrypt_shard_with_link_tier_handle(
         link_tier_handle,
         &envelope_bytes,
     ))
+}
+
+/// Verifies shard ciphertext SHA-256 using Rust core.
+pub fn verify_shard_integrity_sha256(
+    envelope_bytes: Vec<u8>,
+    expected_sha256: Vec<u8>,
+) -> Result<bool, JsError> {
+    mosaic_client::verify_shard_integrity_sha256(&envelope_bytes, &expected_sha256)
+        .map_err(|error| JsError::new(&error.message))
 }
 
 /// Closes a Rust-owned share-link handle.
@@ -4374,6 +4438,13 @@ pub fn import_link_tier_handle_js(
     ))
 }
 
+/// Mints a link-tier handle from a raw 32-byte tier key through WASM.
+#[wasm_bindgen(js_name = mintLinkTierHandleFromRawKey)]
+#[must_use]
+pub fn mint_link_tier_handle_from_raw_key_js(raw_key: Vec<u8>) -> JsLinkTierHandleResult {
+    js_link_tier_handle_result_from_rust(mint_link_tier_handle_from_raw_key(raw_key))
+}
+
 /// Decrypts a shard using a link-tier handle through WASM.
 #[wasm_bindgen(js_name = decryptShardWithLinkTierHandle)]
 #[must_use]
@@ -4385,6 +4456,15 @@ pub fn decrypt_shard_with_link_tier_handle_js(
         link_tier_handle,
         envelope_bytes,
     ))
+}
+
+/// Verifies shard ciphertext SHA-256 through WASM.
+#[wasm_bindgen(js_name = verifyShardIntegritySha256)]
+pub fn verify_shard_integrity_sha256_js(
+    envelope_bytes: Vec<u8>,
+    expected_sha256: Vec<u8>,
+) -> Result<bool, JsError> {
+    verify_shard_integrity_sha256(envelope_bytes, expected_sha256)
 }
 
 /// Closes a share-link handle through WASM.
@@ -5612,6 +5692,40 @@ fn map_manifest_transcript_error(error: mosaic_domain::ManifestTranscriptError) 
             mosaic_client::ClientErrorCode::InvalidEnvelope.as_u16()
         }
     }
+}
+
+fn master_key_registry() -> &'static Mutex<HashMap<u64, mosaic_crypto::SecretKey>> {
+    MASTER_KEY_HANDLES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn open_master_key_handle(key: mosaic_crypto::SecretKey) -> Result<u64, JsError> {
+    let handle = NEXT_MASTER_KEY_HANDLE_ID.fetch_add(1, Ordering::Relaxed);
+    let mut guard = master_key_registry()
+        .lock()
+        .map_err(|_| JsError::new("master key registry lock was poisoned"))?;
+    guard.insert(handle, key);
+    Ok(handle)
+}
+
+fn consume_master_key_handle(handle: u64) -> Result<Vec<u8>, String> {
+    let mut key = {
+        let mut guard = master_key_registry()
+            .lock()
+            .map_err(|_| "master key registry lock was poisoned".to_owned())?;
+        guard
+            .remove(&handle)
+            .ok_or_else(|| "master key handle is not open".to_owned())?
+    };
+    let bytes = key.as_bytes().to_vec();
+    key.zeroize_in_place();
+    Ok(bytes)
+}
+
+fn js_error_from_crypto(error: mosaic_crypto::MosaicCryptoError) -> JsError {
+    JsError::new(&format!(
+        "Mosaic crypto error code {}",
+        client_error_code_from_crypto(error)
+    ))
 }
 
 fn client_error_code_from_crypto(error: mosaic_crypto::MosaicCryptoError) -> u16 {

@@ -186,6 +186,37 @@ fn wasm_reducer_manifest_and_streaming_exports_are_locked() {
 }
 
 #[test]
+fn link_handle_mint_and_sha256_exports_are_locked() {
+    let golden = normalize_newlines(GOLDEN);
+
+    for declaration in [
+        "export function mintLinkTierHandleFromRawKey(raw_key: Uint8Array): LinkTierHandleResult;",
+        "export function verifyShardIntegritySha256(envelope_bytes: Uint8Array, expected_sha256: Uint8Array): boolean;",
+    ] {
+        assert!(
+            golden.contains(declaration),
+            "WASM W-S5/R-C10 golden is missing pinned declaration: {declaration}"
+        );
+    }
+}
+
+#[test]
+fn session_master_key_wasm_exports_are_locked() {
+    let golden = normalize_newlines(GOLDEN);
+
+    for declaration in [
+        "export function deriveSessionSaltFromUsername(domain: string, username: string): Uint8Array;",
+        "export function deriveMasterKeyFromPassword(password: Uint8Array, salt: Uint8Array, ops_limit: number, mem_limit_kib: number): bigint;",
+        "export function consumeMasterKeyHandleForAesGcm(handle: bigint): Uint8Array;",
+    ] {
+        assert!(
+            golden.contains(declaration),
+            "WASM session-key golden is missing pinned declaration: {declaration}"
+        );
+    }
+}
+
+#[test]
 fn generated_wasm_typescript_declarations_do_not_export_raw_wrap_keys() {
     let generated_path = project_root()
         .join("apps")

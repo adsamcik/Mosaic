@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 
 use argon2::{Algorithm, Argon2, Block, Params, Version};
-use blake2::Blake2bMac;
+use blake2::{Blake2b, Blake2bMac, digest::consts::U16};
 use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
     aead::{Aead, KeyInit, Payload},
@@ -112,7 +112,10 @@ pub const MAX_KDF_ITERATIONS: u32 = 10;
 pub const MAX_KDF_PARALLELISM: u32 = 4;
 
 /// Fixed output length for Mosaic L0/L1/L2 keys.
-const KEY_BYTES: usize = 32;
+pub const KEY_BYTES: usize = 32;
+
+/// Fixed output length for libsodium-compatible Argon2id salts.
+pub const SESSION_SALT_BYTES: usize = 16;
 
 /// Length of a share-link secret in bytes (256-bit security, matches the
 /// TypeScript `LINK_SECRET_SIZE`).
@@ -920,6 +923,77 @@ pub struct EpochKeyMaterial {
     preview_key: SecretKey,
     full_key: SecretKey,
     content_key: SecretKey,
+}
+
+/// Derives the deterministic per-user session Argon2id salt.
+///
+/// This matches `libsodium.crypto_generichash(16, utf8(domain || username))`,
+/// i.e. unkeyed BLAKE2b-128 over the caller-supplied domain prefix followed by
+/// the username. The domain is passed by callers so web and native wrappers can
+/// lock the exact protocol string at their own boundary tests.
+///
+/// # Errors
+/// - `EmptyContext` if `domain` is empty.
+pub fn derive_session_salt(
+    domain: &str,
+    username: &str,
+) -> Result<[u8; SESSION_SALT_BYTES], MosaicCryptoError> {
+    if domain.is_empty() {
+        return Err(MosaicCryptoError::EmptyContext);
+    }
+
+    let mut hasher = <Blake2b<U16> as Digest>::new();
+    Digest::update(&mut hasher, domain.as_bytes());
+    Digest::update(&mut hasher, username.as_bytes());
+    let bytes = hasher.finalize();
+    let mut out = [0_u8; SESSION_SALT_BYTES];
+    out.copy_from_slice(&bytes);
+    Ok(out)
+}
+
+/// Derives the session L0 master key with libsodium-compatible Argon2id13.
+///
+/// The web login salt-encryption flow historically called
+/// `libsodium.crypto_pwhash(32, password, salt, opsLimit, memLimitBytes,
+/// ALG_ARGON2ID13)`. This Rust primitive preserves that byte output exactly:
+/// `mem_limit_kib` is Argon2's `m_cost` in KiB, `ops_limit` is `t_cost`, and
+/// parallelism is fixed at 1 to match the TypeScript parameter policy.
+///
+/// # Errors
+/// - `InvalidSaltLength` if `salt` is not 16 bytes.
+/// - `KdfProfileTooWeak` if `ops_limit` or `mem_limit_kib` is zero.
+/// - `KdfProfileTooCostly` if the requested work factor exceeds Mosaic caps.
+/// - `KdfFailure` if Argon2id rejects the parameters or derivation fails.
+pub fn derive_session_master_key(
+    password: Zeroizing<Vec<u8>>,
+    salt: &[u8],
+    ops_limit: u32,
+    mem_limit_kib: u32,
+) -> Result<SecretKey, MosaicCryptoError> {
+    validate_salt(salt)?;
+    if ops_limit == 0 || mem_limit_kib == 0 {
+        return Err(MosaicCryptoError::KdfProfileTooWeak);
+    }
+    if ops_limit > MAX_KDF_ITERATIONS || mem_limit_kib > MAX_KDF_MEMORY_KIB {
+        return Err(MosaicCryptoError::KdfProfileTooCostly);
+    }
+
+    let argon_params = Params::new(mem_limit_kib, ops_limit, 1, Some(KEY_BYTES))
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params.clone());
+
+    let mut master_key = Zeroizing::new([0_u8; KEY_BYTES]);
+    let mut memory_blocks = Zeroizing::new(vec![Block::default(); argon_params.block_count()]);
+    argon2
+        .hash_password_into_with_memory(
+            password.as_slice(),
+            salt,
+            &mut master_key[..],
+            memory_blocks.as_mut_slice(),
+        )
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
+
+    SecretKey::from_bytes(&mut master_key[..])
 }
 
 impl EpochKeyMaterial {

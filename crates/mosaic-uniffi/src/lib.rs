@@ -2,7 +2,14 @@
 
 #![forbid(unsafe_code)]
 
-use std::{fmt, sync::Mutex};
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::{
+        Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 use mosaic_domain::{
     EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, MetadataSidecar,
@@ -16,6 +23,10 @@ type CryptoStreamingDecryptor<'a> = mosaic_crypto::StreamingDecryptor<'a>;
 
 struct CryptoStreamingEncryptorState<'a>(Option<CryptoStreamingEncryptor<'a>>);
 struct CryptoStreamingDecryptorState<'a>(Option<CryptoStreamingDecryptor<'a>>);
+
+static NEXT_MASTER_KEY_HANDLE_ID: AtomicU64 = AtomicU64::new(1);
+static MASTER_KEY_HANDLES: OnceLock<Mutex<HashMap<u64, mosaic_crypto::SecretKey>>> =
+    OnceLock::new();
 
 self_cell!(
     struct StreamingEncryptorCell {
@@ -947,6 +958,47 @@ pub fn android_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> Pr
     }
 }
 
+/// Derives the 16-byte deterministic session Argon2id salt.
+#[uniffi::export]
+pub fn derive_session_salt_from_username(
+    domain: String,
+    username: String,
+) -> Result<Vec<u8>, MosaicError> {
+    mosaic_crypto::derive_session_salt(&domain, &username)
+        .map(|salt| salt.to_vec())
+        .map_err(mosaic_error_from_crypto)
+}
+
+/// Derives the session L0 master key and stores it behind an opaque handle.
+#[uniffi::export]
+pub fn derive_master_key_from_password(
+    password: Vec<u8>,
+    salt: Vec<u8>,
+    ops_limit: u32,
+    mem_limit_kib: u32,
+) -> Result<u64, MosaicError> {
+    let password = Zeroizing::new(password);
+    let key = mosaic_crypto::derive_session_master_key(password, &salt, ops_limit, mem_limit_kib)
+        .map_err(mosaic_error_from_crypto)?;
+    open_master_key_handle(key)
+}
+
+/// Consumes a session L0 handle and returns one short-lived AES-GCM import buffer.
+#[uniffi::export]
+pub fn consume_master_key_handle_for_aes_gcm(handle: u64) -> Result<Vec<u8>, MosaicError> {
+    let mut key = {
+        let mut guard = master_key_registry()
+            .lock()
+            .map_err(|_| MosaicError::InternalStatePoisoned)?;
+        guard.remove(&handle).ok_or(MosaicError::Client {
+            code: mosaic_client::ClientErrorCode::SecretHandleNotFound.as_u16(),
+        })?
+    };
+    let bytes = key.as_bytes().to_vec();
+    key.zeroize_in_place();
+    Ok(bytes)
+}
+
 /// Unwraps an account key into a Rust-owned opaque account-key handle.
 ///
 /// The caller-owned `password` buffer is wrapped in `Zeroizing` so it is
@@ -1629,6 +1681,28 @@ pub fn manifest_transcript_bytes_uniffi(
     manifest_transcript_bytes_result(inputs)
 }
 
+/// Mints a Rust-owned link-tier handle from a raw 32-byte tier key.
+#[uniffi::export]
+#[must_use]
+pub fn mint_link_tier_handle_from_raw_key(raw_key: Vec<u8>) -> LinkTierHandleFfiResult {
+    let raw_key = Zeroizing::new(raw_key);
+    let result = mosaic_client::mint_link_tier_handle_from_raw_key(&raw_key);
+    LinkTierHandleFfiResult {
+        code: result.code.as_u16(),
+        link_tier_handle_id: result.handle,
+    }
+}
+
+/// Verifies shard ciphertext SHA-256 using Rust core.
+#[uniffi::export]
+pub fn verify_shard_integrity_sha256(
+    envelope: Vec<u8>,
+    expected_sha256: Vec<u8>,
+) -> Result<bool, MosaicError> {
+    mosaic_client::verify_shard_integrity_sha256(&envelope, &expected_sha256)
+        .map_err(mosaic_error_from_client)
+}
+
 fn identity_result_from_client(
     result: mosaic_client::IdentityHandleResult,
 ) -> IdentityHandleResult {
@@ -1681,6 +1755,19 @@ fn mosaic_error_from_client(error: mosaic_client::ClientError) -> MosaicError {
     MosaicError::Client {
         code: error.code.as_u16(),
     }
+}
+
+fn master_key_registry() -> &'static Mutex<HashMap<u64, mosaic_crypto::SecretKey>> {
+    MASTER_KEY_HANDLES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn open_master_key_handle(key: mosaic_crypto::SecretKey) -> Result<u64, MosaicError> {
+    let handle = NEXT_MASTER_KEY_HANDLE_ID.fetch_add(1, Ordering::Relaxed);
+    let mut guard = master_key_registry()
+        .lock()
+        .map_err(|_| MosaicError::InternalStatePoisoned)?;
+    guard.insert(handle, key);
+    Ok(handle)
 }
 
 fn mosaic_error_from_crypto(error: mosaic_crypto::MosaicCryptoError) -> MosaicError {
@@ -3180,6 +3267,22 @@ impl fmt::Debug for LinkKeysFfiResult {
             .field("code", &self.code)
             .field("link_id_len", &self.link_id.len())
             .field("link_handle_id", &self.link_handle_id)
+            .finish()
+    }
+}
+
+/// UniFFI record for Rust-owned link-tier handle minting.
+#[derive(Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct LinkTierHandleFfiResult {
+    pub code: u16,
+    pub link_tier_handle_id: u64,
+}
+
+impl fmt::Debug for LinkTierHandleFfiResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LinkTierHandleFfiResult")
+            .field("code", &self.code)
+            .field("link_tier_handle_id", &self.link_tier_handle_id)
             .finish()
     }
 }

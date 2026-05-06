@@ -1,6 +1,11 @@
 import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
 import { getArgon2Params } from '@mosaic/crypto';
+import initRustWasm, {
+  consumeMasterKeyHandleForAesGcm,
+  deriveMasterKeyFromPassword,
+  deriveSessionSaltFromUsername,
+} from '../generated/mosaic-wasm/mosaic_wasm.js';
 import { toArrayBufferView } from './buffer-utils';
 import { clearAllCovers } from './album-cover-service';
 import { clearAllCachedMetadata } from './album-metadata-service';
@@ -27,6 +32,15 @@ import { syncCoordinator } from './sync-coordinator';
 import type { CryptoWorkerApi, DbCryptoBridge } from '../workers/types';
 
 const log = createLogger('session');
+
+let rustWasmInitPromise: Promise<unknown> | null = null;
+
+async function ensureRustWasmInitialized(): Promise<void> {
+  if (!rustWasmInitPromise) {
+    rustWasmInitPromise = initRustWasm();
+  }
+  await rustWasmInitPromise;
+}
 
 /**
  * Build a Comlink-proxied {@link DbCryptoBridge} that the DB SharedWorker
@@ -176,50 +190,50 @@ export class WrappedKeyConflictError extends Error {
  * Hash output is 16 bytes which matches `crypto_pwhash_SALTBYTES`.
  */
 async function deriveArgon2SaltForUser(username: string): Promise<Uint8Array> {
-  await sodium.ready;
-  const input = new TextEncoder().encode(SALT_ENCRYPTION_DOMAIN_V2 + username);
-  return sodium.crypto_generichash(16, input);
+  await ensureRustWasmInitialized();
+  return deriveSessionSaltFromUsername(SALT_ENCRYPTION_DOMAIN_V2, username);
 }
 
 /**
- * Derive the v2 AES-GCM key from the password using Argon2id (libsodium).
+ * Derive the v2 AES-GCM key from the password using Rust-core Argon2id.
  *
- * The 32-byte raw key from Argon2id is imported into Web Crypto as a
- * non-extractable AES-GCM key, then the raw buffer (and the password
- * buffer) are zeroed before this function returns.
+ * Rust keeps the L0 master key behind an opaque handle until the WebCrypto
+ * import handoff. `consumeMasterKeyHandleForAesGcm` removes and zeroizes the
+ * Rust handle, returns one short-lived 32-byte buffer, then this function
+ * imports it as a non-extractable AES-GCM key and zeroizes the JS buffer.
  */
 async function deriveSaltEncryptionKeyV2(
   password: string,
   username: string,
 ): Promise<CryptoKey> {
   await sodium.ready;
+  await ensureRustWasmInitialized();
   const argon2Params = getArgon2Params();
   const argonSalt = await deriveArgon2SaltForUser(username);
   const passwordBytes = new TextEncoder().encode(password);
 
-  let derived: Uint8Array | null = null;
+  let derivedForAesImport: Uint8Array | null = null;
   try {
-    derived = sodium.crypto_pwhash(
-      32,
+    const masterKeyHandle = deriveMasterKeyFromPassword(
       passwordBytes,
       argonSalt,
       argon2Params.iterations,
-      argon2Params.memory * 1024, // KiB → bytes
-      sodium.crypto_pwhash_ALG_ARGON2ID13,
+      argon2Params.memory,
     );
+    derivedForAesImport = consumeMasterKeyHandleForAesGcm(masterKeyHandle);
 
-    // importKey copies the bytes internally; we can safely zero `derived` after.
+    // importKey copies the bytes internally; we can safely zero the handoff buffer after.
     return await crypto.subtle.importKey(
       'raw',
-      toArrayBufferView(derived),
+      toArrayBufferView(derivedForAesImport),
       'AES-GCM',
       false,
       ['encrypt', 'decrypt'],
     );
   } finally {
     sodium.memzero(passwordBytes);
-    if (derived) {
-      sodium.memzero(derived);
+    if (derivedForAesImport) {
+      sodium.memzero(derivedForAesImport);
     }
     sodium.memzero(argonSalt);
   }

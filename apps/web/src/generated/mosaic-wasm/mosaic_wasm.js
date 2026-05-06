@@ -2396,6 +2396,36 @@ export function closeLinkTierHandle(handle) {
 }
 
 /**
+ * Consumes a session L0 handle and returns one short-lived AES-GCM import buffer.
+ *
+ * WebCrypto cannot import a Rust-owned handle directly, so the web boundary
+ * immediately imports these 32 bytes with `extractable = false` and zeroizes
+ * the returned `Uint8Array`. The Rust handle is removed and the registry copy
+ * is zeroized before this function returns, limiting raw L0 exposure to the
+ * WebCrypto import handoff.
+ * @param {bigint} handle
+ * @returns {Uint8Array}
+ */
+export function consumeMasterKeyHandleForAesGcm(handle) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        wasm.consumeMasterKeyHandleForAesGcm(retptr, handle);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
+        var v1 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export4(r0, r1 * 1, 1);
+        return v1;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
  * Creates a fresh account-key handle through the generated WASM binding
  * surface. Returns the opaque handle plus the wrapped account key the
  * caller must persist on the server for future logins.
@@ -2575,6 +2605,63 @@ export function deriveAuthKeypairFromPassword(password, user_salt, kdf_memory_ki
     const len1 = WASM_VECTOR_LEN;
     const ret = wasm.deriveAuthKeypairFromPassword(ptr0, len0, ptr1, len1, kdf_memory_kib, kdf_iterations, kdf_parallelism);
     return AuthKeypairResult.__wrap(ret);
+}
+
+/**
+ * Derives the session L0 master key and stores it behind an opaque handle.
+ * @param {Uint8Array} password
+ * @param {Uint8Array} salt
+ * @param {number} ops_limit
+ * @param {number} mem_limit_kib
+ * @returns {bigint}
+ */
+export function deriveMasterKeyFromPassword(password, salt, ops_limit, mem_limit_kib) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(password, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(salt, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.deriveMasterKeyFromPassword(retptr, ptr0, len0, ptr1, len1, ops_limit, mem_limit_kib);
+        var r0 = getDataViewMemory0().getBigInt64(retptr + 8 * 0, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
+        return BigInt.asUintN(64, r0);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Derives the 16-byte deterministic session Argon2id salt.
+ * @param {string} domain
+ * @param {string} username
+ * @returns {Uint8Array}
+ */
+export function deriveSessionSaltFromUsername(domain, username) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(domain, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(username, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.deriveSessionSaltFromUsername(retptr, ptr0, len0, ptr1, len1);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
+        var v3 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export4(r0, r1 * 1, 1);
+        return v3;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
@@ -2894,6 +2981,18 @@ export function manifestTranscriptBytes(album_id, epoch_id, encrypted_meta, enco
     const len2 = WASM_VECTOR_LEN;
     const ret = wasm.manifestTranscriptBytes(ptr0, len0, epoch_id, ptr1, len1, ptr2, len2);
     return BytesResult.__wrap(ret);
+}
+
+/**
+ * Mints a link-tier handle from a raw 32-byte tier key through WASM.
+ * @param {Uint8Array} raw_key
+ * @returns {LinkTierHandleResult}
+ */
+export function mintLinkTierHandleFromRawKey(raw_key) {
+    const ptr0 = passArray8ToWasm0(raw_key, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.mintLinkTierHandleFromRawKey(ptr0, len0);
+    return LinkTierHandleResult.__wrap(ret);
 }
 
 /**
@@ -3227,6 +3326,32 @@ export function verifyManifestWithIdentity(transcript_bytes, signature, public_k
     const len2 = WASM_VECTOR_LEN;
     const ret = wasm.verifyManifestWithIdentity(ptr0, len0, ptr1, len1, ptr2, len2);
     return ret;
+}
+
+/**
+ * Verifies shard ciphertext SHA-256 through WASM.
+ * @param {Uint8Array} envelope_bytes
+ * @param {Uint8Array} expected_sha256
+ * @returns {boolean}
+ */
+export function verifyShardIntegritySha256(envelope_bytes, expected_sha256) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(envelope_bytes, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(expected_sha256, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.verifyShardIntegritySha256(retptr, ptr0, len0, ptr1, len1);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return r0 !== 0;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
