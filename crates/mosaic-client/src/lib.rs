@@ -28,6 +28,8 @@ use mosaic_crypto::{
     wrap_tier_key_for_link as crypto_wrap_tier_key_for_link,
 };
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader, ShardTier};
+use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
 pub mod download;
@@ -1158,7 +1160,7 @@ impl Drop for LinkShareRecord {
 
 struct LinkTierRecord {
     album_id: String,
-    tier: ShardTier,
+    tier: Option<ShardTier>,
     key_bytes: Zeroizing<Vec<u8>>,
     open: bool,
 }
@@ -2267,6 +2269,10 @@ pub fn import_link_tier_handle(
 }
 
 /// Mints an opaque link-tier handle from a raw 32-byte tier key.
+///
+/// This exists only as a recipient-side bridge while older share-link URL/cache
+/// paths still surface raw tier-key bytes. The bytes are copied into the
+/// Rust-owned handle registry and never need to cross FFI again.
 #[must_use]
 pub fn mint_link_tier_handle_from_raw_key(raw_key: &[u8]) -> LinkTierHandleResult {
     match mint_link_tier_handle_from_raw_key_result(raw_key) {
@@ -2287,25 +2293,33 @@ pub fn decrypt_shard_with_link_tier_handle(
     }
 }
 
-/// Verifies a shard envelope SHA-256 digest in constant time.
+/// Verifies the SHA-256 digest of shard ciphertext bytes (envelope after the
+/// canonical header) with constant-time comparison.
+///
+/// # Errors
+/// Returns `InvalidInputLength` if `expected_sha256` is not 32 bytes and
+/// `InvalidEnvelope` if the envelope is shorter than the canonical header.
 pub fn verify_shard_integrity_sha256(
     envelope_bytes: &[u8],
     expected_sha256: &[u8],
 ) -> Result<bool, ClientError> {
-    let expected = <[u8; 32]>::try_from(expected_sha256).map_err(|_| {
-        ClientError::new(
+    if expected_sha256.len() != 32 {
+        return Err(ClientError::new(
             ClientErrorCode::InvalidInputLength,
-            "expected shard SHA-256 must be 32 bytes",
-        )
-    })?;
-    match verify_shard_integrity(envelope_bytes, &ShardSha256(expected)) {
-        Ok(()) => Ok(true),
-        Err(ShardIntegrityError::DigestMismatch) => Ok(false),
-        Err(ShardIntegrityError::InvalidEnvelopeLength { .. }) => Err(ClientError::new(
-            ClientErrorCode::InvalidEnvelope,
-            "shard envelope is too short for integrity verification",
-        )),
+            "expected_sha256 must be 32 bytes",
+        ));
     }
+    if envelope_bytes.len() < mosaic_domain::SHARD_ENVELOPE_HEADER_LEN {
+        return Err(ClientError::new(
+            ClientErrorCode::InvalidEnvelope,
+            "envelope shorter than header",
+        ));
+    }
+
+    let ciphertext = &envelope_bytes[mosaic_domain::SHARD_ENVELOPE_HEADER_LEN..];
+    let digest = Sha256::digest(ciphertext);
+    let digest_bytes: &[u8] = digest.as_ref();
+    Ok(bool::from(digest_bytes.ct_eq(expected_sha256)))
 }
 
 /// Closes and wipes a share-link wrapping handle.
@@ -2445,7 +2459,7 @@ fn import_link_tier_handle_result(
     };
     let key_bytes = crypto_unwrap_tier_key_from_link(&wrapped, tier, &wrapping_key)
         .map_err(client_error_from_crypto)?;
-    let handle = insert_link_tier_handle(album_id, tier, key_bytes.as_slice())?;
+    let handle = insert_link_tier_handle(album_id, Some(tier), key_bytes.as_slice())?;
     Ok(LinkTierHandleResult::ok(
         handle,
         link_id.to_vec(),
@@ -2456,20 +2470,20 @@ fn import_link_tier_handle_result(
 fn mint_link_tier_handle_from_raw_key_result(
     raw_key: &[u8],
 ) -> Result<LinkTierHandleResult, ClientError> {
-    if raw_key.len() != 32 {
+    if raw_key.len() != mosaic_crypto::KEY_BYTES {
         return Err(ClientError::new(
             ClientErrorCode::InvalidKeyLength,
             "raw link tier key must be 32 bytes",
         ));
     }
-    let tier = ShardTier::Original;
-    let handle = insert_link_tier_handle(String::new(), tier, raw_key)?;
-    Ok(LinkTierHandleResult::ok(handle, Vec::new(), tier.to_byte()))
+
+    let handle = insert_link_tier_handle(String::new(), None, raw_key)?;
+    Ok(LinkTierHandleResult::ok(handle, Vec::new(), 0))
 }
 
 fn insert_link_tier_handle(
     album_id: String,
-    tier: ShardTier,
+    tier: Option<ShardTier>,
     key_bytes: &[u8],
 ) -> Result<LinkTierHandleId, ClientError> {
     let handle = allocate_handle(&NEXT_LINK_TIER_HANDLE)?;
@@ -2498,6 +2512,7 @@ fn insert_link_tier_handle(
     Ok(handle)
 }
 
+
 fn decrypt_shard_with_link_tier_handle_result(
     link_tier_handle: u64,
     envelope_bytes: &[u8],
@@ -2509,7 +2524,9 @@ fn decrypt_shard_with_link_tier_handle_result(
         envelope_bytes
     };
     let header = ShardEnvelopeHeader::parse(header_bytes).map_err(client_error_from_domain)?;
-    if header.tier() != tier {
+    if let Some(tier) = tier
+        && header.tier() != tier
+    {
         return Err(ClientError::new(
             ClientErrorCode::LinkTierMismatch,
             "link tier handle does not match envelope tier",
@@ -2523,7 +2540,7 @@ fn decrypt_shard_with_link_tier_handle_result(
 
 fn clone_link_tier_key_for_handle(
     handle: u64,
-) -> Result<(ShardTier, Zeroizing<Vec<u8>>), ClientError> {
+) -> Result<(Option<ShardTier>, Zeroizing<Vec<u8>>), ClientError> {
     let registry = link_tier_registry();
     let guard = registry.lock().map_err(|_| {
         ClientError::new(

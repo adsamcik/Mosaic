@@ -5,15 +5,21 @@
 use std::{
     collections::HashMap,
     fmt,
+    io::Cursor,
     sync::{
         Mutex, OnceLock,
         atomic::{AtomicU64, Ordering},
     },
 };
 
+use blake2::{
+    Blake2bVar,
+    digest::{Update, VariableOutput},
+};
+use ciborium::value::{Integer, Value};
 use mosaic_domain::{
     EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, MetadataSidecar,
-    MetadataSidecarError, MetadataSidecarField, ShardTier,
+    MetadataSidecarError, MetadataSidecarField, ShardTier, ShardTier as DomainShardTier,
 };
 use self_cell::self_cell;
 use zeroize::Zeroizing;
@@ -130,6 +136,21 @@ pub enum ClientErrorCode {
     ManifestSetConflict = 709,
     BackendIdempotencyConflict = 710,
     VideoPosterExtractionFailed = 711,
+    DownloadInvalidPlan = 720,
+    DownloadIllegalTransition = 721,
+    DownloadSnapshotMigration = 722,
+    DownloadSnapshotCorrupt = 723,
+    DownloadSnapshotChecksumMismatch = 724,
+    DownloadSnapshotTorn = 725,
+    DownloadTransientNetwork = 726,
+    DownloadIntegrity = 727,
+    DownloadDecrypt = 728,
+    DownloadNotFound = 729,
+    DownloadQuota = 730,
+    DownloadCancelled = 731,
+    DownloadAccessRevoked = 732,
+    DownloadAuthorizationChanged = 733,
+    DownloadIllegalState = 734,
     PinValidationFailed = 800,
 }
 
@@ -250,6 +271,33 @@ impl ClientErrorCode {
             mosaic_client::ClientErrorCode::VideoPosterExtractionFailed => {
                 Self::VideoPosterExtractionFailed
             }
+            mosaic_client::ClientErrorCode::DownloadInvalidPlan => Self::DownloadInvalidPlan,
+            mosaic_client::ClientErrorCode::DownloadIllegalTransition => {
+                Self::DownloadIllegalTransition
+            }
+            mosaic_client::ClientErrorCode::DownloadSnapshotMigration => {
+                Self::DownloadSnapshotMigration
+            }
+            mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt => {
+                Self::DownloadSnapshotCorrupt
+            }
+            mosaic_client::ClientErrorCode::DownloadSnapshotChecksumMismatch => {
+                Self::DownloadSnapshotChecksumMismatch
+            }
+            mosaic_client::ClientErrorCode::DownloadSnapshotTorn => Self::DownloadSnapshotTorn,
+            mosaic_client::ClientErrorCode::DownloadTransientNetwork => {
+                Self::DownloadTransientNetwork
+            }
+            mosaic_client::ClientErrorCode::DownloadIntegrity => Self::DownloadIntegrity,
+            mosaic_client::ClientErrorCode::DownloadDecrypt => Self::DownloadDecrypt,
+            mosaic_client::ClientErrorCode::DownloadNotFound => Self::DownloadNotFound,
+            mosaic_client::ClientErrorCode::DownloadQuota => Self::DownloadQuota,
+            mosaic_client::ClientErrorCode::DownloadCancelled => Self::DownloadCancelled,
+            mosaic_client::ClientErrorCode::DownloadAccessRevoked => Self::DownloadAccessRevoked,
+            mosaic_client::ClientErrorCode::DownloadAuthorizationChanged => {
+                Self::DownloadAuthorizationChanged
+            }
+            mosaic_client::ClientErrorCode::DownloadIllegalState => Self::DownloadIllegalState,
             mosaic_client::ClientErrorCode::PinValidationFailed => Self::PinValidationFailed,
         }
     }
@@ -3764,6 +3812,775 @@ pub fn decrypt_content_with_raw_key(
             code: map_crypto_error_uniffi(error),
             plaintext: Vec::new(),
         },
+    }
+}
+
+// =============================================================================
+// Phase 1 download orchestrator UniFFI bindings.
+//
+// These bindings expose the same `mosaic_client::download` orchestrator that
+// `mosaic-wasm` exposes to the web worker, but adapted to UniFFI's typed
+// `Record` style. The CBOR byte format used for `plan_cbor`, `state_cbor`,
+// `event_cbor`, and snapshot bytes is byte-identical to the WASM facade so a
+// future native iOS/Android app drives the SAME canonical wire format the web
+// already drives. The duplicated CBOR helpers are kept source-equivalent with
+// the WASM helpers via `tests/parser_equivalence.rs`.
+// =============================================================================
+
+/// UniFFI record describing a single shard input to the download plan builder.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct DownloadPlanShardInput {
+    pub shard_id: Vec<u8>,
+    pub epoch_id: u32,
+    pub tier: u8,
+    pub expected_hash: Vec<u8>,
+    pub declared_size: u64,
+}
+
+/// UniFFI record describing one photo + its shards as input to the plan builder.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct DownloadPlanEntryInput {
+    pub photo_id: String,
+    pub filename: String,
+    pub shards: Vec<DownloadPlanShardInput>,
+}
+
+/// UniFFI record for `build_download_plan` input.
+///
+/// `album_id` is carried for symmetry with `init_download_job` but is not
+/// validated here — the orchestrator binds the album id at snapshot init.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct DownloadPlanInput {
+    pub album_id: Vec<u8>,
+    pub entries: Vec<DownloadPlanEntryInput>,
+}
+
+/// UniFFI record for canonical download plan construction results.
+///
+/// `plan_cbor` is opaque to consumers and stable across UniFFI/WASM. On error
+/// it is empty and `error_detail` carries a privacy-safe diagnostic string
+/// (no shard bytes; photo ids are project-internal opaque strings).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct DownloadPlanResult {
+    pub code: u16,
+    pub plan_cbor: Vec<u8>,
+    pub error_detail: Option<String>,
+}
+
+/// UniFFI record for `init_download_job` input.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct DownloadInitInput {
+    pub job_id: Vec<u8>,
+    pub album_id: Vec<u8>,
+    pub plan_cbor: Vec<u8>,
+    pub now_ms: u64,
+}
+
+/// UniFFI record carrying canonical snapshot body bytes plus a BLAKE2b-256
+/// checksum over those bytes.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SnapshotBytesResult {
+    pub code: u16,
+    pub body: Vec<u8>,
+    pub checksum: Vec<u8>,
+}
+
+/// UniFFI record for `apply_download_event` results.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ApplyEventResult {
+    pub code: u16,
+    pub new_state_cbor: Vec<u8>,
+}
+
+/// UniFFI record for `load_download_snapshot` results.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct LoadSnapshotResult {
+    pub code: u16,
+    pub snapshot_cbor: Vec<u8>,
+    pub schema_version_loaded: u32,
+}
+
+/// UniFFI record for constant-time `verify_download_snapshot` results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct VerifySnapshotResult {
+    pub code: u16,
+    pub valid: bool,
+}
+
+/// Builds a canonical download plan from a typed UniFFI input record.
+///
+/// Returns the same canonical CBOR bytes a future native app would obtain by
+/// driving `mosaic_wasm::download_build_plan_v1` via `wasm-bindgen` from JS.
+/// The Rust orchestrator (`mosaic_client::download::plan::DownloadPlanBuilder`)
+/// is the authoritative source of truth for both wrappers.
+#[uniffi::export]
+#[must_use]
+pub fn build_download_plan(input: DownloadPlanInput) -> DownloadPlanResult {
+    let _ = input.album_id;
+    let mut builder = mosaic_client::download::plan::DownloadPlanBuilder::new();
+    for entry in input.entries {
+        let mut shards = Vec::with_capacity(entry.shards.len());
+        for shard in entry.shards {
+            let shard_id = match <[u8; 16]>::try_from(shard.shard_id.as_slice()) {
+                Ok(value) => value,
+                Err(_) => {
+                    return build_download_plan_error(
+                        mosaic_client::ClientErrorCode::InvalidInputLength,
+                        Some("shard_id must be 16 bytes".to_owned()),
+                    );
+                }
+            };
+            let expected_hash = match <[u8; 32]>::try_from(shard.expected_hash.as_slice()) {
+                Ok(value) => value,
+                Err(_) => {
+                    return build_download_plan_error(
+                        mosaic_client::ClientErrorCode::InvalidInputLength,
+                        Some("expected_hash must be 32 bytes".to_owned()),
+                    );
+                }
+            };
+            let tier = match ShardTier::try_from(shard.tier) {
+                Ok(value) => value,
+                Err(_) => {
+                    return build_download_plan_error(
+                        mosaic_client::ClientErrorCode::DownloadInvalidPlan,
+                        Some(format!("unknown tier {}", shard.tier)),
+                    );
+                }
+            };
+            shards.push(mosaic_client::download::plan::DownloadShardInput {
+                shard_id: mosaic_client::download::plan::ShardId::from_bytes(shard_id),
+                epoch_id: shard.epoch_id,
+                tier,
+                expected_hash,
+                declared_size: shard.declared_size,
+            });
+        }
+        builder = builder.with_photo(mosaic_client::download::plan::DownloadPlanInput {
+            photo_id: mosaic_client::download::plan::PhotoId::new(entry.photo_id),
+            filename: entry.filename,
+            shards,
+        });
+    }
+    match builder.build() {
+        Ok(plan) => match download_plan_to_cbor(&plan) {
+            Ok(plan_cbor) => DownloadPlanResult {
+                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                plan_cbor,
+                error_detail: None,
+            },
+            Err(code) => build_download_plan_error(code, None),
+        },
+        Err(error) => build_download_plan_error(
+            mosaic_client::ClientErrorCode::DownloadInvalidPlan,
+            Some(download_plan_error_detail(&error)),
+        ),
+    }
+}
+
+/// Initializes a fresh canonical download job snapshot.
+///
+/// The returned `body` and `checksum` are byte-identical to the bytes a
+/// future native consumer would obtain by driving `download_init_snapshot_v1`
+/// from the WASM facade with the same inputs.
+#[uniffi::export]
+#[must_use]
+pub fn init_download_job(input: DownloadInitInput) -> SnapshotBytesResult {
+    let job_id = match <[u8; 16]>::try_from(input.job_id.as_slice()) {
+        Ok(value) => value,
+        Err(_) => {
+            return snapshot_bytes_error(mosaic_client::ClientErrorCode::InvalidInputLength);
+        }
+    };
+    let album_id = match <[u8; 16]>::try_from(input.album_id.as_slice()) {
+        Ok(value) => value,
+        Err(_) => {
+            return snapshot_bytes_error(mosaic_client::ClientErrorCode::InvalidInputLength);
+        }
+    };
+    let plan = match download_plan_from_cbor(&input.plan_cbor) {
+        Ok(value) => value,
+        Err(code) => return snapshot_bytes_error(code),
+    };
+    let photos = plan
+        .entries
+        .iter()
+        .map(|entry| mosaic_client::download::snapshot::PhotoState {
+            photo_id: entry.photo_id.clone(),
+            status: mosaic_client::download::state::PhotoStatus::Pending,
+            bytes_written: 0,
+            last_attempt_at_ms: None,
+            retry_count: 0,
+        })
+        .collect();
+    let snapshot = mosaic_client::download::snapshot::DownloadJobSnapshot {
+        schema_version: mosaic_client::download::snapshot::CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION,
+        job_id: mosaic_client::download::snapshot::JobId::from_bytes(job_id),
+        album_id: mosaic_client::Uuid::from_bytes(album_id),
+        created_at_ms: input.now_ms,
+        last_updated_at_ms: input.now_ms,
+        state: mosaic_client::download::state::DownloadJobState::Idle,
+        plan,
+        photos,
+        failure_log: Vec::new(),
+        lease_token: None,
+    };
+    match mosaic_client::download::snapshot::prepare_snapshot_bytes(&snapshot) {
+        Ok(bytes) => SnapshotBytesResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            body: bytes.body,
+            checksum: bytes.checksum.to_vec(),
+        },
+        Err(error) => snapshot_bytes_error(download_snapshot_error_code(&error)),
+    }
+}
+
+/// Applies a download state-machine event to a CBOR-encoded state.
+#[uniffi::export]
+#[must_use]
+pub fn apply_download_event(state_cbor: Vec<u8>, event_cbor: Vec<u8>) -> ApplyEventResult {
+    let state = match download_state_from_cbor(&state_cbor) {
+        Ok(value) => value,
+        Err(code) => return apply_event_error(code),
+    };
+    let event = match download_event_from_cbor(&event_cbor) {
+        Ok(value) => value,
+        Err(code) => return apply_event_error(code),
+    };
+    match mosaic_client::download::state::apply(&state, &event) {
+        Ok(new_state) => match download_state_to_cbor(&new_state) {
+            Ok(new_state_cbor) => ApplyEventResult {
+                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                new_state_cbor,
+            },
+            Err(code) => apply_event_error(code),
+        },
+        Err(_) => apply_event_error(mosaic_client::ClientErrorCode::DownloadIllegalTransition),
+    }
+}
+
+/// Validates a persisted snapshot body against its expected checksum and
+/// returns the canonicalized snapshot CBOR plus its loaded schema version.
+#[uniffi::export]
+#[must_use]
+pub fn load_download_snapshot(snapshot_cbor: Vec<u8>, checksum: Vec<u8>) -> LoadSnapshotResult {
+    let expected = match checksum_32(&checksum) {
+        Ok(value) => value,
+        Err(code) => return load_snapshot_error(code),
+    };
+    let actual = match download_checksum_body(&snapshot_cbor) {
+        Ok(value) => value,
+        Err(code) => return load_snapshot_error(code),
+    };
+    if !checksum_matches(&actual, &expected) {
+        return load_snapshot_error(
+            mosaic_client::ClientErrorCode::DownloadSnapshotChecksumMismatch,
+        );
+    }
+    match mosaic_client::download::snapshot::DownloadJobSnapshot::from_canonical_cbor(
+        &snapshot_cbor,
+    ) {
+        Ok(snapshot) => match snapshot.to_canonical_cbor() {
+            Ok(canonical) => LoadSnapshotResult {
+                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                snapshot_cbor: canonical,
+                schema_version_loaded: snapshot.schema_version,
+            },
+            Err(error) => load_snapshot_error(download_snapshot_error_code(&error)),
+        },
+        Err(error) => load_snapshot_error(download_snapshot_error_code(&error)),
+    }
+}
+
+/// Computes the canonical BLAKE2b-256 checksum for a download snapshot body.
+///
+/// The returned `body` is the canonically re-encoded snapshot CBOR; the
+/// `checksum` is the BLAKE2b-256 of that body. Callers can persist `body`
+/// plus `checksum` directly.
+#[uniffi::export]
+#[must_use]
+pub fn commit_download_snapshot(snapshot_cbor: Vec<u8>) -> SnapshotBytesResult {
+    match mosaic_client::download::snapshot::DownloadJobSnapshot::from_canonical_cbor(
+        &snapshot_cbor,
+    )
+    .and_then(|snapshot| mosaic_client::download::snapshot::prepare_snapshot_bytes(&snapshot))
+    {
+        Ok(bytes) => SnapshotBytesResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            body: bytes.body,
+            checksum: bytes.checksum.to_vec(),
+        },
+        Err(error) => snapshot_bytes_error(download_snapshot_error_code(&error)),
+    }
+}
+
+/// Verifies a download snapshot body checksum without branching on the bytes.
+#[uniffi::export]
+#[must_use]
+pub fn verify_download_snapshot(snapshot_cbor: Vec<u8>, checksum: Vec<u8>) -> VerifySnapshotResult {
+    let actual = match download_checksum_body(&snapshot_cbor) {
+        Ok(value) => value,
+        Err(code) => return verify_snapshot_error(code),
+    };
+    let expected = checksum_32_padded(&checksum);
+    let valid = checksum.len() == 32 && checksum_matches(&actual, &expected);
+    VerifySnapshotResult {
+        code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+        valid,
+    }
+}
+
+// ---- internal helpers (kept source-equivalent with mosaic-wasm) -------------
+
+fn build_download_plan_error(
+    code: mosaic_client::ClientErrorCode,
+    error_detail: Option<String>,
+) -> DownloadPlanResult {
+    DownloadPlanResult {
+        code: code.as_u16(),
+        plan_cbor: Vec::new(),
+        error_detail,
+    }
+}
+
+fn snapshot_bytes_error(code: mosaic_client::ClientErrorCode) -> SnapshotBytesResult {
+    SnapshotBytesResult {
+        code: code.as_u16(),
+        body: Vec::new(),
+        checksum: Vec::new(),
+    }
+}
+
+fn apply_event_error(code: mosaic_client::ClientErrorCode) -> ApplyEventResult {
+    ApplyEventResult {
+        code: code.as_u16(),
+        new_state_cbor: Vec::new(),
+    }
+}
+
+fn load_snapshot_error(code: mosaic_client::ClientErrorCode) -> LoadSnapshotResult {
+    LoadSnapshotResult {
+        code: code.as_u16(),
+        snapshot_cbor: Vec::new(),
+        schema_version_loaded: 0,
+    }
+}
+
+fn verify_snapshot_error(code: mosaic_client::ClientErrorCode) -> VerifySnapshotResult {
+    VerifySnapshotResult {
+        code: code.as_u16(),
+        valid: false,
+    }
+}
+
+fn cbor_value(bytes: &[u8]) -> Result<Value, mosaic_client::ClientErrorCode> {
+    ciborium::de::from_reader(Cursor::new(bytes))
+        .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn cbor_bytes(value: &Value) -> Result<Vec<u8>, mosaic_client::ClientErrorCode> {
+    let mut out = Vec::new();
+    ciborium::ser::into_writer(value, &mut out)
+        .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)?;
+    Ok(out)
+}
+
+fn download_state_from_cbor(
+    bytes: &[u8],
+) -> Result<mosaic_client::download::state::DownloadJobState, mosaic_client::ClientErrorCode> {
+    decode_download_state(&cbor_value(bytes)?)
+}
+
+fn download_state_to_cbor(
+    state: &mosaic_client::download::state::DownloadJobState,
+) -> Result<Vec<u8>, mosaic_client::ClientErrorCode> {
+    cbor_bytes(&download_state_value(state))
+}
+
+fn download_event_from_cbor(
+    bytes: &[u8],
+) -> Result<mosaic_client::download::state::DownloadJobEvent, mosaic_client::ClientErrorCode> {
+    decode_download_event(&cbor_value(bytes)?)
+}
+
+fn download_plan_to_cbor(
+    plan: &mosaic_client::download::plan::DownloadPlan,
+) -> Result<Vec<u8>, mosaic_client::ClientErrorCode> {
+    cbor_bytes(&download_plan_value(plan))
+}
+
+fn download_plan_from_cbor(
+    bytes: &[u8],
+) -> Result<mosaic_client::download::plan::DownloadPlan, mosaic_client::ClientErrorCode> {
+    decode_download_plan(&cbor_value(bytes)?)
+}
+
+fn download_state_value(state: &mosaic_client::download::state::DownloadJobState) -> Value {
+    match state {
+        mosaic_client::download::state::DownloadJobState::Errored { reason } => Value::Map(vec![
+            cbor_kv(0, cbor_uint(u64::from(state.to_u8()))),
+            cbor_kv(1, download_error_value(*reason)),
+        ]),
+        mosaic_client::download::state::DownloadJobState::Cancelled { soft } => Value::Map(vec![
+            cbor_kv(0, cbor_uint(u64::from(state.to_u8()))),
+            cbor_kv(2, Value::Bool(*soft)),
+        ]),
+        _ => Value::Map(vec![cbor_kv(0, cbor_uint(u64::from(state.to_u8())))]),
+    }
+}
+
+fn decode_download_state(
+    value: &Value,
+) -> Result<mosaic_client::download::state::DownloadJobState, mosaic_client::ClientErrorCode> {
+    use mosaic_client::download::snapshot::download_job_state_codes as codes;
+    let entries = map_entries(value)?;
+    let code = u8_from_value(required_entry(entries, 0)?)?;
+    match code {
+        codes::IDLE => Ok(mosaic_client::download::state::DownloadJobState::Idle),
+        codes::PREPARING => Ok(mosaic_client::download::state::DownloadJobState::Preparing),
+        codes::RUNNING => Ok(mosaic_client::download::state::DownloadJobState::Running),
+        codes::PAUSED => Ok(mosaic_client::download::state::DownloadJobState::Paused),
+        codes::FINALIZING => Ok(mosaic_client::download::state::DownloadJobState::Finalizing),
+        codes::DONE => Ok(mosaic_client::download::state::DownloadJobState::Done),
+        codes::ERRORED => Ok(mosaic_client::download::state::DownloadJobState::Errored {
+            reason: decode_download_error(required_entry(entries, 1)?)?,
+        }),
+        codes::CANCELLED => Ok(
+            mosaic_client::download::state::DownloadJobState::Cancelled {
+                soft: bool_from_value(required_entry(entries, 2)?)?,
+            },
+        ),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn decode_download_event(
+    value: &Value,
+) -> Result<mosaic_client::download::state::DownloadJobEvent, mosaic_client::ClientErrorCode> {
+    let entries = map_entries(value)?;
+    let kind = u8_from_value(required_entry(entries, 0)?)?;
+    match kind {
+        0 => Ok(
+            mosaic_client::download::state::DownloadJobEvent::StartRequested {
+                job_id: mosaic_client::download::snapshot::JobId::from_bytes(bytes_16_from_value(
+                    required_entry(entries, 1)?,
+                )?),
+                album_id: uuid_from_cbor_value(required_entry(entries, 2)?)?,
+            },
+        ),
+        1 => Ok(mosaic_client::download::state::DownloadJobEvent::PlanReady),
+        2 => Ok(mosaic_client::download::state::DownloadJobEvent::PauseRequested),
+        3 => Ok(mosaic_client::download::state::DownloadJobEvent::ResumeRequested),
+        4 => Ok(
+            mosaic_client::download::state::DownloadJobEvent::CancelRequested {
+                soft: bool_from_value(required_entry(entries, 3)?)?,
+            },
+        ),
+        5 => Ok(
+            mosaic_client::download::state::DownloadJobEvent::ErrorEncountered {
+                reason: decode_download_error(required_entry(entries, 4)?)?,
+            },
+        ),
+        6 => Ok(mosaic_client::download::state::DownloadJobEvent::AllPhotosDone),
+        7 => Ok(mosaic_client::download::state::DownloadJobEvent::FinalizationDone),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadIllegalTransition),
+    }
+}
+
+fn download_plan_value(plan: &mosaic_client::download::plan::DownloadPlan) -> Value {
+    Value::Array(plan.entries.iter().map(download_plan_entry_value).collect())
+}
+
+fn download_plan_entry_value(entry: &mosaic_client::download::plan::DownloadPlanEntry) -> Value {
+    Value::Map(vec![
+        cbor_kv(0, Value::Text(entry.photo_id.as_str().to_owned())),
+        cbor_kv(1, cbor_uint(u64::from(entry.epoch_id))),
+        cbor_kv(2, cbor_uint(u64::from(entry.tier.to_byte()))),
+        cbor_kv(
+            3,
+            Value::Array(
+                entry
+                    .shard_ids
+                    .iter()
+                    .map(|id| Value::Bytes(id.as_bytes().to_vec()))
+                    .collect(),
+            ),
+        ),
+        cbor_kv(
+            4,
+            Value::Array(
+                entry
+                    .expected_hashes
+                    .iter()
+                    .map(|hash| Value::Bytes(hash.to_vec()))
+                    .collect(),
+            ),
+        ),
+        cbor_kv(5, Value::Text(entry.filename.clone())),
+        cbor_kv(6, cbor_uint(entry.total_bytes)),
+    ])
+}
+
+fn decode_download_plan(
+    value: &Value,
+) -> Result<mosaic_client::download::plan::DownloadPlan, mosaic_client::ClientErrorCode> {
+    let items = array_items(value)?;
+    let mut entries = Vec::with_capacity(items.len());
+    for item in items {
+        let fields = map_entries(item)?;
+        let tier = shard_tier_from_value(required_entry(fields, 2)?)?;
+        let shard_ids = array_items(required_entry(fields, 3)?)?
+            .iter()
+            .map(|value| {
+                bytes_16_from_value(value).map(mosaic_client::download::plan::ShardId::from_bytes)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let expected_hashes = array_items(required_entry(fields, 4)?)?
+            .iter()
+            .map(bytes_32_from_value)
+            .collect::<Result<Vec<_>, _>>()?;
+        if shard_ids.is_empty() || shard_ids.len() != expected_hashes.len() {
+            return Err(mosaic_client::ClientErrorCode::DownloadInvalidPlan);
+        }
+        entries.push(mosaic_client::download::plan::DownloadPlanEntry {
+            photo_id: mosaic_client::download::plan::PhotoId::new(text_from_value(
+                required_entry(fields, 0)?,
+            )?),
+            epoch_id: u32_from_value(required_entry(fields, 1)?)?,
+            tier,
+            shard_ids,
+            expected_hashes,
+            filename: text_from_value(required_entry(fields, 5)?)?,
+            total_bytes: u64_from_value(required_entry(fields, 6)?)?,
+        });
+    }
+    Ok(mosaic_client::download::plan::DownloadPlan { entries })
+}
+
+fn download_plan_error_detail(error: &mosaic_client::download::plan::DownloadPlanError) -> String {
+    match error {
+        mosaic_client::download::plan::DownloadPlanError::DisallowedTier { photo_id, tier } => {
+            format!("DisallowedTier:photoId={photo_id},tier={}", tier.to_byte())
+        }
+        mosaic_client::download::plan::DownloadPlanError::MultiEpochPhoto { photo_id, epochs } => {
+            let epochs = epochs
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("MultiEpochPhoto:photoId={photo_id},epochs=[{epochs}]")
+        }
+        mosaic_client::download::plan::DownloadPlanError::PhotoHasNoShards { photo_id } => {
+            format!("PhotoHasNoShards:photoId={photo_id}")
+        }
+        mosaic_client::download::plan::DownloadPlanError::SizeOverflow { photo_id } => {
+            format!("SizeOverflow:photoId={photo_id}")
+        }
+    }
+}
+
+fn download_snapshot_error_code(
+    error: &mosaic_client::download::snapshot::DownloadSnapshotError,
+) -> mosaic_client::ClientErrorCode {
+    match error {
+        mosaic_client::download::snapshot::DownloadSnapshotError::ChecksumMismatch => {
+            mosaic_client::ClientErrorCode::DownloadSnapshotChecksumMismatch
+        }
+        mosaic_client::download::snapshot::DownloadSnapshotError::SchemaTooNew { .. } => {
+            mosaic_client::ClientErrorCode::DownloadSnapshotMigration
+        }
+        mosaic_client::download::snapshot::DownloadSnapshotError::Torn { .. } => {
+            mosaic_client::ClientErrorCode::DownloadSnapshotTorn
+        }
+        mosaic_client::download::snapshot::DownloadSnapshotError::CborDecodeFailed
+        | mosaic_client::download::snapshot::DownloadSnapshotError::SchemaVersionMissing
+        | mosaic_client::download::snapshot::DownloadSnapshotError::SchemaCorrupt
+        | mosaic_client::download::snapshot::DownloadSnapshotError::ForbiddenField => {
+            mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt
+        }
+    }
+}
+
+fn download_checksum_body(body: &[u8]) -> Result<[u8; 32], mosaic_client::ClientErrorCode> {
+    let mut hasher =
+        Blake2bVar::new(32).map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)?;
+    hasher.update(body);
+    let mut out = [0_u8; 32];
+    hasher
+        .finalize_variable(&mut out)
+        .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)?;
+    Ok(out)
+}
+
+fn checksum_32(bytes: &[u8]) -> Result<[u8; 32], mosaic_client::ClientErrorCode> {
+    if bytes.len() != 32 {
+        return Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt);
+    }
+    Ok(checksum_32_padded(bytes))
+}
+
+fn checksum_32_padded(bytes: &[u8]) -> [u8; 32] {
+    let mut out = [0_u8; 32];
+    let mut index = 0_usize;
+    while index < out.len() {
+        if let Some(value) = bytes.get(index) {
+            out[index] = *value;
+        }
+        index += 1;
+    }
+    out
+}
+
+fn checksum_matches(actual: &[u8; 32], expected: &[u8; 32]) -> bool {
+    let mut diff = 0_u8;
+    let mut index = 0_usize;
+    while index < actual.len() {
+        diff |= actual[index] ^ expected[index];
+        index += 1;
+    }
+    diff == 0
+}
+
+fn map_entries(value: &Value) -> Result<&[(Value, Value)], mosaic_client::ClientErrorCode> {
+    match value {
+        Value::Map(entries) => Ok(entries.as_slice()),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn array_items(value: &Value) -> Result<&[Value], mosaic_client::ClientErrorCode> {
+    match value {
+        Value::Array(items) => Ok(items.as_slice()),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn required_entry(
+    entries: &[(Value, Value)],
+    key: u32,
+) -> Result<&Value, mosaic_client::ClientErrorCode> {
+    entries
+        .iter()
+        .find_map(|(candidate, value)| {
+            match candidate
+                .as_integer()
+                .and_then(|integer| u32::try_from(integer).ok())
+            {
+                Some(found) if found == key => Some(value),
+                _ => None,
+            }
+        })
+        .ok_or(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn cbor_kv(key: u32, value: Value) -> (Value, Value) {
+    (Value::Integer(Integer::from(key)), value)
+}
+
+fn cbor_uint(value: u64) -> Value {
+    Value::Integer(Integer::from(value))
+}
+
+fn u8_from_value(value: &Value) -> Result<u8, mosaic_client::ClientErrorCode> {
+    value
+        .as_integer()
+        .and_then(|integer| u8::try_from(integer).ok())
+        .ok_or(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn u32_from_value(value: &Value) -> Result<u32, mosaic_client::ClientErrorCode> {
+    value
+        .as_integer()
+        .and_then(|integer| u32::try_from(integer).ok())
+        .ok_or(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn u64_from_value(value: &Value) -> Result<u64, mosaic_client::ClientErrorCode> {
+    value
+        .as_integer()
+        .and_then(|integer| u64::try_from(integer).ok())
+        .ok_or(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn bool_from_value(value: &Value) -> Result<bool, mosaic_client::ClientErrorCode> {
+    match value {
+        Value::Bool(value) => Ok(*value),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn text_from_value(value: &Value) -> Result<String, mosaic_client::ClientErrorCode> {
+    match value {
+        Value::Text(value) => Ok(value.clone()),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn bytes_from_value(value: &Value) -> Result<Vec<u8>, mosaic_client::ClientErrorCode> {
+    match value {
+        Value::Bytes(value) => Ok(value.clone()),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn bytes_16_from_value(value: &Value) -> Result<[u8; 16], mosaic_client::ClientErrorCode> {
+    bytes_from_value(value)?
+        .as_slice()
+        .try_into()
+        .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn bytes_32_from_value(value: &Value) -> Result<[u8; 32], mosaic_client::ClientErrorCode> {
+    bytes_from_value(value)?
+        .as_slice()
+        .try_into()
+        .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)
+}
+
+fn uuid_from_cbor_value(
+    value: &Value,
+) -> Result<mosaic_client::Uuid, mosaic_client::ClientErrorCode> {
+    match value {
+        Value::Bytes(_) => Ok(mosaic_client::Uuid::from_bytes(bytes_16_from_value(value)?)),
+        Value::Text(text) => uuid_from_string(text)
+            .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
+    }
+}
+
+fn shard_tier_from_value(value: &Value) -> Result<DomainShardTier, mosaic_client::ClientErrorCode> {
+    DomainShardTier::try_from(u8_from_value(value)?)
+        .map_err(|_| mosaic_client::ClientErrorCode::DownloadInvalidPlan)
+}
+
+fn download_error_value(error: mosaic_client::download::error::DownloadErrorCode) -> Value {
+    cbor_uint(u64::from(match error {
+        mosaic_client::download::error::DownloadErrorCode::TransientNetwork => 0_u8,
+        mosaic_client::download::error::DownloadErrorCode::Integrity => 1,
+        mosaic_client::download::error::DownloadErrorCode::Decrypt => 2,
+        mosaic_client::download::error::DownloadErrorCode::NotFound => 3,
+        mosaic_client::download::error::DownloadErrorCode::AccessRevoked => 4,
+        mosaic_client::download::error::DownloadErrorCode::AuthorizationChanged => 5,
+        mosaic_client::download::error::DownloadErrorCode::Quota => 6,
+        mosaic_client::download::error::DownloadErrorCode::Cancelled => 7,
+        mosaic_client::download::error::DownloadErrorCode::IllegalState => 8,
+    }))
+}
+
+fn decode_download_error(
+    value: &Value,
+) -> Result<mosaic_client::download::error::DownloadErrorCode, mosaic_client::ClientErrorCode> {
+    match u8_from_value(value)? {
+        0 => Ok(mosaic_client::download::error::DownloadErrorCode::TransientNetwork),
+        1 => Ok(mosaic_client::download::error::DownloadErrorCode::Integrity),
+        2 => Ok(mosaic_client::download::error::DownloadErrorCode::Decrypt),
+        3 => Ok(mosaic_client::download::error::DownloadErrorCode::NotFound),
+        4 => Ok(mosaic_client::download::error::DownloadErrorCode::AccessRevoked),
+        5 => Ok(mosaic_client::download::error::DownloadErrorCode::AuthorizationChanged),
+        6 => Ok(mosaic_client::download::error::DownloadErrorCode::Quota),
+        7 => Ok(mosaic_client::download::error::DownloadErrorCode::Cancelled),
+        8 => Ok(mosaic_client::download::error::DownloadErrorCode::IllegalState),
+        _ => Err(mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt),
     }
 }
 

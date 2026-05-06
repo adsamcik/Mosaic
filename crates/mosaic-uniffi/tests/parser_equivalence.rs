@@ -9,6 +9,186 @@ const DUPLICATED_STRING_PARSERS: [&str; 5] = [
     "manifest_recovery_outcome_from_string",
 ];
 
+/// Source-equivalence locks for the download CBOR codec helpers duplicated
+/// from `mosaic-wasm` into `mosaic-uniffi` so both wrappers emit and accept
+/// byte-identical canonical CBOR for plans, states, and events while staying
+/// architecturally independent (mosaic-uniffi must not depend on mosaic-wasm
+/// per `tests/architecture/rust-boundaries.sh`). Drift in either copy is the
+/// only way wire-format compatibility can break, and is therefore the only
+/// thing this lock needs to catch.
+const DUPLICATED_DOWNLOAD_CODEC_FNS: &[&str] = &[
+    "cbor_value",
+    "cbor_bytes",
+    "cbor_kv",
+    "cbor_uint",
+    "download_state_from_cbor",
+    "download_state_to_cbor",
+    "download_event_from_cbor",
+    "download_plan_to_cbor",
+    "download_plan_from_cbor",
+    "download_state_value",
+    "decode_download_state",
+    "decode_download_event",
+    "download_plan_value",
+    "download_plan_entry_value",
+    "decode_download_plan",
+    "download_plan_error_detail",
+    "download_snapshot_error_code",
+    "download_checksum_body",
+    "checksum_32",
+    "checksum_32_padded",
+    "checksum_matches",
+    "map_entries",
+    "array_items",
+    "required_entry",
+    "u8_from_value",
+    "u32_from_value",
+    "u64_from_value",
+    "bool_from_value",
+    "text_from_value",
+    "bytes_from_value",
+    "bytes_16_from_value",
+    "bytes_32_from_value",
+    "uuid_from_cbor_value",
+    "shard_tier_from_value",
+    "download_error_value",
+    "decode_download_error",
+];
+
+#[test]
+fn duplicated_download_codec_helpers_are_source_equivalent() {
+    for function_name in DUPLICATED_DOWNLOAD_CODEC_FNS {
+        let uniffi_function = normalized_function(UNIFFI_SOURCE, function_name);
+        let wasm_function = normalized_function(WASM_SOURCE, function_name);
+        assert_eq!(
+            uniffi_function, wasm_function,
+            "{function_name} must stay source-equivalent between mosaic-uniffi              and mosaic-wasm so the download CBOR wire format is byte-identical"
+        );
+    }
+}
+
+/// Asserts that calling `mosaic_client::download::plan::DownloadPlanBuilder`
+/// directly and calling the new UniFFI `build_download_plan` export yields a
+/// byte-identical canonical plan CBOR for equivalent inputs. Together with
+/// `duplicated_download_codec_helpers_are_source_equivalent` this gives the
+/// strongest cross-wrapper byte-equivalence guarantee we can express without
+/// introducing a forbidden dependency on `mosaic-wasm`.
+#[test]
+fn build_download_plan_uniffi_matches_direct_mosaic_client() {
+    use mosaic_client::ClientErrorCode;
+    use mosaic_client::download::plan::{
+        DownloadPlanBuilder, DownloadPlanInput as ClientPlanInput, DownloadShardInput, PhotoId,
+        ShardId,
+    };
+    use mosaic_domain::ShardTier;
+    use mosaic_uniffi::{
+        DownloadPlanEntryInput, DownloadPlanInput, DownloadPlanShardInput, build_download_plan,
+    };
+
+    let shard_id = [9_u8; 16];
+    let expected_hash = [3_u8; 32];
+
+    let uniffi_input = DownloadPlanInput {
+        album_id: vec![0_u8; 16],
+        entries: vec![DownloadPlanEntryInput {
+            photo_id: "photo-001".to_owned(),
+            filename: "vacation.jpg".to_owned(),
+            shards: vec![DownloadPlanShardInput {
+                shard_id: shard_id.to_vec(),
+                epoch_id: 5,
+                tier: ShardTier::Original.to_byte(),
+                expected_hash: expected_hash.to_vec(),
+                declared_size: 1024,
+            }],
+        }],
+    };
+    let uniffi_result = build_download_plan(uniffi_input);
+    assert_eq!(uniffi_result.code, ClientErrorCode::Ok.as_u16());
+    assert!(uniffi_result.error_detail.is_none());
+
+    let direct_plan = DownloadPlanBuilder::new()
+        .with_photo(ClientPlanInput {
+            photo_id: PhotoId::new("photo-001"),
+            filename: "vacation.jpg".to_owned(),
+            shards: vec![DownloadShardInput {
+                shard_id: ShardId::from_bytes(shard_id),
+                epoch_id: 5,
+                tier: ShardTier::Original,
+                expected_hash,
+                declared_size: 1024,
+            }],
+        })
+        .build()
+        .unwrap_or_else(|_| panic!("direct plan must build"));
+    let direct_cbor = match download_plan_canonical_cbor(&direct_plan) {
+        Ok(value) => value,
+        Err(_) => panic!("direct plan must encode"),
+    };
+    assert_eq!(uniffi_result.plan_cbor, direct_cbor);
+}
+
+/// Re-implements `mosaic_uniffi::download_plan_to_cbor` for tests so the test
+/// stays independent of any private uniffi helper. Source-equivalence with
+/// the wrapper helpers is locked by `duplicated_download_codec_helpers_*`.
+fn download_plan_canonical_cbor(
+    plan: &mosaic_client::download::plan::DownloadPlan,
+) -> Result<Vec<u8>, mosaic_client::ClientErrorCode> {
+    use ciborium::value::{Integer, Value};
+    let entries: Vec<Value> = plan
+        .entries
+        .iter()
+        .map(|entry| {
+            Value::Map(vec![
+                (
+                    Value::Integer(Integer::from(0_u32)),
+                    Value::Text(entry.photo_id.as_str().to_owned()),
+                ),
+                (
+                    Value::Integer(Integer::from(1_u32)),
+                    Value::Integer(Integer::from(u64::from(entry.epoch_id))),
+                ),
+                (
+                    Value::Integer(Integer::from(2_u32)),
+                    Value::Integer(Integer::from(u64::from(entry.tier.to_byte()))),
+                ),
+                (
+                    Value::Integer(Integer::from(3_u32)),
+                    Value::Array(
+                        entry
+                            .shard_ids
+                            .iter()
+                            .map(|id| Value::Bytes(id.as_bytes().to_vec()))
+                            .collect(),
+                    ),
+                ),
+                (
+                    Value::Integer(Integer::from(4_u32)),
+                    Value::Array(
+                        entry
+                            .expected_hashes
+                            .iter()
+                            .map(|hash| Value::Bytes(hash.to_vec()))
+                            .collect(),
+                    ),
+                ),
+                (
+                    Value::Integer(Integer::from(5_u32)),
+                    Value::Text(entry.filename.clone()),
+                ),
+                (
+                    Value::Integer(Integer::from(6_u32)),
+                    Value::Integer(Integer::from(entry.total_bytes)),
+                ),
+            ])
+        })
+        .collect();
+    let value = Value::Array(entries);
+    let mut out = Vec::new();
+    ciborium::ser::into_writer(&value, &mut out)
+        .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)?;
+    Ok(out)
+}
+
 #[test]
 fn duplicated_string_parsers_are_source_equivalent() {
     for function_name in DUPLICATED_STRING_PARSERS {

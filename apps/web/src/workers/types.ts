@@ -115,7 +115,7 @@ export type IdentityHandleId = string & { readonly __brand: 'IdentityHandleId' }
 export type EpochHandleId = string & { readonly __brand: 'EpochHandleId' };
 export type LinkShareHandleId = string & { readonly __brand: 'LinkShareHandleId' };
 export type LinkTierHandleId = string & { readonly __brand: 'LinkTierHandleId' };
-export type LinkDecryptionKey = Uint8Array | LinkTierHandleId;
+export type LinkDecryptionKey = LinkTierHandleId;
 
 export type EnvelopeHeader =
   | {
@@ -489,7 +489,7 @@ export interface CryptoWorkerApi {
    */
   decryptShardWithTierKey(
     envelope: Uint8Array,
-    tierKey: LinkDecryptionKey,
+    tierKey: LinkTierHandleId,
   ): Promise<Uint8Array>;
 
   /**
@@ -502,14 +502,6 @@ export interface CryptoWorkerApi {
     shardId: number;
     tier: number; // 1=thumb, 2=preview, 3=original
   }>;
-
-  /**
-   * Verify shard integrity against expected hash
-   * @param envelope - Downloaded shard envelope
-   * @param expectedSha256 - Expected SHA256 hash from manifest (base64url)
-   * @returns true if hash matches
-   */
-  verifyShard(envelope: Uint8Array, expectedSha256: string): Promise<boolean>;
 
   /**
    * Verify manifest signature using the per-epoch manifest signing key.
@@ -1052,6 +1044,8 @@ export interface CryptoWorkerApi {
     albumId: string,
     tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{ linkTierHandleId: LinkTierHandleId; linkId: Uint8Array; tier: number }>;
+
+  mintLinkTierHandleFromRawKey(rawKey: Uint8Array): Promise<LinkTierHandleId>;
 
   decryptShardWithLinkTierHandle(
     linkTierHandleId: LinkTierHandleId,

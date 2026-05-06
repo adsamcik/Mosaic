@@ -60,14 +60,6 @@ export {
 } from './utils';
 
 export {
-  decryptShard,
-  encryptShard,
-  parseShardHeader,
-  peekHeader,
-  verifyShard,
-} from './envelope';
-
-export {
   deriveContentKey,
   deriveTierKeys,
   generateEpochKey,
