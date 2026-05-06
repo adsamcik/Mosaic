@@ -42,6 +42,9 @@ pub use streaming::{
     STREAMING_ENVELOPE_VARIANT, StreamingShardDecryptor, encrypt_streaming_shard,
     open_streaming_shard,
 };
+pub mod sidecar;
+pub use sidecar::{SidecarError, open_tunnel, pake_initiator_start, pake_responder};
+
 
 /// Maximum allowed plaintext size for shard encryption (100 MiB).
 const MAX_SHARD_BYTES: usize = 100 * 1024 * 1024;
