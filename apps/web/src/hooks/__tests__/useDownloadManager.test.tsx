@@ -78,6 +78,7 @@ const api: CoordinatorWorkerApi = {
     };
   }),
   gc: vi.fn(async () => ({ purged: [] })),
+  clear: vi.fn(async () => undefined),
   setSaveTargetProvider: vi.fn(async () => undefined),
 };
 
