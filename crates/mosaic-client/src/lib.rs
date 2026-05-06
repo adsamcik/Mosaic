@@ -57,6 +57,7 @@ pub enum ClientErrorCode {
     UnsupportedVersion = 102,
     InvalidTier = 103,
     NonZeroReservedByte = 104,
+    UnknownEnvelopeVersion = 106,
     EmptyContext = 200,
     InvalidKeyLength = 201,
     InvalidInputLength = 202,
@@ -176,6 +177,7 @@ impl ClientErrorCode {
             102 => Some(Self::UnsupportedVersion),
             103 => Some(Self::InvalidTier),
             104 => Some(Self::NonZeroReservedByte),
+            106 => Some(Self::UnknownEnvelopeVersion),
             200 => Some(Self::EmptyContext),
             201 => Some(Self::InvalidKeyLength),
             202 => Some(Self::InvalidInputLength),
@@ -3449,7 +3451,7 @@ fn map_domain_error(error: MosaicDomainError) -> ClientErrorCode {
     match error {
         MosaicDomainError::InvalidHeaderLength { .. } => ClientErrorCode::InvalidHeaderLength,
         MosaicDomainError::InvalidMagic => ClientErrorCode::InvalidMagic,
-        MosaicDomainError::UnsupportedVersion { .. } => ClientErrorCode::UnsupportedVersion,
+        MosaicDomainError::UnsupportedVersion { .. } => ClientErrorCode::UnknownEnvelopeVersion,
         MosaicDomainError::InvalidTier { .. } => ClientErrorCode::InvalidTier,
         MosaicDomainError::NonZeroReservedByte { .. } => ClientErrorCode::NonZeroReservedByte,
     }

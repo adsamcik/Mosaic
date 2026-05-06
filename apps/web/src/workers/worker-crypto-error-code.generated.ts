@@ -18,6 +18,7 @@ export enum WorkerCryptoErrorCode {
   UnsupportedVersion = 102,
   InvalidTier = 103,
   NonZeroReservedByte = 104,
+  UnknownEnvelopeVersion = 106,
   EmptyContext = 200,
   InvalidKeyLength = 201,
   InvalidInputLength = 202,

@@ -2635,7 +2635,11 @@ impl StreamingShardDecryptor {
         js_decrypted_shard_result_from_rust(result).into()
     }
 
-    /// Finalizes the stream state.
+    /// Returns a `BytesResult` whose `bytes` field is always empty by contract.
+    /// Future callers should ignore `bytes` and check only `code`. Reason: the
+    /// finalize step performs final-frame AAD verification only — there is no
+    /// payload data to return. UniFFI mirror returns `Result<(), MosaicError>` honestly;
+    /// WASM uses `BytesResult` for cross-API uniformity.
     #[must_use]
     pub fn finalize(self) -> JsValue {
         if self.code != 0 {

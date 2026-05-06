@@ -7,7 +7,6 @@ import {
   WorkerCryptoErrorCode,
   type AccountHandleId,
   type CryptoWorkerApi,
-  type EncryptedShard,
   type EnvelopeHeader,
   type EpochHandleId,
   type IdentityHandleId,
@@ -35,11 +34,8 @@ import {
 // their callers are migrated.
 import {
   decryptShard as cryptoDecryptShard,
-  encryptShard as cryptoEncryptShard,
   verifyShard as cryptoVerifyShard,
-  deriveTierKeys,
   getArgon2Params,
-  memzero,
 } from '@mosaic/crypto';
 import {
   getRustCryptoCore,
@@ -61,6 +57,7 @@ const V03_RESERVED_OFFSET = 38;
 const V03_RESERVED_END = 64;
 const V04_RESERVED_OFFSET = 30;
 const V04_RESERVED_END = 64;
+const STREAMING_FINAL_FRAME_MAX_BYTES = 64 * 1024;
 
 function readU32Le(bytes: Uint8Array, offset: number): number {
   return (
@@ -97,6 +94,15 @@ function assertReservedZeros(
   }
 }
 
+function assertValidTierByte(tier: number): void {
+  if (tier !== 1 && tier !== 2 && tier !== 3) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidTier,
+      `Tier byte ${String(tier)} not in {1,2,3}`,
+    );
+  }
+}
+
 function ensureNonNullRawEpochHandle(epochHandleId: bigint): void {
   if (epochHandleId === 0n) {
     throw new WorkerCryptoError(
@@ -120,27 +126,45 @@ function parseEnvelopeHeader(envelope: Uint8Array): EnvelopeHeader {
   const version = header[4];
   if (version === ENVELOPE_VERSION_V03) {
     assertReservedZeros(header, V03_RESERVED_OFFSET, V03_RESERVED_END);
+    const tier = header[37]!;
+    assertValidTierByte(tier);
     return {
       magic: ENVELOPE_MAGIC,
       version: ENVELOPE_VERSION_V03,
       epoch: readU32Le(header, 5),
       shard: readU32Le(header, 9),
       nonce: new Uint8Array(header.subarray(13, 37)),
-      tier: header[37]!,
+      tier,
     };
   }
 
   if (version === ENVELOPE_VERSION_V04) {
     assertReservedZeros(header, V04_RESERVED_OFFSET, V04_RESERVED_END);
+    const tier = header[5]!;
+    assertValidTierByte(tier);
+    const frameCount = readU32Le(header, 22);
+    const finalFrameSize = readU32Le(header, 26);
+    if (frameCount === 0) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidEnvelope,
+        'streaming envelope frame_count must be non-zero',
+      );
+    }
+    if (finalFrameSize === 0 || finalFrameSize > STREAMING_FINAL_FRAME_MAX_BYTES) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidEnvelope,
+        `streaming envelope final_frame_size ${String(finalFrameSize)} must be in 1..=65536`,
+      );
+    }
     return {
       magic: ENVELOPE_MAGIC,
       version: ENVELOPE_VERSION_V04,
       epoch: 0,
       shard: 0,
-      tier: header[5]!,
+      tier,
       streamSalt: new Uint8Array(header.subarray(6, 22)),
-      frameCount: readU32Le(header, 22),
-      finalFrameSize: readU32Le(header, 26),
+      frameCount,
+      finalFrameSize,
     };
   }
 
@@ -1042,101 +1066,6 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   /**
-   * Encrypt a photo shard using XChaCha20-Poly1305.
-   *
-   * Creates a 64-byte envelope header with fresh random nonce,
-   * then encrypts data with header as AAD for tamper detection.
-   *
-   * The epochSeed is used to derive the fullKey (tier 3) for encryption.
-   * This ensures compatibility with share links which only have derived tier keys.
-   *
-   * @param data - Plaintext data to encrypt (max 6MB)
-   * @param epochSeed - Epoch seed for deriving tier keys (32 bytes)
-   * @param epochId - Current epoch ID
-   * @param shardIndex - Shard index within photo
-   * @returns Encrypted shard with SHA256 hash
-   */
-  async encryptShard(
-    data: Uint8Array,
-    epochSeed: Uint8Array,
-    epochId: number,
-    shardIndex: number,
-  ): Promise<EncryptedShard> {
-    await this.ensureSodiumReady();
-    // Derive the fullKey (tier 3) from epochSeed for encryption
-    // This ensures share link recipients with tier keys can decrypt
-    const { fullKey } = deriveTierKeys(epochSeed);
-    try {
-      return await cryptoEncryptShard(data, fullKey, epochId, shardIndex);
-    } finally {
-      // Zero out derived key after use
-      memzero(fullKey);
-    }
-  }
-
-  /**
-   * Decrypt a photo shard (for owner/member viewing).
-   *
-   * Validates envelope header, checks reserved bytes are zero,
-   * then decrypts using XChaCha20-Poly1305 with header as AAD.
-   *
-   * The epochSeed is used to derive tier-specific keys for decryption.
-   * The correct tier key is selected by peeking at the tier byte in the
-   * envelope header (tier 1=thumb, 2=preview, 3=original).
-   *
-   * For backwards compatibility with photos encrypted before tier key derivation
-   * was implemented, falls back to trying epochSeed directly if tier key fails.
-   *
-   * For share link decryption where you have the tier key directly,
-   * use decryptShardWithTierKey instead.
-   *
-   * @param envelope - Complete envelope (header + ciphertext)
-   * @param epochSeed - Epoch seed for deriving tier keys (32 bytes)
-   * @returns Decrypted plaintext
-   * @throws Error if decryption fails or envelope is invalid
-   */
-  async decryptShard(
-    envelope: Uint8Array,
-    epochSeed: Uint8Array,
-  ): Promise<Uint8Array> {
-    await this.ensureSodiumReady();
-
-    // Peek at the envelope header to determine which tier key to use
-    const header = await this.peekHeader(envelope);
-    const { thumbKey, previewKey, fullKey } = deriveTierKeys(epochSeed);
-
-    // Select the appropriate tier key based on the envelope's tier byte
-    let tierKey: Uint8Array;
-    switch (header.tier) {
-      case 1: // THUMB
-        tierKey = thumbKey;
-        break;
-      case 2: // PREVIEW
-        tierKey = previewKey;
-        break;
-      case 3: // ORIGINAL
-      default:
-        tierKey = fullKey;
-        break;
-    }
-
-    try {
-      return await cryptoDecryptShard(envelope, tierKey);
-    } catch (err) {
-      // Fall back to epochSeed directly for backwards compatibility
-      // (photos encrypted before tier key derivation was implemented)
-      const errorType = err instanceof Error ? err.constructor.name : 'Unknown';
-      log.debug('Tier key decrypt failed, falling back to epochSeed', { errorType });
-      return await cryptoDecryptShard(envelope, epochSeed);
-    } finally {
-      // Zero out all derived keys after use
-      memzero(thumbKey);
-      memzero(previewKey);
-      memzero(fullKey);
-    }
-  }
-
-  /**
    * Decrypt a photo shard with a tier key directly (for share link viewing).
    *
    * Use this method when you have the unwrapped tier key from a share link,
@@ -1404,7 +1333,7 @@ class CryptoWorker implements CryptoWorkerApi {
     epochHandleId: EpochHandleId,
     envelopeBytes: Uint8Array,
   ): Promise<Uint8Array> {
-    return this.decryptShardWithEpoch(epochHandleId, envelopeBytes);
+    return this.decryptShardWithEpochHandle(epochHandleId, envelopeBytes);
   }
 
   /**
@@ -1625,7 +1554,7 @@ class CryptoWorker implements CryptoWorkerApi {
     epochHandleId: EpochHandleId,
     envelopeBytes: Uint8Array,
   ): Promise<Uint8Array> {
-    return this.decryptShardWithEpoch(epochHandleId, envelopeBytes);
+    return this.decryptShardWithEpochHandle(epochHandleId, envelopeBytes);
   }
 
   // ===========================================================================
@@ -1856,18 +1785,6 @@ class CryptoWorker implements CryptoWorkerApi {
       'epoch',
       (rustEpoch) =>
         facade.encryptShardWithEpochHandle(rustEpoch, plaintext, shardIndex, tier),
-    );
-  }
-
-  async decryptShardWithEpoch(
-    epochHandleId: EpochHandleId,
-    envelopeBytes: Uint8Array,
-  ): Promise<Uint8Array> {
-    const facade = await getRustFacade();
-    return this.handleRegistry.withLease(
-      epochHandleId,
-      'epoch',
-      (rustEpoch) => facade.decryptShardWithEpochHandle(rustEpoch, envelopeBytes),
     );
   }
 

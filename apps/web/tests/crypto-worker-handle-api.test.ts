@@ -59,6 +59,20 @@ function sha256(bytes: Uint8Array): Uint8Array {
   return new Uint8Array(createHash('sha256').update(bytes).digest());
 }
 
+async function expectPeekRejectsWithCode(
+  envelope: Uint8Array,
+  code: WorkerCryptoErrorCode,
+): Promise<void> {
+  let err: { code?: number } | null = null;
+  try {
+    await cryptoWorker.peekEnvelopeHeader(envelope);
+  } catch (caught) {
+    err = caught as { code?: number };
+  }
+
+  expect(err?.code).toBe(code);
+}
+
 describe('W-S1 crypto worker handle API', () => {
   beforeAll(async () => {
     const wasmBytes = new Uint8Array(readFileSync(wasmPath));
@@ -141,6 +155,41 @@ describe('W-S1 crypto worker handle API', () => {
     );
     expect(parsed.frameCount).toBe(5);
     expect(parsed.finalFrameSize).toBe(1234);
+  });
+
+  it('peekEnvelopeHeader rejects v0x03 headers with invalid tier bytes', async () => {
+    const envelope = v03Envelope();
+    envelope[37] = 0;
+
+    await expectPeekRejectsWithCode(envelope, WorkerCryptoErrorCode.InvalidTier);
+  });
+
+  it('peekEnvelopeHeader rejects v0x04 headers with invalid tier bytes', async () => {
+    const envelope = v04Envelope();
+    envelope[5] = 4;
+
+    await expectPeekRejectsWithCode(envelope, WorkerCryptoErrorCode.InvalidTier);
+  });
+
+  it('peekEnvelopeHeader rejects v0x04 headers with zero frame count', async () => {
+    const envelope = v04Envelope();
+    writeU32Le(envelope, 22, 0);
+
+    await expectPeekRejectsWithCode(envelope, WorkerCryptoErrorCode.InvalidEnvelope);
+  });
+
+  it('peekEnvelopeHeader rejects v0x04 headers with zero final frame size', async () => {
+    const envelope = v04Envelope();
+    writeU32Le(envelope, 26, 0);
+
+    await expectPeekRejectsWithCode(envelope, WorkerCryptoErrorCode.InvalidEnvelope);
+  });
+
+  it('peekEnvelopeHeader rejects v0x04 headers with oversized final frame size', async () => {
+    const envelope = v04Envelope();
+    writeU32Le(envelope, 26, 65_537);
+
+    await expectPeekRejectsWithCode(envelope, WorkerCryptoErrorCode.InvalidEnvelope);
   });
 
   it('rejects the conventional null WASM epoch handle sentinel', async () => {

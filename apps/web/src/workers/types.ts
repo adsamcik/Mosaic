@@ -1,7 +1,6 @@
 /**
  * Shared types for worker communication
  */
-import type { EncryptedShard } from '@mosaic/crypto';
 import { WorkerCryptoErrorCode } from './worker-crypto-error-code.generated';
 
 export type ShardTier = import('../generated/mosaic-wasm/mosaic_wasm.js').ShardTier;
@@ -19,11 +18,14 @@ export type StreamingShardDecryptor =
   import('../generated/mosaic-wasm/mosaic_wasm.js').StreamingShardDecryptor;
 export type StreamingDecryptFrameResult =
   import('../generated/mosaic-wasm/mosaic_wasm.js').DecryptedShardResult;
+/**
+ * WASM `StreamingShardDecryptor.finalize()` returns a BytesResult whose bytes
+ * field is always empty by contract. Callers must ignore bytes and check code:
+ * finalize performs final-frame AAD verification only, with no payload return.
+ */
 export type StreamingFinalizeResult =
   import('../generated/mosaic-wasm/mosaic_wasm.js').BytesResult;
 
-// Re-export EncryptedShard from crypto lib (single source of truth)
-export type { EncryptedShard };
 export { WorkerCryptoErrorCode };
 
 // =============================================================================
@@ -360,8 +362,6 @@ export interface DbWorkerApi {
   clearAlbumPhotos(albumId: string): Promise<void>;
 }
 
-// EncryptedShard is re-exported from @mosaic/crypto at the top of this file
-
 /**
  * Crypto Worker API
  * Handles all cryptographic operations in a dedicated worker
@@ -474,30 +474,6 @@ export interface CryptoWorkerApi {
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
   ): Promise<void>;
-
-  /**
-   * Encrypt a photo shard
-   * @param data - Plaintext data to encrypt
-   * @param epochSeed - Epoch seed for deriving tier keys (32 bytes)
-   * @param epochId - Current epoch ID
-   * @param shardIndex - Shard index within photo
-   */
-  encryptShard(
-    data: Uint8Array,
-    epochSeed: Uint8Array,
-    epochId: number,
-    shardIndex: number,
-  ): Promise<EncryptedShard>;
-
-  /**
-   * Decrypt a photo shard (for owner/member viewing)
-   * @param envelope - Complete envelope (header + ciphertext)
-   * @param epochSeed - Epoch seed for deriving tier keys (32 bytes)
-   */
-  decryptShard(
-    envelope: Uint8Array,
-    epochSeed: Uint8Array,
-  ): Promise<Uint8Array>;
 
   /**
    * Decrypt a photo shard with a tier key directly (for share link viewing)
@@ -824,7 +800,7 @@ export interface CryptoWorkerApi {
   /**
    * Decrypt an album-name envelope previously produced by
    * {@link encryptAlbumName}. Thin wrapper over
-   * {@link decryptShardWithEpoch} — the envelope header carries the tier
+   * {@link decryptShardWithEpochHandle} — the envelope header carries the tier
    * byte so callers do not specify it.
    *
    * @param epochHandleId - Opaque epoch handle id from the worker.
@@ -975,15 +951,6 @@ export interface CryptoWorkerApi {
     shardIndex: number,
     tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{ envelopeBytes: Uint8Array; sha256: string }>;
-
-  /**
-   * Decrypt a complete shard envelope (header + ciphertext) using the
-   * epoch handle.
-   */
-  decryptShardWithEpoch(
-    epochHandleId: EpochHandleId,
-    envelopeBytes: Uint8Array,
-  ): Promise<Uint8Array>;
 
   encryptShardWithEpochHandle(
     epochHandleId: bigint,
