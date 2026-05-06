@@ -418,6 +418,7 @@ export pub fn advance_album_sync_uniffi( snapshot: ClientCoreAlbumSyncSnapshot, 
 export pub fn manifest_transcript_bytes_uniffi( inputs: ClientCoreManifestTranscriptInputs, ) -> Result<Vec<u8>, MosaicError>
 export pub fn client_error_code_enum_from_u16(value: u16) -> Option<ClientErrorCode>
 export pub fn client_error_code_to_u16(code: ClientErrorCode) -> u16
+export pub fn build_share_link_url( base_url: String, album_id: String, link_id: String, link_url_token: String, ) -> String
 record LinkKeysFfiResult
   code: u16
   link_id: Vec<u8>
