@@ -13,21 +13,27 @@ import okhttp3.TlsVersion
 import okio.BufferedSink
 
 object MosaicHttpClient {
-  fun create(certPinner: CertificatePinner): OkHttpClient = OkHttpClient.Builder()
-    .connectTimeout(30, TimeUnit.SECONDS)
-    .readTimeout(60, TimeUnit.SECONDS)
-    .writeTimeout(60, TimeUnit.SECONDS)
-    .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
-    .connectionSpecs(
-      listOf(
-        ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
-          .tlsVersions(TlsVersion.TLS_1_3, TlsVersion.TLS_1_2)
-          .build(),
-      ),
-    )
-    .certificatePinner(certPinner)
-    .addInterceptor(NoBodyLoggingInterceptor())
-    .build()
+  fun create(certPinner: CertificatePinner): OkHttpClient {
+    require(certPinner.pins.isNotEmpty()) {
+      "Refusing to build OkHttpClient without pins. Use failClosed(hostname) factory."
+    }
+
+    return OkHttpClient.Builder()
+      .connectTimeout(30, TimeUnit.SECONDS)
+      .readTimeout(60, TimeUnit.SECONDS)
+      .writeTimeout(60, TimeUnit.SECONDS)
+      .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+      .connectionSpecs(
+        listOf(
+          ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
+            .tlsVersions(TlsVersion.TLS_1_3, TlsVersion.TLS_1_2)
+            .build(),
+        ),
+      )
+      .certificatePinner(certPinner)
+      .addInterceptor(NoBodyLoggingInterceptor())
+      .build()
+  }
 }
 
 object MosaicCertificatePinnerFactory {

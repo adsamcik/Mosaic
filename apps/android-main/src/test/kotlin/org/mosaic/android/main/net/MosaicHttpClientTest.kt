@@ -20,8 +20,17 @@ import org.junit.Test
 
 class MosaicHttpClientTest {
   @Test
+  fun createRejectsEmptyCertificatePinner() {
+    val exception = assertThrows(IllegalArgumentException::class.java) {
+      MosaicHttpClient.create(CertificatePinner.Builder().build())
+    }
+
+    assertTrue(exception.message!!.contains("Refusing to build OkHttpClient without pins"))
+  }
+
+  @Test
   fun connectionSpecsAllowOnlyTls12OrNewer() {
-    val client = MosaicHttpClient.create(CertificatePinner.Builder().build())
+    val client = MosaicHttpClient.create(MosaicCertificatePinnerFactory.failClosed("mosaic.example.com"))
     val tlsVersions = client.connectionSpecs.flatMap { spec -> spec.tlsVersions.orEmpty() }.toSet()
 
     assertTrue(TlsVersion.TLS_1_2 in tlsVersions)
@@ -52,6 +61,23 @@ class MosaicHttpClientTest {
   }
 
   @Test
+  fun failClosedFactoryBuildsClientWithExpectedPinner() {
+    val hostname = "mosaic.example.com"
+    val client = MosaicHttpClient.create(MosaicCertificatePinnerFactory.failClosed(hostname))
+
+    assertTrue(client.certificatePinner.pins.any { pin -> pin.pattern == hostname })
+  }
+
+  @Test
+  fun createRejectsDefaultCertificatePinner() {
+    val exception = assertThrows(IllegalArgumentException::class.java) {
+      MosaicHttpClient.create(CertificatePinner.DEFAULT)
+    }
+
+    assertTrue(exception.message!!.contains("Refusing to build OkHttpClient without pins"))
+  }
+
+  @Test
   fun noBodyLoggingSuppressesRequestAndResponseBodiesWithAppLevelLogging() {
     val logs = mutableListOf<String>()
     val logging = HttpLoggingInterceptor { message -> logs += message }
@@ -66,7 +92,7 @@ class MosaicHttpClientTest {
         .body("response-secret".toResponseBody("text/plain".toMediaType()))
         .build()
     }
-    val client = MosaicHttpClient.create(CertificatePinner.Builder().build())
+    val client = MosaicHttpClient.create(MosaicCertificatePinnerFactory.failClosed("mosaic.example.com"))
       .newBuilder()
       .addInterceptor(logging)
       .addInterceptor(terminal)
