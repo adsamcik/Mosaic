@@ -433,7 +433,7 @@ describe('useLinkKeys', () => {
                 {
                   epochId: 1,
                   tier: 2,
-                  key: new Uint8Array(32).fill(7),
+                  linkTierHandleId: 'lnkt_cached-handle' as never,
                 },
               ],
             ]),

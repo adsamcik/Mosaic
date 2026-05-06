@@ -14,6 +14,10 @@ export default defineConfig({
     exclude: [
       '**/node_modules/**',
     ],
+    // Rust WASM init is CPU/memory heavy and happens per Vitest worker.
+    // Keep limited parallelism so WASM-touching suites don't contend and
+    // time out while preserving more throughput than fully sequential runs.
+    maxWorkers: 2,
     testTimeout: 15000, // Fast with weak keys enabled, but some tests still need time
     coverage: {
       provider: 'v8',

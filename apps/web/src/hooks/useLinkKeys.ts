@@ -121,13 +121,14 @@ export function useLinkKeys(
       return;
     }
 
+    let secret: Uint8Array | null = null;
+
     try {
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       const crypto = await getCryptoClient();
 
       // Decode and verify link secret/ID
-      let secret: Uint8Array;
       let urlLinkId: Uint8Array;
       try {
         secret = decodeLinkSecret(linkSecret);
@@ -234,6 +235,8 @@ export function useLinkKeys(
         error: err instanceof Error ? err : new Error(String(err)),
         isValid: false,
       }));
+    } finally {
+      secret?.fill(0);
     }
   }, [linkId, linkSecret]);
 
@@ -254,7 +257,7 @@ export function useLinkKeys(
       // Return highest tier key available (3=full, 2=preview, 1=thumb)
       for (const tier of [3, 2, 1] as AccessTierType[]) {
         const tierKey = epochTiers.get(tier);
-        if (tierKey) return tierKey.linkTierHandleId ?? tierKey.key;
+        if (tierKey) return tierKey.linkTierHandleId;
       }
       return undefined;
     },

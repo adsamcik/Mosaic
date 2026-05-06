@@ -127,6 +127,18 @@ describe('W-S1 crypto worker handle API', () => {
     ).resolves.toBe(false);
   });
 
+  it('mints link-tier handles from raw keys and rejects invalid raw key lengths', async () => {
+    const handle = await cryptoWorker.mintLinkTierHandleFromRawKey(
+      new Uint8Array(32).fill(0x42),
+    );
+
+    expect(typeof handle).toBe('string');
+    expect(handle.length).toBeGreaterThan(0);
+    await expect(
+      cryptoWorker.mintLinkTierHandleFromRawKey(new Uint8Array(31)),
+    ).rejects.toThrow();
+  });
+
   it('peekEnvelopeHeader parses v0x03 headers without decrypting', async () => {
     const parsed = await cryptoWorker.peekEnvelopeHeader(v03Envelope());
 

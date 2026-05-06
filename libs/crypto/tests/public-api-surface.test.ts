@@ -22,10 +22,8 @@ describe('public TypeScript crypto compatibility surface', () => {
       'benchmarkArgon2',
       'concat',
       'constantTimeEqual',
-      'decryptShard',
       'deriveContentKey',
       'deriveTierKeys',
-      'encryptShard',
       'fromBase64',
       'fromBytes',
       'generateEpochKey',
@@ -35,14 +33,11 @@ describe('public TypeScript crypto compatibility surface', () => {
       'isMobileDevice',
       'isValidEpochKey',
       'memzero',
-      'parseShardHeader',
-      'peekHeader',
       'randomBytes',
       'sha256',
       'sha256Sync',
       'toBase64',
       'toBytes',
-      'verifyShard',
     ]);
   });
 });

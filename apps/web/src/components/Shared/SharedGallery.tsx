@@ -151,7 +151,7 @@ export function SharedGallery({
                 // `decryptManifest` did the parse inside the worker).
                 const plaintextBytes = await crypto.decryptShardWithTierKey(
                   encryptedMeta,
-                  (tierKey.linkTierHandleId ?? tierKey.key)!,
+                  tierKey.linkTierHandleId!,
                 );
                 const meta = JSON.parse(
                   textDecoder.decode(plaintextBytes),
@@ -237,7 +237,7 @@ export function SharedGallery({
               fallbackEpoch: fallbackEpochId,
               tier,
             });
-            return key.linkTierHandleId ?? key.key;
+            return key.linkTierHandleId;
           }
         }
         log.warn('No tier key found', { epochId, tier });
@@ -251,7 +251,7 @@ export function SharedGallery({
           epochId,
           tier,
         });
-        return tierKey.linkTierHandleId ?? tierKey.key;
+        return tierKey.linkTierHandleId;
       }
 
       // Fall back to highest available
@@ -263,7 +263,7 @@ export function SharedGallery({
             requestedTier: tier,
             actualTier: t,
           });
-          return key.linkTierHandleId ?? key.key;
+          return key.linkTierHandleId;
         }
       }
       log.warn('No tier key found after fallback', { epochId, tier });
@@ -279,7 +279,7 @@ export function SharedGallery({
       createShareLinkOriginalResolver({
         linkId,
         grantToken: grantToken ?? undefined,
-        getTierKey,
+        getTierKeyHandle: getTierKey,
       }),
     [linkId, grantToken, getTierKey],
   );

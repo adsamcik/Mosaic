@@ -134,7 +134,7 @@ export function SharedAlbumViewer({
           for (const tier of [3, 2, 1] as AccessTierType[]) {
             const key = epochTiers.get(tier);
             if (key) {
-              tierKey = key.linkTierHandleId ?? key.key;
+              tierKey = key.linkTierHandleId;
               usedTier = tier;
               usedEpoch = epochId;
               break;

@@ -20,6 +20,7 @@
 import { createLogger } from './logger';
 import { toArrayBufferView } from './buffer-utils';
 import type { AccessTier as AccessTierType } from './api-types';
+import { getCryptoClient } from './crypto-client';
 import type { LinkTierHandleId } from '../workers/types';
 
 const log = createLogger('LinkTierKeyStore');
@@ -51,7 +52,8 @@ export interface TierKey {
 interface SerializedTierKey {
   epochId: number;
   tier: AccessTierType;
-  key: string; // Base64
+  key?: string; // Legacy raw key, Base64
+  linkTierHandleId?: LinkTierHandleId;
   signPubkey?: string; // Base64
 }
 
@@ -104,6 +106,25 @@ function fromBase64(base64: string): Uint8Array {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes;
+}
+
+async function deserializeLinkTierHandle(
+  key: SerializedTierKey,
+): Promise<LinkTierHandleId | undefined> {
+  if (key.linkTierHandleId) {
+    return key.linkTierHandleId;
+  }
+  if (!key.key) {
+    return undefined;
+  }
+
+  const rawKey = fromBase64(key.key);
+  try {
+    const crypto = await getCryptoClient();
+    return await crypto.mintLinkTierHandleFromRawKey(rawKey);
+  } finally {
+    rawKey.fill(0);
+  }
 }
 
 /**
@@ -185,8 +206,14 @@ export async function saveTierKeys(
         const entry: SerializedTierKey = {
           epochId,
           tier,
-          key: tierKey.key ? toBase64(tierKey.key) : '',
         };
+        if (tierKey.linkTierHandleId) {
+          entry.linkTierHandleId = tierKey.linkTierHandleId;
+        } else if (tierKey.key) {
+          const crypto = await getCryptoClient();
+          entry.linkTierHandleId = await crypto.mintLinkTierHandleFromRawKey(tierKey.key);
+          tierKey.key.fill(0);
+        }
         if (tierKey.signPubkey) {
           entry.signPubkey = toBase64(tierKey.signPubkey);
         }
@@ -311,12 +338,18 @@ export async function getTierKeys(
             if (!tierKeys.has(key.epochId)) {
               tierKeys.set(key.epochId, new Map());
             }
-            tierKeys.get(key.epochId)!.set(key.tier, {
+            const linkTierHandleId = await deserializeLinkTierHandle(key);
+            const tierKey: TierKey = {
               epochId: key.epochId,
               tier: key.tier,
-              key: fromBase64(key.key),
-              signPubkey: key.signPubkey ? fromBase64(key.signPubkey) : undefined,
-            });
+            };
+            if (linkTierHandleId) {
+              tierKey.linkTierHandleId = linkTierHandleId;
+            }
+            if (key.signPubkey) {
+              tierKey.signPubkey = fromBase64(key.signPubkey);
+            }
+            tierKeys.get(key.epochId)!.set(key.tier, tierKey);
           }
 
           // Re-save with encryption (fire and forget)
@@ -331,12 +364,18 @@ export async function getTierKeys(
           if (!tierKeys.has(key.epochId)) {
             tierKeys.set(key.epochId, new Map());
           }
-          tierKeys.get(key.epochId)!.set(key.tier, {
+          const linkTierHandleId = await deserializeLinkTierHandle(key);
+          const tierKey: TierKey = {
             epochId: key.epochId,
             tier: key.tier,
-            key: fromBase64(key.key),
-            signPubkey: key.signPubkey ? fromBase64(key.signPubkey) : undefined,
-          });
+          };
+          if (linkTierHandleId) {
+            tierKey.linkTierHandleId = linkTierHandleId;
+          }
+          if (key.signPubkey) {
+            tierKey.signPubkey = fromBase64(key.signPubkey);
+          }
+          tierKeys.get(key.epochId)!.set(key.tier, tierKey);
         }
 
         resolve({

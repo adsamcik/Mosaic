@@ -115,7 +115,7 @@ function createTierKeys(
   tierMap.set(tier, {
     epochId,
     tier,
-    key: new Uint8Array(32).fill(1),
+    linkTierHandleId: `link-tier-handle-${tier}` as never,
     signPubkey: new Uint8Array(32).fill(2),
   });
   return new Map([[epochId, tierMap]]);
@@ -744,7 +744,7 @@ describe('SharedGallery', () => {
         expect.objectContaining({
           linkId: 'test-link-id',
           grantToken: 'grant-token-123',
-          getTierKey: expect.any(Function),
+          getTierKeyHandle: expect.any(Function),
         }),
       );
       expect(mocks.startDownload).toHaveBeenCalledTimes(1);

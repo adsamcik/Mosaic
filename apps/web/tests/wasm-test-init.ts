@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import initRustWasm, { initSync } from '../src/generated/mosaic-wasm/mosaic_wasm.js';
+import { vi } from 'vitest';
 
 const WASM_BYTES_PATH = resolve(
   process.cwd(),
@@ -10,7 +10,21 @@ const WASM_BYTES_PATH = resolve(
   'mosaic_wasm_bg.wasm',
 );
 
+let wasmInitPromise: Promise<void> | null = null;
+
 export async function initializeRustWasmForTests(): Promise<void> {
-  initSync({ module: readFileSync(WASM_BYTES_PATH) });
-  await initRustWasm();
+  wasmInitPromise ??= (async () => {
+    vi.unmock('../src/generated/mosaic-wasm/mosaic_wasm.js');
+    const { default: initRustWasm, initSync } = await import(
+      '../src/generated/mosaic-wasm/mosaic_wasm.js'
+    );
+
+    initSync({ module: readFileSync(WASM_BYTES_PATH) });
+    await initRustWasm();
+  })().catch((error: unknown) => {
+    wasmInitPromise = null;
+    throw error;
+  });
+
+  await wasmInitPromise;
 }

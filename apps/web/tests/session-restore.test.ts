@@ -50,6 +50,7 @@ vi.mock('../src/lib/local-auth', () => ({
 
 vi.mock('../src/lib/settings-service', () => ({
   getIdleTimeoutMs: vi.fn(() => 30 * 60 * 1000),
+  getKeyCacheDurationMs: vi.fn(() => 0),
   subscribeToSettings: vi.fn(() => () => {}),
 }));
 

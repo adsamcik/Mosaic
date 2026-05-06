@@ -109,9 +109,9 @@ describe('Album Metadata Service', () => {
       const albumName = 'Base64 Shared Album';
       const encryptedBytes = createEncryptedNameBytes(albumName);
       const base64Encrypted = toBase64(encryptedBytes);
-      const tierKey = new Uint8Array(32).fill(3);
+      const tierKey = 'link-tier-handle-3' as never;
 
-      mockCryptoClient.decryptShardWithTierKey.mockResolvedValue(
+      mockCryptoClient.decryptShardWithLinkTierHandle.mockResolvedValue(
         new TextEncoder().encode(albumName),
       );
 
@@ -122,20 +122,20 @@ describe('Album Metadata Service', () => {
       );
 
       expect(result).toBe(albumName);
-      expect(mockCryptoClient.decryptShardWithTierKey).toHaveBeenCalled();
+      expect(mockCryptoClient.decryptShardWithLinkTierHandle).toHaveBeenCalled();
     });
 
     it('throws error for empty encrypted name', async () => {
-      const tierKey = new Uint8Array(32).fill(1);
+      const tierKey = 'link-tier-handle-1' as never;
 
       await expect(
         decryptAlbumNameWithTierKey(new Uint8Array(0), tierKey, 'album-shared'),
       ).rejects.toThrow(AlbumMetadataError);
     });
 
-    it('throws error for invalid tier key length', async () => {
+    it('throws error for invalid tier key handle', async () => {
       const encryptedBytes = createEncryptedNameBytes('Test');
-      const invalidKey = new Uint8Array(16); // Should be 32 bytes
+      const invalidKey = '' as never;
 
       await expect(
         decryptAlbumNameWithTierKey(encryptedBytes, invalidKey, 'album-shared'),
@@ -144,9 +144,9 @@ describe('Album Metadata Service', () => {
 
     it('throws AlbumMetadataError on decryption failure', async () => {
       const encryptedBytes = createEncryptedNameBytes('Test');
-      const tierKey = new Uint8Array(32).fill(1);
+      const tierKey = 'link-tier-handle-1' as never;
 
-      mockCryptoClient.decryptShardWithTierKey.mockRejectedValue(
+      mockCryptoClient.decryptShardWithLinkTierHandle.mockRejectedValue(
         new Error('Decryption failed - wrong key or tampered data'),
       );
 
@@ -227,9 +227,9 @@ describe('Album Metadata Service', () => {
   describe('edge cases', () => {
     it('handles empty album name', async () => {
       const albumName = '';
-      const tierKey = new Uint8Array(32).fill(1);
+      const tierKey = 'link-tier-handle-1' as never;
 
-      mockCryptoClient.decryptShardWithTierKey.mockResolvedValue(
+      mockCryptoClient.decryptShardWithLinkTierHandle.mockResolvedValue(
         new Uint8Array(0),
       );
 
@@ -244,9 +244,9 @@ describe('Album Metadata Service', () => {
 
     it('handles very long album names', async () => {
       const albumName = 'A'.repeat(1000);
-      const tierKey = new Uint8Array(32).fill(1);
+      const tierKey = 'link-tier-handle-1' as never;
 
-      mockCryptoClient.decryptShardWithTierKey.mockResolvedValue(
+      mockCryptoClient.decryptShardWithLinkTierHandle.mockResolvedValue(
         new TextEncoder().encode(albumName),
       );
 
@@ -262,9 +262,9 @@ describe('Album Metadata Service', () => {
 
     it('handles album names with special characters', async () => {
       const albumName = '<script>alert("XSS")</script> & "quotes" \'single\'';
-      const tierKey = new Uint8Array(32).fill(1);
+      const tierKey = 'link-tier-handle-1' as never;
 
-      mockCryptoClient.decryptShardWithTierKey.mockResolvedValue(
+      mockCryptoClient.decryptShardWithLinkTierHandle.mockResolvedValue(
         new TextEncoder().encode(albumName),
       );
 

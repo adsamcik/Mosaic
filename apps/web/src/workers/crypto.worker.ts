@@ -12,7 +12,6 @@ import {
   type IdentityHandleId,
   type LinkShareHandleId,
   type LinkTierHandleId,
-  type LinkDecryptionKey,
   type OpenEpochKeyBundleOptions,
   type PhotoMeta,
   type ShardTier,
@@ -33,8 +32,6 @@ import {
 // The remaining symbols belong to slices 5/7's territory and stay until
 // their callers are migrated.
 import {
-  decryptShard as cryptoDecryptShard,
-  verifyShard as cryptoVerifyShard,
   getArgon2Params,
 } from '@mosaic/crypto';
 import {
@@ -741,6 +738,7 @@ class CryptoWorker implements CryptoWorkerApi {
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
   ): Promise<void> {
+    await this.ensureSodiumReady();
     const kdf = this.kdfFromSodiumParams();
     const out = await this.createNewAccount({
       password,
@@ -1078,25 +1076,9 @@ class CryptoWorker implements CryptoWorkerApi {
    */
   async decryptShardWithTierKey(
     envelope: Uint8Array,
-    tierKey: LinkDecryptionKey,
+    tierKeyHandle: LinkTierHandleId,
   ): Promise<Uint8Array> {
-    if (typeof tierKey === 'string') {
-      return this.decryptShardWithLinkTierHandle(tierKey, envelope);
-    }
-    await this.ensureSodiumReady();
-    return cryptoDecryptShard(envelope, tierKey);
-  }
-
-  /**
-   * Verify shard integrity against expected hash.
-   * Should be called before decryption to ensure shard wasn't tampered with.
-   */
-  async verifyShard(
-    envelope: Uint8Array,
-    expectedSha256: string,
-  ): Promise<boolean> {
-    await this.ensureSodiumReady();
-    return cryptoVerifyShard(envelope, expectedSha256);
+    return this.decryptShardWithLinkTierHandle(tierKeyHandle, envelope);
   }
 
   /**
@@ -1836,15 +1818,8 @@ class CryptoWorker implements CryptoWorkerApi {
     envelope: Uint8Array,
     expectedSha256: Uint8Array,
   ): Promise<boolean> {
-    await this.ensureSodiumReady();
-    if (envelope.length < ENVELOPE_HEADER_BYTES || expectedSha256.length !== 32) {
-      return false;
-    }
-
-    const actual = sodium.crypto_hash_sha256(
-      envelope.subarray(ENVELOPE_HEADER_BYTES),
-    );
-    return sodium.memcmp(actual, expectedSha256);
+    const facade = await getRustFacade();
+    return facade.verifyShardIntegritySha256(envelope, expectedSha256);
   }
 
   async peekEnvelopeHeader(envelope: Uint8Array): Promise<EnvelopeHeader> {
@@ -1962,6 +1937,15 @@ class CryptoWorker implements CryptoWorkerApi {
       linkId: imported.linkId,
       tier: imported.tier,
     };
+  }
+
+  async mintLinkTierHandleFromRawKey(
+    rawKey: Uint8Array,
+  ): Promise<LinkTierHandleId> {
+    const facade = await getRustFacade();
+    const imported = facade.mintLinkTierHandleFromRawKey(rawKey);
+    const handle = this.handleRegistry.registerLinkTier(imported.handle);
+    return handle.id as LinkTierHandleId;
   }
 
   async decryptShardWithLinkTierHandle(

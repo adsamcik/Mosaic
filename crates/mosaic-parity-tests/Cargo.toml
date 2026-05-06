@@ -20,6 +20,7 @@ mosaic-domain = { path = "../mosaic-domain", version = "0.1.0" }
 mosaic-media = { path = "../mosaic-media", version = "0.1.0" }
 mosaic-uniffi = { path = "../mosaic-uniffi", version = "0.1.0" }
 mosaic-wasm = { path = "../mosaic-wasm", version = "0.1.0" }
+sha2 = { version = "=0.10.9", default-features = false }
 
 [lints]
 workspace = true

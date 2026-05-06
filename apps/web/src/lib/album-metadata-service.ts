@@ -8,7 +8,6 @@ import type { LinkDecryptionKey } from '../workers/types';
 
 import { fromBase64 } from './api';
 import { getCryptoClient } from './crypto-client';
-import { isLinkTierHandleId } from './read-path-crypto';
 
 /**
  * Error thrown when album metadata decryption fails
@@ -62,20 +61,15 @@ export async function decryptAlbumNameWithTierKey(
       throw new Error('Encrypted name is empty');
     }
 
-    if (!tierKey || (typeof tierKey !== 'string' && tierKey.length !== 32)) {
-      throw new Error('Invalid tier key handle/key');
+    if (!tierKey) {
+      throw new Error('Invalid tier key handle');
     }
 
     const crypto = await getCryptoClient();
-    const decryptedBytes = isLinkTierHandleId(tierKey)
-      ? await crypto.decryptShardWithLinkTierHandle(tierKey, encryptedBytes)
-      : await crypto.decryptShardWithTierKey(
-        encryptedBytes,
-        // TODO(W-S4): Remove the raw tier-key fallback after all share-link key
-        // resolution paths mint LinkTierHandleId; legacy cached links only have
-        // pre-handle Uint8Array keys.
-        tierKey,
-      );
+    const decryptedBytes = await crypto.decryptShardWithLinkTierHandle(
+      tierKey,
+      encryptedBytes,
+    );
 
     // Decode UTF-8 text
     const decoder = new TextDecoder('utf-8', { fatal: true });

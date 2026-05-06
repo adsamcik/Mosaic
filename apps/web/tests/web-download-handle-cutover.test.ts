@@ -243,7 +243,7 @@ describe('W-S2 web download handle API cutover', () => {
 
     const resolver = createShareLinkOriginalResolver({
       linkId: 'link-1',
-      getTierKey: () => 'link_tier_handle_3' as never,
+      getTierKeyHandle: () => 'link_tier_handle_3' as never,
     });
 
     await expect(
