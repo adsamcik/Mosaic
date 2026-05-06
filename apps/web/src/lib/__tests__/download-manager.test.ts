@@ -53,6 +53,7 @@ function createApi(): CoordinatorWorkerApi & { [releaseProxy]: () => void } {
     getJob: vi.fn(async () => null),
     subscribe: vi.fn(async () => ({ unsubscribe: vi.fn() })),
     gc: vi.fn(async () => ({ purged: [] })),
+    clear: vi.fn(async () => undefined),
     setSaveTargetProvider: vi.fn(async () => undefined),
     [releaseProxy]: vi.fn(),
   };
@@ -94,6 +95,7 @@ describe('download-manager', () => {
     await disposeDownloadManager();
     await expect(getDownloadManager()).resolves.toBe(secondApi);
 
+    expect(firstApi.clear).toHaveBeenCalledTimes(1);
     expect(firstApi[releaseProxy]).toHaveBeenCalledTimes(1);
     expect(terminateMock).toHaveBeenCalledTimes(1);
     expect(workerConstructCount).toBe(2);
@@ -118,3 +120,6 @@ describe('download-manager', () => {
     expect(api.computeAlbumDiff).toHaveBeenCalledWith('job', { albumId: 'album', photos: [] });
   });
 });
+
+
+
