@@ -1337,6 +1337,49 @@ describe('CoordinatorWorker', () => {
       expect(peer.send).not.toHaveBeenCalled();
     });
 
+
+    it('does not broadcast sidecar job state changes to sibling tabs', async () => {
+      // Spy on the cross-tab BroadcastChannel by creating a sibling worker.
+      // Sidecar jobs MUST NOT cause job-changed messages to reach siblings -
+      // the peer handle is per-tab and siblings cannot act on it. We assert
+      // by counting messages received on a sibling worker's broadcast inbox.
+      const peer = makeStubPeer();
+      const workerA = new CoordinatorWorker();
+      const workerB = new CoordinatorWorker();
+      await workerA.initialize({ nowMs });
+      await workerB.initialize({ nowMs });
+      const received: string[] = [];
+      const channel = [...broadcastState.channels].reverse().find((ch) => ch.name === 'mosaic-download-jobs');
+      if (!channel) throw new Error('expected mosaic-download-jobs channel');
+      channel.listeners.add((ev) => {
+        const data = ev.data as { kind?: string; jobId?: string };
+        if (data?.kind === 'job-changed' && data.jobId) received.push(data.jobId);
+      });
+      const { jobId } = await workerA.startJob({
+        ...validInput(),
+        outputMode: { kind: 'sidecar', peerHandle: peer, fallback: 'zip' },
+      });
+      await cbor.awaitScheduledDriver(workerA, jobId);
+      expect(received).not.toContain(jobId);
+    });
+
+    it('still broadcasts non-sidecar job state changes (control case)', async () => {
+      const workerA = new CoordinatorWorker();
+      const workerB = new CoordinatorWorker();
+      await workerA.initialize({ nowMs });
+      await workerB.initialize({ nowMs });
+      const received: string[] = [];
+      const channel = [...broadcastState.channels].reverse().find((ch) => ch.name === 'mosaic-download-jobs');
+      if (!channel) throw new Error('expected mosaic-download-jobs channel');
+      channel.listeners.add((ev) => {
+        const data = ev.data as { kind?: string; jobId?: string };
+        if (data?.kind === 'job-changed' && data.jobId) received.push(data.jobId);
+      });
+      const { jobId } = await workerA.startJob({ ...validInput() });
+      await cbor.awaitScheduledDriver(workerA, jobId);
+      expect(received).toContain(jobId);
+    });
+
     it('does not persist sidecar outputMode across reconstruction', async () => {
       // The outputMode map is in-memory only; verify by starting a sidecar
       // job, then constructing a new worker over the same OPFS state.

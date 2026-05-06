@@ -1470,6 +1470,17 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
    *     and is already on `JobSummary`; broadcasting it adds no leakage.
    */
   private broadcast(job: InMemoryJob): void {
+    // Sidecar suppression: a sidecar job is per-session — its peer handle
+    // lives only in the originating tab and is not reachable from siblings.
+    // Sibling tabs already filter cross-scope messages by scopeKey, so this
+    // is a polish (not a leak): we avoid waking subscribers for jobs they
+    // can never act on. NOTE: broadcasting still happens for non-sidecar
+    // jobs and (intentionally) for sidecar jobs that have already engaged
+    // their fallback (zip/perFile) — at that point the job is once more a
+    // tray-visible cross-tab artefact.
+    if (this.jobOutputModes.get(job.jobId)?.kind === 'sidecar') {
+      return;
+    }
     const message: DownloadJobsBroadcastMessage = {
       kind: 'job-changed',
       jobId: job.jobId,
