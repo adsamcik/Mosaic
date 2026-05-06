@@ -10,7 +10,7 @@ export default defineConfig({
     env: {
       VITE_E2E_WEAK_KEYS: 'true',
     },
-    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'src/**/__tests__/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'src/**/__tests__/**/*.test.ts', 'src/**/__tests__/**/*.test.tsx'],
     exclude: [
       '**/node_modules/**',
     ],
@@ -47,6 +47,7 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, './src'),
       '@mosaic/crypto': resolve(__dirname, '../../libs/crypto/src'),
+      'libsodium-wrappers-sumo': resolve(__dirname, './node_modules/libsodium-wrappers-sumo'),
     },
   },
 });

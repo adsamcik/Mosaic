@@ -89,6 +89,21 @@ fn expected_table() -> Vec<(&'static str, u16)> {
         ("ManifestSetConflict", 709),
         ("BackendIdempotencyConflict", 710),
         ("VideoPosterExtractionFailed", 711),
+        ("DownloadInvalidPlan", 720),
+        ("DownloadIllegalTransition", 721),
+        ("DownloadSnapshotMigration", 722),
+        ("DownloadSnapshotCorrupt", 723),
+        ("DownloadSnapshotChecksumMismatch", 724),
+        ("DownloadSnapshotTorn", 725),
+        ("DownloadTransientNetwork", 726),
+        ("DownloadIntegrity", 727),
+        ("DownloadDecrypt", 728),
+        ("DownloadNotFound", 729),
+        ("DownloadQuota", 730),
+        ("DownloadCancelled", 731),
+        ("DownloadAccessRevoked", 732),
+        ("DownloadAuthorizationChanged", 733),
+        ("DownloadIllegalState", 734),
         ("PinValidationFailed", 800),
     ]
 }
@@ -355,6 +370,60 @@ fn live_table() -> Vec<(&'static str, u16)> {
         (
             "VideoPosterExtractionFailed",
             ClientErrorCode::VideoPosterExtractionFailed.as_u16(),
+        ),
+        (
+            "DownloadInvalidPlan",
+            ClientErrorCode::DownloadInvalidPlan.as_u16(),
+        ),
+        (
+            "DownloadIllegalTransition",
+            ClientErrorCode::DownloadIllegalTransition.as_u16(),
+        ),
+        (
+            "DownloadSnapshotMigration",
+            ClientErrorCode::DownloadSnapshotMigration.as_u16(),
+        ),
+        (
+            "DownloadSnapshotCorrupt",
+            ClientErrorCode::DownloadSnapshotCorrupt.as_u16(),
+        ),
+        (
+            "DownloadSnapshotChecksumMismatch",
+            ClientErrorCode::DownloadSnapshotChecksumMismatch.as_u16(),
+        ),
+        (
+            "DownloadSnapshotTorn",
+            ClientErrorCode::DownloadSnapshotTorn.as_u16(),
+        ),
+        (
+            "DownloadTransientNetwork",
+            ClientErrorCode::DownloadTransientNetwork.as_u16(),
+        ),
+        (
+            "DownloadIntegrity",
+            ClientErrorCode::DownloadIntegrity.as_u16(),
+        ),
+        ("DownloadDecrypt", ClientErrorCode::DownloadDecrypt.as_u16()),
+        (
+            "DownloadNotFound",
+            ClientErrorCode::DownloadNotFound.as_u16(),
+        ),
+        ("DownloadQuota", ClientErrorCode::DownloadQuota.as_u16()),
+        (
+            "DownloadCancelled",
+            ClientErrorCode::DownloadCancelled.as_u16(),
+        ),
+        (
+            "DownloadAccessRevoked",
+            ClientErrorCode::DownloadAccessRevoked.as_u16(),
+        ),
+        (
+            "DownloadAuthorizationChanged",
+            ClientErrorCode::DownloadAuthorizationChanged.as_u16(),
+        ),
+        (
+            "DownloadIllegalState",
+            ClientErrorCode::DownloadIllegalState.as_u16(),
         ),
         (
             "PinValidationFailed",

@@ -40,6 +40,11 @@ const workerOnlyCodes = [
     value: 1004,
     docs: ['Worker has not been bootstrapped or has been cleared via clear().'],
   },
+  {
+    name: 'JobNotFound',
+    value: 1005,
+    docs: ['Download job id is not known to the coordinator worker.'],
+  },
 ];
 
 function extractEnumBody(source) {

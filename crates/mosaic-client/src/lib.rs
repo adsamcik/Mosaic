@@ -32,9 +32,11 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
+pub mod download;
 pub mod snapshot_schema;
 pub mod state_machine;
 pub mod telemetry;
+pub use download::*;
 pub use snapshot_schema::{
     AlbumSyncSnapshotPlaceholder, CURRENT_SNAPSHOT_SCHEMA_VERSION, FORBIDDEN_FIELD_NAMES,
     SCHEMA_VERSION_KEY, SNAPSHOT_SCHEMA_VERSION_V1, SnapshotMigrationError, album_sync_phase_codes,
@@ -147,6 +149,21 @@ pub enum ClientErrorCode {
     BackendIdempotencyConflict = 710,
     /// Video poster extraction failed; emitted as an event code without failing the upload.
     VideoPosterExtractionFailed = 711,
+    DownloadInvalidPlan = 720,
+    DownloadIllegalTransition = 721,
+    DownloadSnapshotMigration = 722,
+    DownloadSnapshotCorrupt = 723,
+    DownloadSnapshotChecksumMismatch = 724,
+    DownloadSnapshotTorn = 725,
+    DownloadTransientNetwork = 726,
+    DownloadIntegrity = 727,
+    DownloadDecrypt = 728,
+    DownloadNotFound = 729,
+    DownloadQuota = 730,
+    DownloadCancelled = 731,
+    DownloadAccessRevoked = 732,
+    DownloadAuthorizationChanged = 733,
+    DownloadIllegalState = 734,
     /// Android TLS certificate pin validation failed for a configured Mosaic endpoint.
     PinValidationFailed = 800,
 }
@@ -245,6 +262,21 @@ impl ClientErrorCode {
             709 => Some(Self::ManifestSetConflict),
             710 => Some(Self::BackendIdempotencyConflict),
             711 => Some(Self::VideoPosterExtractionFailed),
+            720 => Some(Self::DownloadInvalidPlan),
+            721 => Some(Self::DownloadIllegalTransition),
+            722 => Some(Self::DownloadSnapshotMigration),
+            723 => Some(Self::DownloadSnapshotCorrupt),
+            724 => Some(Self::DownloadSnapshotChecksumMismatch),
+            725 => Some(Self::DownloadSnapshotTorn),
+            726 => Some(Self::DownloadTransientNetwork),
+            727 => Some(Self::DownloadIntegrity),
+            728 => Some(Self::DownloadDecrypt),
+            729 => Some(Self::DownloadNotFound),
+            730 => Some(Self::DownloadQuota),
+            731 => Some(Self::DownloadCancelled),
+            732 => Some(Self::DownloadAccessRevoked),
+            733 => Some(Self::DownloadAuthorizationChanged),
+            734 => Some(Self::DownloadIllegalState),
             800 => Some(Self::PinValidationFailed),
             _ => None,
         }
@@ -2236,6 +2268,19 @@ pub fn import_link_tier_handle(
     }
 }
 
+/// Mints an opaque link-tier handle from a raw 32-byte tier key.
+///
+/// This exists only as a recipient-side bridge while older share-link URL/cache
+/// paths still surface raw tier-key bytes. The bytes are copied into the
+/// Rust-owned handle registry and never need to cross FFI again.
+#[must_use]
+pub fn mint_link_tier_handle_from_raw_key(raw_key: &[u8]) -> LinkTierHandleResult {
+    match mint_link_tier_handle_from_raw_key_result(raw_key) {
+        Ok(result) => result,
+        Err(error) => LinkTierHandleResult::error(error.code),
+    }
+}
+
 /// Decrypts a shard with an imported share-link tier handle.
 #[must_use]
 pub fn decrypt_shard_with_link_tier_handle(
@@ -2273,7 +2318,8 @@ pub fn verify_shard_integrity_sha256(
 
     let ciphertext = &envelope_bytes[mosaic_domain::SHARD_ENVELOPE_HEADER_LEN..];
     let digest = Sha256::digest(ciphertext);
-    Ok(bool::from(digest.as_slice().ct_eq(expected_sha256)))
+    let digest_bytes: &[u8] = digest.as_ref();
+    Ok(bool::from(digest_bytes.ct_eq(expected_sha256)))
 }
 
 /// Closes and wipes a share-link wrapping handle.
@@ -2421,6 +2467,20 @@ fn import_link_tier_handle_result(
     ))
 }
 
+fn mint_link_tier_handle_from_raw_key_result(
+    raw_key: &[u8],
+) -> Result<LinkTierHandleResult, ClientError> {
+    if raw_key.len() != mosaic_crypto::KEY_BYTES {
+        return Err(ClientError::new(
+            ClientErrorCode::InvalidKeyLength,
+            "raw link tier key must be 32 bytes",
+        ));
+    }
+
+    let handle = insert_link_tier_handle(String::new(), None, raw_key)?;
+    Ok(LinkTierHandleResult::ok(handle, Vec::new(), 0))
+}
+
 fn insert_link_tier_handle(
     album_id: String,
     tier: Option<ShardTier>,
@@ -2452,22 +2512,6 @@ fn insert_link_tier_handle(
     Ok(handle)
 }
 
-/// Mints an opaque link-tier handle from a raw 32-byte tier key.
-///
-/// This exists only as a recipient-side bridge while older share-link URL/cache
-/// paths still surface raw tier-key bytes. The bytes are copied into the
-/// Rust-owned handle registry and never need to cross FFI again.
-#[must_use]
-pub fn mint_link_tier_handle_from_raw_key(raw_key: &[u8]) -> LinkTierHandleResult {
-    if raw_key.len() != mosaic_crypto::KEY_BYTES {
-        return LinkTierHandleResult::error(ClientErrorCode::InvalidKeyLength);
-    }
-
-    match insert_link_tier_handle(String::new(), None, raw_key) {
-        Ok(handle) => LinkTierHandleResult::ok(handle, Vec::new(), 0),
-        Err(error) => LinkTierHandleResult::error(error.code),
-    }
-}
 
 fn decrypt_shard_with_link_tier_handle_result(
     link_tier_handle: u64,

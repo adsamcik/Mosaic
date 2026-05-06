@@ -819,4 +819,3 @@ describe('generateTieredImages', () => {
     expect(mockBitmap.close).toHaveBeenCalled();
   });
 });
-

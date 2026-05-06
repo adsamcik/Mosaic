@@ -79,3 +79,5 @@ export type {
 } from './useThumbnailShard';
 export { useErrorToast } from './useErrorToast';
 export { useUpload } from './useUpload';
+export { useWakeLock } from './useWakeLock';
+export type { UseWakeLockResult, WakeLockReleaseReason, WakeLockState } from './useWakeLock';

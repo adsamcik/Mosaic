@@ -84,6 +84,21 @@ export enum WorkerCryptoErrorCode {
   ManifestSetConflict = 709,
   BackendIdempotencyConflict = 710,
   VideoPosterExtractionFailed = 711,
+  DownloadInvalidPlan = 720,
+  DownloadIllegalTransition = 721,
+  DownloadSnapshotMigration = 722,
+  DownloadSnapshotCorrupt = 723,
+  DownloadSnapshotChecksumMismatch = 724,
+  DownloadSnapshotTorn = 725,
+  DownloadTransientNetwork = 726,
+  DownloadIntegrity = 727,
+  DownloadDecrypt = 728,
+  DownloadNotFound = 729,
+  DownloadQuota = 730,
+  DownloadCancelled = 731,
+  DownloadAccessRevoked = 732,
+  DownloadAuthorizationChanged = 733,
+  DownloadIllegalState = 734,
   PinValidationFailed = 800,
 
   // Worker-only error codes start at 1000.
@@ -97,4 +112,6 @@ export enum WorkerCryptoErrorCode {
   ClosedHandle = 1003,
   /** Worker has not been bootstrapped or has been cleared via clear(). */
   WorkerNotInitialized = 1004,
+  /** Download job id is not known to the coordinator worker. */
+  JobNotFound = 1005,
 }

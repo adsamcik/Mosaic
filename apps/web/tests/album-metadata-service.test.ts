@@ -278,4 +278,3 @@ describe('Album Metadata Service', () => {
     });
   });
 });
-

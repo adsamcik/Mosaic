@@ -1009,4 +1009,3 @@ describe('SharedPhotoLightbox', () => {
     });
   });
 });
-
