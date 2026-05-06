@@ -2,7 +2,7 @@
 
 ## Status
 
-**Locked** - corresponds to mosaic-media strip surface as of M0 commit.
+**Locked** - corresponds to mosaic-media strip surface as of M0 commit, with R-C5 classifier hardening evidence from commit `23c2124`.
 
 ## Purpose
 
@@ -63,7 +63,7 @@ M0 makes browser upload metadata stripping use the same dependency-free Rust `mo
 
 | Action | Rationale |
 |---|---|
-| Strip ISO-BMFF metadata carriers before encryption/TUS for supported AVIF/HEIC/HEIF originals. Canvas-reencoded AVIF originals remain metadata-clean by construction and may bypass stripping. | R-M1/R-M2 added bounded ISO-BMFF parsing and metadata item removal while preserving `mdat` image bytes. |
+| Strip ISO-BMFF metadata carriers before encryption/TUS for supported AVIF/HEIC/HEIF originals. Orientation tags are preserved as sidecar-bound rendering metadata rather than stripped from the client-local canonical sidecar. Canvas-reencoded AVIF originals remain metadata-clean by construction and may bypass stripping. | R-M1/R-M2 added bounded ISO-BMFF parsing and metadata item removal while preserving `mdat` image bytes and preserving orientation semantics outside uploaded plaintext metadata. |
 
 ### Video (MP4, MOV, WebM, Matroska)
 
@@ -105,6 +105,10 @@ tiered-upload-handler.ts
 - `apps/web/tests/strip-parity.test.ts` loads generated WASM bytes and compares JPEG/PNG/WebP output against golden corpus files.
 - `apps/web/tests/avif-heic-strip-roundtrip.test.ts` loads generated WASM bytes and asserts AVIF/HEIC `ftyp` + `mdat` preservation, metadata marker removal, `iloc` extents inside `mdat`, and video chunk offsets inside `mdat`.
 - `crates/mosaic-media/tests/strip_corpus.rs` reads the same web corpus/goldens and asserts native Rust output bytes and removed counts match.
+- R-C5 (`23c2124`) locked classifier hardening at 98.32% line coverage and 97.67% branch coverage.
+- R-C5 mutation testing killed 100% of classifier predicate mutants: 25 caught, 3 unviable, 0 missed.
+- R-C5 added 37 fuzz fixtures covering classifier and strip edge cases.
+- R-C4 streaming AEAD has no direct metadata-strip impact: stripping completes before encryption and before streaming AEAD frame construction.
 - Architecture guards verify Rust crate dependency boundaries and raw-secret FFI constraints.
 
 ## Forward links

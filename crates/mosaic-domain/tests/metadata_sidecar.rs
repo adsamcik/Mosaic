@@ -413,6 +413,29 @@ fn worst_case_active_tag_sidecar_fits_within_cap() {
 }
 
 #[test]
+fn encoder_rejects_out_of_range_gps_with_specific_error_code() {
+    let mut gps = [0_u8; 14];
+    gps[..4].copy_from_slice(&90_000_001_i32.to_le_bytes());
+    gps[4..8].copy_from_slice(&0_i32.to_le_bytes());
+    let fields = [MetadataSidecarField::new(metadata_field_tags::GPS, &gps)];
+
+    let error = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
+        ALBUM_ID, PHOTO_ID, 1, &fields,
+    )) {
+        Ok(_) => panic!("out-of-range GPS latitude should fail"),
+        Err(error) => error,
+    };
+
+    assert_eq!(
+        error,
+        MetadataSidecarError::InvalidGpsValue {
+            latitude_e7: 90_000_001,
+            longitude_e7: 0,
+        }
+    );
+}
+
+#[test]
 fn encoder_rejects_vendor_range_tag_4096() {
     let fields = [MetadataSidecarField::new(4096, b"vendor")];
     assert_eq!(

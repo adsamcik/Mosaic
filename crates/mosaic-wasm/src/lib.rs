@@ -5540,7 +5540,8 @@ fn map_metadata_sidecar_error(error: MetadataSidecarError) -> u16 {
         MetadataSidecarError::ZeroFieldTag
         | MetadataSidecarError::EmptyFieldValue { .. }
         | MetadataSidecarError::DuplicateFieldTag { .. }
-        | MetadataSidecarError::UnsortedFieldTag { .. } => {
+        | MetadataSidecarError::UnsortedFieldTag { .. }
+        | MetadataSidecarError::InvalidGpsValue { .. } => {
             mosaic_client::ClientErrorCode::MalformedSidecar.as_u16()
         }
     }

@@ -6,6 +6,7 @@ enum ClientErrorCode
   UnsupportedVersion = 102
   InvalidTier = 103
   NonZeroReservedByte = 104
+  UnknownEnvelopeVersion = 106
   EmptyContext = 200
   InvalidKeyLength = 201
   InvalidInputLength = 202
@@ -413,7 +414,7 @@ export pub fn advance_upload_job_uniffi( snapshot: ClientCoreUploadJobSnapshot, 
 export pub fn init_album_sync(request: ClientCoreAlbumSyncRequest) -> ClientCoreAlbumSyncResult
 export pub fn advance_album_sync( snapshot: ClientCoreAlbumSyncSnapshot, event: ClientCoreAlbumSyncEvent, ) -> ClientCoreAlbumSyncTransitionResult
 export pub fn advance_album_sync_uniffi( snapshot: ClientCoreAlbumSyncSnapshot, event: ClientCoreAlbumSyncEvent, ) -> ClientCoreAlbumSyncTransition
-export pub fn manifest_transcript_bytes_uniffi(inputs: ClientCoreManifestTranscriptInputs) -> Vec<u8>
+export pub fn manifest_transcript_bytes_uniffi( inputs: ClientCoreManifestTranscriptInputs, ) -> Result<Vec<u8>, MosaicError>
 export pub fn client_error_code_enum_from_u16(value: u16) -> Option<ClientErrorCode>
 export pub fn client_error_code_to_u16(code: ClientErrorCode) -> u16
 record LinkKeysFfiResult

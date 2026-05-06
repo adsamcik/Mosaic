@@ -310,6 +310,8 @@ pub enum MetadataSidecarError {
     ReservedTagNotPromoted { tag: u16 },
     /// The tag number is permanently forbidden by policy.
     ForbiddenTag { tag: u16 },
+    /// A GPS active sidecar field used latitude or longitude outside protocol bounds.
+    InvalidGpsValue { latitude_e7: i32, longitude_e7: i32 },
     /// The tag number is outside the append-only sidecar registry.
     UnknownTag { tag: u16 },
 }
@@ -815,9 +817,9 @@ fn validate_gps_field(value: &[u8]) -> Result<(), MetadataSidecarError> {
     if (-90_000_000..=90_000_000).contains(&lat) && (-180_000_000..=180_000_000).contains(&lon) {
         Ok(())
     } else {
-        Err(MetadataSidecarError::LengthTooLarge {
-            field: "sidecar_field_value",
-            actual: value.len(),
+        Err(MetadataSidecarError::InvalidGpsValue {
+            latitude_e7: lat,
+            longitude_e7: lon,
         })
     }
 }

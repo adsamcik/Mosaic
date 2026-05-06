@@ -83,7 +83,7 @@ private fun triggerSql(table: String, columns: List<String>, operation: String):
     "($value LIKE '%signature%' OR $value LIKE '%signpublickey%' OR " +
       "$value LIKE '%sign_public_key%' OR $value LIKE '%privatekey%' OR " +
       "$value LIKE '%private_key%' OR $value LIKE '%-----begin%' OR " +
-      "$value LIKE '%ed25519%' OR $value LIKE '%@%.%')"
+      "$value LIKE '%ed25519%' OR $value LIKE '${MosaicPiiPatterns.EMAIL_SQL_LIKE}')"
   }
   return """
     CREATE TRIGGER IF NOT EXISTS $triggerName

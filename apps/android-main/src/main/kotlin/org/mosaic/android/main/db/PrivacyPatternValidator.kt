@@ -4,10 +4,13 @@ object RustSnapshotVersions {
   const val CURRENT: Int = 1
 }
 
+object MosaicPiiPatterns {
+  const val EMAIL_SQL_LIKE: String = "%@%.%"
+  val EMAIL: Regex = Regex("@.*\\.", RegexOption.IGNORE_CASE)
+}
+
 object PrivacyPatternValidator {
-  private val piiRegexes = listOf(
-    Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE),
-  )
+  private val piiRegexes = listOf(MosaicPiiPatterns.EMAIL)
 
   private val forbiddenPlaintextMarkers = listOf(
     "signature",

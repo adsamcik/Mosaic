@@ -111,6 +111,16 @@ class UploadQueueDatabaseSchemaTest {
     }
   }
 
+
+  @Test
+  fun daoPrivacyValidatorRejectsSqlLikeEmailShapeBeforeInsert() {
+    val bad = validUploadQueueRecord().copy(phase = "AwaitingPreparedMedia user@.local")
+
+    assertThrows(IllegalArgumentException::class.java) {
+      db.uploadQueueDao().insert(bad)
+    }
+  }
+
   @Test
   fun roomCallbackTriggerRejectsPlaintextMarkerOnRawInsert() {
     val sql = """

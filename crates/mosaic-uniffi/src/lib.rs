@@ -53,6 +53,7 @@ pub enum ClientErrorCode {
     UnsupportedVersion = 102,
     InvalidTier = 103,
     NonZeroReservedByte = 104,
+    UnknownEnvelopeVersion = 106,
     EmptyContext = 200,
     InvalidKeyLength = 201,
     InvalidInputLength = 202,
@@ -138,6 +139,7 @@ impl ClientErrorCode {
             mosaic_client::ClientErrorCode::UnsupportedVersion => Self::UnsupportedVersion,
             mosaic_client::ClientErrorCode::InvalidTier => Self::InvalidTier,
             mosaic_client::ClientErrorCode::NonZeroReservedByte => Self::NonZeroReservedByte,
+            mosaic_client::ClientErrorCode::UnknownEnvelopeVersion => Self::UnknownEnvelopeVersion,
             mosaic_client::ClientErrorCode::EmptyContext => Self::EmptyContext,
             mosaic_client::ClientErrorCode::InvalidKeyLength => Self::InvalidKeyLength,
             mosaic_client::ClientErrorCode::InvalidInputLength => Self::InvalidInputLength,
@@ -776,7 +778,7 @@ sync(init_album_sync(ClientCoreAlbumSyncRequest)->ClientCoreAlbumSyncResult,\
 advance_album_sync(ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncEvent)->ClientCoreAlbumSyncTransitionResult,\
 advance_album_sync_uniffi(ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncEvent)->ClientCoreAlbumSyncTransition,\
 ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncTransition,ClientCoreAlbumSyncEffect) \
-manifest_transcript(manifest_transcript_bytes_uniffi(ClientCoreManifestTranscriptInputs)->Vec<u8>,\
+manifest_transcript(manifest_transcript_bytes_uniffi(ClientCoreManifestTranscriptInputs)->Result<Vec<u8>, MosaicError>,\
 ClientCoreManifestTranscriptInputs,ClientCoreManifestShardRef)";
 
 /// Stateful UniFFI wrapper around the v0x04 streaming AEAD encryptor.
@@ -1611,12 +1613,13 @@ pub fn advance_album_sync_uniffi(
 
 /// Returns canonical manifest transcript bytes for encrypted metadata/shard refs.
 ///
-/// Invalid host DTOs or rejected transcript shapes return an empty byte vector.
+/// Invalid host DTOs or rejected transcript shapes return a typed MosaicError.
 /// The metadata input is encrypted/opaque bytes and is never parsed as plaintext.
 #[uniffi::export]
-#[must_use]
-pub fn manifest_transcript_bytes_uniffi(inputs: ClientCoreManifestTranscriptInputs) -> Vec<u8> {
-    manifest_transcript_bytes_result(inputs).unwrap_or_default()
+pub fn manifest_transcript_bytes_uniffi(
+    inputs: ClientCoreManifestTranscriptInputs,
+) -> Result<Vec<u8>, MosaicError> {
+    manifest_transcript_bytes_result(inputs)
 }
 
 fn identity_result_from_client(
@@ -1873,17 +1876,21 @@ fn upload_transition_from_client(
 
 fn manifest_transcript_bytes_result(
     inputs: ClientCoreManifestTranscriptInputs,
-) -> Result<Vec<u8>, u16> {
-    let album_id = uuid_bytes(&inputs.album_id)?;
+) -> Result<Vec<u8>, MosaicError> {
+    let album_id = uuid_bytes(&inputs.album_id).map_err(|code| MosaicError::Client { code })?;
     let shards = inputs
         .shards
         .iter()
         .map(manifest_shard_to_domain)
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|code| MosaicError::Client { code })?;
     let encrypted_meta = EncryptedMetadataEnvelope::new(&inputs.encrypted_metadata_envelope);
     let transcript = ManifestTranscript::new(album_id, inputs.epoch_id, encrypted_meta, &shards);
-    mosaic_domain::canonical_manifest_transcript_bytes(&transcript)
-        .map_err(|_| mosaic_client::ClientErrorCode::ManifestShapeRejected.as_u16())
+    mosaic_domain::canonical_manifest_transcript_bytes(&transcript).map_err(|_| {
+        MosaicError::Client {
+            code: mosaic_client::ClientErrorCode::ManifestShapeRejected.as_u16(),
+        }
+    })
 }
 
 fn manifest_shard_to_domain(shard: &ClientCoreManifestShardRef) -> Result<ManifestShardRef, u16> {
@@ -2637,7 +2644,8 @@ fn map_metadata_sidecar_error(error: MetadataSidecarError) -> u16 {
         MetadataSidecarError::ZeroFieldTag
         | MetadataSidecarError::EmptyFieldValue { .. }
         | MetadataSidecarError::DuplicateFieldTag { .. }
-        | MetadataSidecarError::UnsortedFieldTag { .. } => {
+        | MetadataSidecarError::UnsortedFieldTag { .. }
+        | MetadataSidecarError::InvalidGpsValue { .. } => {
             mosaic_client::ClientErrorCode::MalformedSidecar.as_u16()
         }
     }

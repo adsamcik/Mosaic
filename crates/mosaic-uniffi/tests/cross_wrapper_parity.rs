@@ -42,6 +42,8 @@ const REQUIRED_SHARED_DTOS: &[&str] = &[
     "CryptoDomainGoldenVectorSnapshot",
 ];
 
+const ALIASED_TWINS: &[(&str, &str)] = &[("EncryptedFrame", "StreamingFrameResult")];
+
 const EXPECTED_DIVERGENCES: &[ExpectedDivergence] = &[ExpectedDivergence {
     // WASM flattens progress events into integer pairs for wasm-bindgen
     // marshalling while UniFFI exposes the nested ProgressEvent record.
@@ -82,6 +84,39 @@ fn new_wasm_media_export_without_uniffi_mirror_fails_parity() {
     );
 
     assert_media_exports_match(UNIFFI_SOURCE, &wasm_source);
+}
+
+#[test]
+fn aliased_dto_twins_share_required_field_intersection() {
+    let uniffi_records = parse_uniffi_records(UNIFFI_SOURCE);
+    let wasm_structs = parse_wasm_structs(WASM_SOURCE);
+
+    for (uniffi_name, wasm_name) in ALIASED_TWINS {
+        let uniffi = uniffi_records
+            .get(*uniffi_name)
+            .unwrap_or_else(|| panic!("UniFFI aliased DTO `{uniffi_name}` is missing"));
+        let wasm = wasm_structs
+            .get(*wasm_name)
+            .unwrap_or_else(|| panic!("WASM aliased DTO `{wasm_name}` is missing"));
+        let shared = uniffi
+            .fields
+            .keys()
+            .filter(|field| wasm.fields.contains_key(*field))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(
+            shared,
+            BTreeSet::from(["bytes".to_owned(), "frame_index".to_owned()]),
+            "aliased DTO pair `{uniffi_name}`/`{wasm_name}` lost streaming AEAD shared fields"
+        );
+        for field in &shared {
+            assert_eq!(
+                uniffi.fields[field], wasm.fields[field],
+                "aliased DTO pair `{uniffi_name}`/`{wasm_name}` field `{field}` type drifted"
+            );
+        }
+    }
 }
 
 #[test]

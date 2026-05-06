@@ -60,7 +60,7 @@ fn uniffi_exported_api_shape_matches_golden() {
 
 #[test]
 fn uniffi_api_v1_baseline_signature_unchanged() {
-    let v1_baseline_blake3 = "ff907d6218ec4efac9cfc902648e26f58103a56edd1dba3af03d448f43b883e6";
+    let v1_baseline_blake3 = "48e787b90a23677a731e95c2c7ee616d0887c7c5e19c12d6e1571ba0eeca4ef2";
     let actual = blake3::hash(canonical_uniffi_api_shape(SOURCE).as_bytes()).to_hex();
 
     assert_eq!(
@@ -423,7 +423,7 @@ fn manifest_transcript_uniffi_export_is_present() {
 
     assert!(
         actual.contains(
-            "export pub fn manifest_transcript_bytes_uniffi(inputs: ClientCoreManifestTranscriptInputs) -> Vec<u8>"
+            "export pub fn manifest_transcript_bytes_uniffi( inputs: ClientCoreManifestTranscriptInputs, ) -> Result<Vec<u8>, MosaicError>"
         ),
         "manifest transcript bytes export must be present in UniFFI API shape"
     );
@@ -649,7 +649,8 @@ fn manifest_transcript_bytes_uniffi_matches_domain_vector() {
         shards,
     };
 
-    let result = mosaic_uniffi::manifest_transcript_bytes_uniffi(inputs);
+    let result = mosaic_uniffi::manifest_transcript_bytes_uniffi(inputs)
+        .expect("valid manifest transcript inputs should serialize");
 
     assert_eq!(
         result,
@@ -659,6 +660,26 @@ fn manifest_transcript_bytes_uniffi_matches_domain_vector() {
         }
     );
 }
+#[test]
+fn manifest_transcript_bytes_uniffi_rejects_malformed_inputs_without_panic() {
+    let inputs = mosaic_uniffi::ClientCoreManifestTranscriptInputs {
+        album_id: (0_u8..16).collect(),
+        epoch_id: 7,
+        encrypted_metadata_envelope: Vec::new(),
+        shards: Vec::new(),
+    };
+
+    let error = mosaic_uniffi::manifest_transcript_bytes_uniffi(inputs)
+        .expect_err("malformed manifest transcript inputs should return MosaicError");
+
+    assert_eq!(
+        error,
+        mosaic_uniffi::MosaicError::Client {
+            code: mosaic_uniffi::ClientErrorCode::ManifestShapeRejected.as_u16(),
+        }
+    );
+}
+
 #[test]
 fn default_api_shape_excludes_cross_client_vector_seed_verifier() {
     let actual = canonical_uniffi_api_shape_for_features(SOURCE, false);
