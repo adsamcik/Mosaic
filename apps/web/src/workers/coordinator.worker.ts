@@ -67,7 +67,7 @@ import { runZipFinalizer as defaultRunZipFinalizer, type ZipFinalizerDeps } from
 import { runPerFileFinalizer as defaultRunPerFileFinalizer, type PerFileFinalizerDeps } from './coordinator/per-file-finalizer';
 import { createShardMirror, type ShardMirror, type ShardMirrorStats } from './coordinator/shard-mirror';
 import { createDecryptCache, type DecryptCache } from './coordinator/decrypt-cache';
-import { createThumbnailStreamer, type ThumbnailStreamer } from './coordinator/thumbnail-streamer';
+import { createThumbnailStreamer, type ThumbnailManifestEntry, type ThumbnailStreamer } from './coordinator/thumbnail-streamer';
 
 
 const log = createLogger('CoordinatorWorker');
@@ -94,9 +94,23 @@ interface ByteProgressTimer {
 }
 
 let getCryptoPoolForCoordinator = getCryptoPool;
+let cachedCryptoPoolForCoordinator: Promise<CryptoPool> | null = null;
 let executePhotoTaskForCoordinator = executePhotoTask;
 let runZipFinalizerForCoordinator: typeof defaultRunZipFinalizer = defaultRunZipFinalizer;
 let runPerFileFinalizerForCoordinator: typeof defaultRunPerFileFinalizer = defaultRunPerFileFinalizer;
+
+
+async function acquireCryptoPoolForCoordinator(): Promise<CryptoPool> {
+  cachedCryptoPoolForCoordinator ??= getCryptoPoolForCoordinator();
+  return cachedCryptoPoolForCoordinator;
+}
+
+async function shutdownCryptoPoolForCoordinator(): Promise<void> {
+  const poolPromise = cachedCryptoPoolForCoordinator;
+  cachedCryptoPoolForCoordinator = null;
+  const pool = await poolPromise;
+  await pool?.shutdown();
+}
 
 interface InMemoryJob {
   readonly jobId: string;
@@ -200,19 +214,6 @@ const DOWNLOAD_REASON_BY_CODE: Readonly<Record<number, DownloadErrorReason>> = (
   return out;
 })();
 
-/**
- * Per-thumbnail-loop state. The thumbnail streamer's deps don't carry jobId
- * through fetch/key resolution, so we publish the active job's source +
- * album via these refs at the start of each `resolveJobThumbnails` loop.
- * Safe in practice: only one loop iterates the manifest at a time per job
- * (perJobConcurrency drains processOne synchronously w.r.t. the iteration).
- *
- * Cross-job interleaving is bounded by the global concurrency cap and each
- * loop pins refs at iteration entry, so per-shard fetches always read the
- * source matching their entry.
- */
-const currentSourceRef: { current: SourceStrategy | null } = { current: null };
-const currentAlbumIdRef: { current: string | null } = { current: null };
 
 /** Singleton worker implementation hosting all Phase 1 download jobs. */
 export class CoordinatorWorker implements CoordinatorWorkerApi {
@@ -735,51 +736,74 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     if (this.thumbnailStreamerInstance) return this.thumbnailStreamerInstance;
     const sourceFor = (jobId: string): SourceStrategy =>
       this.jobSources.get(jobId) ?? this.getDefaultAuthSource();
-    // Per-shard small abort signal; we don't tie thumbnails to the main job
-    // abort because cancelling the main download must NOT cancel a thumbnail
-    // already in flight (it'll just be the last one we emit). The streamer's
-    // own abort (per stop(jobId)) handles teardown.
-    const neverAbort = new AbortController().signal;
     const self = this;
     this.thumbnailStreamerInstance = createThumbnailStreamer({
       fetchShard: async (shardId, signal): Promise<Uint8Array> => {
-        // fallbackSource: jobId is not part of this dep's signature, so
-        // route through default auth. This is correct for authenticated
-        // jobs; visitor jobs must rely on the overload installed via
-        // resolveJobThumbnails which closes over the matching source.
-        // To avoid leaking visitor data, we ALWAYS resolve via the
-        // currently-active job source captured per-iteration:
-        const src = currentSourceRef.current ?? self.getDefaultAuthSource();
-        return src.fetchShard(shardId, signal);
+        // Fallback for tests / legacy entries. Real coordinator entries are
+        // bound below to the job-local source captured when the stream starts.
+        return self.getDefaultAuthSource().fetchShard(shardId, signal);
       },
       resolveThumbKey: async (_photoId, epochId): Promise<Uint8Array> => {
-        const src = currentSourceRef.current ?? self.getDefaultAuthSource();
-        const albumId = currentAlbumIdRef.current ?? '';
         const epoch = Number.parseInt(epochId, 10);
-        return src.resolveKey(albumId, Number.isFinite(epoch) ? epoch : 0);
+        return self.getDefaultAuthSource().resolveKey('', Number.isFinite(epoch) ? epoch : 0);
       },
       decryptShard: async (bytes, key): Promise<Uint8Array> => {
-        const pool = await getCryptoPoolForCoordinator();
-        return pool.decryptShard(bytes, key);
+        const pool = await acquireCryptoPoolForCoordinator();
+        return pool.decryptShard(bytes, key, 1);
       },
-      resolveJobThumbnails: async function* (jobId: string) {
+      resolveJobThumbnails: async function* (jobId: string): AsyncIterable<ThumbnailManifestEntry> {
         const manifest = self.jobThumbnailManifests.get(jobId) ?? [];
         const job = self.jobs.get(jobId);
-        currentSourceRef.current = sourceFor(jobId);
-        currentAlbumIdRef.current = job?.albumId ?? '';
-        try {
-          for (const entry of manifest) {
-            yield entry;
-          }
-        } finally {
-          // Leave refs alone; the next loop overwrites them. The streamer's
-          // perJobConcurrency=2 and a single-job iteration ensure no
-          // cross-job race on these refs in practice.
-          void neverAbort;
+        const source = sourceFor(jobId);
+        const albumId = job?.albumId ?? '';
+        for (const entry of manifest) {
+          yield {
+            ...entry,
+            fetchShard: (shardId, signal) => source.fetchShard(shardId, signal),
+            resolveThumbKey: (_photoId, epochId) => {
+              const epoch = Number.parseInt(epochId, 10);
+              return source.resolveKey(albumId, Number.isFinite(epoch) ? epoch : 0);
+            },
+          };
         }
       },
     });
     return this.thumbnailStreamerInstance;
+  }
+
+  /** Clear coordinator-local state and terminate cached crypto workers (logout/teardown). */
+  async clear(): Promise<void> {
+    for (const abortController of this.jobAborts.values()) {
+      abortController.abort();
+    }
+    for (const timer of this.byteProgressTimers.values()) {
+      if (timer.pendingWrite) {
+        clearTimeout(timer.pendingWrite);
+      }
+    }
+    this.thumbnailStreamerInstance?.clear();
+    this.scheduleManagerInstance?.stop();
+    this.jobs.clear();
+    this.subscribers.clear();
+    this.jobMutations.clear();
+    this.jobAborts.clear();
+    this.jobDrivers.clear();
+    this.byteProgressTimers.clear();
+    this.jobOutputModes.clear();
+    this.jobSources.clear();
+    this.jobExportFailures.clear();
+    this.pausedNoSourceVisitorJobs.clear();
+    this.decryptCache.clear();
+    this.lastEvaluations.clear();
+    this.scheduledAt.clear();
+    this.jobThumbnailManifests.clear();
+    this.thumbnailStreamerInstance = null;
+    this.scheduleManagerInstance = null;
+    this.defaultAuthSource = null;
+    this.saveTargetProvider = null;
+    this.initialized = false;
+    this.initializePromise = null;
+    await shutdownCryptoPoolForCoordinator();
   }
 
   /** Garbage-collect stale OPFS jobs. */
@@ -1000,7 +1024,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     if (!job || job.state.phase !== 'Running') {
       return;
     }
-    const pool = await getCryptoPoolForCoordinator();
+    const pool = await acquireCryptoPoolForCoordinator();
     const abortController = new AbortController();
     this.jobAborts.set(jobId, abortController);
     try {
@@ -2438,6 +2462,7 @@ export const __coordinatorWorkerTestUtils = {
   uintValue,
   phaseCodeByPhase: PHASE_CODE_BY_PHASE,
   setCryptoPoolFactory(factory: typeof getCryptoPool): void {
+    cachedCryptoPoolForCoordinator = null;
     getCryptoPoolForCoordinator = factory;
   },
   setExecutePhotoTask(fn: typeof executePhotoTask): void {
@@ -2456,6 +2481,7 @@ export const __coordinatorWorkerTestUtils = {
     interface SourceMapHolder { readonly jobSources: Map<string, SourceStrategy> }
     return (worker as unknown as SourceMapHolder).jobSources.get(jobId) ?? null;
   },
+  shutdownCryptoPoolForCoordinator,
   awaitScheduledDriver(worker: CoordinatorWorker, jobId: string): Promise<void> {
     interface DriverMapHolder { readonly jobDrivers: Map<string, Promise<void>> }
     const map = (worker as unknown as DriverMapHolder).jobDrivers;
@@ -2470,3 +2496,4 @@ export const __coordinatorWorkerTestUtils = {
     (worker as unknown as EvalHolder).lastEvaluations.set(jobId, evaluation);
   },
 };
+

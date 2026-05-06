@@ -249,4 +249,50 @@ describe('thumbnail-streamer', () => {
     await new Promise((r) => setTimeout(r, 5));
     expect(urls.revoked.length).toBe(urls.created.length);
   });
+
+  it('keeps concurrent jobs bound to their own thumbnail source', async () => {
+    interface BoundThumbnailManifestEntry extends ThumbnailManifestEntry {
+      readonly fetchShard: (shardId: string, signal: AbortSignal) => Promise<Uint8Array>;
+      readonly resolveThumbKey: (photoId: string, epochId: string) => Promise<Uint8Array>;
+    }
+
+    const urls = makeUrlRegistry();
+    const authFetch = vi.fn(async (_shardId: string, _signal: AbortSignal) => new Uint8Array([0xA1]));
+    const visitorFetch = vi.fn(async (_shardId: string, _signal: AbortSignal) => new Uint8Array([0xB2]));
+    const key = new Uint8Array(32);
+    const entriesByJob: ReadonlyMap<string, ReadonlyArray<BoundThumbnailManifestEntry>> = new Map([
+      ['job-auth', [{
+        ...makeEntry('auth'),
+        fetchShard: authFetch,
+        resolveThumbKey: async () => key,
+      }]],
+      ['job-visitor', [{
+        ...makeEntry('visitor'),
+        fetchShard: visitorFetch,
+        resolveThumbKey: async () => key,
+      }]],
+    ]);
+    const fallbackFetch = vi.fn(async (): Promise<Uint8Array> => {
+      throw new Error('unbound source used');
+    });
+    const streamer = createThumbnailStreamer(makeDeps({
+      fetchShard: fallbackFetch,
+      resolveJobThumbnails: (jobId) => asyncIterable(entriesByJob.get(jobId) ?? [], { delayMs: 1 }),
+      perJobConcurrency: 2,
+      globalConcurrency: 2,
+    }, urls));
+
+    const received: string[] = [];
+    streamer.subscribe('job-auth', (photoId) => { received.push(photoId); });
+    streamer.subscribe('job-visitor', (photoId) => { received.push(photoId); });
+    await new Promise((r) => setTimeout(r, 60));
+
+    expect(fallbackFetch).not.toHaveBeenCalled();
+    expect(authFetch).toHaveBeenCalledTimes(1);
+    expect(authFetch).toHaveBeenCalledWith('shard-auth', expect.any(AbortSignal));
+    expect(visitorFetch).toHaveBeenCalledTimes(1);
+    expect(visitorFetch).toHaveBeenCalledWith('shard-visitor', expect.any(AbortSignal));
+    expect(received).toEqual(expect.arrayContaining(['photo-auth-aaaaaaaaaaaaaaaa', 'photo-visitor-aaaaaaaaaaaaaaaa']));
+    streamer.clear();
+  });
 });

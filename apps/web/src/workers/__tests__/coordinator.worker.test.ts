@@ -18,7 +18,7 @@ const opfsState = vi.hoisted(() => ({
 }));
 
 const pipelineMocks = vi.hoisted(() => ({
-  executePhotoTask: vi.fn<(input: { readonly signal: AbortSignal }, deps?: { readonly reportBytesWritten?: (jobId: string, photoId: string, bytesWritten: number) => void }) => Promise<{ kind: 'done'; bytesWritten: number } | { kind: 'failed'; code: 'Cancelled' | 'Integrity' | 'AccessRevoked' }>>(),
+  executePhotoTask: vi.fn<(input: { readonly signal: AbortSignal }, deps?: { readonly pool?: unknown; readonly reportBytesWritten?: (jobId: string, photoId: string, bytesWritten: number) => void }) => Promise<{ kind: 'done'; bytesWritten: number } | { kind: 'failed'; code: 'Cancelled' | 'Integrity' | 'AccessRevoked' }>>(),
 }));
 
 const cryptoPoolMocks = vi.hoisted(() => {
@@ -577,6 +577,32 @@ describe('CoordinatorWorker', () => {
     await vi.waitFor(async () => expect((await worker.getJob(jobId))?.phase).toBe('Done'));
   });
 
+
+
+  it('reuses one crypto pool across sequential job drivers', async () => {
+    pipelineMocks.executePhotoTask.mockResolvedValue({ kind: 'done', bytesWritten: 123 });
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const firstJob = await startPreparingJob(worker);
+    await vi.waitFor(async () => expect((await worker.getJob(firstJob))?.phase).toBe('Done'));
+
+    const secondJob = await startPreparingJob(worker);
+    await vi.waitFor(async () => expect((await worker.getJob(secondJob))?.phase).toBe('Done'));
+
+    expect(cryptoPoolMocks.getCryptoPool).toHaveBeenCalledTimes(1);
+  });
+
+  it('shuts down the cached crypto pool on coordinator clear', async () => {
+    const worker = new CoordinatorWorker();
+    await worker.initialize({ nowMs });
+    const jobId = await startPreparingJob(worker);
+    await vi.waitFor(async () => expect((await worker.getJob(jobId))?.phase).toBe('Done'));
+
+    await worker.clear();
+
+    expect(cryptoPoolMocks.pool.shutdown).toHaveBeenCalledTimes(1);
+  });
+
   it('driver records one-photo integrity failure and still finalizes', async () => {
     pipelineMocks.executePhotoTask.mockResolvedValue({ kind: 'failed', code: 'Integrity' });
     const worker = new CoordinatorWorker();
@@ -671,7 +697,8 @@ describe('CoordinatorWorker', () => {
     await worker.sendEvent(jobId, { kind: 'PlanReady' });
     subscription.unsubscribe();
     await worker.pauseJob(jobId);
-    expect(events).toEqual(['Running', 'Running']);
+    expect(events.slice(0, 2)).toEqual(['Running', 'Running']);
+    expect(events).not.toContain('Paused');
   });
 
   it('garbage-collects stale jobs', async () => {

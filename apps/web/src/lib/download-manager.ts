@@ -35,6 +35,11 @@ export async function disposeDownloadManager(): Promise<void> {
   api = null;
   initPromise = null;
   if (currentApi) {
+    try {
+      await currentApi.clear();
+    } catch (error) {
+      log.warn('Download coordinator clear failed during dispose', { errorName: error instanceof Error ? error.name : 'Unknown' });
+    }
     currentApi[Comlink.releaseProxy]();
   }
   if (worker) {
@@ -63,3 +68,5 @@ async function createDownloadManager(): Promise<Comlink.Remote<CoordinatorWorker
   api = remote;
   return remote;
 }
+
+

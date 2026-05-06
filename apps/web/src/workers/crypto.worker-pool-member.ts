@@ -7,7 +7,7 @@ import type { LinkDecryptionKey } from './types';
 
 interface CryptoPoolMemberApi {
   verifyShard(shardBytes: Uint8Array, expectedHash: Uint8Array): Promise<void>;
-  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array): Promise<Uint8Array>;
+  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array, tier: number): Promise<Uint8Array>;
   decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: LinkDecryptionKey): Promise<Uint8Array>;
 }
 
@@ -20,15 +20,15 @@ const memberApi: CryptoPoolMemberApi = {
     }
   },
 
-  async decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array): Promise<Uint8Array> {
+  async decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array, tier: number): Promise<Uint8Array> {
     const { fullKey, previewKey, thumbKey } = deriveTierKeys(epochSeed);
     try {
-      try {
-        return await rustDecryptShardWithSeed(shardBytes, fullKey);
-      } catch {
-        return await rustDecryptShardWithSeed(shardBytes, epochSeed);
-      }
+      const tierKey = selectTierKey(tier, { fullKey, previewKey, thumbKey });
+      return await rustDecryptShardWithSeed(shardBytes, tierKey);
     } catch (error) {
+      if (error instanceof DownloadError) {
+        throw error;
+      }
       throw new DownloadError('Decrypt', 'Shard AEAD decrypt failed', { cause: error });
     } finally {
       memzero(fullKey);
@@ -49,6 +49,23 @@ const memberApi: CryptoPoolMemberApi = {
   },
 };
 
+function selectTierKey(
+  tier: number,
+  keys: { readonly fullKey: Uint8Array; readonly previewKey: Uint8Array; readonly thumbKey: Uint8Array },
+): Uint8Array {
+  switch (tier) {
+    case 1:
+      return keys.thumbKey;
+    case 2:
+      return keys.previewKey;
+    case 3:
+      return keys.fullKey;
+    default:
+      throw new DownloadError('IllegalState', 'Unsupported shard tier for epoch-seed decrypt');
+  }
+}
+
+export const __cryptoPoolMemberTestUtils = { memberApi };
 
 Comlink.expose(memberApi);
 

@@ -30,7 +30,7 @@ export interface CryptoPool {
   /** Verify a shard's SHA256 hash. Throws DownloadError(Integrity) on mismatch. */
   verifyShard(shardBytes: Uint8Array, expectedHash: Uint8Array): Promise<void>;
   /** Decrypt a shard with an authenticated viewer epoch seed. Throws DownloadError(Decrypt) on AEAD failure. */
-  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array): Promise<Uint8Array>;
+  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array, tier: number): Promise<Uint8Array>;
   /** Decrypt a shard with a share-link tier key. Throws DownloadError(Decrypt) on AEAD failure. */
   decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: LinkDecryptionKey): Promise<Uint8Array>;
   /** Pool stats for telemetry/UI. */
@@ -47,7 +47,7 @@ export interface CryptoPoolOptions {
 
 interface CryptoPoolMemberApi {
   verifyShard(shardBytes: Uint8Array, expectedHash: Uint8Array): Promise<void>;
-  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array): Promise<Uint8Array>;
+  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array, tier: number): Promise<Uint8Array>;
   decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: LinkDecryptionKey): Promise<Uint8Array>;
 }
 
@@ -135,8 +135,8 @@ class CryptoWorkerPool implements CryptoPool {
     await this.dispatch((api) => api.verifyShard(shardBytes, expectedHash));
   }
 
-  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array): Promise<Uint8Array> {
-    return this.dispatch((api) => api.decryptShard(shardBytes, epochSeed));
+  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array, tier: number): Promise<Uint8Array> {
+    return this.dispatch((api) => api.decryptShard(shardBytes, epochSeed, tier));
   }
 
   decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: LinkDecryptionKey): Promise<Uint8Array> {
@@ -199,6 +199,9 @@ class CryptoWorkerPool implements CryptoPool {
 
   private respawnSlot(slot: WorkerSlot): void {
     slot.worker.terminate();
+    if (this.shuttingDown) {
+      return;
+    }
     const replacement = this.createSlot(slot.index);
     slot.worker = replacement.worker;
     slot.api = replacement.api;
