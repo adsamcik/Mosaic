@@ -229,6 +229,20 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   /** Per-job output mode, kept in-memory only (Phase 2). See file header. */
   private readonly jobOutputModes = new Map<string, DownloadOutputMode>();
   /**
+   * Per-job sidecar disconnect handler unsubscribers (in-memory only).
+   * Set when a job's outputMode is sidecar; fired on cleanup to detach
+   * the underlying RTCDataChannel listener so it doesn't leak after the
+   * job ends.
+   */
+  private readonly jobSidecarUnsubs = new Map<string, () => void>();
+  /**
+   * Per-job marker that a sidecar job lost its peer mid-flight AND the
+   * declared fallback was 'none'. The job stays in a "sidecar may be
+   * incomplete" terminal state surfaced via the tray; coordinator does NOT
+   * re-run a finalizer for these.
+   */
+  private readonly jobSidecarIncomplete = new Set<string>();
+  /**
    * Per-job source strategy (in-memory only). Reconstructed jobs fall back
    * to {@link getDefaultAuthSource}. See file header.
    */
@@ -323,6 +337,9 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     const job = createInMemoryJob(initialized.bodyBytes, initialized.checksum);
     this.jobs.set(jobId, job);
     this.jobOutputModes.set(jobId, outputMode);
+    if (outputMode.kind === 'sidecar') {
+      this.attachSidecarDisconnectHandler(jobId, outputMode);
+    }
     if (input.source) {
       this.jobSources.set(jobId, input.source);
     }
@@ -472,6 +489,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       await opfsStaging.purgeJob(jobId);
       this.jobs.delete(jobId);
       this.jobOutputModes.delete(jobId);
+      this.detachSidecar(jobId);
       this.jobSources.delete(jobId);
       this.jobExportFailures.delete(jobId);
       this.pausedNoSourceVisitorJobs.delete(jobId);
@@ -511,6 +529,10 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     }
     if (opts?.mode) {
       this.jobOutputModes.set(jobId, opts.mode);
+      this.detachSidecar(jobId);
+      if (opts.mode.kind === 'sidecar') {
+        this.attachSidecarDisconnectHandler(jobId, opts.mode);
+      }
     }
     const job = this.jobs.get(jobId);
     if (!job) {
@@ -775,6 +797,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     for (const jobId of result.purged) {
       this.jobs.delete(jobId);
       this.jobOutputModes.delete(jobId);
+      this.detachSidecar(jobId);
       this.jobSources.delete(jobId);
       this.jobExportFailures.delete(jobId);
       this.pausedNoSourceVisitorJobs.delete(jobId);
@@ -868,6 +891,21 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       case 'perFile':
         await this.runPerFileFinalizer(jobId, mode.strategy, signal);
         return;
+      case 'sidecar': {
+        // All photo bytes were pushed inline as each photo finalized; this
+        // call is the cooperative session close. peerHandle is (typically)
+        // a Comlink proxy; failures here MUST NOT mark the job as errored.
+        try {
+          await mode.peerHandle.close('success');
+        } catch (err) {
+          log.warn('Sidecar close failed', {
+            jobId: shortId(jobId),
+            errorName: err instanceof Error ? err.name : 'Unknown',
+          });
+        }
+        this.detachSidecar(jobId);
+        return;
+      }
       default: {
         const _exhaustive: never = mode;
         throw new Error(`Unknown output mode: ${String(_exhaustive)}`);
@@ -1034,6 +1072,10 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   private async handlePhotoOutcome(jobId: string, photoId: string, outcome: PhotoOutcome): Promise<void> {
     if (outcome.kind === 'done') {
       await this.transitionPhoto(jobId, photoId, { kind: 'done', bytesWritten: outcome.bytesWritten });
+      const currentMode = this.jobOutputModes.get(jobId);
+      if (currentMode && currentMode.kind === 'sidecar') {
+        await this.pumpSidecarPhoto(jobId, photoId, currentMode);
+      }
       return;
     }
     if (outcome.kind === 'skipped') {
@@ -1261,6 +1303,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       }
       this.jobs.delete(jobId);
       this.jobOutputModes.delete(jobId);
+      this.detachSidecar(jobId);
       this.jobSources.delete(jobId);
       this.jobExportFailures.delete(jobId);
       this.pausedNoSourceVisitorJobs.delete(jobId);
@@ -1446,6 +1489,122 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
         this.emitProgress(summaryToProgress(localJob));
       }
     })();
+  }
+
+  // ----- Sidecar (Phase 4D) ------------------------------------------------
+
+  /**
+   * Read the staged plaintext bytes for one finalized photo and push them
+   * through the sidecar peer handle. Best-effort: any failure is logged and
+   * treated as a peer disconnect (mode is swapped to fallback for subsequent
+   * photos in this job).
+   *
+   * ZK-safe logging: we never log filenames, byte sizes per photo (only the
+   * fact of success/failure), or any payload bytes. The sessionId is logged
+   * pre-truncated by the caller of attach().
+   */
+  private async pumpSidecarPhoto(
+    jobId: string,
+    photoId: string,
+    mode: { readonly kind: 'sidecar'; readonly peerHandle: import('./types').SidecarPeerHandle; readonly fallback: import('./types').SidecarFallbackKind },
+  ): Promise<void> {
+    const job = this.jobs.get(jobId);
+    if (!job) return;
+    const planEntry = job.plan.find((e) => e.photoId === photoId);
+    if (!planEntry) return;
+    const photoIdx = job.plan.findIndex((e) => e.photoId === photoId);
+    try {
+      const stream = await opfsStaging.readPhotoStream(jobId, photoId);
+      const reader = stream.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      // Note: copies the photo into memory before send. Acceptable for
+      // typical photo sizes; a future iteration can stream chunks via the
+      // existing chunker if peerHandle grows a streaming API.
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          total += value.byteLength;
+        }
+      }
+      const merged = new Uint8Array(total);
+      let off = 0;
+      for (const ch of chunks) { merged.set(ch, off); off += ch.byteLength; }
+      await mode.peerHandle.send(merged, planEntry.filename, photoIdx);
+      await mode.peerHandle.endPhoto(photoIdx);
+    } catch (err) {
+      log.warn('Sidecar pump failed; engaging fallback', {
+        jobId: shortId(jobId),
+        errorName: err instanceof Error ? err.name : 'Unknown',
+      });
+      this.engageSidecarFallback(jobId, 'pump-error');
+    }
+  }
+
+  /**
+   * Wires up the peer's onDisconnect listener so that a mid-job drop swaps
+   * the in-memory output mode to the user-declared fallback. The
+   * unsubscriber is stashed in `jobSidecarUnsubs` so cleanup paths can
+   * detach it without leaking listeners.
+   */
+  private attachSidecarDisconnectHandler(
+    jobId: string,
+    mode: { readonly kind: 'sidecar'; readonly peerHandle: import('./types').SidecarPeerHandle; readonly fallback: import('./types').SidecarFallbackKind },
+  ): void {
+    try {
+      const unsub = mode.peerHandle.onDisconnect((_reason: string) => {
+        // Reason is intentionally not logged — may contain network details
+        // that aren't ZK-safe across all transports.
+        this.engageSidecarFallback(jobId, 'peer-disconnect');
+      });
+      this.jobSidecarUnsubs.set(jobId, unsub);
+    } catch (err) {
+      log.warn('Sidecar onDisconnect attach failed', {
+        jobId: shortId(jobId),
+        errorName: err instanceof Error ? err.name : 'Unknown',
+      });
+    }
+  }
+
+  /**
+   * Swap a job's outputMode from sidecar to its declared fallback. Idempotent
+   * — if the mode has already been swapped (e.g. multiple disconnect events
+   * race), this is a no-op. For `fallback === 'none'`, the mode is removed
+   * (so the finalizer is keepOffline) and the job is flagged as
+   * sidecar-incomplete so the tray can surface a warning.
+   */
+  private engageSidecarFallback(jobId: string, _reasonTag: string): void {
+    const cur = this.jobOutputModes.get(jobId);
+    if (!cur || cur.kind !== 'sidecar') return;
+    const fb = cur.fallback;
+    this.detachSidecar(jobId);
+    if (fb === 'zip') {
+      this.jobOutputModes.set(jobId, { kind: 'zip', fileName: 'album.zip' });
+    } else if (fb === 'perFile') {
+      // Strategy detection happens main-side; if no strategy is wired up,
+      // the per-file finalizer will throw and the job errors gracefully.
+      // We stash a sentinel here so the finalizer can refuse cleanly.
+      this.jobOutputModes.set(jobId, { kind: 'perFile', strategy: 'fsAccessPerFile' });
+    } else {
+      // 'none' — leave no finalizer mode, mark incomplete.
+      this.jobOutputModes.delete(jobId);
+      this.jobSidecarIncomplete.add(jobId);
+    }
+    log.info('Sidecar fallback engaged', {
+      jobId: shortId(jobId),
+      fallback: fb,
+    });
+  }
+
+  /** Drop the sidecar disconnect listener for a job (idempotent). */
+  private detachSidecar(jobId: string): void {
+    const unsub = this.jobSidecarUnsubs.get(jobId);
+    if (unsub) {
+      try { unsub(); } catch { /* listener may already be torn down */ }
+      this.jobSidecarUnsubs.delete(jobId);
+    }
   }
 }
 
