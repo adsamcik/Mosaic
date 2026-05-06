@@ -114,6 +114,9 @@ public class MosaicDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             e.HasIndex(m => new { m.AlbumId, m.VersionCreated });
+            e.Property(m => m.ProtocolVersion).HasDefaultValue(1);
+            e.Property(m => m.AssetType).HasMaxLength(16).HasDefaultValue("Image");
+            e.Property(m => m.MetadataVersion).HasDefaultValue(1L);
 
             // Index for efficient expired photo cleanup queries
             e.HasIndex(m => m.ExpiresAt)
@@ -149,6 +152,10 @@ public class MosaicDbContext : DbContext
             // Tier column with default value for backward compatibility
             e.Property(ms => ms.Tier)
                 .HasDefaultValue((int)ShardTier.Original);
+            e.Property(ms => ms.ShardIndex).HasDefaultValue(0);
+            e.Property(ms => ms.Sha256).HasMaxLength(64).HasDefaultValue(string.Empty);
+            e.Property(ms => ms.ContentLength).HasDefaultValue(0L);
+            e.Property(ms => ms.EnvelopeVersion).HasDefaultValue(3);
 
             e.HasOne(ms => ms.Manifest)
                 .WithMany(m => m.ManifestShards)

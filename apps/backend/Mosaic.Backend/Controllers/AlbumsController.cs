@@ -468,8 +468,24 @@ public class AlbumsController : ControllerBase
             })
             .ToListAsync();
 
+        var currentManifest = await _db.Manifests
+            .AsNoTracking()
+            .Include(m => m.ManifestShards)
+            .Where(m => m.AlbumId == albumId && !m.IsDeleted)
+            .OrderByDescending(m => m.VersionCreated)
+            .FirstOrDefaultAsync();
+
         return Ok(new
         {
+            AlbumId = album.Id,
+            CurrentVersion = album.CurrentVersion,
+            ManifestId = currentManifest?.Id,
+            ManifestUrl = currentManifest == null ? null : $"/api/manifests/{currentManifest.Id}",
+            ExpectedSha256 = currentManifest?.ManifestShards
+                .OrderBy(ms => ms.Tier)
+                .ThenBy(ms => ms.ShardIndex)
+                .Select(ms => ms.Sha256)
+                .FirstOrDefault() ?? string.Empty,
             Manifests = manifests,
             CurrentEpochId = album.CurrentEpochId,
             AlbumVersion = album.CurrentVersion,
