@@ -21,6 +21,7 @@ import {
 const mockCryptoClient = {
   decryptShard: vi.fn(),
   decryptShardWithTierKey: vi.fn(),
+  decryptShardWithLinkTierHandle: vi.fn(),
 };
 
 vi.mock('../src/lib/crypto-client', () => ({
@@ -82,10 +83,9 @@ describe('Album Metadata Service', () => {
     it('decrypts album name using tier key directly (for share links)', async () => {
       const albumName = 'Shared Album Name';
       const encryptedBytes = createEncryptedNameBytes(albumName);
-      const tierKey = new Uint8Array(32).fill(2); // Tier key, not epoch seed
+      const tierKey = 'link-tier-handle-2' as never;
 
-      // Mock decryptShardWithTierKey for share link context
-      mockCryptoClient.decryptShardWithTierKey.mockResolvedValue(
+      mockCryptoClient.decryptShardWithLinkTierHandle.mockResolvedValue(
         new TextEncoder().encode(albumName),
       );
 
@@ -96,12 +96,13 @@ describe('Album Metadata Service', () => {
       );
 
       expect(result).toBe(albumName);
-      expect(mockCryptoClient.decryptShardWithTierKey).toHaveBeenCalledWith(
-        encryptedBytes,
+      expect(mockCryptoClient.decryptShardWithLinkTierHandle).toHaveBeenCalledWith(
         tierKey,
+        encryptedBytes,
       );
       // Should NOT call decryptShard (which derives tier keys)
       expect(mockCryptoClient.decryptShard).not.toHaveBeenCalled();
+      expect(mockCryptoClient.decryptShardWithTierKey).not.toHaveBeenCalled();
     });
 
     it('decrypts album name from base64 string with tier key', async () => {

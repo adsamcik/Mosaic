@@ -17,7 +17,11 @@ import { createDisplayableUrl } from './image-decoder';
 import { downloadShards, type ProgressCallback } from './shard-service';
 import { base64ToUint8Array } from './thumbnail-generator';
 import { createLogger } from './logger';
-import type { EpochHandleId } from '../workers/types';
+import {
+  assertValidEpochHandle,
+  type EpochReadHandleId,
+  verifyDownloadedShard,
+} from './read-path-crypto';
 
 const log = createLogger('PhotoService');
 
@@ -268,7 +272,7 @@ export class ShardIntegrityError extends Error {
 export async function loadPhoto(
   photoId: string,
   shardIds: string[],
-  epochReadKey: EpochHandleId,
+  epochReadKey: EpochReadHandleId,
   mimeType: string,
   options: PhotoLoadOptions = {},
   shardHashes?: string[],
@@ -298,6 +302,8 @@ export async function loadPhoto(
   // Create load promise
   const loadPromise = (async (): Promise<PhotoLoadResult> => {
     try {
+      assertValidEpochHandle(epochReadKey);
+
       // Download all shards
       const encryptedShards = await downloadShards(shardIds, onProgress);
 
@@ -312,16 +318,23 @@ export async function loadPhoto(
 
         // Verify integrity if hash is available
         if (expectedHash) {
-          const isValid = await crypto.verifyShard(shard, expectedHash);
+          const isValid = await verifyDownloadedShard(
+            crypto,
+            shard,
+            expectedHash,
+          );
           if (!isValid) {
             throw new ShardIntegrityError(shardIds[i]!, expectedHash);
           }
         }
 
-        const plaintext = await crypto.decryptShardWithEpoch(
-          epochReadKey,
-          shard,
-        );
+        const plaintext =
+          typeof epochReadKey === 'bigint'
+            ? await (crypto.decryptShardWithEpochHandle as unknown as (
+              handleId: bigint,
+              envelope: Uint8Array,
+            ) => Promise<Uint8Array>)(epochReadKey, shard)
+            : await crypto.decryptShardWithEpochHandle(epochReadKey, shard);
         decryptedChunks.push(plaintext);
       }
 
@@ -354,6 +367,11 @@ export async function loadPhoto(
         mimeType: displayMimeType,
         size: blob.size,
       };
+    } catch (error) {
+      throw new PhotoAssemblyError(
+        photoId,
+        error instanceof Error ? error : new Error(String(error)),
+      );
     } finally {
       pendingLoads.delete(photoId);
     }
@@ -445,7 +463,7 @@ export function getCacheStats(): {
  */
 export async function preloadPhotos(
   photos: Array<{ id: string; shardIds: string[]; mimeType: string }>,
-  epochReadKey: EpochHandleId,
+  epochReadKey: EpochReadHandleId,
 ): Promise<void> {
   // Load in parallel but don't wait for all
   const loads = photos.map(async (photo) => {

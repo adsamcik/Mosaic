@@ -78,7 +78,7 @@ describe('Photo Service', () => {
       ]);
 
       const mockCrypto = {
-        decryptShardWithEpoch: vi
+        decryptShardWithEpochHandle: vi
           .fn()
           .mockResolvedValueOnce(decryptedChunk1)
           .mockResolvedValueOnce(decryptedChunk2),
@@ -97,7 +97,7 @@ describe('Photo Service', () => {
         ['shard-a', 'shard-b'],
         undefined, // no progress callback when not provided
       );
-      expect(mockCrypto.decryptShardWithEpoch).toHaveBeenCalledTimes(2);
+      expect(mockCrypto.decryptShardWithEpochHandle).toHaveBeenCalledTimes(2);
       expect(result.blobUrl).toMatch(/^blob:mock-/);
       expect(result.mimeType).toBe('image/jpeg');
       expect(result.size).toBe(6); // 3 + 3 bytes
@@ -112,7 +112,7 @@ describe('Photo Service', () => {
 
       vi.mocked(downloadShards).mockResolvedValue([encryptedShard]);
       vi.mocked(getCryptoClient).mockResolvedValue({
-        decryptShardWithEpoch: vi.fn().mockResolvedValue(decryptedChunk),
+        decryptShardWithEpochHandle: vi.fn().mockResolvedValue(decryptedChunk),
       } as any);
 
       const epochKey = 'epoch-handle-42' as never;
@@ -147,7 +147,7 @@ describe('Photo Service', () => {
 
       vi.mocked(downloadShards).mockResolvedValue([encryptedShard]);
       vi.mocked(getCryptoClient).mockResolvedValue({
-        decryptShardWithEpoch: vi.fn().mockResolvedValue(decryptedChunk),
+        decryptShardWithEpochHandle: vi.fn().mockResolvedValue(decryptedChunk),
       } as any);
 
       const epochKey = 'epoch-handle-42' as never;
@@ -180,7 +180,7 @@ describe('Photo Service', () => {
       });
 
       vi.mocked(getCryptoClient).mockResolvedValue({
-        decryptShardWithEpoch: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
+        decryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
       } as any);
 
       const epochKey = 'epoch-handle-42' as never;
@@ -200,7 +200,7 @@ describe('Photo Service', () => {
 
       vi.mocked(downloadShards).mockResolvedValue([new Uint8Array([1, 2, 3])]);
       vi.mocked(getCryptoClient).mockResolvedValue({
-        decryptShardWithEpoch: vi.fn().mockRejectedValue(new Error('Decryption failed')),
+        decryptShardWithEpochHandle: vi.fn().mockRejectedValue(new Error('Decryption failed')),
       } as any);
 
       const epochKey = 'epoch-handle-42' as never;
@@ -218,7 +218,7 @@ describe('Photo Service', () => {
 
       vi.mocked(downloadShards).mockResolvedValue([new Uint8Array([1, 2, 3])]);
       vi.mocked(getCryptoClient).mockResolvedValue({
-        decryptShardWithEpoch: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
+        decryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
       } as any);
 
       const epochKey = 'epoch-handle-42' as never;
@@ -243,7 +243,7 @@ describe('Photo Service', () => {
 
       vi.mocked(downloadShards).mockResolvedValue([new Uint8Array([1, 2, 3])]);
       vi.mocked(getCryptoClient).mockResolvedValue({
-        decryptShardWithEpoch: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
+        decryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
       } as any);
 
       const epochKey = 'epoch-handle-42' as never;
@@ -265,7 +265,7 @@ describe('Photo Service', () => {
 
       vi.mocked(downloadShards).mockResolvedValue([new Uint8Array([1, 2, 3])]);
       vi.mocked(getCryptoClient).mockResolvedValue({
-        decryptShardWithEpoch: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
+        decryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
       } as any);
 
       const epochKey = 'epoch-handle-42' as never;
@@ -291,7 +291,7 @@ describe('Photo Service', () => {
 
       vi.mocked(downloadShards).mockResolvedValue([new Uint8Array([1, 2, 3])]);
       vi.mocked(getCryptoClient).mockResolvedValue({
-        decryptShardWithEpoch: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
+        decryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
       } as any);
 
       const epochKey = 'epoch-handle-42' as never;
@@ -313,7 +313,7 @@ describe('Photo Service', () => {
 
       vi.mocked(downloadShards).mockResolvedValue([new Uint8Array([1, 2, 3])]);
       vi.mocked(getCryptoClient).mockResolvedValue({
-        decryptShardWithEpoch: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
+        decryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
       } as any);
 
       const epochKey = 'epoch-handle-42' as never;
@@ -336,7 +336,7 @@ describe('Photo Service', () => {
 
       vi.mocked(downloadShards).mockResolvedValue([new Uint8Array([1, 2, 3])]);
       vi.mocked(getCryptoClient).mockResolvedValue({
-        decryptShardWithEpoch: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
+        decryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
       } as any);
 
       const epochKey = 'epoch-handle-42' as never;
@@ -374,7 +374,7 @@ describe('Photo Service', () => {
 
       vi.mocked(downloadShards).mockResolvedValue([new Uint8Array([1, 2, 3])]);
       vi.mocked(getCryptoClient).mockResolvedValue({
-        decryptShardWithEpoch: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
+        decryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6])),
       } as any);
 
       const epochKey = 'epoch-handle-42' as never;
