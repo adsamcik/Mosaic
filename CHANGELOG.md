@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### Sidecar Beacon (P4-A through P4-E, beta)
+- **Send to my phone (beta)** - device-to-device download mode that streams an album from the originating tab over a PAKE-authenticated, AEAD-encrypted WebRTC data channel; the server only relays opaque bytes. Gated by `VITE_FEATURE_SIDECAR=1` at build time. See `docs/architecture/SIDECAR.md`, `docs/sidecar-beta-rollout.md`, and `docs/sidecar-test-matrix.md`.
+- **ZK-safe telemetry** - coarse, pre-bucketed counters only (event / errCode / turnUsed / photoCount / bytes / throughput / duration). Independent kill-switch via `VITE_FEATURE_SIDECAR_TELEMETRY=1`. Backend endpoint at `POST /api/sidecar/telemetry/v1` validates the schema strictly and emits one structured-log line per event with NO IPs, NO user ids, and NO continuous values.
+- **Cross-tab broadcast suppression** - sidecar jobs no longer wake sibling tabs via the cross-tab BroadcastChannel; once a sidecar job engages its fallback (zip / perFile), broadcasting resumes naturally.
+- **Cross-device integration tests** - `apps/web/src/lib/sidecar/__tests__/sidecar-cross-device.test.ts` (50 photos byte-equal, wrong-code, abort-during-handshake, multiple sequential sessions).
+
+
 #### Rust client core (Slices 0–8)
 - **TypeScript → Rust crypto cutover (Slices 2–8)** — account/session bootstrap, epoch-key lifecycle, manifest sign/verify, share-link key wrapping, album content + UI utility, OPFS DB worker encryption, and sync are now driven through Rust handles via the WASM facade (`apps/web/src/workers/rust-crypto-core.ts`). The legacy `@mosaic/crypto` TypeScript-shadow modules are retained only as compatibility shims; the per-symbol `rust-cutover-boundary.test.ts` guard fails CI when a protocol-class TS helper sneaks into a retired module.
 - **Rust workspace bring-up** — `mosaic-domain`, `mosaic-crypto`, `mosaic-client`, `mosaic-media`, `mosaic-uniffi`, `mosaic-wasm` crates with handle-based opaque secret registries, FFI-safe `ClientErrorCode` table (codes 0–222), client-core upload/sync state machines, manifest canonical transcript (`Mosaic_Manifest_v1`), encrypted metadata sidecar (`Mosaic_Metadata_v1`), and 64-byte shard envelope (`SGzk`/`0x03`) primitives.
