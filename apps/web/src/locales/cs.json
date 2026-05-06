@@ -457,7 +457,7 @@
       "codeLabel": "Párovací kód",
       "expiresIn": "Platí ještě {{seconds}}s",
       "cancel": "Zrušit",
-      "qrHint": "Nebo načtěte QR kód telefonem",
+      "qrHint": "Nebo načtěte QR kód telefonem","qrAriaLabel": "QR kód pro spárování","preparingQr": "Připravuji QR…",
       "connecting": "Připojuji…",
       "errors": {
         "WrongCode": "Nesprávný kód nebo se nikdo nepřipojil.",
@@ -887,3 +887,4 @@
     }
   }
 }
+

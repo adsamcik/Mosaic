@@ -446,7 +446,7 @@
       "codeLabel": "Pairing code",
       "expiresIn": "Expires in {{seconds}}s",
       "cancel": "Cancel",
-      "qrHint": "Or scan the QR code with your phone",
+      "qrHint": "Or scan the QR code with your phone","qrAriaLabel": "Pairing QR code","preparingQr": "Preparing QR…",
       "connecting": "Connecting…",
       "errors": {
         "WrongCode": "Wrong code or no peer joined.",
@@ -875,3 +875,4 @@
     }
   }
 }
+

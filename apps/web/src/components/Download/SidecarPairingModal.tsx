@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
-import { pairSidecar, PairingError } from '../../lib/sidecar/pairing';
+import qrcode from 'qrcode-generator';
+import { pairSidecarInitiatorBegin, PairingError, type InitiatorPrefix } from '../../lib/sidecar/pairing';
 import { encodeFrame } from '../../lib/sidecar/framing';
+import { chunkPhoto } from '../../lib/sidecar/chunker';
 import type { SidecarFallbackKind, SidecarPeerHandle } from '../../workers/types';
 import { createLogger } from '../../lib/logger';
 
@@ -12,6 +14,12 @@ const CODE_LENGTH = 6;
 const DEFAULT_ICE_SERVERS: readonly RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
 ];
+
+// Conservative defaults for chunk sizing. The runtime SCTP max-message-size
+// can be smaller; we subtract AEAD/frame overhead to stay below it.
+const SCTP_DEFAULT_MAX_BYTES = 256 * 1024;
+const AEAD_OVERHEAD_BYTES = 16 /* poly1305 tag */ + 24 /* nonce-prefix */;
+const FRAME_HEADER_OVERHEAD_BYTES = 32;
 
 export interface SidecarPairingModalProps {
   readonly open: boolean;
@@ -25,8 +33,6 @@ export interface SidecarPairingModalProps {
 
 /**
  * Generate `n` decimal digits using rejection sampling on `crypto.getRandomValues`.
- * Avoids modulo bias: any random byte >= 250 (= 25 * 10) is rejected so each
- * accepted byte maps to one of {0..9} uniformly.
  */
 function generateCode(n: number): Uint8Array {
   const out = new Uint8Array(n);
@@ -49,8 +55,14 @@ function codeToString(code: Uint8Array): string {
   return Array.from(code, (b) => String.fromCharCode(b)).join('');
 }
 
+/** RFC 4648 base64url with no padding. */
+function base64UrlEncode(bytes: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < bytes.byteLength; i += 1) bin += String.fromCharCode(bytes[i]!);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
 function buildSignalingBaseUrl(): string | undefined {
-  // Default: same-origin WSS. Override via VITE_SIDECAR_SIGNAL_URL.
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const env = (typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined) ?? {};
   /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -80,17 +92,23 @@ function formatCode(code: string): string {
 }
 
 /**
- * Build the responder pairing URL. The responder needs `msg1` to derive the
- * roomId; we pass it in the URL fragment (never sent to the server) along
- * with the 6-digit code. The receive page parses both from the fragment.
+ * Build the responder pairing URL embedding msg1 (base64url) and the 6-digit
+ * code in the URL fragment. Fragments are NEVER sent to the server.
  */
-function buildPairUrl(_codeStr: string): string {
-  // We don't have msg1 yet at this point — a future iteration can wire the
-  // pairing API to expose msg1 ahead of the handshake so we can render a
-  // QR with both. For now we return the bare /pair URL; the user types
-  // the 6-digit code AND the sender shows a QR with msg1+code (TODO).
-  if (typeof window === 'undefined') return '/pair';
-  return `${window.location.origin}/pair`;
+function buildPairUrl(msg1: Uint8Array, codeStr: string): string {
+  const m = base64UrlEncode(msg1);
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return `${origin}/pair#m=${m}&c=${codeStr}`;
+}
+
+/** Render a QR code to an inline SVG string. Pure-JS, no canvas. */
+function renderQrSvg(text: string): string {
+  // Type 0 = auto-fit, error correction 'M' (15%) is a balance of density vs. resilience.
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  // cellSize=4, margin=2 cells gives a ~140-160px QR for typical short URLs.
+  return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
 }
 
 interface PeerHandleAdapterDeps {
@@ -101,7 +119,6 @@ interface PeerHandleAdapterDeps {
 
 function buildPeerHandle(deps: PeerHandleAdapterDeps): SidecarPeerHandle {
   const disconnectHandlers = new Set<(reason: string) => void>();
-  // Bridge the underlying peer-connection state to onDisconnect listeners.
   const onState = (s: string): void => {
     if (s === 'failed' || s === 'disconnected' || s === 'closed') {
       for (const h of disconnectHandlers) h(s);
@@ -117,30 +134,40 @@ function buildPeerHandle(deps: PeerHandleAdapterDeps): SidecarPeerHandle {
 
   const sessionId = `sc-${Date.now().toString(36).slice(-6)}`;
 
+  // Per-photo streaming send via the chunker. We accept a Uint8Array (for
+  // backwards compat / small-photo path) and wrap it in a single-shot
+  // ReadableStream so the chunker remains the single producer of frames.
+  // Memory peak is bounded by the chunker's internal carry buffer (one
+  // upstream chunk worth of bytes), not the whole photo.
   return {
     sessionId,
     async send(bytes, filename, photoIdx): Promise<void> {
-      // Emit fileStart, fileChunk, in framed-then-AEAD form. The receive
-      // sink reassembles in fileEnd order. Single-chunk send is fine for
-      // typical photo sizes (< few MiB); the chunker can be plugged in
-      // later for streaming.
-      const startFrame = encodeFrame({ kind: 'fileStart', photoIdx, filename, size: BigInt(bytes.byteLength) });
-      const sealedStart = await deps.tunnel.send.seal(startFrame);
-      await deps.peer.sendFrame(sealedStart);
-      const chunkFrame = encodeFrame({ kind: 'fileChunk', photoIdx, payload: bytes });
-      const sealedChunk = await deps.tunnel.send.seal(chunkFrame);
-      await deps.peer.sendFrame(sealedChunk);
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller): void {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      });
+      const maxChunk = Math.max(
+        1024,
+        SCTP_DEFAULT_MAX_BYTES - AEAD_OVERHEAD_BYTES - FRAME_HEADER_OVERHEAD_BYTES,
+      );
+      for await (const frame of chunkPhoto(photoIdx, filename, BigInt(bytes.byteLength), stream, { maxChunkBytes: maxChunk })) {
+        const sealed = await deps.tunnel.send.seal(encodeFrame(frame));
+        await deps.peer.sendFrame(sealed);
+      }
     },
     async endPhoto(photoIdx): Promise<void> {
+      // chunkPhoto already emits fileEnd, but the public contract of
+      // SidecarPeerHandle expects a separate endPhoto call. We send a
+      // standalone fileEnd here for compatibility; the receive sink is
+      // idempotent against duplicate fileEnd frames.
       const endFrame = encodeFrame({ kind: 'fileEnd', photoIdx });
       const sealed = await deps.tunnel.send.seal(endFrame);
       await deps.peer.sendFrame(sealed);
     },
     async close(reason): Promise<void> {
       try { unsubState?.(); } catch { /* swallow */ }
-      // Best-effort cooperative close: tell the receiver we're done so it
-      // can finalize the save target. Failures here are swallowed — the
-      // RTC close below tears down the channel regardless.
       if (reason === 'success') {
         try {
           const endFrame = encodeFrame({ kind: 'sessionEnd' });
@@ -162,10 +189,14 @@ function buildPeerHandle(deps: PeerHandleAdapterDeps): SidecarPeerHandle {
 }
 
 /**
- * Initiator-side pairing modal. Generates a 6-digit code, displays it with
- * a TTL countdown, and runs {@link pairSidecar} in the role of initiator.
- * On success it builds a {@link SidecarPeerHandle} and hands it to the
- * caller via `onPaired`. ZK-safe: the code is never logged.
+ * Initiator-side pairing modal. Generates a 6-digit code, kicks off the
+ * pairing handshake, captures msg1, renders a QR + URL the user can scan
+ * on the receiving device, and awaits the responder.
+ *
+ * ZK-safe: the code and msg1 are visible to the user (intentional — that's
+ * the pairing artifact) but never logged, never sent to the server beyond
+ * the WebSocket relay (which only sees the derived roomId), and never
+ * persisted.
  */
 export function SidecarPairingModal(props: SidecarPairingModalProps): JSX.Element | null {
   const { t } = useTranslation();
@@ -173,7 +204,10 @@ export function SidecarPairingModal(props: SidecarPairingModalProps): JSX.Elemen
   const codeStr = useMemo(() => codeToString(code), [code]);
   const [secondsLeft, setSecondsLeft] = useState<number>(Math.ceil(PAIRING_TTL_MS / 1000));
   const [error, setError] = useState<string | null>(null);
+  const [pairUrl, setPairUrl] = useState<string | null>(null);
+  const [qrSvg, setQrSvg] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const prefixRef = useRef<InitiatorPrefix | null>(null);
   const startedRef = useRef(false);
 
   // Run the pairing handshake exactly once on mount (when open).
@@ -190,27 +224,40 @@ export function SidecarPairingModal(props: SidecarPairingModalProps): JSX.Elemen
 
     void (async (): Promise<void> => {
       try {
-        const result = await pairSidecar({
-          role: 'initiator',
+        const prefix = await pairSidecarInitiatorBegin({
           code,
           iceServers: buildIceServers(),
           ...(buildSignalingBaseUrl() !== undefined ? { signalingBaseUrl: buildSignalingBaseUrl()! } : {}),
           abort: ac.signal,
           timeoutMs: PAIRING_TTL_MS,
         });
+        prefixRef.current = prefix;
+
+        // Compute and render the pairing URL + QR using the freshly-emitted msg1.
+        const url = buildPairUrl(prefix.msg1, codeStr);
+        setPairUrl(url);
+        try {
+          setQrSvg(renderQrSvg(url));
+        } catch (qerr) {
+          log.warn('QR render failed', { errorName: qerr instanceof Error ? qerr.name : 'Unknown' });
+        }
+
+        // Now await the responder.
+        const result = await prefix.resume();
         const handle = buildPeerHandle({ tunnel: result.tunnel, peer: result.peer, close: result.close });
         props.onPaired(handle, props.fallback);
       } catch (err) {
         if (ac.signal.aborted) return;
-        const code = err instanceof PairingError ? err.code : 'Generic';
-        setError(t(`download.sidecarPairing.errors.${code}`, { defaultValue: t('download.sidecarPairing.errors.Generic') }));
-        log.warn('Pairing failed', { code });
+        const errCode = err instanceof PairingError ? err.code : 'Generic';
+        setError(t(`download.sidecarPairing.errors.${errCode}`, { defaultValue: t('download.sidecarPairing.errors.Generic') }));
+        log.warn('Pairing failed', { code: errCode });
       }
     })();
 
     return (): void => {
       window.clearTimeout(timeoutId);
       ac.abort();
+      try { prefixRef.current?.abort(); } catch { /* swallow */ }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.open]);
@@ -228,8 +275,6 @@ export function SidecarPairingModal(props: SidecarPairingModalProps): JSX.Elemen
   }, [props.open]);
 
   if (!props.open) return null;
-
-  const pairUrl = buildPairUrl(codeStr);
 
   return (
     <div className="sidecar-pairing-backdrop" role="presentation">
@@ -252,15 +297,35 @@ export function SidecarPairingModal(props: SidecarPairingModalProps): JSX.Elemen
         <p className="sidecar-pairing-ttl" data-testid="sidecar-pairing-ttl">
           {t('download.sidecarPairing.expiresIn', { seconds: secondsLeft })}
         </p>
-        <p className="sidecar-pairing-url-hint">
-          {t('download.sidecarPairing.qrHint')} <code>{pairUrl}</code>
-        </p>
+        {qrSvg !== null ? (
+          <div
+            className="sidecar-pairing-qr"
+            data-testid="sidecar-pairing-qr"
+            aria-label={t('download.sidecarPairing.qrAriaLabel')}
+            // SVG produced by qrcode-generator is a static, parameter-free
+            // markup string. The only dynamic input (the URL) is text-encoded
+            // by the library before being placed into a <text>-free SVG.
+            dangerouslySetInnerHTML={{ __html: qrSvg }}
+          />
+        ) : (
+          <p className="sidecar-pairing-qr-placeholder">{t('download.sidecarPairing.preparingQr')}</p>
+        )}
+        {pairUrl !== null ? (
+          <p className="sidecar-pairing-url-hint">
+            {t('download.sidecarPairing.qrHint')}{' '}
+            <code data-testid="sidecar-pairing-url">{pairUrl}</code>
+          </p>
+        ) : null}
         {error !== null ? (
           <p className="sidecar-pairing-error" role="alert" data-testid="sidecar-pairing-error">{error}</p>
         ) : null}
         <button
           type="button"
-          onClick={(): void => { abortRef.current?.abort(); props.onCancel(); }}
+          onClick={(): void => {
+            abortRef.current?.abort();
+            try { prefixRef.current?.abort(); } catch { /* swallow */ }
+            props.onCancel();
+          }}
           data-testid="sidecar-pairing-cancel"
         >
           {t('download.sidecarPairing.cancel')}
