@@ -1,0 +1,7 @@
+{
+  "albumId": "string",
+  "currentVersion": "number",
+  "manifestId": "string",
+  "manifestUrl": "string",
+  "expectedSha256": "string"
+}

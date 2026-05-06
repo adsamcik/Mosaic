@@ -101,6 +101,12 @@ public partial class CombinedAuthMiddleware
             return;
         }
 
+        if (IsPublicShareLinkPhotoPath(context.Request))
+        {
+            await _next(context);
+            return;
+        }
+
         if (authenticated)
         {
             await _next(context);
@@ -220,5 +226,17 @@ public partial class CombinedAuthMiddleware
 
         return _testSeedEnabled &&
                AuthConfigurationResolver.MatchesPublicPath(path, "/api/test-seed");
+    }
+
+    private static bool IsPublicShareLinkPhotoPath(HttpRequest request)
+    {
+        if (!HttpMethods.IsGet(request.Method))
+        {
+            return false;
+        }
+
+        var path = request.Path.Value ?? string.Empty;
+        return path.StartsWith("/api/share-links/", StringComparison.OrdinalIgnoreCase)
+            && path.EndsWith("/photos", StringComparison.OrdinalIgnoreCase);
     }
 }

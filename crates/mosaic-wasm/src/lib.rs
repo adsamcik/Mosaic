@@ -2,8 +2,15 @@
 
 #![forbid(unsafe_code)]
 
-use std::fmt;
-use std::io::Cursor;
+use std::{
+    collections::HashMap,
+    fmt,
+    io::Cursor,
+    sync::{
+        Mutex, OnceLock,
+        atomic::{AtomicU32, AtomicU64, Ordering},
+    },
+};
 
 use blake2::{
     Blake2bVar,
@@ -11,10 +18,62 @@ use blake2::{
 };
 use ciborium::value::{Integer, Value};
 
-use wasm_bindgen::prelude::wasm_bindgen;
+use self_cell::self_cell;
+use wasm_bindgen::prelude::{JsError, JsValue, wasm_bindgen};
 use zeroize::{Zeroize, Zeroizing};
 
-use mosaic_domain::{MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier};
+use mosaic_domain::{
+    MetadataSidecar, MetadataSidecarError, MetadataSidecarField, SHARD_ENVELOPE_HEADER_LEN,
+    ShardTier as DomainShardTier,
+};
+
+type CryptoStreamingEncryptor<'a> = mosaic_crypto::StreamingEncryptor<'a>;
+type CryptoStreamingDecryptor<'a> = mosaic_crypto::StreamingDecryptor<'a>;
+type CryptoStreamingShardDecryptor = mosaic_crypto::StreamingShardDecryptor;
+
+struct CryptoStreamingEncryptorState<'a>(Option<CryptoStreamingEncryptor<'a>>);
+struct CryptoStreamingDecryptorState<'a>(Option<CryptoStreamingDecryptor<'a>>);
+
+static NEXT_MASTER_KEY_HANDLE_ID: AtomicU64 = AtomicU64::new(1);
+static MASTER_KEY_HANDLES: OnceLock<Mutex<HashMap<u64, mosaic_crypto::SecretKey>>> =
+    OnceLock::new();
+
+self_cell!(
+    struct StreamingEncryptorCell {
+        owner: mosaic_crypto::EpochKeyMaterial,
+
+        #[not_covariant]
+        dependent: CryptoStreamingEncryptorState,
+    }
+);
+
+self_cell!(
+    struct StreamingDecryptorCell {
+        owner: mosaic_crypto::EpochKeyMaterial,
+
+        #[not_covariant]
+        dependent: CryptoStreamingDecryptorState,
+    }
+);
+
+/// WASM-visible shard tiers pinned to the Mosaic envelope wire protocol.
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShardTier {
+    Thumbnail = 1,
+    Preview = 2,
+    Original = 3,
+}
+
+impl From<ShardTier> for DomainShardTier {
+    fn from(tier: ShardTier) -> Self {
+        match tier {
+            ShardTier::Thumbnail => Self::Thumbnail,
+            ShardTier::Preview => Self::Preview,
+            ShardTier::Original => Self::Original,
+        }
+    }
+}
 
 /// Rust-side WASM facade result for header parsing.
 #[derive(Clone, PartialEq, Eq)]
@@ -74,6 +133,59 @@ pub struct StripResult {
     pub code: u16,
     pub stripped_bytes: Vec<u8>,
     pub removed_metadata_count: u32,
+}
+
+/// Rust-side WASM facade result for image container inspection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageInspectResult {
+    pub code: u16,
+    pub format: u8,
+    pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub orientation: u8,
+    pub encoded_sidecar_fields: Vec<u8>,
+    pub camera_make: String,
+    pub camera_model: String,
+    pub device_timestamp_ms: u64,
+    pub has_device_timestamp_ms: bool,
+    pub subseconds_ms: u32,
+    pub has_subseconds_ms: bool,
+    pub gps_lat_microdegrees: i32,
+    pub gps_lon_microdegrees: i32,
+    pub gps_altitude_meters: i32,
+    pub gps_accuracy_meters: u16,
+    pub has_gps: bool,
+}
+
+/// Rust-side WASM facade result for video container inspection.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VideoInspectResult {
+    pub code: u16,
+    pub container: String,
+    pub video_codec: String,
+    pub width_px: u32,
+    pub height_px: u32,
+    pub duration_ms: u64,
+    pub frame_rate_fps: f64,
+    pub orientation: String,
+}
+
+/// Rust-side WASM facade record for one canonical media tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MediaTierDimensions {
+    pub tier: u8,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Rust-side WASM facade record for canonical media tier dimensions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MediaTierLayoutResult {
+    pub code: u16,
+    pub thumbnail: MediaTierDimensions,
+    pub preview: MediaTierDimensions,
+    pub original: MediaTierDimensions,
 }
 
 impl fmt::Debug for StripResult {
@@ -265,11 +377,51 @@ impl fmt::Debug for DecryptShardResult {
     }
 }
 
+/// Rust-side WASM facade streaming encrypted frame result.
+#[derive(Clone, PartialEq, Eq)]
+pub struct StreamingFrameResult {
+    pub code: u16,
+    pub frame_index: u32,
+    pub bytes: Vec<u8>,
+}
+
+impl fmt::Debug for StreamingFrameResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StreamingFrameResult")
+            .field("code", &self.code)
+            .field("frame_index", &self.frame_index)
+            .field("bytes_len", &self.bytes.len())
+            .finish()
+    }
+}
+
 /// Rust-side WASM facade result for stateless shard integrity verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VerifyShardResult {
     /// 0 on success; [`mosaic_client::ClientErrorCode`] otherwise.
     pub code: u32,
+}
+
+/// Rust-side WASM facade finalized streaming envelope result.
+#[derive(Clone, PartialEq, Eq)]
+pub struct StreamingEnvelopeResult {
+    pub code: u16,
+    pub header: Vec<u8>,
+    pub bytes: Vec<u8>,
+    pub frame_count: u32,
+    pub final_frame_size: u32,
+}
+
+impl fmt::Debug for StreamingEnvelopeResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StreamingEnvelopeResult")
+            .field("code", &self.code)
+            .field("header_len", &self.header.len())
+            .field("bytes_len", &self.bytes.len())
+            .field("frame_count", &self.frame_count)
+            .field("final_frame_size", &self.final_frame_size)
+            .finish()
+    }
 }
 
 /// Rust-side WASM facade public crypto/domain golden-vector snapshot.
@@ -611,14 +763,14 @@ impl fmt::Debug for AuthKeypairResult {
 
 /// Rust-side WASM facade result for creating a link-share handle and first wrapped tier.
 ///
-/// `link_secret_for_url` is the protocol-mandated URL fragment seed. It is
-/// not the derived link wrapping key; the wrapping key remains Rust-owned.
+/// `link_url_token` is a bearer URL fragment token by design. It is not
+/// the derived link wrapping key; the wrapping key remains Rust-owned.
 #[derive(Clone, PartialEq, Eq)]
 pub struct CreateLinkShareHandleResult {
     pub code: u16,
     pub handle: u64,
     pub link_id: Vec<u8>,
-    pub link_secret_for_url: Vec<u8>,
+    pub link_url_token: Vec<u8>,
     pub tier: u8,
     pub nonce: Vec<u8>,
     pub encrypted_key: Vec<u8>,
@@ -630,7 +782,7 @@ impl fmt::Debug for CreateLinkShareHandleResult {
             .field("code", &self.code)
             .field("handle", &self.handle)
             .field("link_id_len", &self.link_id.len())
-            .field("link_secret_for_url_len", &self.link_secret_for_url.len())
+            .field("link_url_token_len", &self.link_url_token.len())
             .field("tier", &self.tier)
             .field("nonce_len", &self.nonce.len())
             .field("encrypted_key_len", &self.encrypted_key.len())
@@ -731,6 +883,47 @@ impl fmt::Debug for DecryptedContentResult {
             .field("code", &self.code)
             .field("plaintext_len", &self.plaintext.len())
             .finish()
+    }
+}
+
+fn parse_uuid_string(input: &str) -> Result<mosaic_client::Uuid, ()> {
+    let mut hex = String::with_capacity(32);
+    for ch in input.chars() {
+        if ch == '-' {
+            continue;
+        }
+        if !ch.is_ascii_hexdigit() {
+            return Err(());
+        }
+        hex.push(ch);
+    }
+    if hex.len() != 32 {
+        return Err(());
+    }
+    let mut bytes = [0_u8; 16];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        let start = index * 2;
+        *byte = u8::from_str_radix(&hex[start..start + 2], 16).map_err(|_| ())?;
+    }
+    Ok(mosaic_client::Uuid::from_bytes(bytes))
+}
+
+/// Builds the canonical v1 share-link URL in Rust so web callers do not
+/// duplicate route assembly logic. The fragment token is a bearer token by
+/// design and remains after `#k=` so it is never sent to the server.
+#[wasm_bindgen(js_name = buildShareLinkUrl)]
+#[must_use]
+pub fn build_share_link_url(
+    base_url: String,
+    album_id: String,
+    link_id: String,
+    link_url_token: String,
+) -> String {
+    match parse_uuid_string(&album_id) {
+        Ok(album_uuid) => {
+            mosaic_client::build_share_link_url(&base_url, &album_uuid, &link_id, &link_url_token)
+        }
+        Err(()) => String::new(),
     }
 }
 
@@ -871,7 +1064,7 @@ impl JsStripResult {
         self.code
     }
 
-    /// Image bytes after metadata stripping.
+    /// Image or video bytes after metadata stripping.
     #[wasm_bindgen(getter, js_name = strippedBytes)]
     #[must_use]
     pub fn stripped_bytes(&self) -> Vec<u8> {
@@ -883,6 +1076,298 @@ impl JsStripResult {
     #[must_use]
     pub fn removed_metadata_count(&self) -> u32 {
         self.removed_metadata_count
+    }
+}
+
+/// WASM-bindgen class for one canonical media tier.
+#[wasm_bindgen(js_name = MediaTierDimensions)]
+pub struct JsMediaTierDimensions {
+    tier: u8,
+    width: u32,
+    height: u32,
+}
+
+#[wasm_bindgen(js_class = MediaTierDimensions)]
+impl JsMediaTierDimensions {
+    /// Shard tier protocol byte.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn tier(&self) -> u8 {
+        self.tier
+    }
+
+    /// Canonical max width for this tier.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Canonical max height for this tier.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
+/// WASM-bindgen class for canonical media tier dimensions.
+#[wasm_bindgen(js_name = MediaTierLayoutResult)]
+pub struct JsMediaTierLayoutResult {
+    code: u16,
+    thumbnail: MediaTierDimensions,
+    preview: MediaTierDimensions,
+    original: MediaTierDimensions,
+}
+
+#[wasm_bindgen(js_class = MediaTierLayoutResult)]
+impl JsMediaTierLayoutResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Canonical thumbnail tier dimensions.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn thumbnail(&self) -> JsMediaTierDimensions {
+        js_media_tier_dimensions_from_rust(self.thumbnail)
+    }
+
+    /// Canonical preview tier dimensions.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn preview(&self) -> JsMediaTierDimensions {
+        js_media_tier_dimensions_from_rust(self.preview)
+    }
+
+    /// Canonical original tier dimensions.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn original(&self) -> JsMediaTierDimensions {
+        js_media_tier_dimensions_from_rust(self.original)
+    }
+}
+
+/// WASM-bindgen class for image inspection results.
+#[wasm_bindgen(js_name = ImageInspectResult)]
+pub struct JsImageInspectResult {
+    code: u16,
+    format: u8,
+    mime_type: String,
+    width: u32,
+    height: u32,
+    orientation: u8,
+    encoded_sidecar_fields: Vec<u8>,
+    camera_make: String,
+    camera_model: String,
+    device_timestamp_ms: u64,
+    has_device_timestamp_ms: bool,
+    subseconds_ms: u32,
+    has_subseconds_ms: bool,
+    gps_lat_microdegrees: i32,
+    gps_lon_microdegrees: i32,
+    gps_altitude_meters: i32,
+    gps_accuracy_meters: u16,
+    has_gps: bool,
+}
+
+#[wasm_bindgen(js_class = ImageInspectResult)]
+impl JsImageInspectResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Stable media format code derived from container bytes (JPEG=1, PNG=2, WebP=3, AVIF=4, HEIC=5).
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn format(&self) -> u8 {
+        self.format
+    }
+
+    /// Trusted MIME type derived from container bytes.
+    #[wasm_bindgen(getter, js_name = mimeType)]
+    #[must_use]
+    pub fn mime_type(&self) -> String {
+        self.mime_type.clone()
+    }
+
+    /// Display width after orientation normalization.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Display height after orientation normalization.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// EXIF orientation value normalized by the Rust media parser.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn orientation(&self) -> u8 {
+        self.orientation
+    }
+
+    /// Compact encoded canonical metadata sidecar fields.
+    #[wasm_bindgen(getter, js_name = encodedSidecarFields)]
+    #[must_use]
+    pub fn encoded_sidecar_fields(&self) -> Vec<u8> {
+        self.encoded_sidecar_fields.clone()
+    }
+
+    /// Camera make extracted from EXIF, or empty when absent.
+    #[wasm_bindgen(getter, js_name = cameraMake)]
+    #[must_use]
+    pub fn camera_make(&self) -> String {
+        self.camera_make.clone()
+    }
+
+    /// Camera model extracted from EXIF, or empty when absent.
+    #[wasm_bindgen(getter, js_name = cameraModel)]
+    #[must_use]
+    pub fn camera_model(&self) -> String {
+        self.camera_model.clone()
+    }
+
+    /// Whether `deviceTimestampMs` carries an extracted EXIF timestamp.
+    #[wasm_bindgen(getter, js_name = hasDeviceTimestampMs)]
+    #[must_use]
+    pub fn has_device_timestamp_ms(&self) -> bool {
+        self.has_device_timestamp_ms
+    }
+
+    /// Device timestamp extracted from EXIF, valid when `hasDeviceTimestampMs` is true.
+    #[wasm_bindgen(getter, js_name = deviceTimestampMs)]
+    #[must_use]
+    pub fn device_timestamp_ms(&self) -> u64 {
+        self.device_timestamp_ms
+    }
+
+    /// Whether `subsecondsMs` carries extracted EXIF subseconds.
+    #[wasm_bindgen(getter, js_name = hasSubsecondsMs)]
+    #[must_use]
+    pub fn has_subseconds_ms(&self) -> bool {
+        self.has_subseconds_ms
+    }
+
+    /// EXIF subseconds in milliseconds, valid when `hasSubsecondsMs` is true.
+    #[wasm_bindgen(getter, js_name = subsecondsMs)]
+    #[must_use]
+    pub fn subseconds_ms(&self) -> u32 {
+        self.subseconds_ms
+    }
+
+    /// Whether GPS fields were extracted from EXIF.
+    #[wasm_bindgen(getter, js_name = hasGps)]
+    #[must_use]
+    pub fn has_gps(&self) -> bool {
+        self.has_gps
+    }
+
+    #[wasm_bindgen(getter, js_name = gpsLatMicrodegrees)]
+    #[must_use]
+    pub fn gps_lat_microdegrees(&self) -> i32 {
+        self.gps_lat_microdegrees
+    }
+
+    #[wasm_bindgen(getter, js_name = gpsLonMicrodegrees)]
+    #[must_use]
+    pub fn gps_lon_microdegrees(&self) -> i32 {
+        self.gps_lon_microdegrees
+    }
+
+    #[wasm_bindgen(getter, js_name = gpsAltitudeMeters)]
+    #[must_use]
+    pub fn gps_altitude_meters(&self) -> i32 {
+        self.gps_altitude_meters
+    }
+
+    #[wasm_bindgen(getter, js_name = gpsAccuracyMeters)]
+    #[must_use]
+    pub fn gps_accuracy_meters(&self) -> u16 {
+        self.gps_accuracy_meters
+    }
+}
+
+/// WASM-bindgen class for video inspection results.
+#[wasm_bindgen(js_name = VideoInspectResult)]
+pub struct JsVideoInspectResult {
+    code: u16,
+    container: String,
+    video_codec: String,
+    width_px: u32,
+    height_px: u32,
+    duration_ms: u64,
+    frame_rate_fps: f64,
+    orientation: String,
+}
+
+#[wasm_bindgen(js_class = VideoInspectResult)]
+impl JsVideoInspectResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Trusted video container label derived from bytes.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn container(&self) -> String {
+        self.container.clone()
+    }
+
+    /// Trusted codec label, or empty string when unavailable.
+    #[wasm_bindgen(getter, js_name = videoCodec)]
+    #[must_use]
+    pub fn video_codec(&self) -> String {
+        self.video_codec.clone()
+    }
+
+    /// Video track width in pixels.
+    #[wasm_bindgen(getter, js_name = widthPx)]
+    #[must_use]
+    pub fn width_px(&self) -> u32 {
+        self.width_px
+    }
+
+    /// Video track height in pixels.
+    #[wasm_bindgen(getter, js_name = heightPx)]
+    #[must_use]
+    pub fn height_px(&self) -> u32 {
+        self.height_px
+    }
+
+    /// Video duration in milliseconds.
+    #[wasm_bindgen(getter, js_name = durationMs)]
+    #[must_use]
+    pub fn duration_ms(&self) -> u64 {
+        self.duration_ms
+    }
+
+    /// Video frame rate in frames per second, or NaN when unavailable.
+    #[wasm_bindgen(getter, js_name = frameRateFps)]
+    #[must_use]
+    pub fn frame_rate_fps(&self) -> f64 {
+        self.frame_rate_fps
+    }
+
+    /// Rotation label, or empty string when unavailable.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn orientation(&self) -> String {
+        self.orientation.clone()
     }
 }
 
@@ -1190,6 +1675,86 @@ impl JsVerifyShardResult {
     }
 }
 
+/// WASM-bindgen class for streaming encrypted/decrypted frame results.
+#[wasm_bindgen(js_name = StreamingFrameResult)]
+pub struct JsStreamingFrameResult {
+    code: u16,
+    frame_index: u32,
+    bytes: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = StreamingFrameResult)]
+impl JsStreamingFrameResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Zero-based frame index assigned by the streaming encryptor.
+    #[wasm_bindgen(getter, js_name = frameIndex)]
+    #[must_use]
+    pub fn frame_index(&self) -> u32 {
+        self.frame_index
+    }
+
+    /// Serialized frame bytes.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn bytes(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+}
+
+/// WASM-bindgen class for finalized streaming envelope results.
+#[wasm_bindgen(js_name = StreamingEnvelopeResult)]
+pub struct JsStreamingEnvelopeResult {
+    code: u16,
+    header: Vec<u8>,
+    bytes: Vec<u8>,
+    frame_count: u32,
+    final_frame_size: u32,
+}
+
+#[wasm_bindgen(js_class = StreamingEnvelopeResult)]
+impl JsStreamingEnvelopeResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Final v0x04 streaming envelope header bytes.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn header(&self) -> Vec<u8> {
+        self.header.clone()
+    }
+
+    /// Full v0x04 streaming envelope bytes: header followed by frames.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn bytes(&self) -> Vec<u8> {
+        self.bytes.clone()
+    }
+
+    /// Declared frame count.
+    #[wasm_bindgen(getter, js_name = frameCount)]
+    #[must_use]
+    pub fn frame_count(&self) -> u32 {
+        self.frame_count
+    }
+
+    /// Plaintext byte length of the final frame.
+    #[wasm_bindgen(getter, js_name = finalFrameSize)]
+    #[must_use]
+    pub fn final_frame_size(&self) -> u32 {
+        self.final_frame_size
+    }
+}
+
 /// WASM-bindgen class for public crypto/domain golden-vector snapshots.
 #[wasm_bindgen(js_name = CryptoDomainGoldenVectorSnapshot)]
 pub struct JsCryptoDomainGoldenVectorSnapshot {
@@ -1316,7 +1881,7 @@ pub struct JsCreateLinkShareHandleResult {
     code: u16,
     handle: u64,
     link_id: Vec<u8>,
-    link_secret_for_url: Vec<u8>,
+    link_url_token: Vec<u8>,
     tier: u8,
     nonce: Vec<u8>,
     encrypted_key: Vec<u8>,
@@ -1339,11 +1904,11 @@ impl JsCreateLinkShareHandleResult {
     pub fn link_id(&self) -> Vec<u8> {
         self.link_id.clone()
     }
-    /// URL fragment seed allowed by the link-share protocol; not a derived key.
-    #[wasm_bindgen(getter, js_name = linkSecretForUrl)]
+    /// Bearer URL fragment token allowed by the link-share protocol.
+    #[wasm_bindgen(getter, js_name = linkUrlToken)]
     #[must_use]
-    pub fn link_secret_for_url(&self) -> Vec<u8> {
-        self.link_secret_for_url.clone()
+    pub fn link_url_token(&self) -> Vec<u8> {
+        self.link_url_token.clone()
     }
     #[wasm_bindgen(getter)]
     #[must_use]
@@ -1782,6 +2347,41 @@ pub const fn protocol_version() -> &'static str {
     mosaic_client::protocol_version()
 }
 
+/// Returns the ADR-022 canonical manifest-finalize idempotency key.
+pub fn finalize_idempotency_key(job_id: String) -> Result<String, u16> {
+    let uuid = uuid_from_string(&job_id)?;
+    Ok(mosaic_client::finalize_idempotency_key(&uuid))
+}
+
+/// Returns the protocol byte pinned for a WASM shard tier.
+#[must_use]
+pub const fn shard_tier_byte(tier: ShardTier) -> u8 {
+    tier as u8
+}
+
+/// Parses a protocol byte into a typed WASM shard tier.
+///
+/// Valid bytes are pinned by `mosaic_domain::ShardTier`: 1=thumbnail,
+/// 2=preview, 3=original.
+pub fn shard_tier_from_byte(byte: u8) -> Result<ShardTier, JsError> {
+    match byte {
+        1 => Ok(ShardTier::Thumbnail),
+        2 => Ok(ShardTier::Preview),
+        3 => Ok(ShardTier::Original),
+        _ => Err(JsError::new("invalid shard tier byte")),
+    }
+}
+
+/// Lists all protocol-supported shard tiers in ascending wire-byte order.
+#[must_use]
+pub fn list_shard_tiers() -> Vec<ShardTier> {
+    vec![
+        ShardTier::Thumbnail,
+        ShardTier::Preview,
+        ShardTier::Original,
+    ]
+}
+
 /// Returns the historical WASM API changelog label for diagnostics.
 ///
 /// This string is documentation only. The authoritative API-shape lock is
@@ -1960,6 +2560,43 @@ pub fn parse_envelope_header(bytes: Vec<u8>) -> HeaderResult {
 #[must_use]
 pub fn wasm_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> ProgressResult {
     progress_result_from_client(mosaic_client::run_progress_probe(total_steps, cancel_after))
+}
+
+/// Derives the 16-byte deterministic session Argon2id salt.
+#[wasm_bindgen(js_name = deriveSessionSaltFromUsername)]
+pub fn derive_session_salt_from_username(
+    domain: String,
+    username: String,
+) -> Result<Vec<u8>, JsError> {
+    mosaic_crypto::derive_session_salt(&domain, &username)
+        .map(|salt| salt.to_vec())
+        .map_err(js_error_from_crypto)
+}
+
+/// Derives the session L0 master key and stores it behind an opaque handle.
+#[wasm_bindgen(js_name = deriveMasterKeyFromPassword)]
+pub fn derive_master_key_from_password(
+    password: Vec<u8>,
+    salt: Vec<u8>,
+    ops_limit: u32,
+    mem_limit_kib: u32,
+) -> Result<u64, JsError> {
+    let password = Zeroizing::new(password);
+    let key = mosaic_crypto::derive_session_master_key(password, &salt, ops_limit, mem_limit_kib)
+        .map_err(js_error_from_crypto)?;
+    open_master_key_handle(key)
+}
+
+/// Consumes a session L0 handle and returns one short-lived AES-GCM import buffer.
+///
+/// WebCrypto cannot import a Rust-owned handle directly, so the web boundary
+/// immediately imports these 32 bytes with `extractable = false` and zeroizes
+/// the returned `Uint8Array`. The Rust handle is removed and the registry copy
+/// is zeroized before this function returns, limiting raw L0 exposure to the
+/// WebCrypto import handoff.
+#[wasm_bindgen(js_name = consumeMasterKeyHandleForAesGcm)]
+pub fn consume_master_key_handle_for_aes_gcm(handle: u64) -> Result<Vec<u8>, JsError> {
+    consume_master_key_handle(handle).map_err(|error| JsError::new(&error))
 }
 
 /// Unwraps an account key into a Rust-owned opaque account-key handle.
@@ -2158,6 +2795,65 @@ pub fn canonical_metadata_sidecar_bytes(
     }
 }
 
+/// Builds canonical plaintext video metadata sidecar bytes from inspected video bytes.
+#[must_use]
+pub fn video_metadata_sidecar_bytes(
+    album_id: Vec<u8>,
+    photo_id: Vec<u8>,
+    epoch_id: u32,
+    input_bytes: Vec<u8>,
+) -> BytesResult {
+    let inspect = mosaic_media::inspect_video_container(&input_bytes);
+    if inspect.code != 0 {
+        return BytesResult {
+            code: inspect.code,
+            bytes: Vec::new(),
+        };
+    }
+
+    let pairs = mosaic_media::video_metadata_sidecar_fields(&inspect);
+    let mut encoded_fields = Vec::new();
+    for (tag, value) in pairs {
+        let value_len = match u32::try_from(value.len()) {
+            Ok(length) => length,
+            Err(_) => {
+                return BytesResult {
+                    code: mosaic_client::ClientErrorCode::InvalidInputLength.as_u16(),
+                    bytes: Vec::new(),
+                };
+            }
+        };
+        encoded_fields.extend_from_slice(&tag.to_le_bytes());
+        encoded_fields.extend_from_slice(&value_len.to_le_bytes());
+        encoded_fields.extend_from_slice(&value);
+    }
+
+    canonical_metadata_sidecar_bytes(album_id, photo_id, epoch_id, encoded_fields)
+}
+
+/// Builds canonical manifest transcript bytes from opaque encrypted metadata and shard refs.
+///
+/// `encoded_shards` is a repeated sequence of
+/// `chunk_index:u32le | tier:u8 | shard_id:16 bytes | sha256:32 bytes`.
+#[must_use]
+pub fn manifest_transcript_bytes(
+    album_id: Vec<u8>,
+    epoch_id: u32,
+    encrypted_meta: Vec<u8>,
+    encoded_shards: Vec<u8>,
+) -> BytesResult {
+    match manifest_transcript_bytes_result(&album_id, epoch_id, &encrypted_meta, &encoded_shards) {
+        Ok(bytes) => BytesResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            bytes,
+        },
+        Err(code) => BytesResult {
+            code,
+            bytes: Vec::new(),
+        },
+    }
+}
+
 /// Encrypts canonical metadata sidecar bytes with a Rust-owned epoch-key handle.
 #[must_use]
 pub fn encrypt_metadata_sidecar_with_epoch_handle(
@@ -2188,7 +2884,7 @@ pub fn encrypt_metadata_sidecar_with_epoch_handle(
         handle,
         &plaintext,
         shard_index,
-        ShardTier::Thumbnail.to_byte(),
+        DomainShardTier::Thumbnail.to_byte(),
     ))
 }
 
@@ -2257,6 +2953,22 @@ pub fn encrypt_shard_with_epoch_handle(
     ))
 }
 
+/// Encrypts shard bytes with a Rust-owned epoch-key handle and typed shard tier.
+#[must_use]
+pub fn encrypt_shard_with_tier(
+    handle: u64,
+    plaintext: Vec<u8>,
+    shard_index: u32,
+    tier: ShardTier,
+) -> EncryptedShardResult {
+    encrypt_shard_with_epoch_handle(
+        handle,
+        plaintext,
+        shard_index,
+        DomainShardTier::from(tier).to_byte(),
+    )
+}
+
 /// Decrypts shard envelope bytes with a Rust-owned epoch-key handle.
 #[must_use]
 pub fn decrypt_shard_with_epoch_handle(
@@ -2267,6 +2979,294 @@ pub fn decrypt_shard_with_epoch_handle(
         handle,
         &envelope_bytes,
     ))
+}
+
+/// Decrypts shard envelope bytes and returns plaintext bytes.
+///
+/// The shard tier is read from the envelope header by the client core.
+#[must_use]
+pub fn decrypt_shard_with_tier(handle: u64, envelope_bytes: Vec<u8>) -> BytesResult {
+    let result = decrypt_shard_with_epoch_handle(handle, envelope_bytes);
+    BytesResult {
+        code: result.code,
+        bytes: result.plaintext,
+    }
+}
+
+fn streaming_frame_error(code: u16) -> StreamingFrameResult {
+    StreamingFrameResult {
+        code,
+        frame_index: 0,
+        bytes: Vec::new(),
+    }
+}
+
+fn streaming_envelope_error(code: u16) -> StreamingEnvelopeResult {
+    StreamingEnvelopeResult {
+        code,
+        header: Vec::new(),
+        bytes: Vec::new(),
+        frame_count: 0,
+        final_frame_size: 0,
+    }
+}
+
+fn already_finalized_code() -> u16 {
+    mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()
+}
+
+/// Stateful v0x04 streaming shard encryptor exposed to WASM.
+#[wasm_bindgen]
+pub struct StreamingShardEncryptor {
+    code: u16,
+    inner: Mutex<Option<StreamingEncryptorCell>>,
+}
+
+#[wasm_bindgen]
+impl StreamingShardEncryptor {
+    /// Initializes a streaming encryptor for an existing epoch handle.
+    #[wasm_bindgen(constructor)]
+    #[must_use]
+    pub fn new(_epoch_handle_id: u64, _tier: u8, _expected_frame_count: Option<u32>) -> Self {
+        let key_material = match mosaic_client::epoch_key_material_for_handle(_epoch_handle_id) {
+            Ok(key_material) => key_material,
+            Err(error) => {
+                return Self {
+                    code: error.code.as_u16(),
+                    inner: Mutex::new(None),
+                };
+            }
+        };
+        let tier = match mosaic_domain::ShardTier::try_from(_tier) {
+            Ok(tier) => tier,
+            Err(_) => {
+                return Self {
+                    code: mosaic_client::ClientErrorCode::InvalidTier.as_u16(),
+                    inner: Mutex::new(None),
+                };
+            }
+        };
+        let cell = match StreamingEncryptorCell::try_new(key_material, |handle| {
+            mosaic_crypto::streaming_encrypt_init(handle, tier, _expected_frame_count)
+                .map(|inner| CryptoStreamingEncryptorState(Some(inner)))
+        }) {
+            Ok(cell) => cell,
+            Err(error) => {
+                return Self {
+                    code: client_error_code_from_crypto(error),
+                    inner: Mutex::new(None),
+                };
+            }
+        };
+        Self {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            inner: Mutex::new(Some(cell)),
+        }
+    }
+
+    /// Encrypts one plaintext frame.
+    #[wasm_bindgen(js_name = encryptFrame)]
+    #[must_use]
+    pub fn encrypt_frame(&mut self, _plaintext: Vec<u8>) -> JsValue {
+        if self.code != 0 {
+            return js_streaming_frame_result_from_rust(streaming_frame_error(self.code)).into();
+        }
+        let plaintext = Zeroizing::new(_plaintext);
+        let result = self
+            .inner
+            .lock()
+            .map_err(|_| mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16())
+            .and_then(|mut guard| {
+                let cell = guard.as_mut().ok_or_else(already_finalized_code)?;
+                cell.with_dependent_mut(|_, state| {
+                    let encryptor = state.0.as_mut().ok_or_else(already_finalized_code)?;
+                    encryptor.encrypt_frame(&plaintext).map_or_else(
+                        |error| Err(client_error_code_from_crypto(error)),
+                        |frame| {
+                            Ok(StreamingFrameResult {
+                                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                                frame_index: frame.frame_index,
+                                bytes: frame.bytes,
+                            })
+                        },
+                    )
+                })
+            })
+            .unwrap_or_else(streaming_frame_error);
+        js_streaming_frame_result_from_rust(result).into()
+    }
+
+    /// Finalizes the stream and returns the v0x04 envelope.
+    #[must_use]
+    pub fn finalize(self) -> JsValue {
+        if self.code != 0 {
+            return js_streaming_envelope_result_from_rust(streaming_envelope_error(self.code))
+                .into();
+        }
+        let result = self
+            .inner
+            .lock()
+            .map_err(|_| mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16())
+            .and_then(|mut guard| {
+                let mut cell = guard.take().ok_or_else(already_finalized_code)?;
+                cell.with_dependent_mut(|_, state| {
+                    let encryptor = state.0.take().ok_or_else(already_finalized_code)?;
+                    encryptor.finalize().map_or_else(
+                        |error| Err(client_error_code_from_crypto(error)),
+                        |envelope| {
+                            Ok(StreamingEnvelopeResult {
+                                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                                header: envelope.header.to_vec(),
+                                bytes: envelope.bytes,
+                                frame_count: envelope.frame_count,
+                                final_frame_size: envelope.final_frame_size,
+                            })
+                        },
+                    )
+                })
+            })
+            .unwrap_or_else(streaming_envelope_error);
+        js_streaming_envelope_result_from_rust(result).into()
+    }
+}
+
+/// Stateful v0x04 streaming shard decryptor exposed to WASM.
+#[wasm_bindgen]
+pub struct StreamingShardDecryptor {
+    code: u16,
+    inner: Mutex<Option<StreamingDecryptorCell>>,
+}
+
+#[wasm_bindgen]
+impl StreamingShardDecryptor {
+    /// Initializes a streaming decryptor from a v0x04 envelope header.
+    #[wasm_bindgen(constructor)]
+    #[must_use]
+    pub fn new(_epoch_handle_id: u64, _envelope_header: Vec<u8>) -> Self {
+        let key_material = match mosaic_client::epoch_key_material_for_handle(_epoch_handle_id) {
+            Ok(key_material) => key_material,
+            Err(error) => {
+                return Self {
+                    code: error.code.as_u16(),
+                    inner: Mutex::new(None),
+                };
+            }
+        };
+        let cell = match StreamingDecryptorCell::try_new(key_material, |handle| {
+            mosaic_crypto::streaming_decrypt_init(handle, &_envelope_header)
+                .map(|inner| CryptoStreamingDecryptorState(Some(inner)))
+        }) {
+            Ok(cell) => cell,
+            Err(error) => {
+                return Self {
+                    code: client_error_code_from_crypto(error),
+                    inner: Mutex::new(None),
+                };
+            }
+        };
+        Self {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            inner: Mutex::new(Some(cell)),
+        }
+    }
+
+    /// Decrypts one serialized streaming frame.
+    #[wasm_bindgen(js_name = decryptFrame)]
+    #[must_use]
+    pub fn decrypt_frame(&mut self, _frame: Vec<u8>) -> JsValue {
+        if self.code != 0 {
+            return js_decrypted_shard_result_from_rust(DecryptedShardResult {
+                code: self.code,
+                plaintext: Vec::new(),
+            })
+            .into();
+        }
+        let result = self
+            .inner
+            .lock()
+            .map_err(|_| mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16())
+            .and_then(|mut guard| {
+                let cell = guard.as_mut().ok_or_else(already_finalized_code)?;
+                cell.with_dependent_mut(|_, state| {
+                    let decryptor = state.0.as_mut().ok_or_else(already_finalized_code)?;
+                    decryptor.decrypt_frame(&_frame).map_or_else(
+                        |error| Err(client_error_code_from_crypto(error)),
+                        |plaintext| {
+                            Ok(DecryptedShardResult {
+                                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                                plaintext,
+                            })
+                        },
+                    )
+                })
+            })
+            .unwrap_or_else(|code| DecryptedShardResult {
+                code,
+                plaintext: Vec::new(),
+            });
+        js_decrypted_shard_result_from_rust(result).into()
+    }
+
+    /// Returns a `BytesResult` whose `bytes` field is always empty by contract.
+    /// Future callers should ignore `bytes` and check only `code`. Reason: the
+    /// finalize step performs final-frame AAD verification only — there is no
+    /// payload data to return. UniFFI mirror returns `Result<(), MosaicError>` honestly;
+    /// WASM uses `BytesResult` for cross-API uniformity.
+    #[must_use]
+    pub fn finalize(self) -> JsValue {
+        if self.code != 0 {
+            return js_bytes_result_from_rust(BytesResult {
+                code: self.code,
+                bytes: Vec::new(),
+            })
+            .into();
+        }
+        let code = self
+            .inner
+            .lock()
+            .map_err(|_| mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16())
+            .and_then(|mut guard| {
+                let mut cell = guard.take().ok_or_else(already_finalized_code)?;
+                cell.with_dependent_mut(|_, state| {
+                    let decryptor = state.0.take().ok_or_else(already_finalized_code)?;
+                    decryptor.finalize().map_or_else(
+                        |error| Err(client_error_code_from_crypto(error)),
+                        |_| Ok(()),
+                    )
+                })
+            })
+            .map_or_else(|code| code, |_| mosaic_client::ClientErrorCode::Ok.as_u16());
+        js_bytes_result_from_rust(BytesResult {
+            code,
+            bytes: Vec::new(),
+        })
+        .into()
+    }
+}
+
+/// Decrypts a v0x03/v0x04 envelope using the epoch-handle dispatcher surface.
+#[wasm_bindgen(js_name = decryptEnvelope)]
+#[must_use]
+pub fn decrypt_envelope_js(epoch_handle_id: u64, envelope: Vec<u8>) -> JsValue {
+    let result = mosaic_client::epoch_key_material_for_handle(epoch_handle_id).map_or_else(
+        |error| DecryptedShardResult {
+            code: error.code.as_u16(),
+            plaintext: Vec::new(),
+        },
+        |key_material| {
+            mosaic_crypto::decrypt_envelope(&key_material, &envelope).map_or_else(
+                |error| DecryptedShardResult {
+                    code: client_error_code_from_crypto(error),
+                    plaintext: Vec::new(),
+                },
+                |plaintext| DecryptedShardResult {
+                    code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                    plaintext,
+                },
+            )
+        },
+    );
+    js_decrypted_shard_result_from_rust(result).into()
 }
 
 /// Decrypts a legacy raw-key shard envelope with a Rust-owned epoch-key handle.
@@ -2580,9 +3580,9 @@ pub fn get_auth_public_key_from_password(
 
 /// Creates a share-link handle and returns the first wrapped tier key.
 ///
-/// `link_secret_for_url` is the protocol-mandated URL fragment seed. It is not
-/// the derived wrapping key; Rust derives and retains the wrapping key behind
-/// the returned opaque handle.
+/// `link_url_token` is a bearer URL fragment token by design. It is not the
+/// derived wrapping key; Rust derives and retains the wrapping key behind the
+/// returned opaque handle.
 #[must_use]
 pub fn create_link_share_handle(
     album_id: String,
@@ -2598,11 +3598,9 @@ pub fn create_link_share_handle(
 
 /// Imports a URL fragment seed into a Rust-owned share-link handle.
 #[must_use]
-pub fn import_link_share_handle(link_secret_for_url: Vec<u8>) -> LinkTierHandleResult {
-    let link_secret_for_url = Zeroizing::new(link_secret_for_url);
-    link_tier_handle_result_from_client(mosaic_client::import_link_share_handle(
-        &link_secret_for_url,
-    ))
+pub fn import_link_share_handle(link_url_token: Vec<u8>) -> LinkTierHandleResult {
+    let link_url_token = Zeroizing::new(link_url_token);
+    link_tier_handle_result_from_client(mosaic_client::import_link_share_handle(&link_url_token))
 }
 
 /// Wraps an epoch tier for an existing Rust-owned share-link handle.
@@ -2622,20 +3620,27 @@ pub fn wrap_link_tier_handle(
 /// Imports a wrapped tier key into a Rust-owned link-tier handle.
 #[must_use]
 pub fn import_link_tier_handle(
-    link_secret_for_url: Vec<u8>,
+    link_url_token: Vec<u8>,
     nonce: Vec<u8>,
     encrypted_key: Vec<u8>,
     album_id: String,
     tier_byte: u8,
 ) -> LinkTierHandleResult {
-    let link_secret_for_url = Zeroizing::new(link_secret_for_url);
+    let link_url_token = Zeroizing::new(link_url_token);
     link_tier_handle_result_from_client(mosaic_client::import_link_tier_handle(
-        &link_secret_for_url,
+        &link_url_token,
         &nonce,
         &encrypted_key,
         album_id,
         tier_byte,
     ))
+}
+
+/// Mints a Rust-owned link-tier handle from a raw 32-byte tier key.
+#[must_use]
+pub fn mint_link_tier_handle_from_raw_key(raw_key: Vec<u8>) -> LinkTierHandleResult {
+    let raw_key = Zeroizing::new(raw_key);
+    link_tier_handle_result_from_client(mosaic_client::mint_link_tier_handle_from_raw_key(&raw_key))
 }
 
 /// Decrypts a shard using a Rust-owned share-link tier handle.
@@ -2648,6 +3653,15 @@ pub fn decrypt_shard_with_link_tier_handle(
         link_tier_handle,
         &envelope_bytes,
     ))
+}
+
+/// Verifies shard ciphertext SHA-256 using Rust core.
+pub fn verify_shard_integrity_sha256(
+    envelope_bytes: Vec<u8>,
+    expected_sha256: Vec<u8>,
+) -> Result<bool, JsError> {
+    mosaic_client::verify_shard_integrity_sha256(&envelope_bytes, &expected_sha256)
+        .map_err(|error| JsError::new(&error.message))
 }
 
 /// Closes a Rust-owned share-link handle.
@@ -2746,6 +3760,26 @@ pub fn parse_envelope_header_js(bytes: Vec<u8>) -> JsHeaderResult {
     }
 }
 
+/// Returns the protocol byte pinned for a WASM shard tier.
+#[wasm_bindgen(js_name = shardTierByte)]
+#[must_use]
+pub fn shard_tier_byte_js(tier: ShardTier) -> u8 {
+    shard_tier_byte(tier)
+}
+
+/// Parses a protocol byte into a typed WASM shard tier.
+#[wasm_bindgen(js_name = shardTierFromByte)]
+pub fn shard_tier_from_byte_js(byte: u8) -> Result<ShardTier, JsError> {
+    shard_tier_from_byte(byte)
+}
+
+/// Lists all protocol-supported shard tiers in ascending wire-byte order.
+#[wasm_bindgen(js_name = listShardTiers)]
+#[must_use]
+pub fn list_shard_tiers_js() -> Vec<ShardTier> {
+    list_shard_tiers()
+}
+
 /// Runs the progress probe through the generated WASM binding surface.
 #[wasm_bindgen(js_name = progressProbe)]
 #[must_use]
@@ -2777,24 +3811,44 @@ pub fn wasm_progress_probe_js(total_steps: u32, cancel_after: i64) -> JsProgress
     }
 }
 
+const MEDIA_INVALID_JPEG_CODE: u16 = 601;
+const MEDIA_INVALID_PNG_CODE: u16 = 602;
+const MEDIA_INVALID_WEBP_CODE: u16 = 603;
+const MEDIA_OUTPUT_TOO_LARGE_CODE: u16 = 604;
+/// Strip-result-namespace code for `removed.len() > u32::MAX` overflow on the
+/// strip wrapper path (effectively unreachable since input is bounded by image
+/// size limits, but defensive). NOT a `WorkerCryptoErrorCode`: this lives in
+/// the wasm strip-result namespace and flows only through `JsStripResult.code`
+/// (see `apps/web/src/lib/exif-stripper.ts`). The numeric collision with
+/// `WorkerCryptoErrorCode.InvalidMediaSidecar = 605` (TS-side) is intentional —
+/// the two namespaces are independent and never cross.
+const METADATA_STRIP_OVERFLOW_CODE: u16 = 605;
+const MEDIA_UNKNOWN_ERROR_CODE: u16 = 699;
+
 fn media_error_code(error: mosaic_media::MosaicMediaError) -> u16 {
     match error {
-        mosaic_media::MosaicMediaError::InvalidJpeg => 601,
-        mosaic_media::MosaicMediaError::InvalidPng => 602,
-        mosaic_media::MosaicMediaError::InvalidWebP => 603,
-        mosaic_media::MosaicMediaError::OutputTooLarge => 604,
-        _ => 699,
+        mosaic_media::MosaicMediaError::InvalidJpeg => MEDIA_INVALID_JPEG_CODE,
+        mosaic_media::MosaicMediaError::InvalidPng => MEDIA_INVALID_PNG_CODE,
+        mosaic_media::MosaicMediaError::InvalidWebP => MEDIA_INVALID_WEBP_CODE,
+        mosaic_media::MosaicMediaError::OutputTooLarge => MEDIA_OUTPUT_TOO_LARGE_CODE,
+        _ => MEDIA_UNKNOWN_ERROR_CODE,
     }
 }
 
 fn strip_metadata(format: mosaic_media::MediaFormat, input_bytes: Vec<u8>) -> StripResult {
-    match mosaic_media::strip_known_metadata(format, &input_bytes) {
+    strip_with_result(mosaic_media::strip_known_metadata(format, &input_bytes))
+}
+
+fn strip_with_result(
+    result: Result<mosaic_media::StrippedMedia, mosaic_media::MosaicMediaError>,
+) -> StripResult {
+    match result {
         Ok(stripped) => {
             let removed_metadata_count = match u32::try_from(stripped.removed.len()) {
                 Ok(value) => value,
                 Err(_) => {
                     return StripResult {
-                        code: 604,
+                        code: METADATA_STRIP_OVERFLOW_CODE,
                         stripped_bytes: Vec::new(),
                         removed_metadata_count: 0,
                     };
@@ -2814,12 +3868,359 @@ fn strip_metadata(format: mosaic_media::MediaFormat, input_bytes: Vec<u8>) -> St
     }
 }
 
+fn image_format_code(format: mosaic_media::MediaFormat) -> u8 {
+    match format {
+        mosaic_media::MediaFormat::Jpeg => 1,
+        mosaic_media::MediaFormat::Png => 2,
+        mosaic_media::MediaFormat::WebP => 3,
+    }
+}
+
+fn video_container_label(container: mosaic_media::VideoContainer) -> &'static str {
+    match container {
+        mosaic_media::VideoContainer::Mp4 => "mp4",
+        mosaic_media::VideoContainer::Mov => "mov",
+        mosaic_media::VideoContainer::WebM => "webm",
+        mosaic_media::VideoContainer::Matroska => "matroska",
+    }
+}
+
+fn video_codec_label(codec: mosaic_media::VideoCodec) -> &'static str {
+    match codec {
+        mosaic_media::VideoCodec::H264 => "h264",
+        mosaic_media::VideoCodec::H265 => "h265",
+        mosaic_media::VideoCodec::AV1 => "av1",
+        mosaic_media::VideoCodec::VP8 => "vp8",
+        mosaic_media::VideoCodec::VP9 => "vp9",
+    }
+}
+
+fn orientation_label(orientation: mosaic_media::Orientation) -> &'static str {
+    match orientation {
+        mosaic_media::Orientation::Rotate0 => "rotate0",
+        mosaic_media::Orientation::Rotate90 => "rotate90",
+        mosaic_media::Orientation::Rotate180 => "rotate180",
+        mosaic_media::Orientation::Rotate270 => "rotate270",
+    }
+}
+
+fn image_inspect_result_from_media(
+    result: Result<mosaic_media::ImageMetadata, mosaic_media::MosaicMediaError>,
+    input_bytes: &[u8],
+) -> ImageInspectResult {
+    match result {
+        Ok(metadata) => ImageInspectResult {
+            code: 0,
+            format: image_format_code(metadata.format),
+            mime_type: metadata.mime_type.to_owned(),
+            width: metadata.width,
+            height: metadata.height,
+            orientation: metadata.orientation,
+            ..image_sidecar_fields_for_format(input_bytes, metadata.format)
+        },
+        Err(error) => iso_bmff_image_inspect_result(input_bytes)
+            .unwrap_or_else(|| empty_image_inspect_result(media_error_code(error))),
+    }
+}
+
+fn iso_bmff_image_inspect_result(input_bytes: &[u8]) -> Option<ImageInspectResult> {
+    let boxes = mosaic_media::BoxParser::new(input_bytes).parse().ok()?;
+    let ftyp = boxes
+        .iter()
+        .find(|candidate| candidate.box_type == *b"ftyp")?;
+    let (format, mime_type, sidecar_fields) =
+        if iso_bmff_brands(ftyp.payload).any(|brand| matches!(brand, b"avif" | b"avis")) {
+            (
+                4,
+                "image/avif",
+                image_sidecar_fields_from_extract(
+                    mosaic_media::extract_avif_canonical_sidecar_fields(input_bytes),
+                ),
+            )
+        } else if iso_bmff_brands(ftyp.payload).any(|brand| {
+            matches!(
+                brand,
+                b"heic" | b"heix" | b"hevc" | b"hevx" | b"heim" | b"heis" | b"mif1" | b"msf1"
+            )
+        }) {
+            (
+                5,
+                "image/heic",
+                image_sidecar_fields_from_extract(
+                    mosaic_media::extract_heic_canonical_sidecar_fields(input_bytes),
+                ),
+            )
+        } else {
+            return None;
+        };
+
+    let meta = boxes
+        .iter()
+        .find(|candidate| candidate.box_type == *b"meta")?;
+    let (width, height) = find_ispe_dimensions(&meta.children)?;
+    Some(ImageInspectResult {
+        code: 0,
+        format,
+        mime_type: mime_type.to_owned(),
+        width,
+        height,
+        orientation: mosaic_media::NORMAL_EXIF_ORIENTATION,
+        ..sidecar_fields
+    })
+}
+
+fn iso_bmff_brands(payload: &[u8]) -> impl Iterator<Item = &[u8]> {
+    let first = payload.get(..4).into_iter();
+    let compatible = payload
+        .get(8..)
+        .into_iter()
+        .flat_map(|tail| tail.chunks_exact(4));
+    first.chain(compatible)
+}
+
+fn find_ispe_dimensions(boxes: &[mosaic_media::iso_bmff::Box<'_>]) -> Option<(u32, u32)> {
+    for candidate in boxes {
+        if candidate.box_type == *b"ispe" && candidate.payload.len() >= 12 {
+            let width = u32::from_be_bytes(candidate.payload[4..8].try_into().ok()?);
+            let height = u32::from_be_bytes(candidate.payload[8..12].try_into().ok()?);
+            if width > 0 && height > 0 {
+                return Some((width, height));
+            }
+        }
+        if let Some(dimensions) = find_ispe_dimensions(&candidate.children) {
+            return Some(dimensions);
+        }
+    }
+    None
+}
+
+fn empty_image_inspect_result(code: u16) -> ImageInspectResult {
+    ImageInspectResult {
+        code,
+        format: 0,
+        mime_type: String::new(),
+        width: 0,
+        height: 0,
+        orientation: 0,
+        encoded_sidecar_fields: Vec::new(),
+        camera_make: String::new(),
+        camera_model: String::new(),
+        device_timestamp_ms: 0,
+        has_device_timestamp_ms: false,
+        subseconds_ms: 0,
+        has_subseconds_ms: false,
+        gps_lat_microdegrees: 0,
+        gps_lon_microdegrees: 0,
+        gps_altitude_meters: 0,
+        gps_accuracy_meters: 0,
+        has_gps: false,
+    }
+}
+
+fn image_sidecar_fields_for_format(
+    input_bytes: &[u8],
+    format: mosaic_media::MediaFormat,
+) -> ImageInspectResult {
+    image_sidecar_fields_from_extract(mosaic_media::extract_canonical_sidecar_fields(
+        input_bytes,
+        format,
+    ))
+}
+
+fn image_sidecar_fields_from_extract(
+    result: mosaic_media::SidecarExtractResult,
+) -> ImageInspectResult {
+    let mut fields = empty_image_inspect_result(0);
+    let Some(extracted) = result.fields else {
+        return fields;
+    };
+    if let Some(value) = extracted.device_timestamp_ms {
+        fields.has_device_timestamp_ms = true;
+        fields.device_timestamp_ms = value;
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::DEVICE_TIMESTAMP_MS,
+            &value.to_le_bytes(),
+        );
+    }
+    if let Some(value) = extracted.camera_make {
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::CAMERA_MAKE,
+            value.as_bytes(),
+        );
+        fields.camera_make = value;
+    }
+    if let Some(value) = extracted.camera_model {
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::CAMERA_MODEL,
+            value.as_bytes(),
+        );
+        fields.camera_model = value;
+    }
+    if let Some(value) = extracted.subseconds_ms {
+        fields.has_subseconds_ms = true;
+        fields.subseconds_ms = value;
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::SUBSECONDS_MS,
+            &value.to_le_bytes(),
+        );
+    }
+    if let Some(value) = extracted.gps {
+        fields.has_gps = true;
+        fields.gps_lat_microdegrees = value.lat_microdegrees;
+        fields.gps_lon_microdegrees = value.lon_microdegrees;
+        fields.gps_altitude_meters = value.altitude_meters;
+        fields.gps_accuracy_meters = value.accuracy_meters;
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::GPS,
+            &value.to_tag_value_bytes(),
+        );
+    }
+    fields
+}
+
+fn append_encoded_sidecar_field(encoded: &mut Vec<u8>, tag: u16, value: &[u8]) {
+    let Ok(value_len) = u32::try_from(value.len()) else {
+        return;
+    };
+    encoded.extend_from_slice(&tag.to_le_bytes());
+    encoded.extend_from_slice(&value_len.to_le_bytes());
+    encoded.extend_from_slice(value);
+}
+
+fn video_inspect_result_from_media(result: mosaic_media::VideoInspectResult) -> VideoInspectResult {
+    VideoInspectResult {
+        code: result.code,
+        container: video_container_label(result.container).to_owned(),
+        video_codec: result
+            .video_codec
+            .map_or_else(String::new, |codec| video_codec_label(codec).to_owned()),
+        width_px: result.width_px,
+        height_px: result.height_px,
+        duration_ms: result.duration_ms,
+        frame_rate_fps: result.frame_rate_fps.map_or(f64::NAN, f64::from),
+        orientation: result.orientation.map_or_else(String::new, |orientation| {
+            orientation_label(orientation).to_owned()
+        }),
+    }
+}
+
+const fn media_tier_dimensions(dimensions: mosaic_media::TierDimensions) -> MediaTierDimensions {
+    MediaTierDimensions {
+        tier: dimensions.tier.to_byte(),
+        width: dimensions.width,
+        height: dimensions.height,
+    }
+}
+
+fn canonical_tier_layout_result() -> MediaTierLayoutResult {
+    match mosaic_media::plan_tier_layout(
+        mosaic_media::ORIGINAL_MAX_DIMENSION,
+        mosaic_media::ORIGINAL_MAX_DIMENSION,
+    ) {
+        Ok(layout) => MediaTierLayoutResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            thumbnail: media_tier_dimensions(layout.thumbnail),
+            preview: media_tier_dimensions(layout.preview),
+            original: media_tier_dimensions(layout.original),
+        },
+        Err(error) => MediaTierLayoutResult {
+            code: media_error_code(error),
+            thumbnail: MediaTierDimensions {
+                tier: ShardTier::Thumbnail as u8,
+                width: 0,
+                height: 0,
+            },
+            preview: MediaTierDimensions {
+                tier: ShardTier::Preview as u8,
+                width: 0,
+                height: 0,
+            },
+            original: MediaTierDimensions {
+                tier: ShardTier::Original as u8,
+                width: 0,
+                height: 0,
+            },
+        },
+    }
+}
+
+fn js_media_tier_dimensions_from_rust(dimensions: MediaTierDimensions) -> JsMediaTierDimensions {
+    JsMediaTierDimensions {
+        tier: dimensions.tier,
+        width: dimensions.width,
+        height: dimensions.height,
+    }
+}
+
+fn js_media_tier_layout_from_rust(result: MediaTierLayoutResult) -> JsMediaTierLayoutResult {
+    JsMediaTierLayoutResult {
+        code: result.code,
+        thumbnail: result.thumbnail,
+        preview: result.preview,
+        original: result.original,
+    }
+}
+
 fn js_strip_result_from_rust(result: StripResult) -> JsStripResult {
     JsStripResult {
         code: result.code,
         stripped_bytes: result.stripped_bytes,
         removed_metadata_count: result.removed_metadata_count,
     }
+}
+
+fn js_image_inspect_result_from_rust(result: ImageInspectResult) -> JsImageInspectResult {
+    JsImageInspectResult {
+        code: result.code,
+        format: result.format,
+        mime_type: result.mime_type,
+        width: result.width,
+        height: result.height,
+        orientation: result.orientation,
+        encoded_sidecar_fields: result.encoded_sidecar_fields,
+        camera_make: result.camera_make,
+        camera_model: result.camera_model,
+        device_timestamp_ms: result.device_timestamp_ms,
+        has_device_timestamp_ms: result.has_device_timestamp_ms,
+        subseconds_ms: result.subseconds_ms,
+        has_subseconds_ms: result.has_subseconds_ms,
+        gps_lat_microdegrees: result.gps_lat_microdegrees,
+        gps_lon_microdegrees: result.gps_lon_microdegrees,
+        gps_altitude_meters: result.gps_altitude_meters,
+        gps_accuracy_meters: result.gps_accuracy_meters,
+        has_gps: result.has_gps,
+    }
+}
+
+fn js_video_inspect_result_from_rust(result: VideoInspectResult) -> JsVideoInspectResult {
+    JsVideoInspectResult {
+        code: result.code,
+        container: result.container,
+        video_codec: result.video_codec,
+        width_px: result.width_px,
+        height_px: result.height_px,
+        duration_ms: result.duration_ms,
+        frame_rate_fps: result.frame_rate_fps,
+        orientation: result.orientation,
+    }
+}
+
+/// Returns the canonical media tier dimensions shared by web and native clients.
+#[must_use]
+pub fn canonical_tier_layout() -> MediaTierLayoutResult {
+    canonical_tier_layout_result()
+}
+
+/// Returns the canonical media tier dimensions through WASM.
+#[wasm_bindgen(js_name = canonicalTierLayout)]
+#[must_use]
+pub fn canonical_tier_layout_js() -> JsMediaTierLayoutResult {
+    js_media_tier_layout_from_rust(canonical_tier_layout_result())
 }
 
 /// Strips JPEG metadata through the shared Rust media parser.
@@ -2841,6 +4242,52 @@ pub fn strip_png_metadata_js(input_bytes: Vec<u8>) -> JsStripResult {
 #[must_use]
 pub fn strip_webp_metadata_js(input_bytes: Vec<u8>) -> JsStripResult {
     js_strip_result_from_rust(strip_metadata(mosaic_media::MediaFormat::WebP, input_bytes))
+}
+
+/// Strips AVIF metadata through the shared Rust media parser.
+#[wasm_bindgen(js_name = stripAvifMetadata)]
+#[must_use]
+pub fn strip_avif_metadata_js(input_bytes: Vec<u8>) -> JsStripResult {
+    js_strip_result_from_rust(strip_with_result(mosaic_media::strip_avif_metadata(
+        &input_bytes,
+    )))
+}
+
+/// Strips HEIC/HEIF metadata through the shared Rust media parser.
+#[wasm_bindgen(js_name = stripHeicMetadata)]
+#[must_use]
+pub fn strip_heic_metadata_js(input_bytes: Vec<u8>) -> JsStripResult {
+    js_strip_result_from_rust(strip_with_result(mosaic_media::strip_heic_metadata(
+        &input_bytes,
+    )))
+}
+
+/// Strips video container metadata through the shared Rust media parser.
+#[wasm_bindgen(js_name = stripVideoMetadata)]
+#[must_use]
+pub fn strip_video_metadata_js(input_bytes: Vec<u8>) -> JsStripResult {
+    js_strip_result_from_rust(strip_with_result(mosaic_media::strip_video_metadata(
+        &input_bytes,
+    )))
+}
+
+/// Inspects image container metadata through the shared Rust media parser.
+#[wasm_bindgen(js_name = inspectImage)]
+#[must_use]
+pub fn inspect_image_js(input_bytes: Vec<u8>) -> JsImageInspectResult {
+    js_image_inspect_result_from_rust(image_inspect_result_from_media(
+        mosaic_media::inspect_image(&input_bytes),
+        &input_bytes,
+    ))
+}
+
+/// Inspects video container metadata through the shared Rust media parser.
+#[wasm_bindgen(js_name = inspectVideoContainer)]
+#[must_use]
+pub fn inspect_video_container_js(input_bytes: Vec<u8>) -> JsVideoInspectResult {
+    js_video_inspect_result_from_rust(video_inspect_result_from_media(
+        mosaic_media::inspect_video_container(&input_bytes),
+    ))
 }
 
 /// Unwraps an account key through the generated WASM binding surface.
@@ -2994,6 +4441,49 @@ pub fn canonical_metadata_sidecar_bytes_js(
     ))
 }
 
+/// Builds canonical video metadata sidecar bytes through WASM.
+#[wasm_bindgen(js_name = canonicalVideoSidecarBytes)]
+#[must_use]
+pub fn canonical_video_sidecar_bytes_js(
+    album_id: Vec<u8>,
+    photo_id: Vec<u8>,
+    epoch_id: u32,
+    input_bytes: Vec<u8>,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(video_metadata_sidecar_bytes(
+        album_id,
+        photo_id,
+        epoch_id,
+        input_bytes,
+    ))
+}
+
+/// Builds canonical manifest transcript bytes through WASM.
+///
+/// `encoded_shards` is a repeated sequence of
+/// `chunk_index:u32le | tier:u8 | shard_id:16 bytes | sha256:32 bytes`.
+#[wasm_bindgen(js_name = manifestTranscriptBytes)]
+#[must_use]
+pub fn manifest_transcript_bytes_js(
+    album_id: Vec<u8>,
+    epoch_id: u32,
+    encrypted_meta: Vec<u8>,
+    encoded_shards: Vec<u8>,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(manifest_transcript_bytes(
+        album_id,
+        epoch_id,
+        encrypted_meta,
+        encoded_shards,
+    ))
+}
+
+/// Returns the ADR-022 canonical manifest-finalize idempotency key through WASM.
+#[wasm_bindgen(js_name = finalizeIdempotencyKey)]
+pub fn finalize_idempotency_key_js(job_id: String) -> Result<String, JsError> {
+    finalize_idempotency_key(job_id).map_err(|_| JsError::new("invalid UUIDv7"))
+}
+
 /// Encrypts metadata sidecar bytes with an epoch handle through WASM.
 #[wasm_bindgen(js_name = encryptMetadataSidecarWithEpochHandle)]
 #[must_use]
@@ -3079,6 +4569,32 @@ pub fn decrypt_shard_with_epoch_handle_js(
     envelope_bytes: Vec<u8>,
 ) -> JsDecryptedShardResult {
     js_decrypted_shard_result_from_rust(decrypt_shard_with_epoch_handle(handle, envelope_bytes))
+}
+
+/// Encrypts shard bytes with an epoch-key handle and typed shard tier through WASM.
+#[wasm_bindgen(js_name = encryptShardWithTier)]
+#[must_use]
+pub fn encrypt_shard_with_tier_js(
+    handle: u64,
+    plaintext: Vec<u8>,
+    shard_index: u32,
+    tier: ShardTier,
+) -> JsEncryptedShardResult {
+    js_encrypted_shard_result_from_rust(encrypt_shard_with_tier(
+        handle,
+        plaintext,
+        shard_index,
+        tier,
+    ))
+}
+
+/// Decrypts shard envelope bytes with an epoch-key handle through WASM.
+///
+/// The shard tier is read from the envelope header by the client core.
+#[wasm_bindgen(js_name = decryptShardWithTier)]
+#[must_use]
+pub fn decrypt_shard_with_tier_js(handle: u64, envelope_bytes: Vec<u8>) -> JsBytesResult {
+    js_bytes_result_from_rust(decrypt_shard_with_tier(handle, envelope_bytes))
 }
 
 /// Decrypts a legacy raw-key shard envelope with an epoch-key handle through WASM.
@@ -3444,8 +4960,8 @@ pub fn create_link_share_handle_js(
 /// Imports a URL fragment seed into a share-link handle through WASM.
 #[wasm_bindgen(js_name = importLinkShareHandle)]
 #[must_use]
-pub fn import_link_share_handle_js(link_secret_for_url: Vec<u8>) -> JsLinkTierHandleResult {
-    js_link_tier_handle_result_from_rust(import_link_share_handle(link_secret_for_url))
+pub fn import_link_share_handle_js(link_url_token: Vec<u8>) -> JsLinkTierHandleResult {
+    js_link_tier_handle_result_from_rust(import_link_share_handle(link_url_token))
 }
 
 /// Wraps an epoch tier for an existing share-link handle through WASM.
@@ -3467,19 +4983,26 @@ pub fn wrap_link_tier_handle_js(
 #[wasm_bindgen(js_name = importLinkTierHandle)]
 #[must_use]
 pub fn import_link_tier_handle_js(
-    link_secret_for_url: Vec<u8>,
+    link_url_token: Vec<u8>,
     nonce: Vec<u8>,
     encrypted_key: Vec<u8>,
     album_id: String,
     tier_byte: u8,
 ) -> JsLinkTierHandleResult {
     js_link_tier_handle_result_from_rust(import_link_tier_handle(
-        link_secret_for_url,
+        link_url_token,
         nonce,
         encrypted_key,
         album_id,
         tier_byte,
     ))
+}
+
+/// Mints a link-tier handle from a raw 32-byte tier key through WASM.
+#[wasm_bindgen(js_name = mintLinkTierHandleFromRawKey)]
+#[must_use]
+pub fn mint_link_tier_handle_from_raw_key_js(raw_key: Vec<u8>) -> JsLinkTierHandleResult {
+    js_link_tier_handle_result_from_rust(mint_link_tier_handle_from_raw_key(raw_key))
 }
 
 /// Decrypts a shard using a link-tier handle through WASM.
@@ -3493,6 +5016,15 @@ pub fn decrypt_shard_with_link_tier_handle_js(
         link_tier_handle,
         envelope_bytes,
     ))
+}
+
+/// Verifies shard ciphertext SHA-256 through WASM.
+#[wasm_bindgen(js_name = verifyShardIntegritySha256)]
+pub fn verify_shard_integrity_sha256_js(
+    envelope_bytes: Vec<u8>,
+    expected_sha256: Vec<u8>,
+) -> Result<bool, JsError> {
+    verify_shard_integrity_sha256(envelope_bytes, expected_sha256)
 }
 
 /// Closes a share-link handle through WASM.
@@ -3748,7 +5280,7 @@ fn create_link_share_handle_result_from_client(
         code: result.code.as_u16(),
         handle: result.handle,
         link_id: result.link_id,
-        link_secret_for_url: result.link_secret_for_url,
+        link_url_token: result.link_url_token,
         tier: result.tier,
         nonce: result.nonce,
         encrypted_key: result.encrypted_key,
@@ -5256,8 +6788,8 @@ fn uuid_from_cbor_value(
     }
 }
 
-fn shard_tier_from_value(value: &Value) -> Result<ShardTier, mosaic_client::ClientErrorCode> {
-    ShardTier::try_from(u8_from_value(value)?)
+fn shard_tier_from_value(value: &Value) -> Result<DomainShardTier, mosaic_client::ClientErrorCode> {
+    DomainShardTier::try_from(u8_from_value(value)?)
         .map_err(|_| mosaic_client::ClientErrorCode::DownloadInvalidPlan)
 }
 
@@ -5304,6 +6836,21 @@ fn canonical_metadata_sidecar_bytes_result(
     mosaic_domain::canonical_metadata_sidecar_bytes(&sidecar).map_err(map_metadata_sidecar_error)
 }
 
+fn manifest_transcript_bytes_result(
+    album_id: &[u8],
+    epoch_id: u32,
+    encrypted_meta: &[u8],
+    encoded_shards: &[u8],
+) -> Result<Vec<u8>, u16> {
+    let album_id = uuid_bytes(album_id)?;
+    let shards = manifest_shards_from_encoded(encoded_shards)?;
+    let encrypted_meta = mosaic_domain::EncryptedMetadataEnvelope::new(encrypted_meta);
+    let transcript =
+        mosaic_domain::ManifestTranscript::new(album_id, epoch_id, encrypted_meta, &shards);
+    mosaic_domain::canonical_manifest_transcript_bytes(&transcript)
+        .map_err(map_manifest_transcript_error)
+}
+
 fn uuid_bytes(bytes: &[u8]) -> Result<[u8; 16], u16> {
     if bytes.len() != 16 {
         return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16());
@@ -5311,6 +6858,43 @@ fn uuid_bytes(bytes: &[u8]) -> Result<[u8; 16], u16> {
     let mut value = [0_u8; 16];
     value.copy_from_slice(bytes);
     Ok(value)
+}
+
+fn sha256_bytes(bytes: &[u8]) -> Result<[u8; 32], u16> {
+    if bytes.len() != 32 {
+        return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16());
+    }
+    let mut value = [0_u8; 32];
+    value.copy_from_slice(bytes);
+    Ok(value)
+}
+
+const ENCODED_MANIFEST_SHARD_REF_BYTES: usize = 4 + 1 + 16 + 32;
+
+fn manifest_shards_from_encoded(
+    encoded_shards: &[u8],
+) -> Result<Vec<mosaic_domain::ManifestShardRef>, u16> {
+    let invalid_input_length = mosaic_client::ClientErrorCode::InvalidInputLength.as_u16();
+    let chunks = encoded_shards.chunks_exact(ENCODED_MANIFEST_SHARD_REF_BYTES);
+    if !chunks.remainder().is_empty() {
+        return Err(invalid_input_length);
+    }
+
+    let mut shards = Vec::with_capacity(chunks.len());
+    for chunk in chunks {
+        let chunk_index = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        let tier = mosaic_domain::ShardTier::try_from(chunk[4])
+            .map_err(|_| mosaic_client::ClientErrorCode::InvalidTier.as_u16())?;
+        let shard_id = uuid_bytes(&chunk[5..21])?;
+        let sha256 = sha256_bytes(&chunk[21..53])?;
+        shards.push(mosaic_domain::ManifestShardRef::new(
+            chunk_index,
+            shard_id,
+            tier,
+            sha256,
+        ));
+    }
+    Ok(shards)
 }
 
 /// Maximum byte length permitted for a single encoded metadata field value. Larger values
@@ -5369,8 +6953,130 @@ fn map_metadata_sidecar_error(error: MetadataSidecarError) -> u16 {
         MetadataSidecarError::ZeroFieldTag
         | MetadataSidecarError::EmptyFieldValue { .. }
         | MetadataSidecarError::DuplicateFieldTag { .. }
-        | MetadataSidecarError::UnsortedFieldTag { .. } => {
+        | MetadataSidecarError::UnsortedFieldTag { .. }
+        | MetadataSidecarError::InvalidGpsValue { .. } => {
             mosaic_client::ClientErrorCode::MalformedSidecar.as_u16()
+        }
+    }
+}
+
+fn map_manifest_transcript_error(error: mosaic_domain::ManifestTranscriptError) -> u16 {
+    match error {
+        mosaic_domain::ManifestTranscriptError::LengthTooLarge { .. } => {
+            mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()
+        }
+        mosaic_domain::ManifestTranscriptError::EmptyEncryptedMeta
+        | mosaic_domain::ManifestTranscriptError::EmptyShardList
+        | mosaic_domain::ManifestTranscriptError::NonSequentialShardIndex { .. } => {
+            mosaic_client::ClientErrorCode::InvalidEnvelope.as_u16()
+        }
+    }
+}
+
+fn master_key_registry() -> &'static Mutex<HashMap<u64, mosaic_crypto::SecretKey>> {
+    MASTER_KEY_HANDLES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn open_master_key_handle(key: mosaic_crypto::SecretKey) -> Result<u64, JsError> {
+    let handle = NEXT_MASTER_KEY_HANDLE_ID.fetch_add(1, Ordering::Relaxed);
+    let mut guard = master_key_registry()
+        .lock()
+        .map_err(|_| JsError::new("master key registry lock was poisoned"))?;
+    guard.insert(handle, key);
+    Ok(handle)
+}
+
+fn consume_master_key_handle(handle: u64) -> Result<Vec<u8>, String> {
+    let mut key = {
+        let mut guard = master_key_registry()
+            .lock()
+            .map_err(|_| "master key registry lock was poisoned".to_owned())?;
+        guard
+            .remove(&handle)
+            .ok_or_else(|| "master key handle is not open".to_owned())?
+    };
+    let bytes = key.as_bytes().to_vec();
+    key.zeroize_in_place();
+    Ok(bytes)
+}
+
+fn js_error_from_crypto(error: mosaic_crypto::MosaicCryptoError) -> JsError {
+    JsError::new(&format!(
+        "Mosaic crypto error code {}",
+        client_error_code_from_crypto(error)
+    ))
+}
+
+fn client_error_code_from_crypto(error: mosaic_crypto::MosaicCryptoError) -> u16 {
+    match error {
+        mosaic_crypto::MosaicCryptoError::EmptyContext => {
+            mosaic_client::ClientErrorCode::EmptyContext.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidKeyLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidKeyLength.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidInputLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidEnvelope => {
+            mosaic_client::ClientErrorCode::InvalidEnvelope.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::MissingCiphertext => {
+            mosaic_client::ClientErrorCode::MissingCiphertext.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::AuthenticationFailed => {
+            mosaic_client::ClientErrorCode::AuthenticationFailed.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::RngFailure => {
+            mosaic_client::ClientErrorCode::RngFailure.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::WrappedKeyTooShort { .. } => {
+            mosaic_client::ClientErrorCode::WrappedKeyTooShort.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::KdfProfileTooWeak => {
+            mosaic_client::ClientErrorCode::KdfProfileTooWeak.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::KdfProfileTooCostly => {
+            mosaic_client::ClientErrorCode::KdfProfileTooCostly.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidSaltLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidSaltLength.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::KdfFailure => {
+            mosaic_client::ClientErrorCode::KdfFailure.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidSignatureLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidSignatureLength.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidPublicKey => {
+            mosaic_client::ClientErrorCode::InvalidPublicKey.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::InvalidUsername => {
+            mosaic_client::ClientErrorCode::InvalidUsername.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleAlbumIdEmpty => {
+            mosaic_client::ClientErrorCode::BundleAlbumIdEmpty.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleAlbumIdMismatch => {
+            mosaic_client::ClientErrorCode::BundleAlbumIdMismatch.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleEpochTooOld => {
+            mosaic_client::ClientErrorCode::BundleEpochTooOld.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleRecipientMismatch => {
+            mosaic_client::ClientErrorCode::BundleRecipientMismatch.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleJsonParse => {
+            mosaic_client::ClientErrorCode::BundleJsonParse.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleSignatureInvalid => {
+            mosaic_client::ClientErrorCode::BundleSignatureInvalid.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::BundleSealOpenFailed => {
+            mosaic_client::ClientErrorCode::BundleSealOpenFailed.as_u16()
+        }
+        mosaic_crypto::MosaicCryptoError::LinkTierMismatch { .. } => {
+            mosaic_client::ClientErrorCode::LinkTierMismatch.as_u16()
         }
     }
 }
@@ -5450,6 +7156,26 @@ fn js_decrypted_shard_result_from_rust(result: DecryptedShardResult) -> JsDecryp
     }
 }
 
+fn js_streaming_frame_result_from_rust(result: StreamingFrameResult) -> JsStreamingFrameResult {
+    JsStreamingFrameResult {
+        code: result.code,
+        frame_index: result.frame_index,
+        bytes: result.bytes,
+    }
+}
+
+fn js_streaming_envelope_result_from_rust(
+    result: StreamingEnvelopeResult,
+) -> JsStreamingEnvelopeResult {
+    JsStreamingEnvelopeResult {
+        code: result.code,
+        header: result.header,
+        bytes: result.bytes,
+        frame_count: result.frame_count,
+        final_frame_size: result.final_frame_size,
+    }
+}
+
 fn js_auth_keypair_result_from_rust(result: AuthKeypairResult) -> JsAuthKeypairResult {
     JsAuthKeypairResult {
         code: result.code,
@@ -5464,7 +7190,7 @@ fn js_create_link_share_handle_result_from_rust(
         code: result.code,
         handle: result.handle,
         link_id: result.link_id,
-        link_secret_for_url: result.link_secret_for_url,
+        link_url_token: result.link_url_token,
         tier: result.tier,
         nonce: result.nonce,
         encrypted_key: result.encrypted_key,
@@ -5585,21 +7311,14 @@ fn js_verify_snapshot_result_from_rust(result: VerifySnapshotResult) -> JsVerify
 // ---------------------------------------------------------------------------
 // Streaming-AEAD shard decryptor (envelope variant 1).
 //
-// A simple Mutex<HashMap<u32, StreamingShardDecryptor>> registry keyed by an
+// A simple Mutex<HashMap<u32, CryptoStreamingShardDecryptor>> registry keyed by an
 // AtomicU32 id. Lifetime is owned by the worker; callers MUST invoke
 // streaming_shard_close_v1 (or successfully reach the final chunk, which
 // removes the entry automatically) to avoid leaking decryptors.
 // ---------------------------------------------------------------------------
 
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Mutex, OnceLock};
-
-use mosaic_crypto::StreamingShardDecryptor;
-use mosaic_domain::SHARD_ENVELOPE_HEADER_LEN;
-
-fn streaming_registry() -> &'static Mutex<HashMap<u32, StreamingShardDecryptor>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<u32, StreamingShardDecryptor>>> = OnceLock::new();
+fn streaming_registry() -> &'static Mutex<HashMap<u32, CryptoStreamingShardDecryptor>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<u32, CryptoStreamingShardDecryptor>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -5877,6 +7596,19 @@ mod tests {
     #[test]
     fn uses_client_protocol_version() {
         assert_eq!(super::protocol_version(), "mosaic-v1");
+    }
+
+    #[test]
+    fn metadata_strip_overflow_code_is_distinct_from_media_output_too_large() {
+        assert_eq!(
+            super::media_error_code(mosaic_media::MosaicMediaError::OutputTooLarge),
+            604
+        );
+        assert_eq!(super::METADATA_STRIP_OVERFLOW_CODE, 605);
+        assert_ne!(
+            super::METADATA_STRIP_OVERFLOW_CODE,
+            super::media_error_code(mosaic_media::MosaicMediaError::OutputTooLarge)
+        );
     }
 
     #[test]
@@ -6187,11 +7919,19 @@ pub fn sidecar_pake_initiator_start_v1(code: &[u8]) -> SidecarPakeStartResult {
     let mut guard = match sidecar_initiator_registry().lock() {
         Ok(g) => g,
         Err(_) => {
-            return SidecarPakeStartResult { code: poison_code(), handle_id: 0, msg1: Vec::new() };
+            return SidecarPakeStartResult {
+                code: poison_code(),
+                handle_id: 0,
+                msg1: Vec::new(),
+            };
         }
     };
     guard.insert(id, initiator);
-    SidecarPakeStartResult { code: client_ok(), handle_id: id, msg1: msg1.as_bytes().to_vec() }
+    SidecarPakeStartResult {
+        code: client_ok(),
+        handle_id: id,
+        msg1: msg1.as_bytes().to_vec(),
+    }
 }
 
 #[must_use]
@@ -6324,28 +8064,56 @@ pub fn sidecar_pake_responder_finish_v1(
     let responder = {
         let mut guard = match sidecar_responder_registry().lock() {
             Ok(g) => g,
-            Err(_) => return SidecarPakeResponderFinishResult { code: poison_code(), material_handle_id: 0 },
+            Err(_) => {
+                return SidecarPakeResponderFinishResult {
+                    code: poison_code(),
+                    material_handle_id: 0,
+                };
+            }
         };
         match guard.remove(&handle_id) {
             Some(v) => v,
-            None => return SidecarPakeResponderFinishResult { code: handle_not_found_code(), material_handle_id: 0 },
+            None => {
+                return SidecarPakeResponderFinishResult {
+                    code: handle_not_found_code(),
+                    material_handle_id: 0,
+                };
+            }
         }
     };
     let confirm_parsed = match SidecarConfirm::from_slice(initiator_confirm) {
         Ok(v) => v,
-        Err(e) => return SidecarPakeResponderFinishResult { code: sidecar_error_code(e), material_handle_id: 0 },
+        Err(e) => {
+            return SidecarPakeResponderFinishResult {
+                code: sidecar_error_code(e),
+                material_handle_id: 0,
+            };
+        }
     };
     let material = match responder.finish(&confirm_parsed) {
         Ok(v) => v,
-        Err(e) => return SidecarPakeResponderFinishResult { code: sidecar_error_code(e), material_handle_id: 0 },
+        Err(e) => {
+            return SidecarPakeResponderFinishResult {
+                code: sidecar_error_code(e),
+                material_handle_id: 0,
+            };
+        }
     };
     let mat_id = sidecar_next_id();
     let mut guard = match sidecar_material_registry().lock() {
         Ok(g) => g,
-        Err(_) => return SidecarPakeResponderFinishResult { code: poison_code(), material_handle_id: 0 },
+        Err(_) => {
+            return SidecarPakeResponderFinishResult {
+                code: poison_code(),
+                material_handle_id: 0,
+            };
+        }
     };
     guard.insert(mat_id, material);
-    SidecarPakeResponderFinishResult { code: client_ok(), material_handle_id: mat_id }
+    SidecarPakeResponderFinishResult {
+        code: client_ok(),
+        material_handle_id: mat_id,
+    }
 }
 
 #[must_use]
@@ -6353,11 +8121,23 @@ pub fn sidecar_tunnel_open_v1(material_handle_id: u32) -> SidecarTunnelOpenResul
     let material = {
         let mut guard = match sidecar_material_registry().lock() {
             Ok(g) => g,
-            Err(_) => return SidecarTunnelOpenResult { code: poison_code(), send_handle_id: 0, recv_handle_id: 0 },
+            Err(_) => {
+                return SidecarTunnelOpenResult {
+                    code: poison_code(),
+                    send_handle_id: 0,
+                    recv_handle_id: 0,
+                };
+            }
         };
         match guard.remove(&material_handle_id) {
             Some(v) => v,
-            None => return SidecarTunnelOpenResult { code: handle_not_found_code(), send_handle_id: 0, recv_handle_id: 0 },
+            None => {
+                return SidecarTunnelOpenResult {
+                    code: handle_not_found_code(),
+                    send_handle_id: 0,
+                    recv_handle_id: 0,
+                };
+            }
         }
     };
     let (send, recv) = sidecar_open_tunnel(material);
@@ -6366,7 +8146,13 @@ pub fn sidecar_tunnel_open_v1(material_handle_id: u32) -> SidecarTunnelOpenResul
     {
         let mut guard = match sidecar_send_registry().lock() {
             Ok(g) => g,
-            Err(_) => return SidecarTunnelOpenResult { code: poison_code(), send_handle_id: 0, recv_handle_id: 0 },
+            Err(_) => {
+                return SidecarTunnelOpenResult {
+                    code: poison_code(),
+                    send_handle_id: 0,
+                    recv_handle_id: 0,
+                };
+            }
         };
         guard.insert(send_id, send);
     }
@@ -6378,43 +8164,86 @@ pub fn sidecar_tunnel_open_v1(material_handle_id: u32) -> SidecarTunnelOpenResul
                 if let Ok(mut g) = sidecar_send_registry().lock() {
                     g.remove(&send_id);
                 }
-                return SidecarTunnelOpenResult { code: poison_code(), send_handle_id: 0, recv_handle_id: 0 };
+                return SidecarTunnelOpenResult {
+                    code: poison_code(),
+                    send_handle_id: 0,
+                    recv_handle_id: 0,
+                };
             }
         };
         guard.insert(recv_id, recv);
     }
-    SidecarTunnelOpenResult { code: client_ok(), send_handle_id: send_id, recv_handle_id: recv_id }
+    SidecarTunnelOpenResult {
+        code: client_ok(),
+        send_handle_id: send_id,
+        recv_handle_id: recv_id,
+    }
 }
 
 #[must_use]
 pub fn sidecar_tunnel_seal_v1(send_handle_id: u32, plaintext: &[u8]) -> SidecarTunnelSealResult {
     let mut guard = match sidecar_send_registry().lock() {
         Ok(g) => g,
-        Err(_) => return SidecarTunnelSealResult { code: poison_code(), sealed: Vec::new() },
+        Err(_) => {
+            return SidecarTunnelSealResult {
+                code: poison_code(),
+                sealed: Vec::new(),
+            };
+        }
     };
     let send = match guard.get_mut(&send_handle_id) {
         Some(v) => v,
-        None => return SidecarTunnelSealResult { code: handle_not_found_code(), sealed: Vec::new() },
+        None => {
+            return SidecarTunnelSealResult {
+                code: handle_not_found_code(),
+                sealed: Vec::new(),
+            };
+        }
     };
     match send.seal(plaintext) {
-        Ok(sealed) => SidecarTunnelSealResult { code: client_ok(), sealed },
-        Err(e) => SidecarTunnelSealResult { code: sidecar_error_code(e), sealed: Vec::new() },
+        Ok(sealed) => SidecarTunnelSealResult {
+            code: client_ok(),
+            sealed,
+        },
+        Err(e) => SidecarTunnelSealResult {
+            code: sidecar_error_code(e),
+            sealed: Vec::new(),
+        },
     }
 }
 
 #[must_use]
-pub fn sidecar_tunnel_open_message_v1(recv_handle_id: u32, sealed: &[u8]) -> SidecarTunnelOpenMsgResult {
+pub fn sidecar_tunnel_open_message_v1(
+    recv_handle_id: u32,
+    sealed: &[u8],
+) -> SidecarTunnelOpenMsgResult {
     let mut guard = match sidecar_recv_registry().lock() {
         Ok(g) => g,
-        Err(_) => return SidecarTunnelOpenMsgResult { code: poison_code(), plaintext: Vec::new() },
+        Err(_) => {
+            return SidecarTunnelOpenMsgResult {
+                code: poison_code(),
+                plaintext: Vec::new(),
+            };
+        }
     };
     let recv = match guard.get_mut(&recv_handle_id) {
         Some(v) => v,
-        None => return SidecarTunnelOpenMsgResult { code: handle_not_found_code(), plaintext: Vec::new() },
+        None => {
+            return SidecarTunnelOpenMsgResult {
+                code: handle_not_found_code(),
+                plaintext: Vec::new(),
+            };
+        }
     };
     match recv.open(sealed) {
-        Ok(plaintext) => SidecarTunnelOpenMsgResult { code: client_ok(), plaintext },
-        Err(e) => SidecarTunnelOpenMsgResult { code: sidecar_error_code(e), plaintext: Vec::new() },
+        Ok(plaintext) => SidecarTunnelOpenMsgResult {
+            code: client_ok(),
+            plaintext,
+        },
+        Err(e) => SidecarTunnelOpenMsgResult {
+            code: sidecar_error_code(e),
+            plaintext: Vec::new(),
+        },
     }
 }
 
@@ -6422,11 +8251,17 @@ pub fn sidecar_tunnel_open_message_v1(recv_handle_id: u32, sealed: &[u8]) -> Sid
 pub fn sidecar_tunnel_close_v1(send_handle_id: u32, recv_handle_id: u32) -> u32 {
     // Each `remove` triggers Drop which zeroizes the per-direction sub-key.
     let r1 = match sidecar_send_registry().lock() {
-        Ok(mut g) => { g.remove(&send_handle_id); client_ok() }
+        Ok(mut g) => {
+            g.remove(&send_handle_id);
+            client_ok()
+        }
         Err(_) => poison_code(),
     };
     let r2 = match sidecar_recv_registry().lock() {
-        Ok(mut g) => { g.remove(&recv_handle_id); client_ok() }
+        Ok(mut g) => {
+            g.remove(&recv_handle_id);
+            client_ok()
+        }
         Err(_) => poison_code(),
     };
     if r1 != client_ok() { r1 } else { r2 }
@@ -6435,7 +8270,10 @@ pub fn sidecar_tunnel_close_v1(send_handle_id: u32, recv_handle_id: u32) -> u32 
 #[must_use]
 pub fn sidecar_pake_initiator_close_v1(handle_id: u32) -> u32 {
     match sidecar_initiator_registry().lock() {
-        Ok(mut g) => { g.remove(&handle_id); client_ok() }
+        Ok(mut g) => {
+            g.remove(&handle_id);
+            client_ok()
+        }
         Err(_) => poison_code(),
     }
 }
@@ -6443,7 +8281,10 @@ pub fn sidecar_pake_initiator_close_v1(handle_id: u32) -> u32 {
 #[must_use]
 pub fn sidecar_pake_responder_close_v1(handle_id: u32) -> u32 {
     match sidecar_responder_registry().lock() {
-        Ok(mut g) => { g.remove(&handle_id); client_ok() }
+        Ok(mut g) => {
+            g.remove(&handle_id);
+            client_ok()
+        }
         Err(_) => poison_code(),
     }
 }
@@ -6453,88 +8294,192 @@ pub fn sidecar_pake_responder_close_v1(handle_id: u32) -> u32 {
 // ---------------------------------------------------------------------------
 
 #[wasm_bindgen(js_name = SidecarPakeStartResult)]
-pub struct JsSidecarPakeStartResult { code: u32, handle_id: u32, msg1: Vec<u8> }
+pub struct JsSidecarPakeStartResult {
+    code: u32,
+    handle_id: u32,
+    msg1: Vec<u8>,
+}
 
 #[wasm_bindgen(js_class = SidecarPakeStartResult)]
 impl JsSidecarPakeStartResult {
-    #[wasm_bindgen(getter)] #[must_use] pub fn code(&self) -> u32 { self.code }
-    #[wasm_bindgen(getter, js_name = handleId)] #[must_use] pub fn handle_id(&self) -> u32 { self.handle_id }
-    #[wasm_bindgen(getter)] #[must_use] pub fn msg1(&self) -> Vec<u8> { self.msg1.clone() }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter, js_name = handleId)]
+    #[must_use]
+    pub fn handle_id(&self) -> u32 {
+        self.handle_id
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn msg1(&self) -> Vec<u8> {
+        self.msg1.clone()
+    }
 }
 
 #[wasm_bindgen(js_name = SidecarPakeResponderResult)]
 pub struct JsSidecarPakeResponderResult {
-    code: u32, responder_handle_id: u32, msg2: Vec<u8>, responder_confirm: Vec<u8>,
+    code: u32,
+    responder_handle_id: u32,
+    msg2: Vec<u8>,
+    responder_confirm: Vec<u8>,
 }
 
 #[wasm_bindgen(js_class = SidecarPakeResponderResult)]
 impl JsSidecarPakeResponderResult {
-    #[wasm_bindgen(getter)] #[must_use] pub fn code(&self) -> u32 { self.code }
-    #[wasm_bindgen(getter, js_name = responderHandleId)] #[must_use] pub fn responder_handle_id(&self) -> u32 { self.responder_handle_id }
-    #[wasm_bindgen(getter)] #[must_use] pub fn msg2(&self) -> Vec<u8> { self.msg2.clone() }
-    #[wasm_bindgen(getter, js_name = responderConfirm)] #[must_use] pub fn responder_confirm(&self) -> Vec<u8> { self.responder_confirm.clone() }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter, js_name = responderHandleId)]
+    #[must_use]
+    pub fn responder_handle_id(&self) -> u32 {
+        self.responder_handle_id
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn msg2(&self) -> Vec<u8> {
+        self.msg2.clone()
+    }
+    #[wasm_bindgen(getter, js_name = responderConfirm)]
+    #[must_use]
+    pub fn responder_confirm(&self) -> Vec<u8> {
+        self.responder_confirm.clone()
+    }
 }
 
 #[wasm_bindgen(js_name = SidecarPakeInitiatorFinishResult)]
 pub struct JsSidecarPakeInitiatorFinishResult {
-    code: u32, material_handle_id: u32, initiator_confirm: Vec<u8>,
+    code: u32,
+    material_handle_id: u32,
+    initiator_confirm: Vec<u8>,
 }
 
 #[wasm_bindgen(js_class = SidecarPakeInitiatorFinishResult)]
 impl JsSidecarPakeInitiatorFinishResult {
-    #[wasm_bindgen(getter)] #[must_use] pub fn code(&self) -> u32 { self.code }
-    #[wasm_bindgen(getter, js_name = materialHandleId)] #[must_use] pub fn material_handle_id(&self) -> u32 { self.material_handle_id }
-    #[wasm_bindgen(getter, js_name = initiatorConfirm)] #[must_use] pub fn initiator_confirm(&self) -> Vec<u8> { self.initiator_confirm.clone() }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter, js_name = materialHandleId)]
+    #[must_use]
+    pub fn material_handle_id(&self) -> u32 {
+        self.material_handle_id
+    }
+    #[wasm_bindgen(getter, js_name = initiatorConfirm)]
+    #[must_use]
+    pub fn initiator_confirm(&self) -> Vec<u8> {
+        self.initiator_confirm.clone()
+    }
 }
 
 #[wasm_bindgen(js_name = SidecarPakeResponderFinishResult)]
 #[derive(Clone, Copy)]
-pub struct JsSidecarPakeResponderFinishResult { code: u32, material_handle_id: u32 }
+pub struct JsSidecarPakeResponderFinishResult {
+    code: u32,
+    material_handle_id: u32,
+}
 
 #[wasm_bindgen(js_class = SidecarPakeResponderFinishResult)]
 impl JsSidecarPakeResponderFinishResult {
-    #[wasm_bindgen(getter)] #[must_use] pub fn code(&self) -> u32 { self.code }
-    #[wasm_bindgen(getter, js_name = materialHandleId)] #[must_use] pub fn material_handle_id(&self) -> u32 { self.material_handle_id }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter, js_name = materialHandleId)]
+    #[must_use]
+    pub fn material_handle_id(&self) -> u32 {
+        self.material_handle_id
+    }
 }
 
 #[wasm_bindgen(js_name = SidecarTunnelOpenResult)]
 #[derive(Clone, Copy)]
-pub struct JsSidecarTunnelOpenResult { code: u32, send_handle_id: u32, recv_handle_id: u32 }
+pub struct JsSidecarTunnelOpenResult {
+    code: u32,
+    send_handle_id: u32,
+    recv_handle_id: u32,
+}
 
 #[wasm_bindgen(js_class = SidecarTunnelOpenResult)]
 impl JsSidecarTunnelOpenResult {
-    #[wasm_bindgen(getter)] #[must_use] pub fn code(&self) -> u32 { self.code }
-    #[wasm_bindgen(getter, js_name = sendHandleId)] #[must_use] pub fn send_handle_id(&self) -> u32 { self.send_handle_id }
-    #[wasm_bindgen(getter, js_name = recvHandleId)] #[must_use] pub fn recv_handle_id(&self) -> u32 { self.recv_handle_id }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter, js_name = sendHandleId)]
+    #[must_use]
+    pub fn send_handle_id(&self) -> u32 {
+        self.send_handle_id
+    }
+    #[wasm_bindgen(getter, js_name = recvHandleId)]
+    #[must_use]
+    pub fn recv_handle_id(&self) -> u32 {
+        self.recv_handle_id
+    }
 }
 
 #[wasm_bindgen(js_name = SidecarTunnelSealResult)]
-pub struct JsSidecarTunnelSealResult { code: u32, sealed: Vec<u8> }
+pub struct JsSidecarTunnelSealResult {
+    code: u32,
+    sealed: Vec<u8>,
+}
 
 #[wasm_bindgen(js_class = SidecarTunnelSealResult)]
 impl JsSidecarTunnelSealResult {
-    #[wasm_bindgen(getter)] #[must_use] pub fn code(&self) -> u32 { self.code }
-    #[wasm_bindgen(getter)] #[must_use] pub fn sealed(&self) -> Vec<u8> { self.sealed.clone() }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn sealed(&self) -> Vec<u8> {
+        self.sealed.clone()
+    }
 }
 
 #[wasm_bindgen(js_name = SidecarTunnelOpenMsgResult)]
-pub struct JsSidecarTunnelOpenMsgResult { code: u32, plaintext: Vec<u8> }
+pub struct JsSidecarTunnelOpenMsgResult {
+    code: u32,
+    plaintext: Vec<u8>,
+}
 
 impl Drop for JsSidecarTunnelOpenMsgResult {
-    fn drop(&mut self) { self.plaintext.zeroize(); }
+    fn drop(&mut self) {
+        self.plaintext.zeroize();
+    }
 }
 
 #[wasm_bindgen(js_class = SidecarTunnelOpenMsgResult)]
 impl JsSidecarTunnelOpenMsgResult {
-    #[wasm_bindgen(getter)] #[must_use] pub fn code(&self) -> u32 { self.code }
-    #[wasm_bindgen(getter)] #[must_use] pub fn plaintext(&self) -> Vec<u8> { self.plaintext.clone() }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn plaintext(&self) -> Vec<u8> {
+        self.plaintext.clone()
+    }
 }
 
 #[wasm_bindgen(js_name = sidecarPakeInitiatorStartV1)]
 #[must_use]
 pub fn sidecar_pake_initiator_start_v1_js(code: Vec<u8>) -> JsSidecarPakeStartResult {
     let r = sidecar_pake_initiator_start_v1(&code);
-    JsSidecarPakeStartResult { code: r.code, handle_id: r.handle_id, msg1: r.msg1 }
+    JsSidecarPakeStartResult {
+        code: r.code,
+        handle_id: r.handle_id,
+        msg1: r.msg1,
+    }
 }
 
 #[wasm_bindgen(js_name = sidecarPakeResponderV1)]
@@ -6542,45 +8487,77 @@ pub fn sidecar_pake_initiator_start_v1_js(code: Vec<u8>) -> JsSidecarPakeStartRe
 pub fn sidecar_pake_responder_v1_js(code: Vec<u8>, msg1: Vec<u8>) -> JsSidecarPakeResponderResult {
     let r = sidecar_pake_responder_v1(&code, &msg1);
     JsSidecarPakeResponderResult {
-        code: r.code, responder_handle_id: r.responder_handle_id,
-        msg2: r.msg2, responder_confirm: r.responder_confirm,
+        code: r.code,
+        responder_handle_id: r.responder_handle_id,
+        msg2: r.msg2,
+        responder_confirm: r.responder_confirm,
     }
 }
 
 #[wasm_bindgen(js_name = sidecarPakeInitiatorFinishV1)]
 #[must_use]
-pub fn sidecar_pake_initiator_finish_v1_js(handle_id: u32, msg2: Vec<u8>, responder_confirm: Vec<u8>) -> JsSidecarPakeInitiatorFinishResult {
+pub fn sidecar_pake_initiator_finish_v1_js(
+    handle_id: u32,
+    msg2: Vec<u8>,
+    responder_confirm: Vec<u8>,
+) -> JsSidecarPakeInitiatorFinishResult {
     let r = sidecar_pake_initiator_finish_v1(handle_id, &msg2, &responder_confirm);
-    JsSidecarPakeInitiatorFinishResult { code: r.code, material_handle_id: r.material_handle_id, initiator_confirm: r.initiator_confirm }
+    JsSidecarPakeInitiatorFinishResult {
+        code: r.code,
+        material_handle_id: r.material_handle_id,
+        initiator_confirm: r.initiator_confirm,
+    }
 }
 
 #[wasm_bindgen(js_name = sidecarPakeResponderFinishV1)]
 #[must_use]
-pub fn sidecar_pake_responder_finish_v1_js(handle_id: u32, initiator_confirm: Vec<u8>) -> JsSidecarPakeResponderFinishResult {
+pub fn sidecar_pake_responder_finish_v1_js(
+    handle_id: u32,
+    initiator_confirm: Vec<u8>,
+) -> JsSidecarPakeResponderFinishResult {
     let r = sidecar_pake_responder_finish_v1(handle_id, &initiator_confirm);
-    JsSidecarPakeResponderFinishResult { code: r.code, material_handle_id: r.material_handle_id }
+    JsSidecarPakeResponderFinishResult {
+        code: r.code,
+        material_handle_id: r.material_handle_id,
+    }
 }
 
 #[wasm_bindgen(js_name = sidecarTunnelOpenV1)]
 #[must_use]
 pub fn sidecar_tunnel_open_v1_js(material_handle_id: u32) -> JsSidecarTunnelOpenResult {
     let r = sidecar_tunnel_open_v1(material_handle_id);
-    JsSidecarTunnelOpenResult { code: r.code, send_handle_id: r.send_handle_id, recv_handle_id: r.recv_handle_id }
+    JsSidecarTunnelOpenResult {
+        code: r.code,
+        send_handle_id: r.send_handle_id,
+        recv_handle_id: r.recv_handle_id,
+    }
 }
 
 #[wasm_bindgen(js_name = sidecarTunnelSealV1)]
 #[must_use]
-pub fn sidecar_tunnel_seal_v1_js(send_handle_id: u32, plaintext: Vec<u8>) -> JsSidecarTunnelSealResult {
+pub fn sidecar_tunnel_seal_v1_js(
+    send_handle_id: u32,
+    plaintext: Vec<u8>,
+) -> JsSidecarTunnelSealResult {
     let r = sidecar_tunnel_seal_v1(send_handle_id, &plaintext);
-    JsSidecarTunnelSealResult { code: r.code, sealed: r.sealed }
+    JsSidecarTunnelSealResult {
+        code: r.code,
+        sealed: r.sealed,
+    }
 }
 
 #[wasm_bindgen(js_name = sidecarTunnelOpenMessageV1)]
 #[must_use]
-pub fn sidecar_tunnel_open_message_v1_js(recv_handle_id: u32, sealed: Vec<u8>) -> JsSidecarTunnelOpenMsgResult {
+pub fn sidecar_tunnel_open_message_v1_js(
+    recv_handle_id: u32,
+    sealed: Vec<u8>,
+) -> JsSidecarTunnelOpenMsgResult {
     let mut r = sidecar_tunnel_open_message_v1(recv_handle_id, &sealed);
     let plaintext = std::mem::take(&mut r.plaintext);
-    JsSidecarTunnelOpenMsgResult { code: r.code, plaintext }
+    JsSidecarTunnelOpenMsgResult {
+        code: r.code,
+        plaintext,
+    }
 }
 
 #[wasm_bindgen(js_name = sidecarTunnelCloseV1)]

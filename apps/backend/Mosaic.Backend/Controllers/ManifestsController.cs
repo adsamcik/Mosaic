@@ -44,66 +44,52 @@ public class ManifestsController : ControllerBase
 
 
     /// <summary>
-    /// Create a new manifest (photo) in an album
+    /// Create a new finalized manifest (photo) in an album.
     /// </summary>
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateManifestRequest request)
+    public Task<IActionResult> Create([FromBody] CreateManifestRequest request)
+        => FinalizeManifestCoreAsync(Guid.CreateVersion7(), request);
+
+    /// <summary>
+    /// Finalize a client-addressed manifest id using the ADR-022 v1 shape.
+    /// </summary>
+    [HttpPost("{manifestId:guid}/finalize")]
+    public Task<IActionResult> Finalize(Guid manifestId, [FromBody] CreateManifestRequest request)
+        => FinalizeManifestCoreAsync(manifestId, request);
+
+    private async Task<IActionResult> FinalizeManifestCoreAsync(Guid manifestId, CreateManifestRequest request)
     {
-        // Build shard info list with tiers - support both legacy ShardIds and new TieredShards
-        var shardInfoList = new List<(Guid Id, int Tier)>();
-
-        if (request.TieredShards != null && request.TieredShards.Count > 0)
+        var validationError = ValidateFinalizeRequest(request);
+        if (validationError != null)
         {
-            // New format: per-shard tier assignment
-            foreach (var tieredShard in request.TieredShards)
-            {
-                if (!Guid.TryParse(tieredShard.ShardId, out var shardGuid))
-                {
-                    _logger.LogWarning("Invalid shard ID format: {ShardId}", tieredShard.ShardId);
-                    return Problem(
-                        detail: $"Invalid shard ID format: {tieredShard.ShardId}",
-                        statusCode: StatusCodes.Status400BadRequest);
-                }
-                shardInfoList.Add((shardGuid, tieredShard.Tier));
-            }
-        }
-        else
-        {
-            // Legacy format: all shards share the same tier
-            var defaultTier = request.Tier ?? (int)ShardTier.Original;
-            foreach (var shardIdStr in request.ShardIds)
-            {
-                if (!Guid.TryParse(shardIdStr, out var shardGuid))
-                {
-                    _logger.LogWarning("Invalid shard ID format: {ShardId}", shardIdStr);
-                    return Problem(
-                        detail: $"Invalid shard ID format: {shardIdStr}",
-                        statusCode: StatusCodes.Status400BadRequest);
-                }
-                shardInfoList.Add((shardGuid, defaultTier));
-            }
+            return validationError;
         }
 
+        var shardInfoList = request.TieredShards!
+            .Select(tieredShard => (
+                Id: Guid.Parse(tieredShard.ShardId),
+                tieredShard.Tier,
+                tieredShard.ShardIndex,
+                tieredShard.Sha256,
+                tieredShard.ContentLength,
+                tieredShard.EnvelopeVersion))
+            .OrderBy(shard => shard.Tier)
+            .ThenBy(shard => shard.ShardIndex)
+            .ToList();
         var shardGuids = shardInfoList.Select(s => s.Id).ToList();
-
-        _logger.LogInformation("Creating manifest for album {AlbumId}, shardIds count: {Count}, shardIds: {ShardIds}",
-            request.AlbumId, shardGuids.Count, string.Join(",", shardGuids));
 
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
         {
-            // 1. Lock album row (FOR UPDATE is PostgreSQL-only; SQLite uses simpler locking)
             Album? album;
             if (_db.UsesLiteProvider())
             {
-                // SQLite: Use standard query (transactions provide sufficient isolation)
                 album = await _db.Albums.FindAsync(request.AlbumId);
             }
             else
             {
-                // PostgreSQL: Use row-level locking for concurrent safety
                 album = await _db.Albums
                     .FromSqlRaw("SELECT * FROM albums WHERE id = {0} FOR UPDATE", request.AlbumId)
                     .FirstOrDefaultAsync();
@@ -116,7 +102,6 @@ public class ManifestsController : ControllerBase
                     statusCode: StatusCodes.Status404NotFound);
             }
 
-            // 2. Verify membership
             var (_, memberError) = await _db.RequireAlbumEditorAsync(album.Id, user.Id);
             if (memberError != null)
             {
@@ -136,7 +121,16 @@ public class ManifestsController : ControllerBase
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            // 3. Validate shards
+            if (await _db.Manifests.IgnoreQueryFilters().AnyAsync(m => m.Id == manifestId))
+            {
+                return Conflict(new
+                {
+                    error = "Manifest already finalized",
+                    detail = "The supplied manifest id has already been finalized.",
+                    manifestId
+                });
+            }
+
             var shards = await _db.Shards
                 .Where(s => shardGuids.Contains(s.Id))
                 .ToListAsync();
@@ -153,22 +147,35 @@ public class ManifestsController : ControllerBase
 
             if (shards.Any(s => s.UploaderId != user.Id))
             {
-                _logger.LogWarning("Shard ownership mismatch: user {UserId}, shards belong to {UploaderIds}",
-                    user.Id, string.Join(",", shards.Select(s => s.UploaderId)));
+                _logger.LogWarning("Shard ownership mismatch for user {UserId}", user.Id);
                 return Forbid();
             }
 
             if (shards.Any(s => s.Status != ShardStatus.PENDING))
             {
-                var nonPending = shards.Where(s => s.Status != ShardStatus.PENDING);
-                _logger.LogWarning("Shards already linked: {Shards}",
-                    string.Join(",", nonPending.Select(s => $"{s.Id}={s.Status}")));
                 return Problem(
                     detail: "Some shards already linked to a manifest",
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            // 4. Check album limits
+            foreach (var shardInfo in shardInfoList)
+            {
+                var shard = shards.Single(s => s.Id == shardInfo.Id);
+                if (shardInfo.Sha256 != null && !string.Equals(shard.Sha256, shardInfo.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Problem(
+                        detail: "tieredShards sha256 does not match stored shard hash",
+                        statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (shardInfo.ContentLength.HasValue && shard.SizeBytes != shardInfo.ContentLength.Value)
+                {
+                    return Problem(
+                        detail: "tieredShards contentLength does not match stored shard length",
+                        statusCode: StatusCodes.Status400BadRequest);
+                }
+            }
+
             var albumLimits = await _db.AlbumLimits.FindAsync(album.Id);
             var maxPhotos = await _quotaService.GetEffectiveMaxPhotosAsync(album.Id);
             var maxSize = await _quotaService.GetEffectiveMaxAlbumSizeAsync(album.Id);
@@ -193,29 +200,34 @@ public class ManifestsController : ControllerBase
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            // 5. Create manifest
+            var now = DateTimeOffset.UtcNow;
             album.CurrentVersion++;
-            album.UpdatedAt = DateTime.UtcNow;
+            album.UpdatedAt = now.UtcDateTime;
 
             var manifest = new Manifest
             {
-                Id = Guid.CreateVersion7(),
+                Id = manifestId,
                 AlbumId = album.Id,
+                ProtocolVersion = request.ProtocolVersion,
+                AssetType = request.AssetType,
                 VersionCreated = album.CurrentVersion,
+                MetadataVersion = 1,
                 EncryptedMeta = request.EncryptedMeta,
+                EncryptedMetaSidecar = request.EncryptedMetaSidecar,
                 Signature = request.Signature,
                 SignerPubkey = request.SignerPubkey,
-                ExpiresAt = request.ExpiresAt
+                ExpiresAt = request.ExpiresAt,
+                CreatedAt = now.UtcDateTime,
+                UpdatedAt = now.UtcDateTime
             };
             _db.Manifests.Add(manifest);
 
-            // 6. Link shards and mark ACTIVE
-            for (int i = 0; i < shardInfoList.Count; i++)
+            for (var i = 0; i < shardInfoList.Count; i++)
             {
-                var (shardId, tier) = shardInfoList[i];
-                var shard = shards.First(s => s.Id == shardId);
+                var shardInfo = shardInfoList[i];
+                var shard = shards.Single(s => s.Id == shardInfo.Id);
                 shard.Status = ShardStatus.ACTIVE;
-                shard.StatusUpdatedAt = DateTime.UtcNow;
+                shard.StatusUpdatedAt = now.UtcDateTime;
                 shard.PendingExpiresAt = null;
 
                 _db.ManifestShards.Add(new ManifestShard
@@ -223,16 +235,19 @@ public class ManifestsController : ControllerBase
                     ManifestId = manifest.Id,
                     ShardId = shard.Id,
                     ChunkIndex = i,
-                    Tier = tier
+                    Tier = shardInfo.Tier,
+                    ShardIndex = shardInfo.ShardIndex,
+                    Sha256 = shardInfo.Sha256 ?? shard.Sha256 ?? string.Empty,
+                    ContentLength = shardInfo.ContentLength ?? shard.SizeBytes,
+                    EnvelopeVersion = shardInfo.EnvelopeVersion
                 });
             }
 
-            // 7. Update album limits tracking
             if (albumLimits != null)
             {
                 albumLimits.CurrentPhotoCount++;
                 albumLimits.CurrentSizeBytes += shardsTotalSize;
-                albumLimits.UpdatedAt = DateTime.UtcNow;
+                albumLimits.UpdatedAt = now.UtcDateTime;
             }
             else
             {
@@ -247,12 +262,7 @@ public class ManifestsController : ControllerBase
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
 
-            return Created($"/api/manifests/{manifest.Id}", new
-            {
-                manifest.Id,
-                manifest.ExpiresAt,
-                Version = album.CurrentVersion
-            });
+            return Created($"/api/manifests/{manifest.Id}", ToFinalizeResponse(manifest, shardInfoList));
         }
         catch
         {
@@ -260,6 +270,129 @@ public class ManifestsController : ControllerBase
             throw;
         }
     }
+
+    private IActionResult? ValidateFinalizeRequest(CreateManifestRequest request)
+    {
+        if (request.ProtocolVersion != 1)
+        {
+            return Problem(
+                detail: "protocolVersion must be 1",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (!IsSupportedAssetType(request.AssetType))
+        {
+            return Problem(
+                detail: "assetType must be Image, Video, or LiveImage",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (request.TieredShards == null || request.TieredShards.Count == 0)
+        {
+            return Problem(
+                detail: "tieredShards is required for manifest finalization",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var seen = new HashSet<(int Tier, int ShardIndex)>();
+        foreach (var tieredShard in request.TieredShards)
+        {
+            if (!Guid.TryParse(tieredShard.ShardId, out _))
+            {
+                return Problem(
+                    detail: $"Invalid shard ID format: {tieredShard.ShardId}",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (!Enum.IsDefined(typeof(ShardTier), tieredShard.Tier))
+            {
+                return Problem(
+                    detail: "tieredShards tier must be 1, 2, or 3",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (tieredShard.ShardIndex < 0)
+            {
+                return Problem(
+                    detail: "tieredShards shardIndex must be non-negative",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (!seen.Add((tieredShard.Tier, tieredShard.ShardIndex)))
+            {
+                return Problem(
+                    detail: "tieredShards shardIndex must be unique per tier",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (tieredShard.Sha256 != null && !IsLowercaseSha256Hex(tieredShard.Sha256))
+            {
+                return Problem(
+                    detail: "tieredShards sha256 must be lowercase hex SHA-256",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (tieredShard.ContentLength is <= 0)
+            {
+                return Problem(
+                    detail: "tieredShards contentLength must be positive",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (tieredShard.EnvelopeVersion != 3)
+            {
+                return Problem(
+                    detail: "tieredShards envelopeVersion must be 3",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+        }
+
+        foreach (var tierGroup in request.TieredShards.GroupBy(shard => shard.Tier))
+        {
+            var indices = tierGroup.Select(shard => shard.ShardIndex).Order().ToArray();
+            for (var expected = 0; expected < indices.Length; expected++)
+            {
+                if (indices[expected] != expected)
+                {
+                    return Problem(
+                        detail: "tieredShards shardIndex must be contiguous per tier",
+                        statusCode: StatusCodes.Status400BadRequest);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsSupportedAssetType(string assetType)
+        => string.Equals(assetType, "Image", StringComparison.Ordinal)
+            || string.Equals(assetType, "Video", StringComparison.Ordinal)
+            || string.Equals(assetType, "LiveImage", StringComparison.Ordinal);
+
+    private static bool IsLowercaseSha256Hex(string? value)
+        => value is { Length: 64 } && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
+
+    private static ManifestFinalizeResponse ToFinalizeResponse(
+        Manifest manifest,
+        IReadOnlyCollection<(Guid Id, int Tier, int ShardIndex, string? Sha256, long? ContentLength, int EnvelopeVersion)> shardInfoList)
+        => new()
+        {
+            ProtocolVersion = manifest.ProtocolVersion,
+            ManifestId = manifest.Id,
+            MetadataVersion = manifest.MetadataVersion,
+            CreatedAt = manifest.CreatedAt,
+            TieredShards = shardInfoList
+                .OrderBy(shard => shard.Tier)
+                .ThenBy(shard => shard.ShardIndex)
+                .Select(shard => new TieredShardInfo(
+                    shard.Id.ToString(),
+                    shard.Tier,
+                    shard.ShardIndex,
+                    shard.Sha256 ?? string.Empty,
+                    shard.ContentLength ?? 0,
+                    shard.EnvelopeVersion))
+                .ToList()
+        };
 
     /// <summary>
     /// Update encrypted metadata for an existing manifest without changing shard references.
@@ -354,6 +487,7 @@ public class ManifestsController : ControllerBase
             manifest.Signature = request.Signature;
             manifest.SignerPubkey = request.SignerPubkey;
             manifest.VersionCreated = album.CurrentVersion + 1;
+            manifest.MetadataVersion++;
             manifest.UpdatedAt = DateTime.UtcNow;
             album.CurrentVersion++;
             album.UpdatedAt = DateTime.UtcNow;
@@ -415,6 +549,7 @@ public class ManifestsController : ControllerBase
 
         manifest.ExpiresAt = request.ExpiresAt;
         manifest.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+        manifest.MetadataVersion++;
         manifest.Album.CurrentVersion++;
         manifest.Album.UpdatedAt = manifest.UpdatedAt;
         manifest.VersionCreated = manifest.Album.CurrentVersion;
@@ -463,11 +598,16 @@ public class ManifestsController : ControllerBase
 
         return Ok(new
         {
-            manifest.Id,
+            ProtocolVersion = manifest.ProtocolVersion,
+            ManifestId = manifest.Id,
             manifest.AlbumId,
+            manifest.AssetType,
+            manifest.MetadataVersion,
+            manifest.CreatedAt,
             manifest.VersionCreated,
             manifest.IsDeleted,
             manifest.EncryptedMeta,
+            manifest.EncryptedMetaSidecar,
             manifest.Signature,
             manifest.SignerPubkey,
             manifest.ExpiresAt,
@@ -475,7 +615,18 @@ public class ManifestsController : ControllerBase
             ShardIds = manifest.ManifestShards.Select(ms => ms.ShardId),
             // New format with tier info
             Shards = manifest.ManifestShards.Select(ms => new { ms.ShardId, ms.Tier }),
-            manifest.CreatedAt,
+            TieredShards = manifest.ManifestShards
+                .OrderBy(ms => ms.Tier)
+                .ThenBy(ms => ms.ShardIndex)
+                .Select(ms => new
+                {
+                    ms.Tier,
+                    ms.ShardIndex,
+                    ms.ShardId,
+                    ms.Sha256,
+                    ms.ContentLength,
+                    ms.EnvelopeVersion
+                }),
             manifest.UpdatedAt
         });
     }

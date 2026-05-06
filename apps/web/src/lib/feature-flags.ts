@@ -11,6 +11,21 @@ interface FeatureFlagEnv {
   readonly VITE_FEATURE_SIDECAR_TELEMETRY?: string;
 }
 
+export interface FeatureFlags {
+  readonly rustCoreFinalize: boolean;
+  readonly rustCoreSync: boolean;
+  readonly rustCoreUpload: boolean;
+  readonly sidecar: boolean;
+  readonly sidecarTelemetry: boolean;
+}
+
+export type FeatureFlagName = keyof FeatureFlags;
+type MutableFeatureFlagPatch = {
+  -readonly [K in FeatureFlagName]?: FeatureFlags[K];
+};
+
+const STORAGE_KEY = 'mosaic.feature-flags';
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const env: FeatureFlagEnv =
   typeof import.meta !== 'undefined' && (import.meta as any).env
@@ -18,7 +33,10 @@ const env: FeatureFlagEnv =
     : {};
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-const initialFlags = {
+const DEFAULT_FEATURE_FLAGS: FeatureFlags = Object.freeze({
+  rustCoreFinalize: false,
+  rustCoreSync: false,
+  rustCoreUpload: false,
   /**
    * Sidecar Beacon — "Send to my phone" download output mode + /pair receive page.
    * Beta. Default OFF. Enable for dev with `VITE_FEATURE_SIDECAR=1`.
@@ -30,24 +48,119 @@ const initialFlags = {
    * The telemetry collector self-checks BOTH flags at runtime.
    */
   sidecarTelemetry: env.VITE_FEATURE_SIDECAR_TELEMETRY === '1',
-};
+});
 
-const flags: { -readonly [K in keyof typeof initialFlags]: boolean } = { ...initialFlags };
+let programmaticOverride: Partial<FeatureFlags> | null = null;
 
-export type FeatureFlagName = keyof typeof initialFlags;
+export const FeatureFlagsManager = Object.freeze({
+  storageKey: STORAGE_KEY,
+
+  defaults(): FeatureFlags {
+    return { ...DEFAULT_FEATURE_FLAGS };
+  },
+
+  load(): FeatureFlags {
+    const persisted = readStoredFlags();
+    return programmaticOverride === null
+      ? persisted
+      : { ...persisted, ...programmaticOverride };
+  },
+
+  save(partial: Partial<FeatureFlags>): FeatureFlags {
+    const next = { ...readStoredFlags(), ...sanitizePartialFlags(partial) };
+    writeStoredFlags(next);
+    return programmaticOverride === null
+      ? next
+      : { ...next, ...programmaticOverride };
+  },
+
+  reset(): void {
+    getLocalStorage()?.removeItem(STORAGE_KEY);
+    programmaticOverride = null;
+  },
+
+  override(partial: Partial<FeatureFlags>): FeatureFlags {
+    programmaticOverride = { ...sanitizePartialFlags(partial) };
+    return this.load();
+  },
+
+  resetOverride(): void {
+    programmaticOverride = null;
+  },
+});
 
 export function getFeatureFlag(name: FeatureFlagName): boolean {
-  return flags[name];
+  return FeatureFlagsManager.load()[name];
 }
 
-/** Test-only override. Reset by passing the original value in `afterEach`. */
+/** Test-only override. Reset with `__resetFeatureFlagsForTests` in `afterEach`. */
 export function __setFeatureFlagForTests(name: FeatureFlagName, value: boolean): void {
-  flags[name] = value;
+  programmaticOverride = { ...programmaticOverride, [name]: value };
 }
 
 /** Test-only reset to env-derived defaults. */
 export function __resetFeatureFlagsForTests(): void {
-  for (const k of Object.keys(initialFlags) as FeatureFlagName[]) {
-    flags[k] = initialFlags[k];
+  FeatureFlagsManager.reset();
+}
+
+declare global {
+  interface Window {
+    mosaicFeatureFlags?: typeof FeatureFlagsManager;
   }
+}
+
+if (typeof window !== 'undefined') {
+  window.mosaicFeatureFlags = FeatureFlagsManager;
+}
+
+function readStoredFlags(): FeatureFlags {
+  const storage = getLocalStorage();
+  if (storage === null) {
+    return { ...DEFAULT_FEATURE_FLAGS };
+  }
+
+  const raw = storage.getItem(STORAGE_KEY);
+  if (raw === null) {
+    return { ...DEFAULT_FEATURE_FLAGS };
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) {
+      return { ...DEFAULT_FEATURE_FLAGS };
+    }
+    return { ...DEFAULT_FEATURE_FLAGS, ...sanitizePartialFlags(parsed) };
+  } catch {
+    return { ...DEFAULT_FEATURE_FLAGS };
+  }
+}
+
+function writeStoredFlags(flags: FeatureFlags): void {
+  const storage = getLocalStorage();
+  if (storage === null) {
+    return;
+  }
+  storage.setItem(STORAGE_KEY, JSON.stringify(flags));
+}
+
+function sanitizePartialFlags(value: Partial<FeatureFlags> | Record<string, unknown>): MutableFeatureFlagPatch {
+  const sanitized: MutableFeatureFlagPatch = {};
+  for (const key of Object.keys(DEFAULT_FEATURE_FLAGS) as FeatureFlagName[]) {
+    if (typeof value[key] === 'boolean') {
+      sanitized[key] = value[key];
+    }
+  }
+  return sanitized;
+}
+
+function getLocalStorage(): Storage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

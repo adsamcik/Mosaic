@@ -3,14 +3,18 @@
 #![forbid(unsafe_code)]
 
 use argon2::{Algorithm, Argon2, Block, Params, Version};
-use blake2::Blake2bMac;
+use blake2::{Blake2b, Blake2bMac, digest::consts::U16};
 use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
     aead::{Aead, KeyInit, Payload},
 };
 use ed25519_dalek::{Signature as Ed25519Signature, Signer, SigningKey, VerifyingKey};
 use hkdf::Hkdf;
-use mosaic_domain::{SHARD_ENVELOPE_HEADER_LEN, ShardEnvelopeHeader, ShardTier};
+use mosaic_domain::{
+    SHARD_ENVELOPE_HEADER_LEN, SHARD_ENVELOPE_MAGIC, SHARD_ENVELOPE_VERSION,
+    SHARD_ENVELOPE_VERSION_V04, STREAMING_SHARD_ENVELOPE_HEADER_LEN, STREAMING_SHARD_FRAME_SIZE,
+    STREAMING_SHARD_SALT_LEN, ShardEnvelopeHeader, ShardTier, StreamingShardEnvelopeHeader,
+};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
@@ -45,7 +49,6 @@ pub use streaming::{
 pub mod sidecar;
 pub use sidecar::{SidecarError, open_tunnel, pake_initiator_start, pake_responder};
 
-
 /// Maximum allowed plaintext size for shard encryption (100 MiB).
 const MAX_SHARD_BYTES: usize = 100 * 1024 * 1024;
 
@@ -60,6 +63,14 @@ pub const IDENTITY_SEED_AAD: &[u8] = b"mosaic:l3-identity-seed:v1";
 
 /// AEAD AAD label for generic account-scoped data wrapped by an account key.
 pub const ACCOUNT_DATA_AAD: &[u8] = b"mosaic:account-wrapped-data:v1";
+
+/// AAD for L2 account-key wraps under L1 root-key.
+/// Used by `derive_account_key`, `wrap_account_key`, `unwrap_account_key`.
+pub const ACCOUNT_KEY_WRAP_AAD: &[u8] = b"mosaic:l2-account-key:v1";
+
+/// AAD for L3 link-tier-key wraps under per-link BLAKE2b-derived wrapping key.
+/// Used by `wrap_tier_key_for_link` / `unwrap_tier_key_from_link`.
+pub const LINK_TIER_KEY_AAD: &[u8] = b"mosaic:l3-link-tier-key:v1";
 
 /// Backend LocalAuth username length limit.
 const MAX_AUTH_USERNAME_BYTES: usize = 256;
@@ -110,7 +121,10 @@ pub const MAX_KDF_ITERATIONS: u32 = 10;
 pub const MAX_KDF_PARALLELISM: u32 = 4;
 
 /// Fixed output length for Mosaic L0/L1/L2 keys.
-const KEY_BYTES: usize = 32;
+pub const KEY_BYTES: usize = 32;
+
+/// Fixed output length for libsodium-compatible Argon2id salts.
+pub const SESSION_SALT_BYTES: usize = 16;
 
 /// Length of a share-link secret in bytes (256-bit security, matches the
 /// TypeScript `LINK_SECRET_SIZE`).
@@ -180,6 +194,15 @@ pub const CONTENT_KEY_INFO: &[u8] = b"mosaic:tier:content:v1";
 /// Do not delete this constant. See plan §11 KDF-labels row + Opus P-W7.5/P-W7.8
 /// review notes for rationale.
 pub const DB_SESSION_KEY_INFO: &[u8] = b"mosaic:db-session-key:v1";
+
+/// HKDF-SHA256 info prefix for deriving v0x04 per-frame AEAD keys.
+pub const STREAM_FRAME_KEY_AAD: &[u8] = b"mosaic:stream-frame-key:v1";
+
+/// AAD domain label for v0x04 streaming AEAD frames.
+pub const STREAM_FRAME_AAD: &[u8] = b"mosaic:stream-frame:v1";
+
+const STREAM_FRAME_NONCE_LEN: usize = 24;
+const STREAM_FRAME_TAG_LEN: usize = 16;
 
 /// Crypto crate errors.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -911,6 +934,77 @@ pub struct EpochKeyMaterial {
     content_key: SecretKey,
 }
 
+/// Derives the deterministic per-user session Argon2id salt.
+///
+/// This matches `libsodium.crypto_generichash(16, utf8(domain || username))`,
+/// i.e. unkeyed BLAKE2b-128 over the caller-supplied domain prefix followed by
+/// the username. The domain is passed by callers so web and native wrappers can
+/// lock the exact protocol string at their own boundary tests.
+///
+/// # Errors
+/// - `EmptyContext` if `domain` is empty.
+pub fn derive_session_salt(
+    domain: &str,
+    username: &str,
+) -> Result<[u8; SESSION_SALT_BYTES], MosaicCryptoError> {
+    if domain.is_empty() {
+        return Err(MosaicCryptoError::EmptyContext);
+    }
+
+    let mut hasher = <Blake2b<U16> as Digest>::new();
+    Digest::update(&mut hasher, domain.as_bytes());
+    Digest::update(&mut hasher, username.as_bytes());
+    let bytes = hasher.finalize();
+    let mut out = [0_u8; SESSION_SALT_BYTES];
+    out.copy_from_slice(&bytes);
+    Ok(out)
+}
+
+/// Derives the session L0 master key with libsodium-compatible Argon2id13.
+///
+/// The web login salt-encryption flow historically called
+/// `libsodium.crypto_pwhash(32, password, salt, opsLimit, memLimitBytes,
+/// ALG_ARGON2ID13)`. This Rust primitive preserves that byte output exactly:
+/// `mem_limit_kib` is Argon2's `m_cost` in KiB, `ops_limit` is `t_cost`, and
+/// parallelism is fixed at 1 to match the TypeScript parameter policy.
+///
+/// # Errors
+/// - `InvalidSaltLength` if `salt` is not 16 bytes.
+/// - `KdfProfileTooWeak` if `ops_limit` or `mem_limit_kib` is zero.
+/// - `KdfProfileTooCostly` if the requested work factor exceeds Mosaic caps.
+/// - `KdfFailure` if Argon2id rejects the parameters or derivation fails.
+pub fn derive_session_master_key(
+    password: Zeroizing<Vec<u8>>,
+    salt: &[u8],
+    ops_limit: u32,
+    mem_limit_kib: u32,
+) -> Result<SecretKey, MosaicCryptoError> {
+    validate_salt(salt)?;
+    if ops_limit == 0 || mem_limit_kib == 0 {
+        return Err(MosaicCryptoError::KdfProfileTooWeak);
+    }
+    if ops_limit > MAX_KDF_ITERATIONS || mem_limit_kib > MAX_KDF_MEMORY_KIB {
+        return Err(MosaicCryptoError::KdfProfileTooCostly);
+    }
+
+    let argon_params = Params::new(mem_limit_kib, ops_limit, 1, Some(KEY_BYTES))
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params.clone());
+
+    let mut master_key = Zeroizing::new([0_u8; KEY_BYTES]);
+    let mut memory_blocks = Zeroizing::new(vec![Block::default(); argon_params.block_count()]);
+    argon2
+        .hash_password_into_with_memory(
+            password.as_slice(),
+            salt,
+            &mut master_key[..],
+            memory_blocks.as_mut_slice(),
+        )
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
+
+    SecretKey::from_bytes(&mut master_key[..])
+}
+
 impl EpochKeyMaterial {
     /// Returns the epoch identifier.
     #[must_use]
@@ -1500,6 +1594,378 @@ pub const fn get_tier_key(epoch_key: &EpochKeyMaterial, tier: ShardTier) -> &Sec
     }
 }
 
+/// Handle type accepted by streaming shard APIs.
+pub type EpochHandle = EpochKeyMaterial;
+
+/// One serialized v0x04 streaming frame: `nonce(24) || ciphertext || tag(16)`.
+pub struct EncryptedFrame {
+    /// Zero-based frame index assigned by the encryptor and bound into frame AAD.
+    pub frame_index: u32,
+    pub bytes: Vec<u8>,
+}
+
+/// Finalized v0x04 streaming envelope: header followed by serialized frames.
+pub struct StreamingEnvelope {
+    pub header: [u8; STREAMING_SHARD_ENVELOPE_HEADER_LEN],
+    pub bytes: Vec<u8>,
+    pub frame_count: u32,
+    pub final_frame_size: u32,
+}
+
+/// Stateful v0x04 streaming encryptor.
+pub struct StreamingEncryptor<'a> {
+    epoch_handle: &'a EpochHandle,
+    tier: ShardTier,
+    stream_salt: [u8; STREAMING_SHARD_SALT_LEN],
+    expected_frame_count: u32,
+    next_frame_index: u32,
+    final_frame_size: u32,
+    envelope_bytes: Vec<u8>,
+}
+
+/// Stateful v0x04 streaming decryptor.
+pub struct StreamingDecryptor<'a> {
+    epoch_handle: &'a EpochHandle,
+    header: StreamingShardEnvelopeHeader,
+    header_bytes: [u8; STREAMING_SHARD_ENVELOPE_HEADER_LEN],
+    next_frame_index: u32,
+    last_frame_size: Option<u32>,
+}
+
+/// Initializes a v0x04 streaming shard encryptor.
+///
+/// # Errors
+/// Returns `InvalidInputLength` when `expected_frame_count` is `None` or
+/// `Some(0)`, and `RngFailure` if stream salt generation fails.
+pub fn streaming_encrypt_init(
+    epoch_handle: &EpochHandle,
+    tier: ShardTier,
+    expected_frame_count: Option<u32>,
+) -> Result<StreamingEncryptor<'_>, MosaicCryptoError> {
+    let expected_frame_count =
+        expected_frame_count.ok_or(MosaicCryptoError::InvalidInputLength { actual: 0 })?;
+    if expected_frame_count == 0 {
+        return Err(MosaicCryptoError::InvalidInputLength { actual: 0 });
+    }
+    let mut stream_salt = [0_u8; STREAMING_SHARD_SALT_LEN];
+    getrandom::fill(&mut stream_salt).map_err(|_| MosaicCryptoError::RngFailure)?;
+    let envelope_bytes = vec![0_u8; STREAMING_SHARD_ENVELOPE_HEADER_LEN];
+    Ok(StreamingEncryptor {
+        epoch_handle,
+        tier,
+        stream_salt,
+        expected_frame_count,
+        next_frame_index: 0,
+        final_frame_size: 0,
+        envelope_bytes,
+    })
+}
+
+impl StreamingEncryptor<'_> {
+    /// Encrypts one plaintext frame.
+    ///
+    /// # Errors
+    /// Returns `InvalidInputLength` for frames larger than 64 KiB,
+    /// `InvalidInputLength` when a declared stream receives too many frames,
+    /// or AEAD/KDF errors from the underlying primitives.
+    pub fn encrypt_frame(&mut self, plaintext: &[u8]) -> Result<EncryptedFrame, MosaicCryptoError> {
+        if plaintext.len() > STREAMING_SHARD_FRAME_SIZE {
+            return Err(MosaicCryptoError::InvalidInputLength {
+                actual: plaintext.len(),
+            });
+        }
+        if self.next_frame_index >= self.expected_frame_count {
+            return Err(MosaicCryptoError::InvalidInputLength {
+                actual: self.expected_frame_count as usize,
+            });
+        }
+
+        let is_final = self.next_frame_index + 1 == self.expected_frame_count;
+        if is_final {
+            if plaintext.is_empty() {
+                return Err(MosaicCryptoError::InvalidInputLength { actual: 0 });
+            }
+        } else if plaintext.len() != STREAMING_SHARD_FRAME_SIZE {
+            return Err(MosaicCryptoError::InvalidInputLength {
+                actual: plaintext.len(),
+            });
+        }
+
+        let frame_index = self.next_frame_index;
+        let header_bytes = if is_final {
+            finalized_streaming_header_bytes(
+                self.tier,
+                self.stream_salt,
+                self.expected_frame_count,
+                u32::try_from(plaintext.len()).map_err(|_| {
+                    MosaicCryptoError::InvalidInputLength {
+                        actual: plaintext.len(),
+                    }
+                })?,
+            )?
+        } else {
+            provisional_streaming_header_bytes(self.tier, self.stream_salt)
+        };
+        let frame = encrypt_streaming_frame(
+            get_tier_key(self.epoch_handle, self.tier),
+            &header_bytes,
+            &self.stream_salt,
+            frame_index,
+            plaintext,
+        )?;
+        self.next_frame_index = self
+            .next_frame_index
+            .checked_add(1)
+            .ok_or(MosaicCryptoError::InvalidInputLength { actual: usize::MAX })?;
+        self.final_frame_size =
+            u32::try_from(plaintext.len()).map_err(|_| MosaicCryptoError::InvalidInputLength {
+                actual: plaintext.len(),
+            })?;
+        self.envelope_bytes.extend_from_slice(&frame);
+
+        Ok(EncryptedFrame {
+            frame_index,
+            bytes: frame,
+        })
+    }
+
+    /// Finalizes the stream and returns the v0x04 header plus all frame bytes.
+    ///
+    /// # Errors
+    /// Returns `InvalidInputLength` if a declared frame count was not satisfied.
+    pub fn finalize(self) -> Result<StreamingEnvelope, MosaicCryptoError> {
+        let frame_count = self.next_frame_index;
+        if frame_count == 0 {
+            return Err(MosaicCryptoError::InvalidInputLength { actual: 0 });
+        }
+        if self.expected_frame_count != frame_count {
+            return Err(MosaicCryptoError::InvalidInputLength {
+                actual: frame_count as usize,
+            });
+        }
+        let header = StreamingShardEnvelopeHeader::new(
+            self.tier,
+            self.stream_salt,
+            frame_count,
+            self.final_frame_size,
+        )
+        .map_err(|_| MosaicCryptoError::InvalidEnvelope)?;
+        let header_bytes = header.to_bytes();
+        let mut bytes = self.envelope_bytes;
+        bytes[..STREAMING_SHARD_ENVELOPE_HEADER_LEN].copy_from_slice(&header_bytes);
+        Ok(StreamingEnvelope {
+            header: header_bytes,
+            bytes,
+            frame_count,
+            final_frame_size: self.final_frame_size,
+        })
+    }
+}
+
+/// Initializes a v0x04 streaming shard decryptor from a 64-byte header.
+///
+/// # Errors
+/// Returns `InvalidEnvelope` when the header is malformed.
+pub fn streaming_decrypt_init<'a>(
+    epoch_handle: &'a EpochHandle,
+    envelope: &[u8],
+) -> Result<StreamingDecryptor<'a>, MosaicCryptoError> {
+    if envelope.len() < STREAMING_SHARD_ENVELOPE_HEADER_LEN {
+        return Err(MosaicCryptoError::InvalidEnvelope);
+    }
+    let header_bytes: [u8; STREAMING_SHARD_ENVELOPE_HEADER_LEN] = envelope
+        [..STREAMING_SHARD_ENVELOPE_HEADER_LEN]
+        .try_into()
+        .map_err(|_| MosaicCryptoError::InvalidEnvelope)?;
+    let header = StreamingShardEnvelopeHeader::parse(&header_bytes)
+        .map_err(|_| MosaicCryptoError::InvalidEnvelope)?;
+    Ok(StreamingDecryptor {
+        epoch_handle,
+        header,
+        header_bytes,
+        next_frame_index: 0,
+        last_frame_size: None,
+    })
+}
+
+impl StreamingDecryptor<'_> {
+    /// Decrypts the next serialized frame.
+    ///
+    /// # Errors
+    /// Returns clean streaming state errors for extra frames and AEAD errors for
+    /// tampered, replayed, or reordered frames.
+    pub fn decrypt_frame(&mut self, frame: &[u8]) -> Result<Vec<u8>, MosaicCryptoError> {
+        if self.next_frame_index >= self.header.frame_count() {
+            return Err(MosaicCryptoError::InvalidInputLength {
+                actual: self.header.frame_count() as usize,
+            });
+        }
+        let is_final = self.next_frame_index + 1 == self.header.frame_count();
+        let aad_header_bytes = if is_final {
+            self.header_bytes
+        } else {
+            provisional_streaming_header_bytes(self.header.tier(), *self.header.stream_salt())
+        };
+        let plaintext = decrypt_streaming_frame(
+            get_tier_key(self.epoch_handle, self.header.tier()),
+            &aad_header_bytes,
+            self.header.stream_salt(),
+            self.next_frame_index,
+            frame,
+        )?;
+        if !is_final && plaintext.len() != STREAMING_SHARD_FRAME_SIZE {
+            return Err(MosaicCryptoError::InvalidInputLength {
+                actual: plaintext.len(),
+            });
+        }
+        self.last_frame_size = Some(u32::try_from(plaintext.len()).map_err(|_| {
+            MosaicCryptoError::InvalidInputLength {
+                actual: plaintext.len(),
+            }
+        })?);
+        self.next_frame_index += 1;
+        Ok(plaintext)
+    }
+
+    /// Finalizes the stream state and verifies all declared frames arrived.
+    ///
+    /// # Errors
+    /// Returns `InvalidInputLength` for missing tail frames.
+    pub fn finalize(self) -> Result<(), MosaicCryptoError> {
+        if self.next_frame_index != self.header.frame_count() {
+            return Err(MosaicCryptoError::InvalidInputLength {
+                actual: self.next_frame_index as usize,
+            });
+        }
+        if self.last_frame_size != Some(self.header.final_frame_size()) {
+            return Err(MosaicCryptoError::InvalidInputLength {
+                actual: self.next_frame_index.saturating_sub(1) as usize,
+            });
+        }
+        Ok(())
+    }
+}
+
+fn provisional_streaming_header_bytes(
+    tier: ShardTier,
+    stream_salt: [u8; STREAMING_SHARD_SALT_LEN],
+) -> [u8; STREAMING_SHARD_ENVELOPE_HEADER_LEN] {
+    let mut bytes = [0_u8; STREAMING_SHARD_ENVELOPE_HEADER_LEN];
+    bytes[0..4].copy_from_slice(&SHARD_ENVELOPE_MAGIC);
+    bytes[4] = SHARD_ENVELOPE_VERSION_V04;
+    bytes[5] = tier.to_byte();
+    bytes[6..22].copy_from_slice(&stream_salt);
+    bytes
+}
+
+fn finalized_streaming_header_bytes(
+    tier: ShardTier,
+    stream_salt: [u8; STREAMING_SHARD_SALT_LEN],
+    frame_count: u32,
+    final_frame_size: u32,
+) -> Result<[u8; STREAMING_SHARD_ENVELOPE_HEADER_LEN], MosaicCryptoError> {
+    StreamingShardEnvelopeHeader::new(tier, stream_salt, frame_count, final_frame_size)
+        .map(|header| header.to_bytes())
+        .map_err(|_| MosaicCryptoError::InvalidEnvelope)
+}
+
+fn streaming_frame_aad(header_bytes: &[u8], frame_index: u32) -> Vec<u8> {
+    let mut aad =
+        Vec::with_capacity(STREAM_FRAME_AAD.len() + STREAMING_SHARD_ENVELOPE_HEADER_LEN + 4);
+    aad.extend_from_slice(STREAM_FRAME_AAD);
+    aad.extend_from_slice(header_bytes);
+    aad.extend_from_slice(&frame_index.to_le_bytes());
+    aad
+}
+
+fn streaming_frame_key(
+    tier_key: &SecretKey,
+    stream_salt: &[u8; STREAMING_SHARD_SALT_LEN],
+    frame_index: u32,
+) -> Result<Zeroizing<[u8; KEY_BYTES]>, MosaicCryptoError> {
+    let mut info = Vec::with_capacity(STREAM_FRAME_KEY_AAD.len() + 4);
+    info.extend_from_slice(STREAM_FRAME_KEY_AAD);
+    info.extend_from_slice(&frame_index.to_le_bytes());
+    let mut key = Zeroizing::new([0_u8; KEY_BYTES]);
+    Hkdf::<Sha256>::new(Some(stream_salt), tier_key.as_bytes())
+        .expand(&info, &mut key[..])
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
+    Ok(key)
+}
+
+fn streaming_frame_nonce(
+    stream_salt: &[u8; STREAMING_SHARD_SALT_LEN],
+    frame_index: u32,
+) -> [u8; STREAM_FRAME_NONCE_LEN] {
+    let mut nonce = [0_u8; STREAM_FRAME_NONCE_LEN];
+    nonce[0..16].copy_from_slice(stream_salt);
+    nonce[16..20].copy_from_slice(&frame_index.to_le_bytes());
+    nonce[20..24].copy_from_slice(&[SHARD_ENVELOPE_VERSION_V04, 0, 0, 0]);
+    nonce
+}
+
+fn encrypt_streaming_frame(
+    tier_key: &SecretKey,
+    header_bytes: &[u8; STREAMING_SHARD_ENVELOPE_HEADER_LEN],
+    stream_salt: &[u8; STREAMING_SHARD_SALT_LEN],
+    frame_index: u32,
+    plaintext: &[u8],
+) -> Result<Vec<u8>, MosaicCryptoError> {
+    let frame_key = streaming_frame_key(tier_key, stream_salt, frame_index)?;
+    let nonce_bytes = streaming_frame_nonce(stream_salt, frame_index);
+    let cipher = XChaCha20Poly1305::new_from_slice(&frame_key[..]).map_err(|_| {
+        MosaicCryptoError::InvalidKeyLength {
+            actual: frame_key.len(),
+        }
+    })?;
+    let aad = streaming_frame_aad(header_bytes, frame_index);
+    let encrypted = cipher
+        .encrypt(
+            XNonce::from_slice(&nonce_bytes),
+            Payload {
+                msg: plaintext,
+                aad: &aad,
+            },
+        )
+        .map_err(|_| MosaicCryptoError::AuthenticationFailed)?;
+    let mut frame = Vec::with_capacity(STREAM_FRAME_NONCE_LEN + encrypted.len());
+    frame.extend_from_slice(&nonce_bytes);
+    frame.extend_from_slice(&encrypted);
+    Ok(frame)
+}
+
+fn decrypt_streaming_frame(
+    tier_key: &SecretKey,
+    header_bytes: &[u8; STREAMING_SHARD_ENVELOPE_HEADER_LEN],
+    stream_salt: &[u8; STREAMING_SHARD_SALT_LEN],
+    frame_index: u32,
+    frame: &[u8],
+) -> Result<Vec<u8>, MosaicCryptoError> {
+    if frame.len() < STREAM_FRAME_NONCE_LEN + STREAM_FRAME_TAG_LEN {
+        return Err(MosaicCryptoError::InvalidEnvelope);
+    }
+    let expected_nonce = streaming_frame_nonce(stream_salt, frame_index);
+    if !bool::from(frame[..STREAM_FRAME_NONCE_LEN].ct_eq(&expected_nonce)) {
+        return Err(MosaicCryptoError::AuthenticationFailed);
+    }
+    let frame_key = streaming_frame_key(tier_key, stream_salt, frame_index)?;
+    let cipher = XChaCha20Poly1305::new_from_slice(&frame_key[..]).map_err(|_| {
+        MosaicCryptoError::InvalidKeyLength {
+            actual: frame_key.len(),
+        }
+    })?;
+    let aad = streaming_frame_aad(header_bytes, frame_index);
+    cipher
+        .decrypt(
+            XNonce::from_slice(&frame[..STREAM_FRAME_NONCE_LEN]),
+            Payload {
+                msg: &frame[STREAM_FRAME_NONCE_LEN..],
+                aad: &aad,
+            },
+        )
+        .map_err(|_| MosaicCryptoError::AuthenticationFailed)
+}
+
 /// Derives a 32-byte tier/content key as `BLAKE2b-256(key = seed, msg = info)`.
 ///
 /// Matches libsodium `crypto_generichash(out_len = 32, msg = info, key = seed)`,
@@ -1619,6 +2085,79 @@ pub fn decrypt_shard(
         .map_err(|_| MosaicCryptoError::AuthenticationFailed)?;
 
     Ok(Zeroizing::new(plaintext))
+}
+
+/// Decrypts either a v0x03 single-shot shard envelope or a v0x04 streaming envelope.
+///
+/// # Errors
+/// Returns `InvalidEnvelope` for unsupported version bytes, v0x03 shard
+/// errors from [`decrypt_shard`], and streaming state/authentication errors for
+/// v0x04 envelopes.
+pub fn decrypt_envelope(
+    epoch_handle: &EpochHandle,
+    envelope_bytes: &[u8],
+) -> Result<Vec<u8>, MosaicCryptoError> {
+    if envelope_bytes.len() < SHARD_ENVELOPE_HEADER_LEN {
+        return Err(MosaicCryptoError::InvalidEnvelope);
+    }
+    if envelope_bytes[0..4] != SHARD_ENVELOPE_MAGIC {
+        return Err(MosaicCryptoError::InvalidEnvelope);
+    }
+    match envelope_bytes[4] {
+        SHARD_ENVELOPE_VERSION => {
+            let header = ShardEnvelopeHeader::parse(&envelope_bytes[..SHARD_ENVELOPE_HEADER_LEN])
+                .map_err(|_| MosaicCryptoError::InvalidEnvelope)?;
+            let plaintext =
+                decrypt_shard(envelope_bytes, get_tier_key(epoch_handle, header.tier()))?;
+            Ok(plaintext.to_vec())
+        }
+        SHARD_ENVELOPE_VERSION_V04 => decrypt_streaming_envelope(epoch_handle, envelope_bytes),
+        _version => Err(MosaicCryptoError::InvalidEnvelope),
+    }
+}
+
+fn decrypt_streaming_envelope(
+    epoch_handle: &EpochHandle,
+    envelope_bytes: &[u8],
+) -> Result<Vec<u8>, MosaicCryptoError> {
+    let header =
+        StreamingShardEnvelopeHeader::parse(&envelope_bytes[..STREAMING_SHARD_ENVELOPE_HEADER_LEN])
+            .map_err(|_| MosaicCryptoError::InvalidEnvelope)?;
+    let mut decryptor = streaming_decrypt_init(epoch_handle, envelope_bytes)?;
+    let full_frame_len = STREAM_FRAME_NONCE_LEN + STREAMING_SHARD_FRAME_SIZE + STREAM_FRAME_TAG_LEN;
+    let final_frame_len = STREAM_FRAME_NONCE_LEN
+        + usize::try_from(header.final_frame_size())
+            .map_err(|_| MosaicCryptoError::InvalidInputLength { actual: usize::MAX })?
+        + STREAM_FRAME_TAG_LEN;
+    let declared_frames = usize::try_from(header.frame_count())
+        .map_err(|_| MosaicCryptoError::InvalidInputLength { actual: usize::MAX })?;
+    let mut offset = STREAMING_SHARD_ENVELOPE_HEADER_LEN;
+    let mut plaintext = Vec::new();
+    for frame_index in 0..declared_frames {
+        let frame_len = if frame_index + 1 == declared_frames {
+            final_frame_len
+        } else {
+            full_frame_len
+        };
+        let end = offset
+            .checked_add(frame_len)
+            .ok_or(MosaicCryptoError::InvalidEnvelope)?;
+        if end > envelope_bytes.len() {
+            return Err(MosaicCryptoError::InvalidInputLength {
+                actual: frame_index,
+            });
+        }
+        let frame_plaintext = decryptor.decrypt_frame(&envelope_bytes[offset..end])?;
+        plaintext.extend_from_slice(&frame_plaintext);
+        offset = end;
+    }
+    if offset != envelope_bytes.len() {
+        return Err(MosaicCryptoError::InvalidInputLength {
+            actual: envelope_bytes.len() - offset,
+        });
+    }
+    decryptor.finalize()?;
+    Ok(plaintext)
 }
 
 /// Decrypt a shard envelope using a legacy raw epoch seed.

@@ -4,6 +4,14 @@
  */
 export {
   uploadQueue,
+  LegacyUploadQueueDrainer,
+  IndexedDbLegacyUploadQueueStore,
+  createIdempotencyKey,
+  createUuidV7,
+  isUuidV7,
+  legacyUploadQueueDrainer,
+  legacyUploadTelemetry,
+  SNAPSHOT_VERSION,
   type UploadTask,
   type UploadStatus,
   type UploadAction,
@@ -14,4 +22,11 @@ export {
   type ProgressCallback,
   type CompleteCallback,
   type ErrorCallback,
+  type CurrentUploadRecord,
+  type LegacyUploadDetection,
+  type LegacyUploadDrainResult,
+  type LegacyUploadQueueStoreAdapter,
+  type LegacyUploadRecord,
+  type LegacyUploadTelemetryCounter,
+  type LegacyUploadTelemetrySnapshot,
 } from './upload/index';

@@ -73,7 +73,6 @@ pub mod download_job_state_codes {
     ];
 }
 
-
 pub mod download_schedule_kind_codes {
     pub const IMMEDIATE: u8 = 0;
     pub const WIFI: u8 = 1;
@@ -114,10 +113,20 @@ pub mod download_schedule_keys {
 /// only non-trivial schedules are persisted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DownloadSchedule {
-    Wifi { max_delay_ms: Option<u64> },
-    WifiCharging { max_delay_ms: Option<u64> },
-    Idle { max_delay_ms: Option<u64> },
-    Window { start_hour: u8, end_hour: u8, max_delay_ms: Option<u64> },
+    Wifi {
+        max_delay_ms: Option<u64>,
+    },
+    WifiCharging {
+        max_delay_ms: Option<u64>,
+    },
+    Idle {
+        max_delay_ms: Option<u64>,
+    },
+    Window {
+        start_hour: u8,
+        end_hour: u8,
+        max_delay_ms: Option<u64>,
+    },
 }
 
 impl DownloadSchedule {
@@ -493,7 +502,8 @@ fn decode_snapshot_value(value: &Value) -> Result<DownloadJobSnapshot, DownloadS
         DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1 => download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V1,
         DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V2 => download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V2,
         DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3 => {
-            if entries.len() == download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V3_WITH_SCHEDULE.len() {
+            if entries.len() == download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V3_WITH_SCHEDULE.len()
+            {
                 download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V3_WITH_SCHEDULE
             } else {
                 download_job_snapshot_keys::DOWNLOAD_JOB_KEYS_V3_NO_SCHEDULE
@@ -542,10 +552,12 @@ fn decode_snapshot_value(value: &Value) -> Result<DownloadJobSnapshot, DownloadS
         lease_token: optional_lease(entries, download_job_snapshot_keys::LEASE_TOKEN)?,
         scope_key,
         schedule: match schema_version {
-            DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3 => match entry(entries, download_job_snapshot_keys::SCHEDULE) {
-                Some(value) => Some(decode_schedule(value)?),
-                None => None,
-            },
+            DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3 => {
+                match entry(entries, download_job_snapshot_keys::SCHEDULE) {
+                    Some(value) => Some(decode_schedule(value)?),
+                    None => None,
+                }
+            }
             // v1 + v2 snapshots predate the schedule field; carry as None.
             _ => None,
         },
@@ -847,20 +859,29 @@ fn decode_skip(value: &Value) -> Result<SkipReason, DownloadSnapshotError> {
     }
 }
 
-
 fn schedule_value(schedule: &DownloadSchedule) -> Value {
     match schedule {
         DownloadSchedule::Wifi { max_delay_ms }
         | DownloadSchedule::WifiCharging { max_delay_ms }
         | DownloadSchedule::Idle { max_delay_ms } => Value::Map(vec![
             kv(download_schedule_keys::KIND, uint(schedule.kind_code())),
-            kv(download_schedule_keys::MAX_DELAY_MS, option_u64(*max_delay_ms)),
+            kv(
+                download_schedule_keys::MAX_DELAY_MS,
+                option_u64(*max_delay_ms),
+            ),
         ]),
-        DownloadSchedule::Window { start_hour, end_hour, max_delay_ms } => Value::Map(vec![
+        DownloadSchedule::Window {
+            start_hour,
+            end_hour,
+            max_delay_ms,
+        } => Value::Map(vec![
             kv(download_schedule_keys::KIND, uint(schedule.kind_code())),
             kv(download_schedule_keys::WINDOW_START_HOUR, uint(*start_hour)),
             kv(download_schedule_keys::WINDOW_END_HOUR, uint(*end_hour)),
-            kv(download_schedule_keys::MAX_DELAY_MS, option_u64(*max_delay_ms)),
+            kv(
+                download_schedule_keys::MAX_DELAY_MS,
+                option_u64(*max_delay_ms),
+            ),
         ]),
     }
 }
@@ -873,19 +894,37 @@ fn decode_schedule(value: &Value) -> Result<DownloadSchedule, DownloadSnapshotEr
         .ok_or(DownloadSnapshotError::SchemaCorrupt)?;
     match kind {
         download_schedule_kind_codes::WIFI => {
-            validate_exact_keys(fields, &[download_schedule_keys::KIND, download_schedule_keys::MAX_DELAY_MS])?;
+            validate_exact_keys(
+                fields,
+                &[
+                    download_schedule_keys::KIND,
+                    download_schedule_keys::MAX_DELAY_MS,
+                ],
+            )?;
             Ok(DownloadSchedule::Wifi {
                 max_delay_ms: optional_u64(fields, download_schedule_keys::MAX_DELAY_MS)?,
             })
         }
         download_schedule_kind_codes::WIFI_CHARGING => {
-            validate_exact_keys(fields, &[download_schedule_keys::KIND, download_schedule_keys::MAX_DELAY_MS])?;
+            validate_exact_keys(
+                fields,
+                &[
+                    download_schedule_keys::KIND,
+                    download_schedule_keys::MAX_DELAY_MS,
+                ],
+            )?;
             Ok(DownloadSchedule::WifiCharging {
                 max_delay_ms: optional_u64(fields, download_schedule_keys::MAX_DELAY_MS)?,
             })
         }
         download_schedule_kind_codes::IDLE => {
-            validate_exact_keys(fields, &[download_schedule_keys::KIND, download_schedule_keys::MAX_DELAY_MS])?;
+            validate_exact_keys(
+                fields,
+                &[
+                    download_schedule_keys::KIND,
+                    download_schedule_keys::MAX_DELAY_MS,
+                ],
+            )?;
             Ok(DownloadSchedule::Idle {
                 max_delay_ms: optional_u64(fields, download_schedule_keys::MAX_DELAY_MS)?,
             })
@@ -900,12 +939,10 @@ fn decode_schedule(value: &Value) -> Result<DownloadSchedule, DownloadSnapshotEr
                     download_schedule_keys::MAX_DELAY_MS,
                 ],
             )?;
-            let start_hour =
-                required_u8(fields, download_schedule_keys::WINDOW_START_HOUR)
-                    .ok_or(DownloadSnapshotError::SchemaCorrupt)?;
-            let end_hour =
-                required_u8(fields, download_schedule_keys::WINDOW_END_HOUR)
-                    .ok_or(DownloadSnapshotError::SchemaCorrupt)?;
+            let start_hour = required_u8(fields, download_schedule_keys::WINDOW_START_HOUR)
+                .ok_or(DownloadSnapshotError::SchemaCorrupt)?;
+            let end_hour = required_u8(fields, download_schedule_keys::WINDOW_END_HOUR)
+                .ok_or(DownloadSnapshotError::SchemaCorrupt)?;
             if start_hour > 23 || end_hour > 23 {
                 return Err(DownloadSnapshotError::SchemaCorrupt);
             }
@@ -1118,4 +1155,3 @@ fn validate_cbor_value(value: &Value, depth: usize) -> Result<(), DownloadSnapsh
         _ => Err(DownloadSnapshotError::SchemaCorrupt),
     }
 }
-

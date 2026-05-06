@@ -3,8 +3,8 @@ package org.mosaic.android.foundation
 /**
  * Slice 0C — sealed-bundle verify-and-open with raw recipient seed.
  *
- * Drives the cross-client `tests/vectors/sealed_bundle.json` byte-equality
- * test. Production code paths must use the handle-based
+ * Drives the cross-client `tests/vectors/sealed_bundle.json` corpus test.
+ * Production code paths must use the handle-based
  * `verify_and_open_bundle_with_identity_handle`; this bridge takes a raw
  * 32-byte recipient identity seed and is exclusively for the cross-client
  * differential corpus.
@@ -48,44 +48,38 @@ class OpenedBundleResult(
   val albumId: String,
   val epochId: Int,
   recipientPubkey: ByteArray,
-  epochSeed: ByteArray,
+  val epochHandleId: ULong,
   signPublicKey: ByteArray,
 ) {
   init {
-    val allBytesPresent = recipientPubkey.isNotEmpty() && epochSeed.isNotEmpty() && signPublicKey.isNotEmpty()
-    require((code == OpenedBundleCode.SUCCESS) == allBytesPresent) {
-      "successful bundle opens must include all key fields; failures must include none"
+    val allFieldsPresent = recipientPubkey.isNotEmpty() && epochHandleId != 0UL && signPublicKey.isNotEmpty()
+    require((code == OpenedBundleCode.SUCCESS) == allFieldsPresent) {
+      "successful bundle opens must include all key fields and a non-zero epoch_handle_id; failures must include none"
     }
     if (code == OpenedBundleCode.SUCCESS) {
       require(version >= 0) { "bundle version must not be negative" }
       require(epochId >= 0) { "bundle epoch_id must not be negative" }
       require(recipientPubkey.size == 32) { "recipient_pubkey must be exactly 32 bytes" }
-      require(epochSeed.size == 32) { "epoch_seed must be exactly 32 bytes" }
       require(signPublicKey.size == 32) { "sign_public_key must be exactly 32 bytes" }
     }
   }
 
   private val recipientPubkeyBytes: ByteArray = recipientPubkey.copyOf()
-  private val epochSeedBytes: ByteArray = epochSeed.copyOf()
   private val signPublicKeyBytes: ByteArray = signPublicKey.copyOf()
 
   val recipientPubkey: ByteArray
     get() = recipientPubkeyBytes.copyOf()
-
-  val epochSeed: ByteArray
-    get() = epochSeedBytes.copyOf()
 
   val signPublicKey: ByteArray
     get() = signPublicKeyBytes.copyOf()
 
   fun wipe() {
     recipientPubkeyBytes.fill(0)
-    epochSeedBytes.fill(0)
     signPublicKeyBytes.fill(0)
   }
 
   override fun toString(): String =
-    "OpenedBundleResult(code=$code, version=$version, albumId=<redacted-${albumId.length}-chars>, epochId=$epochId, recipientPubkey=<redacted-${recipientPubkeyBytes.size}-bytes>, epochSeed=<redacted-${epochSeedBytes.size}-bytes>, signPublicKey=<redacted-${signPublicKeyBytes.size}-bytes>)"
+    "OpenedBundleResult(code=$code, version=$version, albumId=<redacted-${albumId.length}-chars>, epochId=$epochId, recipientPubkey=<redacted-${recipientPubkeyBytes.size}-bytes>, epochHandleId=<redacted>, signPublicKey=<redacted-${signPublicKeyBytes.size}-bytes>)"
 }
 
 interface RustSealedBundleBridge {
@@ -108,7 +102,7 @@ data class RustOpenedBundleFfiResult(
   val albumId: String,
   val epochId: Int,
   val recipientPubkey: ByteArray,
-  val epochSeed: ByteArray,
+  val epochHandleId: ULong,
   val signPublicKey: ByteArray,
 ) {
   init {
@@ -119,12 +113,11 @@ data class RustOpenedBundleFfiResult(
 
   fun wipe() {
     recipientPubkey.fill(0)
-    epochSeed.fill(0)
     signPublicKey.fill(0)
   }
 
   override fun toString(): String =
-    "RustOpenedBundleFfiResult(code=$code, version=$version, albumId=<redacted-${albumId.length}-chars>, epochId=$epochId, recipientPubkey=<redacted-${recipientPubkey.size}-bytes>, epochSeed=<redacted-${epochSeed.size}-bytes>, signPublicKey=<redacted-${signPublicKey.size}-bytes>)"
+    "RustOpenedBundleFfiResult(code=$code, version=$version, albumId=<redacted-${albumId.length}-chars>, epochId=$epochId, recipientPubkey=<redacted-${recipientPubkey.size}-bytes>, epochHandleId=<redacted>, signPublicKey=<redacted-${signPublicKey.size}-bytes>)"
 
   override fun equals(other: Any?): Boolean {
     if (this === other) return true
@@ -134,7 +127,7 @@ data class RustOpenedBundleFfiResult(
       albumId == other.albumId &&
       epochId == other.epochId &&
       recipientPubkey.contentEquals(other.recipientPubkey) &&
-      epochSeed.contentEquals(other.epochSeed) &&
+      epochHandleId == other.epochHandleId &&
       signPublicKey.contentEquals(other.signPublicKey)
   }
 
@@ -144,7 +137,7 @@ data class RustOpenedBundleFfiResult(
     result = 31 * result + albumId.hashCode()
     result = 31 * result + epochId
     result = 31 * result + recipientPubkey.contentHashCode()
-    result = 31 * result + epochSeed.contentHashCode()
+    result = 31 * result + epochHandleId.hashCode()
     result = 31 * result + signPublicKey.contentHashCode()
     return result
   }
@@ -210,7 +203,7 @@ class GeneratedRustSealedBundleBridge(
           albumId = result.albumId,
           epochId = result.epochId,
           recipientPubkey = result.recipientPubkey,
-          epochSeed = result.epochSeed,
+          epochHandleId = result.epochHandleId,
           signPublicKey = result.signPublicKey,
         )
       } else {
@@ -220,7 +213,7 @@ class GeneratedRustSealedBundleBridge(
           albumId = "",
           epochId = 0,
           recipientPubkey = ByteArray(0),
-          epochSeed = ByteArray(0),
+          epochHandleId = 0UL,
           signPublicKey = ByteArray(0),
         )
       }

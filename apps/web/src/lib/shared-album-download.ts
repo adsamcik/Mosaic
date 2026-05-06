@@ -2,6 +2,10 @@ import type { AccessTier as AccessTierType } from './api-types';
 import type { AlbumDownloadResolver } from './album-download-service';
 import { getCryptoClient } from './crypto-client';
 import { createLogger } from './logger';
+import {
+  isLinkTierHandleId,
+  verifyDownloadedShard,
+} from './read-path-crypto';
 import { downloadShardViaShareLink } from './shard-service';
 import type { LinkDecryptionKey, PhotoMeta } from '../workers/types';
 
@@ -55,14 +59,18 @@ export function createShareLinkOriginalResolver(
           : await downloadShardViaShareLink(linkId, id);
         const expectedHash = photo.shardHashes?.[i];
         if (expectedHash) {
-          const isValid = await crypto.verifyShard(data, expectedHash);
+          const isValid = await verifyDownloadedShard(
+            crypto,
+            data,
+            expectedHash,
+          );
           if (!isValid) {
             log.warn(
               `Shard integrity check failed for photo ${photo.id}, shard ${i}`,
             );
           }
         }
-        const header = await crypto.peekHeader(data);
+        const header = await crypto.peekEnvelopeHeader(data);
         downloaded.push({ id, data, tier: header.tier });
       }
 
@@ -82,9 +90,21 @@ export function createShareLinkOriginalResolver(
 
       const chunks: Uint8Array[] = [];
       for (const s of originals) {
-        chunks.push(
-          await crypto.decryptShardWithTierKey(s.data, decryptionKey),
-        );
+        if (isLinkTierHandleId(decryptionKey)) {
+          chunks.push(
+            await crypto.decryptShardWithLinkTierHandle(decryptionKey, s.data),
+          );
+        } else {
+          chunks.push(
+            await crypto.decryptShardWithTierKey(
+              s.data,
+              // TODO(W-S4): Remove the raw tier-key fallback after all share-link
+              // key resolution paths mint LinkTierHandleId; legacy cached links
+              // only have pre-handle Uint8Array keys.
+              decryptionKey,
+            ),
+          );
+        }
       }
       return concat(chunks);
     }
@@ -104,7 +124,11 @@ export function createShareLinkOriginalResolver(
         : await downloadShardViaShareLink(linkId, id);
       const expectedHash = photo.originalShardHashes?.[i];
       if (expectedHash) {
-        const isValid = await crypto.verifyShard(data, expectedHash);
+        const isValid = await verifyDownloadedShard(
+          crypto,
+          data,
+          expectedHash,
+        );
         if (!isValid) {
           log.warn(
             `Shard integrity check failed for photo ${photo.id}, shard ${i}`,
@@ -112,7 +136,21 @@ export function createShareLinkOriginalResolver(
         }
       }
       try {
-        chunks.push(await crypto.decryptShardWithTierKey(data, decryptionKey));
+        if (isLinkTierHandleId(decryptionKey)) {
+          chunks.push(
+            await crypto.decryptShardWithLinkTierHandle(decryptionKey, data),
+          );
+        } else {
+          chunks.push(
+            await crypto.decryptShardWithTierKey(
+              data,
+              // TODO(W-S4): Remove the raw tier-key fallback after all share-link
+              // key resolution paths mint LinkTierHandleId; legacy cached links
+              // only have pre-handle Uint8Array keys.
+              decryptionKey,
+            ),
+          );
+        }
       } catch (err) {
         log.error(
           `Failed to decrypt original shard ${id} for photo ${photo.id}`,

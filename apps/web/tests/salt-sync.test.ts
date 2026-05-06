@@ -5,8 +5,9 @@
  * Verifies that encrypted salt can be synced between devices via server.
  */
 
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { fromBase64, toBase64 } from '../src/lib/api';
+import { initializeRustWasmForTests } from './wasm-test-init';
 import {
   decryptSalt,
   encryptSalt,
@@ -14,6 +15,10 @@ import {
 } from '../src/lib/session';
 
 describe('Salt Encryption/Decryption', () => {
+  beforeAll(async () => {
+    await initializeRustWasmForTests();
+  });
+
   const testPassword = 'test-password-123';
   const testUsername = 'testuser@example.com';
   const testSalt = new Uint8Array([

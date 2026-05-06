@@ -11,7 +11,7 @@ import kotlin.io.path.readText
 /**
  * Slice 0C round-trip test for `tests/vectors/identity.json`.
  *
- * Drives the production [AndroidRustIdentitySeedApi] adapter through JNA
+ * Drives the test-only [AndroidRustIdentitySeedApi] adapter through JNA
  * into the host-built `mosaic_uniffi` cdylib and asserts byte-equality
  * against the captured vector outputs.
  */

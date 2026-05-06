@@ -15,6 +15,24 @@ const SHARD_ENVELOPE_NONCE_LEN: usize = 24;
 const SHARD_ENVELOPE_RESERVED_OFFSET: usize = 38;
 const SHARD_ENVELOPE_RESERVED_LEN: usize = 26;
 
+/// Streaming shard envelope magic bytes for v0x04.
+pub const STREAMING_SHARD_ENVELOPE_MAGIC: [u8; 4] = *b"SGzk";
+
+/// Streaming shard envelope version byte.
+pub const SHARD_ENVELOPE_VERSION_V04: u8 = 0x04;
+
+/// Byte length of the v0x04 streaming shard envelope header.
+pub const STREAMING_SHARD_ENVELOPE_HEADER_LEN: usize = 64;
+
+/// v0x04 streaming AEAD frame plaintext size: 64 KiB.
+pub const STREAMING_SHARD_FRAME_SIZE: usize = 64 * 1024;
+
+/// Byte length of the v0x04 per-stream public salt.
+pub const STREAMING_SHARD_SALT_LEN: usize = 16;
+
+const STREAMING_SHARD_RESERVED_OFFSET: usize = 30;
+const STREAMING_SHARD_RESERVED_LEN: usize = 34;
+
 /// Current pre-release Mosaic protocol version used by Rust client-core fixtures.
 pub const PROTOCOL_VERSION: &str = "mosaic-v1";
 
@@ -30,14 +48,24 @@ pub const METADATA_SIDECAR_CONTEXT: &[u8] = b"Mosaic_Metadata_v1";
 /// Current canonical metadata sidecar format version.
 pub const METADATA_SIDECAR_VERSION: u8 = 1;
 
-/// Defense-in-depth cap for the complete canonical metadata sidecar byte buffer.
+/// Maximum total encoded byte length of a canonical metadata sidecar.
 ///
-/// The 1.5 MB limit is roughly 30× larger than the largest currently plausible
-/// legitimate sidecar and exists to bound allocation/DoS surface. Revisit this
-/// before v1 freeze: based on planned active-tag layouts, a tighter cap such as
-/// 64 KiB may be sufficient, but the protocol-visible value is lock-tested until
-/// an explicit ADR changes it.
-pub const MAX_SIDECAR_TOTAL_BYTES: usize = 1_500_000;
+/// Locked at 64 KiB for v1: this is approximately 50-100× the worst-case
+/// legitimate sidecar, which provides ample headroom for future active tags
+/// while constraining the DoS allocation surface to a tight bound. Tightening
+/// after v1 freeze would be a protocol-visible breaking change (some valid v1
+/// sidecars would be retroactively rejected on decode), so the value is locked
+/// at 64 KiB before v1 ships.
+///
+/// Original R-M5.2.1 value was 1_500_000 (1.5 MB); tightened in R-M5.2.2.
+// Maintenance protocol:
+// - The cap is locked AT v1 freeze. Tightening or relaxing it after v1
+//   would be a protocol-visible breaking change.
+// - If a future Active tag would push the worst-case legitimate sidecar
+//   above this cap, EITHER the new tag must be designed to fit within the
+//   cap, OR the cap must be relaxed and the change documented as a v2
+//   protocol breaking change with corresponding migration handlers.
+pub const MAX_SIDECAR_TOTAL_BYTES: usize = 65_536;
 
 /// Client-local plaintext sensitivity class for a sidecar tag.
 ///
@@ -112,16 +140,22 @@ impl SidecarTagRegistryEntry {
 pub mod metadata_field_tags {
     use super::{SidecarTagPrivacyClass, SidecarTagRegistryEntry, SidecarTagStatus};
     pub const ORIENTATION: u16 = 1;
-    pub const DEVICE_TIMESTAMP_MS: u16 = 2;
-    pub const ORIGINAL_DIMENSIONS: u16 = 3;
+    pub const ORIGINAL_DIMENSIONS: u16 = 2;
+    pub const DEVICE_TIMESTAMP_MS: u16 = 3;
     pub const MIME_OVERRIDE: u16 = 4;
-    pub const CAPTION: u16 = 5;
+    pub const CAMERA_MAKE: u16 = 5;
     // Tag 6 is permanently reserved for the forbidden filename payload class.
     // Do not expose a friendly public constant; production callers must not
     // accidentally encode filenames into sidecar plaintext.
-    pub const CAMERA_MAKE: u16 = 7;
-    pub const CAMERA_MODEL: u16 = 8;
+    pub const CAMERA_MODEL: u16 = 7;
+    pub const SUBSECONDS_MS: u16 = 8;
     pub const GPS: u16 = 9;
+    pub const CODEC_FOURCC: u16 = 10;
+    pub const DURATION_MS: u16 = 11;
+    pub const FRAME_RATE_X100: u16 = 12;
+    pub const VIDEO_ORIENTATION: u16 = 13;
+    pub const VIDEO_DIMENSIONS: u16 = 14;
+    pub const VIDEO_CONTAINER_FORMAT: u16 = 15;
     pub const KNOWN_FIELD_TAGS: &[SidecarTagRegistryEntry] = &[
         SidecarTagRegistryEntry::new(
             ORIENTATION,
@@ -130,16 +164,16 @@ pub mod metadata_field_tags {
             SidecarTagPrivacyClass::RenderingOnly,
         ),
         SidecarTagRegistryEntry::new(
-            DEVICE_TIMESTAMP_MS,
-            "device_timestamp_ms",
-            SidecarTagStatus::ReservedNumberPending,
-            SidecarTagPrivacyClass::SensitiveTimestamp,
-        ),
-        SidecarTagRegistryEntry::new(
             ORIGINAL_DIMENSIONS,
             "original_dimensions",
             SidecarTagStatus::Active,
             SidecarTagPrivacyClass::RenderingOnly,
+        ),
+        SidecarTagRegistryEntry::new(
+            DEVICE_TIMESTAMP_MS,
+            "device_timestamp_ms",
+            SidecarTagStatus::Active,
+            SidecarTagPrivacyClass::SensitiveTimestamp,
         ),
         SidecarTagRegistryEntry::new(
             MIME_OVERRIDE,
@@ -148,10 +182,10 @@ pub mod metadata_field_tags {
             SidecarTagPrivacyClass::ContainerTechnical,
         ),
         SidecarTagRegistryEntry::new(
-            CAPTION,
-            "caption",
-            SidecarTagStatus::ReservedNumberPending,
-            SidecarTagPrivacyClass::UserContent,
+            CAMERA_MAKE,
+            "camera_make",
+            SidecarTagStatus::Active,
+            SidecarTagPrivacyClass::DeviceFingerprint,
         ),
         SidecarTagRegistryEntry::new(
             6,
@@ -160,46 +194,58 @@ pub mod metadata_field_tags {
             SidecarTagPrivacyClass::UserContent,
         ),
         SidecarTagRegistryEntry::new(
-            CAMERA_MAKE,
-            "camera_make",
-            SidecarTagStatus::ReservedNumberPending,
+            CAMERA_MODEL,
+            "camera_model",
+            SidecarTagStatus::Active,
             SidecarTagPrivacyClass::DeviceFingerprint,
         ),
         SidecarTagRegistryEntry::new(
-            CAMERA_MODEL,
-            "camera_model",
-            SidecarTagStatus::ReservedNumberPending,
-            SidecarTagPrivacyClass::DeviceFingerprint,
+            SUBSECONDS_MS,
+            "subseconds_ms",
+            SidecarTagStatus::Active,
+            SidecarTagPrivacyClass::SensitiveTimestamp,
         ),
         SidecarTagRegistryEntry::new(
             GPS,
             "gps",
-            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagStatus::Active,
             SidecarTagPrivacyClass::SensitiveLocation,
         ),
         SidecarTagRegistryEntry::new(
-            10,
+            CODEC_FOURCC,
             "codec_fourcc",
-            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagStatus::Active,
             SidecarTagPrivacyClass::ContainerTechnical,
         ),
         SidecarTagRegistryEntry::new(
-            11,
+            DURATION_MS,
             "duration_ms",
-            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagStatus::Active,
             SidecarTagPrivacyClass::ContainerTechnical,
         ),
         SidecarTagRegistryEntry::new(
-            12,
+            FRAME_RATE_X100,
             "frame_rate_x100",
-            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagStatus::Active,
             SidecarTagPrivacyClass::ContainerTechnical,
         ),
         SidecarTagRegistryEntry::new(
-            13,
+            VIDEO_ORIENTATION,
             "video_orientation",
-            SidecarTagStatus::ReservedNumberPending,
+            SidecarTagStatus::Active,
             SidecarTagPrivacyClass::RenderingOnly,
+        ),
+        SidecarTagRegistryEntry::new(
+            VIDEO_DIMENSIONS,
+            "video_dimensions",
+            SidecarTagStatus::Active,
+            SidecarTagPrivacyClass::RenderingOnly,
+        ),
+        SidecarTagRegistryEntry::new(
+            VIDEO_CONTAINER_FORMAT,
+            "video_container_format",
+            SidecarTagStatus::Active,
+            SidecarTagPrivacyClass::ContainerTechnical,
         ),
     ];
     #[must_use]
@@ -264,6 +310,8 @@ pub enum MetadataSidecarError {
     ReservedTagNotPromoted { tag: u16 },
     /// The tag number is permanently forbidden by policy.
     ForbiddenTag { tag: u16 },
+    /// A GPS active sidecar field used latitude or longitude outside protocol bounds.
+    InvalidGpsValue { latitude_e7: i32, longitude_e7: i32 },
     /// The tag number is outside the append-only sidecar registry.
     UnknownTag { tag: u16 },
 }
@@ -603,6 +651,9 @@ fn canonical_metadata_sidecar_bytes_inner(
         if field.value().is_empty() {
             return Err(MetadataSidecarError::EmptyFieldValue { tag: field.tag() });
         }
+        if enforce_active_tags {
+            validate_active_sidecar_field(field)?;
+        }
         let value_len = checked_metadata_sidecar_len("field_value", field.value().len())?;
         let projected_len = bytes
             .len()
@@ -641,6 +692,136 @@ pub fn canonical_metadata_sidecar_bytes_from_raw_fields_for_test(
         &MetadataSidecar::new(album_id, photo_id, epoch_id, &fields),
         false,
     )
+}
+
+fn validate_active_sidecar_field(
+    field: &MetadataSidecarField<'_>,
+) -> Result<(), MetadataSidecarError> {
+    use metadata_field_tags::{
+        CAMERA_MAKE, CAMERA_MODEL, DEVICE_TIMESTAMP_MS, GPS, MIME_OVERRIDE, ORIENTATION,
+        ORIGINAL_DIMENSIONS, SUBSECONDS_MS,
+    };
+
+    match field.tag() {
+        ORIENTATION => validate_orientation_field(field.value()),
+        ORIGINAL_DIMENSIONS => validate_dimensions_field(field.value()),
+        DEVICE_TIMESTAMP_MS => validate_exact_len(field.tag(), field.value(), 8),
+        MIME_OVERRIDE => validate_utf8_field(field.tag(), field.value()),
+        CAMERA_MAKE | CAMERA_MODEL => validate_capped_utf8_field(field.tag(), field.value(), 64),
+        SUBSECONDS_MS => validate_subseconds_field(field.value()),
+        GPS => validate_gps_field(field.value()),
+        _ => Ok(()),
+    }
+}
+
+fn validate_exact_len(_tag: u16, value: &[u8], len: usize) -> Result<(), MetadataSidecarError> {
+    if value.len() == len {
+        Ok(())
+    } else {
+        Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        })
+    }
+}
+
+fn validate_utf8_field(_tag: u16, value: &[u8]) -> Result<(), MetadataSidecarError> {
+    if std::str::from_utf8(value).is_ok() {
+        Ok(())
+    } else {
+        Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        })
+    }
+}
+
+fn validate_capped_utf8_field(
+    tag: u16,
+    value: &[u8],
+    max_len: usize,
+) -> Result<(), MetadataSidecarError> {
+    if value.len() > max_len {
+        return Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value_bytes",
+            actual: value.len(),
+        });
+    }
+    validate_utf8_field(tag, value)
+}
+
+fn validate_orientation_field(value: &[u8]) -> Result<(), MetadataSidecarError> {
+    if value.len() != 2 {
+        return Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        });
+    }
+    let orientation = u16::from_le_bytes([value[0], value[1]]);
+    if (1..=8).contains(&orientation) {
+        Ok(())
+    } else {
+        Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        })
+    }
+}
+
+fn validate_dimensions_field(value: &[u8]) -> Result<(), MetadataSidecarError> {
+    if value.len() != 8 {
+        return Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        });
+    }
+    let width = u32::from_le_bytes([value[0], value[1], value[2], value[3]]);
+    let height = u32::from_le_bytes([value[4], value[5], value[6], value[7]]);
+    if width != 0 && height != 0 {
+        Ok(())
+    } else {
+        Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        })
+    }
+}
+
+fn validate_subseconds_field(value: &[u8]) -> Result<(), MetadataSidecarError> {
+    if value.len() != 4 {
+        return Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        });
+    }
+    let millis = u32::from_le_bytes([value[0], value[1], value[2], value[3]]);
+    if millis <= 999 {
+        Ok(())
+    } else {
+        Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        })
+    }
+}
+
+fn validate_gps_field(value: &[u8]) -> Result<(), MetadataSidecarError> {
+    if value.len() != 14 {
+        return Err(MetadataSidecarError::LengthTooLarge {
+            field: "sidecar_field_value",
+            actual: value.len(),
+        });
+    }
+    let lat = i32::from_le_bytes([value[0], value[1], value[2], value[3]]);
+    let lon = i32::from_le_bytes([value[4], value[5], value[6], value[7]]);
+    if (-90_000_000..=90_000_000).contains(&lat) && (-180_000_000..=180_000_000).contains(&lon) {
+        Ok(())
+    } else {
+        Err(MetadataSidecarError::InvalidGpsValue {
+            latitude_e7: lat,
+            longitude_e7: lon,
+        })
+    }
 }
 
 fn checked_metadata_sidecar_len(
@@ -892,6 +1073,120 @@ impl ShardEnvelopeHeader {
     #[must_use]
     pub const fn tier(&self) -> ShardTier {
         self.tier
+    }
+}
+
+/// Parsed v0x04 streaming shard envelope header.
+///
+/// Layout (64 bytes): magic `SGzk` (4), version `0x04` (1), tier (1),
+/// stream_salt (16), frame_count u32 LE (4), final_frame_size u32 LE (4),
+/// reserved zero bytes (34).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamingShardEnvelopeHeader {
+    tier: ShardTier,
+    stream_salt: [u8; STREAMING_SHARD_SALT_LEN],
+    frame_count: u32,
+    final_frame_size: u32,
+}
+
+impl StreamingShardEnvelopeHeader {
+    /// Creates a v0x04 streaming header from validated field values.
+    ///
+    /// # Errors
+    /// Returns [`MosaicDomainError::InvalidHeaderLength`] for zero frames,
+    /// empty final frames, or final-frame sizes above 64 KiB.
+    pub const fn new(
+        tier: ShardTier,
+        stream_salt: [u8; STREAMING_SHARD_SALT_LEN],
+        frame_count: u32,
+        final_frame_size: u32,
+    ) -> Result<Self, MosaicDomainError> {
+        if frame_count == 0 {
+            return Err(MosaicDomainError::InvalidHeaderLength { actual: 0 });
+        }
+        if final_frame_size == 0 {
+            return Err(MosaicDomainError::InvalidHeaderLength { actual: 0 });
+        }
+        if final_frame_size as usize > STREAMING_SHARD_FRAME_SIZE {
+            return Err(MosaicDomainError::InvalidHeaderLength {
+                actual: final_frame_size as usize,
+            });
+        }
+        Ok(Self {
+            tier,
+            stream_salt,
+            frame_count,
+            final_frame_size,
+        })
+    }
+
+    /// Parses and validates a raw v0x04 streaming envelope header.
+    pub fn parse(bytes: &[u8]) -> Result<Self, MosaicDomainError> {
+        if bytes.len() != STREAMING_SHARD_ENVELOPE_HEADER_LEN {
+            return Err(MosaicDomainError::InvalidHeaderLength {
+                actual: bytes.len(),
+            });
+        }
+        if bytes[0..4] != STREAMING_SHARD_ENVELOPE_MAGIC {
+            return Err(MosaicDomainError::InvalidMagic);
+        }
+        if bytes[4] != SHARD_ENVELOPE_VERSION_V04 {
+            return Err(MosaicDomainError::UnsupportedVersion { version: bytes[4] });
+        }
+        for (relative_offset, value) in bytes[STREAMING_SHARD_RESERVED_OFFSET
+            ..STREAMING_SHARD_RESERVED_OFFSET + STREAMING_SHARD_RESERVED_LEN]
+            .iter()
+            .enumerate()
+        {
+            if *value != 0 {
+                return Err(MosaicDomainError::NonZeroReservedByte {
+                    offset: STREAMING_SHARD_RESERVED_OFFSET + relative_offset,
+                });
+            }
+        }
+        let tier = ShardTier::try_from(bytes[5])?;
+        let mut stream_salt = [0_u8; STREAMING_SHARD_SALT_LEN];
+        stream_salt.copy_from_slice(&bytes[6..22]);
+        let frame_count = u32::from_le_bytes([bytes[22], bytes[23], bytes[24], bytes[25]]);
+        let final_frame_size = u32::from_le_bytes([bytes[26], bytes[27], bytes[28], bytes[29]]);
+        Self::new(tier, stream_salt, frame_count, final_frame_size)
+    }
+
+    /// Serializes the header to its exact 64-byte wire representation.
+    #[must_use]
+    pub fn to_bytes(&self) -> [u8; STREAMING_SHARD_ENVELOPE_HEADER_LEN] {
+        let mut bytes = [0_u8; STREAMING_SHARD_ENVELOPE_HEADER_LEN];
+        bytes[0..4].copy_from_slice(&STREAMING_SHARD_ENVELOPE_MAGIC);
+        bytes[4] = SHARD_ENVELOPE_VERSION_V04;
+        bytes[5] = self.tier.to_byte();
+        bytes[6..22].copy_from_slice(&self.stream_salt);
+        bytes[22..26].copy_from_slice(&self.frame_count.to_le_bytes());
+        bytes[26..30].copy_from_slice(&self.final_frame_size.to_le_bytes());
+        bytes
+    }
+
+    /// Returns the shard tier.
+    #[must_use]
+    pub const fn tier(&self) -> ShardTier {
+        self.tier
+    }
+
+    /// Returns the per-stream salt.
+    #[must_use]
+    pub const fn stream_salt(&self) -> &[u8; STREAMING_SHARD_SALT_LEN] {
+        &self.stream_salt
+    }
+
+    /// Returns the declared frame count.
+    #[must_use]
+    pub const fn frame_count(&self) -> u32 {
+        self.frame_count
+    }
+
+    /// Returns the declared final-frame plaintext size.
+    #[must_use]
+    pub const fn final_frame_size(&self) -> u32 {
+        self.final_frame_size
     }
 }
 

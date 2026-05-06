@@ -6,8 +6,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use mosaic_crypto::sidecar::{
-    SidecarError, TunnelKeyMaterial, open_tunnel,
-    pake_initiator_start_with_rng, pake_responder_with_rng,
+    SidecarError, TunnelKeyMaterial, open_tunnel, pake_initiator_start_with_rng,
+    pake_responder_with_rng,
 };
 use rand_core::{CryptoRng, Error as RandError, RngCore, SeedableRng};
 
@@ -22,7 +22,12 @@ struct DeterministicRng {
 
 impl DeterministicRng {
     fn new(seed: [u8; 32]) -> Self {
-        Self { state: seed, counter: 0, buf: [0u8; 64], buf_pos: 64 }
+        Self {
+            state: seed,
+            counter: 0,
+            buf: [0u8; 64],
+            buf_pos: 64,
+        }
     }
     fn refill(&mut self) {
         use sha2::{Digest, Sha256};
@@ -43,19 +48,34 @@ impl DeterministicRng {
 }
 impl SeedableRng for DeterministicRng {
     type Seed = [u8; 32];
-    fn from_seed(seed: Self::Seed) -> Self { Self::new(seed) }
+    fn from_seed(seed: Self::Seed) -> Self {
+        Self::new(seed)
+    }
 }
 impl RngCore for DeterministicRng {
-    fn next_u32(&mut self) -> u32 { let mut b=[0;4]; self.fill_bytes(&mut b); u32::from_le_bytes(b) }
-    fn next_u64(&mut self) -> u64 { let mut b=[0;8]; self.fill_bytes(&mut b); u64::from_le_bytes(b) }
+    fn next_u32(&mut self) -> u32 {
+        let mut b = [0; 4];
+        self.fill_bytes(&mut b);
+        u32::from_le_bytes(b)
+    }
+    fn next_u64(&mut self) -> u64 {
+        let mut b = [0; 8];
+        self.fill_bytes(&mut b);
+        u64::from_le_bytes(b)
+    }
     fn fill_bytes(&mut self, dest: &mut [u8]) {
         for byte in dest.iter_mut() {
-            if self.buf_pos >= self.buf.len() { self.refill(); }
+            if self.buf_pos >= self.buf.len() {
+                self.refill();
+            }
             *byte = self.buf[self.buf_pos];
             self.buf_pos += 1;
         }
     }
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), RandError> { self.fill_bytes(dest); Ok(()) }
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), RandError> {
+        self.fill_bytes(dest);
+        Ok(())
+    }
 }
 impl CryptoRng for DeterministicRng {}
 

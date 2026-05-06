@@ -1,8 +1,8 @@
 //! Streaming-AEAD round-trip and error-path tests for tier-3 originals.
 
 use mosaic_crypto::{
-    MAX_STREAMING_CHUNK_BYTES, MIN_STREAMING_CHUNK_BYTES, MosaicCryptoError, SecretKey,
-    STREAMING_CHUNK_TAG_BYTES, STREAMING_ENVELOPE_VARIANT, encrypt_streaming_shard,
+    MAX_STREAMING_CHUNK_BYTES, MIN_STREAMING_CHUNK_BYTES, MosaicCryptoError,
+    STREAMING_CHUNK_TAG_BYTES, STREAMING_ENVELOPE_VARIANT, SecretKey, encrypt_streaming_shard,
     open_streaming_shard,
 };
 use mosaic_domain::{SHARD_ENVELOPE_HEADER_LEN, ShardTier};
@@ -31,10 +31,7 @@ fn header_array(envelope: &[u8]) -> [u8; SHARD_ENVELOPE_HEADER_LEN] {
     header
 }
 
-fn build_envelope(
-    plaintext: &[u8],
-    chunk_size: u32,
-) -> (Vec<u8>, [u8; SHARD_ENVELOPE_HEADER_LEN]) {
+fn build_envelope(plaintext: &[u8], chunk_size: u32) -> (Vec<u8>, [u8; SHARD_ENVELOPE_HEADER_LEN]) {
     let envelope = match encrypt_streaming_shard(
         plaintext,
         &key(KEY_A),

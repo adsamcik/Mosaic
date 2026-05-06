@@ -22,16 +22,16 @@ fn run_handshake_through_wasm() -> (u32, u32) {
     assert_eq!(init_start.code, OK);
     let resp = sidecar_pake_responder_v1(PAIRING_CODE, &init_start.msg1);
     assert_eq!(resp.code, OK);
-    let init_finish = sidecar_pake_initiator_finish_v1(
-        init_start.handle_id,
-        &resp.msg2,
-        &resp.responder_confirm,
-    );
+    let init_finish =
+        sidecar_pake_initiator_finish_v1(init_start.handle_id, &resp.msg2, &resp.responder_confirm);
     assert_eq!(init_finish.code, OK);
     let resp_finish =
         sidecar_pake_responder_finish_v1(resp.responder_handle_id, &init_finish.initiator_confirm);
     assert_eq!(resp_finish.code, OK);
-    (init_finish.material_handle_id, resp_finish.material_handle_id)
+    (
+        init_finish.material_handle_id,
+        resp_finish.material_handle_id,
+    )
 }
 
 #[test]
@@ -54,11 +54,8 @@ fn pake_responder_rejects_wrong_code() {
     assert_eq!(init_start.code, OK);
     let resp = sidecar_pake_responder_v1(b"222222", &init_start.msg1);
     assert_eq!(resp.code, OK);
-    let init_finish = sidecar_pake_initiator_finish_v1(
-        init_start.handle_id,
-        &resp.msg2,
-        &resp.responder_confirm,
-    );
+    let init_finish =
+        sidecar_pake_initiator_finish_v1(init_start.handle_id, &resp.msg2, &resp.responder_confirm);
     assert_ne!(
         init_finish.code, OK,
         "mismatched code must produce non-zero error code"

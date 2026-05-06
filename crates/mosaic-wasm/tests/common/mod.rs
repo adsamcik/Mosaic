@@ -64,10 +64,7 @@ pub fn plan_input_cbor(tier: u8) -> Result<Vec<u8>, String> {
 }
 
 pub fn init_snapshot_input_cbor(plan_cbor: Vec<u8>) -> Result<Vec<u8>, String> {
-    init_snapshot_input_cbor_with_scope(
-        plan_cbor,
-        "legacy:00000000000000000000000000000000",
-    )
+    init_snapshot_input_cbor_with_scope(plan_cbor, "legacy:00000000000000000000000000000000")
 }
 
 pub fn init_snapshot_input_cbor_with_scope(

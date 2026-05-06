@@ -33,7 +33,10 @@ use zeroize::{Zeroize, Zeroizing};
 
 use super::errors::SidecarError;
 use super::pake::{TunnelKeyMaterial, TunnelRoleTag};
-use super::{DOMAIN_TAG, NONCE_DOMAIN_PREFIX, TUNNEL_KEY_BYTES, TUNNEL_SUBKEY_I2R_INFO, TUNNEL_SUBKEY_R2I_INFO};
+use super::{
+    DOMAIN_TAG, NONCE_DOMAIN_PREFIX, TUNNEL_KEY_BYTES, TUNNEL_SUBKEY_I2R_INFO,
+    TUNNEL_SUBKEY_R2I_INFO,
+};
 
 /// Role for [`open_tunnel`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,12 +104,12 @@ impl Drop for RecvTunnel {
 #[must_use]
 pub fn open_tunnel(material: TunnelKeyMaterial) -> (SendTunnel, RecvTunnel) {
     // Role -> flow-direction mapping (cross-zip):
-//   Initiator sends on i2r, recvs on r2i.
-//   Responder sends on r2i, recvs on i2r.
-let (send_label, recv_label) = match material.role {
-    TunnelRoleTag::Initiator => (TUNNEL_SUBKEY_I2R_INFO, TUNNEL_SUBKEY_R2I_INFO),
-    TunnelRoleTag::Responder => (TUNNEL_SUBKEY_R2I_INFO, TUNNEL_SUBKEY_I2R_INFO),
-};
+    //   Initiator sends on i2r, recvs on r2i.
+    //   Responder sends on r2i, recvs on i2r.
+    let (send_label, recv_label) = match material.role {
+        TunnelRoleTag::Initiator => (TUNNEL_SUBKEY_I2R_INFO, TUNNEL_SUBKEY_R2I_INFO),
+        TunnelRoleTag::Responder => (TUNNEL_SUBKEY_R2I_INFO, TUNNEL_SUBKEY_I2R_INFO),
+    };
     let send_key = derive_subkey(&material.seed, send_label);
     let recv_key = derive_subkey(&material.seed, recv_label);
     (

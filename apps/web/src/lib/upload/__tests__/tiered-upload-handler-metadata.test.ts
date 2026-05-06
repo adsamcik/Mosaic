@@ -3,17 +3,13 @@ import type { UploadHandlerContext, UploadTask } from '../types';
 
 const mocks = vi.hoisted(() => ({
   generateTieredImages: vi.fn(),
-  encryptTieredImages: vi.fn(),
   generateThumbnail: vi.fn(),
+  encryptShardWithEpochHandle: vi.fn(),
+  getCryptoClient: vi.fn(),
   shouldStripExifFromOriginals: vi.fn().mockReturnValue(true),
   shouldStoreOriginalsAsAvif: vi.fn().mockReturnValue(false),
   getThumbnailQualityValue: vi.fn().mockReturnValue(0.8),
   stripExifFromBlob: vi.fn(),
-  deriveTierKeys: vi.fn().mockReturnValue({
-    thumbKey: new Uint8Array(32).fill(1),
-    previewKey: new Uint8Array(32).fill(2),
-    fullKey: new Uint8Array(32).fill(3),
-  }),
 }));
 
 vi.mock('../../logger', () => ({
@@ -22,8 +18,11 @@ vi.mock('../../logger', () => ({
 
 vi.mock('../../thumbnail-generator', () => ({
   generateTieredImages: (...args: unknown[]) => mocks.generateTieredImages(...args),
-  encryptTieredImages: (...args: unknown[]) => mocks.encryptTieredImages(...args),
   generateThumbnail: (...args: unknown[]) => mocks.generateThumbnail(...args),
+}));
+
+vi.mock('../../crypto-client', () => ({
+  getCryptoClient: () => mocks.getCryptoClient(),
 }));
 
 vi.mock('../../settings-service', () => ({
@@ -36,11 +35,6 @@ vi.mock('../../exif-stripper', () => ({
   stripExifFromBlob: (...args: unknown[]) => mocks.stripExifFromBlob(...args),
 }));
 
-vi.mock('@mosaic/crypto', () => ({
-  deriveTierKeys: (...args: unknown[]) => mocks.deriveTierKeys(...args),
-  ShardTier: { THUMB: 1, PREVIEW: 2, ORIGINAL: 3 },
-}));
-
 import { processTieredUpload } from '../tiered-upload-handler';
 
 function createTask(mimeType: string): UploadTask {
@@ -49,7 +43,7 @@ function createTask(mimeType: string): UploadTask {
     file: new File([new Uint8Array([1, 2, 3])], 'redacted.bin', { type: mimeType }),
     albumId: 'album-001',
     epochId: 42,
-    readKey: new Uint8Array(32).fill(0xab),
+    epochHandleId: 'epoch-handle-42' as never,
     status: 'queued',
     currentAction: 'pending',
     progress: 0,
@@ -74,19 +68,16 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
     mocks.stripExifFromBlob.mockReset();
     mocks.shouldStripExifFromOriginals.mockReturnValue(true);
     mocks.shouldStoreOriginalsAsAvif.mockReturnValue(false);
+    mocks.getCryptoClient.mockResolvedValue({
+      encryptShardWithEpochHandle: mocks.encryptShardWithEpochHandle,
+    });
+    mocks.encryptShardWithEpochHandle.mockResolvedValue(new Uint8Array([9]));
     mocks.generateTieredImages.mockResolvedValue({
       thumbnail: { data: new Uint8Array([1]), width: 100, height: 75, tier: 1 },
       preview: { data: new Uint8Array([2]), width: 800, height: 600, tier: 2 },
       original: { data: new Uint8Array([3]), width: 1600, height: 1200, tier: 3 },
       originalWidth: 1600,
       originalHeight: 1200,
-    });
-    mocks.encryptTieredImages.mockResolvedValue({
-      originalWidth: 1600,
-      originalHeight: 1200,
-      thumbnail: { width: 100, height: 75, tier: 1, encrypted: { ciphertext: new Uint8Array([1]), sha256: 'sha-thumb' } },
-      preview: { width: 800, height: 600, tier: 2, encrypted: { ciphertext: new Uint8Array([2]), sha256: 'sha-preview' } },
-      original: { width: 1600, height: 1200, tier: 3, encrypted: { ciphertext: new Uint8Array([3]), sha256: 'sha-original' } },
     });
     mocks.generateThumbnail.mockResolvedValue({ data: new Uint8Array([4]), thumbhash: 'thumbhash' });
   });
@@ -96,6 +87,9 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
     ['image/jpeg', 'malformed-jpeg', /malformed image\/jpeg/],
     ['image/png', 'malformed-png', /malformed image\/png/],
     ['image/webp', 'malformed-webp', /malformed image\/webp/],
+    ['image/heic', 'malformed-heic', /malformed image\/heic/],
+    ['image/avif', 'malformed-avif', /malformed image\/avif/],
+    ['video/mp4', 'malformed-video', /malformed video\/mp4/],
   ])('rejects %s originals when stripper reports %s before encryption or TUS upload', async (mimeType, skippedReason, messagePattern) => {
     mocks.stripExifFromBlob.mockResolvedValueOnce({ bytes: new Uint8Array([3]), stripped: false, skippedReason });
     const task = createTask(mimeType);
@@ -103,16 +97,13 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
 
     await expect(processTieredUpload(task, ctx)).rejects.toThrow(messagePattern);
 
-    expect(mocks.encryptTieredImages).not.toHaveBeenCalled();
+    expect(mocks.encryptShardWithEpochHandle).not.toHaveBeenCalled();
     expect(ctx.tusUpload).not.toHaveBeenCalled();
     expect(ctx.updatePersistedTask).not.toHaveBeenCalled();
     expect(ctx.onComplete).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['image/heic', /R-M1/],
-    ['image/avif', /R-M2/],
-    ['video/mp4', /R-M6/],
     ['image/gif', /metadata stripping is unsupported/],
     ['image/bmp', /metadata stripping is unsupported/],
   ])('rejects preserve-original %s before tier generation when stripping is required', async (mimeType, messagePattern) => {
@@ -123,7 +114,7 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
 
     expect(mocks.generateTieredImages).not.toHaveBeenCalled();
     expect(mocks.stripExifFromBlob).not.toHaveBeenCalled();
-    expect(mocks.encryptTieredImages).not.toHaveBeenCalled();
+    expect(mocks.encryptShardWithEpochHandle).not.toHaveBeenCalled();
     expect(ctx.tusUpload).not.toHaveBeenCalled();
   });
 
@@ -135,7 +126,7 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
     await expect(processTieredUpload(task, ctx)).resolves.toBeUndefined();
 
     expect(mocks.stripExifFromBlob).not.toHaveBeenCalled();
-    expect(mocks.encryptTieredImages).toHaveBeenCalled();
+    expect(mocks.encryptShardWithEpochHandle).toHaveBeenCalledTimes(3);
     expect(ctx.tusUpload).toHaveBeenCalledTimes(3);
     expect(ctx.updatePersistedTask).toHaveBeenCalledWith(task.id, expect.objectContaining({ status: 'complete' }));
     expect(ctx.onComplete).toHaveBeenCalled();

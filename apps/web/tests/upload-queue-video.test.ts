@@ -21,7 +21,7 @@ const {
   mockDelete: vi.fn().mockResolvedValue(undefined),
   mockGetAll: vi.fn().mockResolvedValue([]),
   mockEncryptShard: vi.fn().mockResolvedValue({
-    ciphertext: new Uint8Array([1, 2, 3]),
+    envelopeBytes: new Uint8Array([1, 2, 3]),
     sha256: 'mock-sha256-hash',
   }),
   mockExtractVideoFrame: vi.fn(),
@@ -33,7 +33,7 @@ const {
     fullKey: new Uint8Array(32).fill(3),
   }),
   mockEncryptShardCrypto: vi.fn().mockResolvedValue({
-    ciphertext: new Uint8Array([10, 20, 30]),
+    envelopeBytes: new Uint8Array([10, 20, 30]),
     sha256: 'encrypted-sha256',
   }),
 }));
@@ -73,7 +73,7 @@ vi.mock('../src/lib/api', () => ({
 
 vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn().mockResolvedValue({
-    encryptShard: mockEncryptShard,
+    encryptShardWithEpochHandle: mockEncryptShardCrypto,
   }),
 }));
 
@@ -111,7 +111,7 @@ vi.mock('../src/lib/exif-stripper', () => ({
 
 vi.mock('@mosaic/crypto', () => ({
   deriveTierKeys: (...args: unknown[]) => mockDeriveTierKeys(...args),
-  encryptShard: (...args: unknown[]) => mockEncryptShardCrypto(...args),
+  encryptShard: (...args: unknown[]) => mockEncryptShard(...args),
   ShardTier: { THUMB: 1, PREVIEW: 2, ORIGINAL: 3 },
 }));
 
@@ -165,7 +165,7 @@ function createTask(overrides: Partial<UploadTask> = {}): UploadTask {
     file,
     albumId: 'album-001',
     epochId: 42,
-    readKey: new Uint8Array(32).fill(0xab),
+    epochHandleId: 'epoch-handle-42' as never,
     status: 'queued',
     currentAction: 'pending',
     progress: 0,
@@ -341,8 +341,8 @@ describe('UploadQueue — Video Upload Pipeline', () => {
 
       // Neither video nor image-specific functions should be called
       expect(mockExtractVideoFrame).not.toHaveBeenCalled();
-      // Legacy uses crypto-client encryptShard directly
-      expect(mockEncryptShard).toHaveBeenCalled();
+      // Legacy uses crypto-client handle encryption directly.
+      expect(mockEncryptShardCrypto).toHaveBeenCalled();
     });
   });
 
@@ -363,7 +363,7 @@ describe('UploadQueue — Video Upload Pipeline', () => {
       await queue.processTask(task);
 
       // Should have fallen back to legacy upload path (uses crypto-client)
-      expect(mockEncryptShard).toHaveBeenCalled();
+      expect(mockEncryptShardCrypto).toHaveBeenCalled();
       // The fallback still preserves video identity so manifest/UI render it as video.
       expect(task.videoMetadata).toEqual({
         isVideo: true,
@@ -380,9 +380,9 @@ describe('UploadQueue — Video Upload Pipeline', () => {
       await queue.processTask(task);
 
       // @mosaic/crypto encryptShard should NOT be called (that's the video path)
-      expect(mockEncryptShardCrypto).not.toHaveBeenCalled();
-      // crypto-client encryptShard SHOULD be called (legacy path)
-      expect(mockEncryptShard).toHaveBeenCalled();
+      expect(mockEncryptShard).not.toHaveBeenCalled();
+      // crypto-client handle encryption SHOULD be called (legacy path)
+      expect(mockEncryptShardCrypto).toHaveBeenCalled();
     });
   });
 
@@ -630,13 +630,12 @@ describe('UploadQueue — Video Upload Pipeline', () => {
       const task = createTask();
       await queue.processTask(task);
 
-      // First encryptShard call should use thumbKey and ShardTier.THUMB (1)
+      // First encryptShardWithEpochHandle call should use the epoch handle and tier 1.
       expect(mockEncryptShardCrypto).toHaveBeenCalledWith(
+        'epoch-handle-42',
         expect.any(Uint8Array),
-        new Uint8Array(32).fill(1), // thumbKey
-        42, // epochId
-        0,  // shard index
         1,  // ShardTier.THUMB
+        0,  // shard index
       );
 
       // Should have a tier-1 shard in completedShards
@@ -652,13 +651,13 @@ describe('UploadQueue — Video Upload Pipeline', () => {
 
       // Should have 2 original chunks (7MB → 6MB + 1MB)
       const origCalls = mockEncryptShardCrypto.mock.calls.filter(
-        (call: unknown[]) => call[4] === 3, // ShardTier.ORIGINAL
+        (call: unknown[]) => call[2] === 3, // ShardTier.ORIGINAL
       );
       expect(origCalls).toHaveLength(2);
 
-      // Each should use fullKey
+      // Each should use the epoch handle.
       for (const call of origCalls) {
-        expect(call[1]).toEqual(new Uint8Array(32).fill(3)); // fullKey
+        expect(call[0]).toBe('epoch-handle-42');
       }
     });
   });

@@ -126,7 +126,10 @@ fn happy_path_both_sides_agree() {
     assert_eq!(resp_material.role(), TunnelRoleTag::Responder);
     // Tunnel seeds derive the same byte vector from the same session secret +
     // transcript. Compare via private accessor (exposed under cfg(test)).
-    assert_eq!(init_material.seed_for_tests(), resp_material.seed_for_tests());
+    assert_eq!(
+        init_material.seed_for_tests(),
+        resp_material.seed_for_tests()
+    );
 }
 
 #[test]
@@ -170,7 +173,10 @@ fn wrong_code_fails_at_responder_confirm_check() {
     let res: Result<_, SidecarError> = initiator.finish(&msg2, &confirm_b);
     let err = res.expect_err("mismatched codes must fail");
     assert!(
-        matches!(err, SidecarError::ConfirmationFailed | SidecarError::PakeFailed),
+        matches!(
+            err,
+            SidecarError::ConfirmationFailed | SidecarError::PakeFailed
+        ),
         "unexpected error: {err:?}"
     );
 }

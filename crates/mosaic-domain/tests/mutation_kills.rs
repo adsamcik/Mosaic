@@ -88,17 +88,17 @@ fn transcript_and_sidecar_context_constants_are_byte_exact() {
 #[test]
 fn metadata_field_tags_have_fixed_protocol_values() {
     assert_eq!(metadata_field_tags::ORIENTATION, 1);
-    assert_eq!(metadata_field_tags::DEVICE_TIMESTAMP_MS, 2);
-    assert_eq!(metadata_field_tags::ORIGINAL_DIMENSIONS, 3);
+    assert_eq!(metadata_field_tags::ORIGINAL_DIMENSIONS, 2);
+    assert_eq!(metadata_field_tags::DEVICE_TIMESTAMP_MS, 3);
     assert_eq!(metadata_field_tags::MIME_OVERRIDE, 4);
-    assert_eq!(metadata_field_tags::CAPTION, 5);
+    assert_eq!(metadata_field_tags::CAMERA_MAKE, 5);
     assert!(
         metadata_field_tags::KNOWN_FIELD_TAGS
             .iter()
             .any(|entry| entry.tag_number() == 6 && entry.tag_name() == "filename")
     );
-    assert_eq!(metadata_field_tags::CAMERA_MAKE, 7);
-    assert_eq!(metadata_field_tags::CAMERA_MODEL, 8);
+    assert_eq!(metadata_field_tags::CAMERA_MODEL, 7);
+    assert_eq!(metadata_field_tags::SUBSECONDS_MS, 8);
     assert_eq!(metadata_field_tags::GPS, 9);
 }
 
@@ -174,7 +174,10 @@ fn canonical_metadata_sidecar_bytes_serialize_two_fields_in_tag_order() {
     assert_eq!(&bytes[61..65], &2_u32.to_le_bytes());
     assert_eq!(&bytes[65..67], &orientation);
 
-    assert_eq!(&bytes[67..69], &3_u16.to_le_bytes());
+    assert_eq!(
+        &bytes[67..69],
+        &metadata_field_tags::ORIGINAL_DIMENSIONS.to_le_bytes()
+    );
     assert_eq!(&bytes[69..73], &8_u32.to_le_bytes());
     assert_eq!(&bytes[73..81], &dimensions);
 
@@ -183,7 +186,7 @@ fn canonical_metadata_sidecar_bytes_serialize_two_fields_in_tag_order() {
 
 #[test]
 fn canonical_metadata_sidecar_bytes_distinguishes_duplicate_and_unsorted_tags() {
-    let value = [0xaa, 0xbb];
+    let value = 1_u16.to_le_bytes();
     let duplicate = [
         MetadataSidecarField::new(metadata_field_tags::ORIENTATION, &value),
         MetadataSidecarField::new(metadata_field_tags::ORIENTATION, &value),

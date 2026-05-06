@@ -293,6 +293,7 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | Frontend Context | [contexts/UploadContext.tsx](../apps/web/src/contexts/UploadContext.tsx)      |
 | Frontend Hook    | [hooks/useUpload.ts](../apps/web/src/hooks/useUpload.ts)                      |
 | Frontend UI      | [components/Upload/](../apps/web/src/components/Upload/)                      |
+| Frontend Upload Queue | [lib/upload/](../apps/web/src/lib/upload/)                              |
 
 **Features:**
 - Client-side encryption before upload
@@ -301,6 +302,8 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 - EXIF extraction (date, GPS, camera info)
 - Thumbnail generation (256px, 512px)
 - Video file support (MP4, WebM, MOV, MKV) with automatic frame extraction
+- Legacy IndexedDB upload queue drain/reset path for pre-R-Cl1 records
+- PNG/WebP/AVIF/HEIC metadata-strip migration parity through Rust WASM
 
 ---
 
@@ -503,6 +506,30 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 
 ## Encryption & Security
 
+### Rust-Owned Share-Link URL Assembly
+
+**Purpose:** Ensure web and Android construct share-link URLs through the Rust core boundary instead of duplicating URL assembly locally.
+
+**Implementation:**
+| Layer | Location |
+|-------|----------|
+| Rust core | `crates/mosaic-client/src/lib.rs` |
+| WASM | `crates/mosaic-wasm/src/lib.rs` |
+| UniFFI | `crates/mosaic-uniffi/src/lib.rs` |
+| Frontend | `apps/web/src/lib/share-link-url.ts` |
+| Android | `apps/android-main/src/main/kotlin/org/mosaic/android/main/sharelink/MosaicShareLinkUrls.kt` |
+
+**Features:**
+- Keeps the bearer `link_url_token` in the URL fragment so it is not sent to the server.
+- Preserves the v1 `/s/{linkId}#k={token}` visitor route while Rust owns string assembly.
+
+**Tests:**
+- Rust: `crates/mosaic-parity-tests/tests/cross_platform_parity.rs`
+- Frontend: `apps/web/tests/share-link-url.test.ts`
+- Android: `apps/android-main/src/test/kotlin/org/mosaic/android/main/sharelink/MosaicShareLinkUrlsTest.kt`
+
+---
+
 ### Key Hierarchy
 
 **Documentation:** See `libs/crypto/.instructions.md`
@@ -623,6 +650,25 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 ---
 
 ## UI/UX Features
+
+### Privacy Class Metadata Error Banner
+
+**Purpose:** Show a clear upload/decode error when a sidecar decoder rejects a forbidden metadata field.
+
+**Implementation:**
+| Layer | Location |
+|-------|----------|
+| Frontend | `apps/web/src/components/Privacy/PrivacyClassErrorBanner.tsx` |
+
+**Features:**
+- Displays guidance to remove unsupported metadata and re-upload.
+- Logs the canonicalized field name for support without logging photo content or key material.
+- v1 placeholder integration: the banner accepts the `ForbiddenTagError` shape until the deferred sidecar decoder flow is promoted.
+
+**Tests:**
+- Frontend: `apps/web/src/components/Privacy/PrivacyClassErrorBanner.test.tsx`
+
+---
 
 ### Theme Support
 
@@ -835,6 +881,30 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 
 ## Android
 
+### Android Sync Confirmation and Photo Picker Staging
+
+**Purpose:** Confirm committed manifest versions have reached album sync and route Android Photo Picker results into app-private staging without broad media permissions.
+
+**Implementation:**
+| Layer | Location |
+|-------|----------|
+| Android sync | `apps/android-main/src/main/kotlin/org/mosaic/android/main/sync/SyncConfirmationLoop.kt` |
+| Android picker | `apps/android-main/src/main/kotlin/org/mosaic/android/main/picker/PhotoPickerStagingAdapter.kt` |
+| Android picker helper | `apps/android-main/src/main/kotlin/org/mosaic/android/main/picker/PhotoPickerStagingLauncher.kt` |
+
+**Features:**
+- Polls album sync until `currentVersion` reaches the locally finalized manifest version.
+- Uses exponential backoff with full jitter and cooperative coroutine cancellation.
+- Treats 404/403 as terminal failures while retrying server errors.
+- Stages Photo Picker `Uri` results via `AppPrivateStagingManager`, preserving original MIME types and falling back to `application/octet-stream`.
+- Provides Activity Result helper functions for Compose `rememberLauncherForActivityResult` integration without adding broad storage permissions.
+
+**Tests:**
+- Android JVM: `apps/android-main/src/test/kotlin/org/mosaic/android/main/sync/SyncConfirmationLoopTest.kt`
+- Android JVM: `apps/android-main/src/test/kotlin/org/mosaic/android/main/picker/PhotoPickerStagingAdapterTest.kt`
+
+---
+
 ### Android Main Module (Rust UniFFI APK)
 
 **Purpose:** First real Android Gradle application module that consumes the Rust UniFFI core directly. Cross-compiled `libmosaic_uniffi.so` is packaged into the APK; JNA-based generated Kotlin bindings call into Rust at runtime. Smoke-tests the FFI end-to-end on a real device.
@@ -941,6 +1011,9 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-05-06 | Deferred Ticket Bundle (P-W2, R-C8, R-M5.3) | Added | Added Rust-owned share-link URL assembly, video tier pipeline edge coverage, and privacy class forbidden-tag banner placeholder |
+| 2026-05-06 | Android Sync Confirmation and Photo Picker Staging | Added | Added album sync confirmation polling with jittered backoff/cancellation plus Photo Picker staging adapter preserving MIME types |
+| 2026-05-05 | Web Upload Queue Migration  | Added    | Added legacy IndexedDB upload task detection/drain/reset telemetry and PNG/WebP/AVIF/HEIC strip parity coverage |
 | 2026-05-04 | Web Metadata Strip Parity (M0) | Added | Web JPEG/PNG/WebP stripping now delegates to Rust `mosaic-media` WASM; HEIC/AVIF/video source originals reject until parser support lands |
 | 2026-04-30 | Cross-client cryptographic vector parity (Android, Slice 0C) | Added | 7 new raw-input UniFFI exports + 5 Generated*Bridge contracts + 5 AndroidRust*Api adapters + 30 round-trip tests; closes 5 `TODO Slice 0C:` markers in `CrossClientVectorTest.kt`; new `kotlin-raw-input-ffi` architecture guard; new `error_code_table.rs` snapshot test |
 | 2026-04-30 | TS-Canonical Cryptographic Primitives | Added | `mosaic-crypto::ts_canonical` module: BLAKE2b-keyed link IDs, BLAKE2b auth-key + L1 derivation, XSalsa20-Poly1305 (`crypto_secretbox`) wrap/unwrap; reproduces TS reference byte-exact for `auth_keypair.json`, `account_unlock.json`, `link_keys.json` corpora |

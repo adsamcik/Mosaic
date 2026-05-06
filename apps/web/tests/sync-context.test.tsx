@@ -79,7 +79,8 @@ import { ApiError } from '../src/lib/api';
 vi.mock('../src/lib/epoch-key-service', () => ({
   getOrFetchEpochKey: vi.fn().mockResolvedValue({
     epochId: 1,
-    epochSeed: new Uint8Array(32),
+    epochHandleId: 'epoch-handle-1' as never,
+    signPublicKey: new Uint8Array(32),
     signKeypair: {
       publicKey: new Uint8Array(32),
       secretKey: new Uint8Array(64),
@@ -243,7 +244,7 @@ describe('SyncContext', () => {
       // Should have synced the registered album
       expect(syncEngine.sync).toHaveBeenCalledWith(
         'album-1',
-        expect.any(Uint8Array),
+        'epoch-handle-1',
       );
     });
 
@@ -360,7 +361,7 @@ describe('SyncContext', () => {
 
       expect(syncEngine.sync).toHaveBeenCalledWith(
         'album-manual',
-        expect.any(Uint8Array),
+        'epoch-handle-1',
       );
     });
 
@@ -434,7 +435,7 @@ describe('SyncContext', () => {
       expect(syncEngine.sync).toHaveBeenCalledTimes(1);
       expect(syncEngine.sync).toHaveBeenCalledWith(
         'album-race',
-        expect.any(Uint8Array),
+        'epoch-handle-1',
       );
     });
 
@@ -471,11 +472,11 @@ describe('SyncContext', () => {
       expect(syncEngine.sync).toHaveBeenCalledTimes(2);
       expect(syncEngine.sync).toHaveBeenCalledWith(
         'album-1',
-        expect.any(Uint8Array),
+        'epoch-handle-1',
       );
       expect(syncEngine.sync).toHaveBeenCalledWith(
         'album-2',
-        expect.any(Uint8Array),
+        'epoch-handle-1',
       );
     });
   });

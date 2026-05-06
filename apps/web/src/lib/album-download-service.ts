@@ -3,8 +3,9 @@ import { downloadZip } from 'client-zip';
 import { getCryptoClient } from './crypto-client';
 import { getOrFetchEpochKey } from './epoch-key-service';
 import { createLogger } from './logger';
+import { assertValidEpochHandle, verifyDownloadedShard } from './read-path-crypto';
 import { downloadShards } from './shard-service';
-import type { EpochHandleId, PhotoMeta } from '../workers/types';
+import type { PhotoMeta } from '../workers/types';
 
 const log = createLogger('AlbumDownloadService');
 
@@ -194,6 +195,7 @@ export async function downloadAlbumAsZip(options: AlbumDownloadOptions): Promise
   const defaultResolver: AlbumDownloadResolver = async (photo) => {
     const crypto = await getCryptoClientCached();
     const bundle = await getOrFetchEpochKey(albumId, photo.epochId);
+    assertValidEpochHandle(bundle.epochHandleId);
 
     const shardIds = getOriginalShardIds(photo);
     const shardHashes = getOriginalShardHashes(photo);
@@ -205,14 +207,18 @@ export async function downloadAlbumAsZip(options: AlbumDownloadOptions): Promise
       const shard = encryptedShards[i]!;
 
       if (shardHashes?.[i]) {
-        const isValid = await crypto.verifyShard(shard, shardHashes[i]!);
+        const isValid = await verifyDownloadedShard(
+          crypto,
+          shard,
+          shardHashes[i]!,
+        );
         if (!isValid) {
           log.warn(`Shard integrity check failed for photo ${photo.id}, shard ${i}`);
         }
       }
 
-      const plaintext = await crypto.decryptShardWithEpoch(
-        bundle.epochHandleId as EpochHandleId,
+      const plaintext = await crypto.decryptShardWithEpochHandle(
+        bundle.epochHandleId,
         shard,
       );
       decryptedChunks.push(plaintext);

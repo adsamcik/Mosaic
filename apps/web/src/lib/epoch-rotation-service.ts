@@ -26,6 +26,7 @@ import {
   type EpochKeyBundle,
 } from './epoch-key-store';
 import { createLogger } from './logger';
+import type { EpochHandleId } from '../workers/types';
 
 const log = createLogger('EpochRotationService');
 
@@ -292,10 +293,8 @@ export async function rotateEpoch(
   // Cache the new epoch key reference for the current user.
   const newBundle: EpochKeyBundle = {
     epochId: newEpochId,
-    epochHandleId: newEpochKey.epochHandleId,
+    epochHandleId: newEpochKey.epochHandleId as EpochHandleId,
     signPublicKey: newEpochKey.signPublicKey,
-    // Slice 3 transitional placeholders — see EpochKeyBundle docs.
-    epochSeed: new Uint8Array(0),
     signKeypair: {
       publicKey: newEpochKey.signPublicKey,
       secretKey: new Uint8Array(0),

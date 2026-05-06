@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "generate:error-codes": "node ../../scripts/generate-worker-crypto-error-codes.mjs",
+    "check:error-codes": "node ../../scripts/generate-worker-crypto-error-codes.mjs --check",
+    "prebuild": "npm run check:error-codes",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint src/",

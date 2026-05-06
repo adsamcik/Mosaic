@@ -94,32 +94,41 @@ mod tests {
 
     #[test]
     fn auth_scope_is_deterministic() {
-        let a = derive_auth_scope("11111111-2222-3333-4444-555555555555").unwrap_or_else(|_| panic!("scope derivation should succeed"));
-        let b = derive_auth_scope("11111111-2222-3333-4444-555555555555").unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let a = derive_auth_scope("11111111-2222-3333-4444-555555555555")
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let b = derive_auth_scope("11111111-2222-3333-4444-555555555555")
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
         assert_eq!(a, b);
     }
 
     #[test]
     fn auth_scope_has_prefix_and_hex_tail() {
-        let scope = derive_auth_scope("11111111-2222-3333-4444-555555555555").unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let scope = derive_auth_scope("11111111-2222-3333-4444-555555555555")
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
         let (prefix, tail) = split(&scope);
         assert_eq!(prefix, "auth");
         assert_eq!(tail.len(), 32);
-        assert!(tail.chars().all(|character| character.is_ascii_digit()
-            || ('a'..='f').contains(&character)));
+        assert!(
+            tail.chars()
+                .all(|character| character.is_ascii_digit() || ('a'..='f').contains(&character))
+        );
     }
 
     #[test]
     fn auth_scopes_for_different_accounts_differ() {
-        let a = derive_auth_scope("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").unwrap_or_else(|_| panic!("scope derivation should succeed"));
-        let b = derive_auth_scope("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let a = derive_auth_scope("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let b = derive_auth_scope("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
         assert_ne!(a, b);
     }
 
     #[test]
     fn visitor_scope_is_deterministic_and_prefixed() {
-        let a = derive_visitor_scope("link-1", Some("grant-x")).unwrap_or_else(|_| panic!("scope derivation should succeed"));
-        let b = derive_visitor_scope("link-1", Some("grant-x")).unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let a = derive_visitor_scope("link-1", Some("grant-x"))
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let b = derive_visitor_scope("link-1", Some("grant-x"))
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
         assert_eq!(a, b);
         let (prefix, tail) = split(&a);
         assert_eq!(prefix, "visitor");
@@ -128,29 +137,37 @@ mod tests {
 
     #[test]
     fn visitor_scope_none_and_empty_grant_collapse() {
-        let none = derive_visitor_scope("link-1", None).unwrap_or_else(|_| panic!("scope derivation should succeed"));
-        let empty = derive_visitor_scope("link-1", Some("")).unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let none = derive_visitor_scope("link-1", None)
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let empty = derive_visitor_scope("link-1", Some(""))
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
         assert_eq!(none, empty);
     }
 
     #[test]
     fn visitor_scopes_for_different_links_differ() {
-        let a = derive_visitor_scope("link-a", None).unwrap_or_else(|_| panic!("scope derivation should succeed"));
-        let b = derive_visitor_scope("link-b", None).unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let a = derive_visitor_scope("link-a", None)
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let b = derive_visitor_scope("link-b", None)
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
         assert_ne!(a, b);
     }
 
     #[test]
     fn visitor_scopes_for_different_grants_differ() {
-        let a = derive_visitor_scope("link-1", Some("grant-a")).unwrap_or_else(|_| panic!("scope derivation should succeed"));
-        let b = derive_visitor_scope("link-1", Some("grant-b")).unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let a = derive_visitor_scope("link-1", Some("grant-a"))
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let b = derive_visitor_scope("link-1", Some("grant-b"))
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
         assert_ne!(a, b);
     }
 
     #[test]
     fn auth_and_visitor_scopes_with_same_input_differ() {
-        let a = derive_auth_scope("link-1").unwrap_or_else(|_| panic!("scope derivation should succeed"));
-        let v = derive_visitor_scope("link-1", None).unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let a = derive_auth_scope("link-1")
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let v = derive_visitor_scope("link-1", None)
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
         assert_ne!(a, v);
         assert_ne!(split(&a).1, split(&v).1);
     }
@@ -164,9 +181,10 @@ mod tests {
 
     #[test]
     fn visitor_grant_does_not_alias_link_id_concat() {
-        let a = derive_visitor_scope("ab", Some("c")).unwrap_or_else(|_| panic!("scope derivation should succeed"));
-        let b = derive_visitor_scope("a", Some("bc")).unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let a = derive_visitor_scope("ab", Some("c"))
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
+        let b = derive_visitor_scope("a", Some("bc"))
+            .unwrap_or_else(|_| panic!("scope derivation should succeed"));
         assert_ne!(a, b);
     }
 }
-

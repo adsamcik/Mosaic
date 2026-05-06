@@ -90,8 +90,11 @@ impl Msg1 {
     }
     /// Parse from a wire slice.
     pub fn from_slice(bytes: &[u8]) -> Result<Self, SidecarError> {
-        let arr = <[u8; MSG_BYTES]>::try_from(bytes)
-            .map_err(|_| SidecarError::InvalidPakeMessageLength { actual: bytes.len() })?;
+        let arr = <[u8; MSG_BYTES]>::try_from(bytes).map_err(|_| {
+            SidecarError::InvalidPakeMessageLength {
+                actual: bytes.len(),
+            }
+        })?;
         Ok(Self(arr))
     }
 }
@@ -104,8 +107,11 @@ impl Msg2 {
     }
     /// Parse from a wire slice.
     pub fn from_slice(bytes: &[u8]) -> Result<Self, SidecarError> {
-        let arr = <[u8; MSG_BYTES]>::try_from(bytes)
-            .map_err(|_| SidecarError::InvalidPakeMessageLength { actual: bytes.len() })?;
+        let arr = <[u8; MSG_BYTES]>::try_from(bytes).map_err(|_| {
+            SidecarError::InvalidPakeMessageLength {
+                actual: bytes.len(),
+            }
+        })?;
         Ok(Self(arr))
     }
 }
@@ -118,8 +124,11 @@ impl Confirm {
     }
     /// Parse from a wire slice.
     pub fn from_slice(bytes: &[u8]) -> Result<Self, SidecarError> {
-        let arr = <[u8; CONFIRM_BYTES]>::try_from(bytes)
-            .map_err(|_| SidecarError::InvalidPakeMessageLength { actual: bytes.len() })?;
+        let arr = <[u8; CONFIRM_BYTES]>::try_from(bytes).map_err(|_| {
+            SidecarError::InvalidPakeMessageLength {
+                actual: bytes.len(),
+            }
+        })?;
         Ok(Self(arr))
     }
 }
@@ -137,7 +146,9 @@ impl core::fmt::Debug for Msg2 {
 }
 impl core::fmt::Debug for Confirm {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Confirm").field("len", &CONFIRM_BYTES).finish()
+        f.debug_struct("Confirm")
+            .field("len", &CONFIRM_BYTES)
+            .finish()
     }
 }
 
@@ -197,7 +208,6 @@ impl core::fmt::Debug for TunnelKeyMaterial {
             .finish()
     }
 }
-
 
 /// Initiator handshake state. Holds the in-flight SPAKE2 instance and the
 /// transcript bytes accumulated so far.
@@ -316,8 +326,11 @@ pub fn pake_responder_with_rng<R: RngCore + CryptoRng>(
         &Identity::new(IDENTITY_RESPONDER),
         rng,
     );
-    let msg2_arr = <[u8; MSG_BYTES]>::try_from(msg2_bytes.as_slice())
-        .map_err(|_| SidecarError::InvalidPakeMessageLength { actual: msg2_bytes.len() })?;
+    let msg2_arr = <[u8; MSG_BYTES]>::try_from(msg2_bytes.as_slice()).map_err(|_| {
+        SidecarError::InvalidPakeMessageLength {
+            actual: msg2_bytes.len(),
+        }
+    })?;
 
     let session_vec = spake
         .finish(msg1.as_bytes().as_slice())
@@ -345,7 +358,10 @@ pub fn pake_responder_with_rng<R: RngCore + CryptoRng>(
 }
 
 /// Convenience: run the responder using OS randomness via [`getrandom`].
-pub fn pake_responder(code: &[u8], msg1: &Msg1) -> Result<(PakeResponder, Msg2, Confirm), SidecarError> {
+pub fn pake_responder(
+    code: &[u8],
+    msg1: &Msg1,
+) -> Result<(PakeResponder, Msg2, Confirm), SidecarError> {
     let mut rng = GetrandomRng;
     pake_responder_with_rng(code, msg1, &mut rng)
 }
@@ -415,8 +431,14 @@ impl PakeInitiator {
         self.transcript.absorb(msg2.as_bytes());
         let transcript_hash = self.transcript.finalize();
 
-        let expected_responder = derive_confirm(&session, &transcript_hash, CONFIRM_RESPONDER_INFO)?;
-        if expected_responder.as_bytes().ct_eq(responder_confirm.as_bytes()).unwrap_u8() != 1 {
+        let expected_responder =
+            derive_confirm(&session, &transcript_hash, CONFIRM_RESPONDER_INFO)?;
+        if expected_responder
+            .as_bytes()
+            .ct_eq(responder_confirm.as_bytes())
+            .unwrap_u8()
+            != 1
+        {
             return Err(SidecarError::ConfirmationFailed);
         }
         let initiator_confirm = derive_confirm(&session, &transcript_hash, CONFIRM_INITIATOR_INFO)?;
@@ -442,7 +464,12 @@ impl PakeResponder {
     pub fn finish(self, initiator_confirm: &Confirm) -> Result<TunnelKeyMaterial, SidecarError> {
         let expected_initiator =
             derive_confirm(&self.session, &self.transcript_hash, CONFIRM_INITIATOR_INFO)?;
-        if expected_initiator.as_bytes().ct_eq(initiator_confirm.as_bytes()).unwrap_u8() != 1 {
+        if expected_initiator
+            .as_bytes()
+            .ct_eq(initiator_confirm.as_bytes())
+            .unwrap_u8()
+            != 1
+        {
             return Err(SidecarError::ConfirmationFailed);
         }
         let seed = derive_tunnel_seed(&self.session, &self.transcript_hash)?;
@@ -464,8 +491,8 @@ fn derive_confirm(
     let mut sub = Zeroizing::new([0u8; 32]);
     hk.expand(label, sub.as_mut_slice())
         .map_err(|_| SidecarError::KdfFailure)?;
-    let mut mac =
-        <HmacSha256 as Mac>::new_from_slice(sub.as_slice()).map_err(|_| SidecarError::KdfFailure)?;
+    let mut mac = <HmacSha256 as Mac>::new_from_slice(sub.as_slice())
+        .map_err(|_| SidecarError::KdfFailure)?;
     mac.update(transcript_hash);
     let tag = mac.finalize().into_bytes();
     let mut out = [0u8; CONFIRM_BYTES];

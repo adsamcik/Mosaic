@@ -438,8 +438,8 @@ export class RustHandleFacade {
     handle: bigint,
     envelopeBytes: Uint8Array,
   ): Uint8Array {
-    const result = rustWasm.decryptShardWithEpochHandle(handle, envelopeBytes);
-    return consumeResult(result, 'decryptShardWithEpochHandle', (r) =>
+    const result = rustWasm.decryptEnvelope(handle, envelopeBytes);
+    return consumeResult(result, 'decryptEnvelope', (r) =>
       copyBytes(r.plaintext),
     );
   }
@@ -459,6 +459,11 @@ export class RustHandleFacade {
     return consumeResult(result, 'signManifestWithEpochHandle', (r) =>
       copyBytes(r.bytes),
     );
+  }
+
+  /** Build the ADR-022 manifest-finalize Idempotency-Key in Rust/WASM. */
+  finalizeIdempotencyKey(jobId: string): string {
+    return rustWasm.finalizeIdempotencyKey(jobId);
   }
 
   /**
@@ -617,6 +622,20 @@ export class RustHandleFacade {
 
   // ---- Link sharing ----
 
+  buildShareLinkUrl(opts: {
+    baseUrl: string;
+    albumId: string;
+    linkId: string;
+    linkUrlToken: string;
+  }): string {
+    return rustWasm.buildShareLinkUrl(
+      opts.baseUrl,
+      opts.albumId,
+      opts.linkId,
+      opts.linkUrlToken,
+    );
+  }
+
   createLinkShareHandle(
     albumId: string,
     epochHandle: bigint,
@@ -624,7 +643,7 @@ export class RustHandleFacade {
   ): {
     handle: bigint;
     linkId: Uint8Array;
-    linkSecretForUrl: Uint8Array;
+    linkUrlToken: Uint8Array;
     tier: number;
     nonce: Uint8Array;
     encryptedKey: Uint8Array;
@@ -633,19 +652,19 @@ export class RustHandleFacade {
     return consumeResult(result, 'createLinkShareHandle', (r) => ({
       handle: r.handle,
       linkId: copyBytes(r.linkId),
-      linkSecretForUrl: copyBytes(r.linkSecretForUrl),
+      linkUrlToken: copyBytes(r.linkUrlToken),
       tier: r.tier,
       nonce: copyBytes(r.nonce),
       encryptedKey: copyBytes(r.encryptedKey),
     }));
   }
 
-  importLinkShareHandle(linkSecretForUrl: Uint8Array): {
+  importLinkShareHandle(linkUrlToken: Uint8Array): {
     handle: bigint;
     linkId: Uint8Array;
     tier: number;
   } {
-    const result = rustWasm.importLinkShareHandle(linkSecretForUrl);
+    const result = rustWasm.importLinkShareHandle(linkUrlToken);
     return consumeResult(result, 'importLinkShareHandle', (r) => ({
       handle: r.handle,
       linkId: copyBytes(r.linkId),
@@ -671,14 +690,14 @@ export class RustHandleFacade {
   }
 
   importLinkTierHandle(
-    linkSecretForUrl: Uint8Array,
+    linkUrlToken: Uint8Array,
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
     albumId: string,
     tierByte: number,
   ): { handle: bigint; linkId: Uint8Array; tier: number } {
     const result = rustWasm.importLinkTierHandle(
-      linkSecretForUrl,
+      linkUrlToken,
       nonce,
       encryptedKey,
       albumId,

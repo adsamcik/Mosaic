@@ -9,6 +9,8 @@ using Mosaic.Backend.Middleware;
 using Mosaic.Backend.Services;
 
 using Mosaic.Backend.Models.Albums;
+using Mosaic.Backend.Models.Manifests;
+using Mosaic.Backend.Models.Photos;
 
 namespace Mosaic.Backend.Controllers;
 
@@ -329,7 +331,8 @@ public class AlbumsController : ControllerBase
         {
             album.ExpirationWarningDays = request.ExpirationWarningDays.Value;
         }
-        album.UpdatedAt = DateTime.UtcNow;
+        var updatedAt = DateTime.UtcNow;
+        album.UpdatedAt = updatedAt;
 
         await _db.SaveChangesAsync();
 
@@ -342,8 +345,68 @@ public class AlbumsController : ControllerBase
 
         return Ok(new
         {
+            album.Id,
             album.ExpiresAt,
-            album.ExpirationWarningDays
+            album.ExpirationWarningDays,
+            UpdatedAt = updatedAt
+        });
+    }
+
+    /// <summary>
+    /// Update photo expiration settings through the album-scoped route.
+    /// </summary>
+    [HttpPatch("{albumId:guid}/photos/{photoId:guid}/expiration")]
+    public async Task<IActionResult> UpdatePhotoExpiration(
+        Guid albumId,
+        Guid photoId,
+        [FromBody] UpdateManifestExpirationRequest request)
+    {
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
+
+        var manifest = await _db.Manifests
+            .IgnoreQueryFilters()
+            .Include(m => m.Album)
+            .FirstOrDefaultAsync(m => m.Id == photoId && m.AlbumId == albumId);
+
+        if (manifest == null || manifest.IsDeleted)
+        {
+            return NotFound();
+        }
+
+        var (_, memberError) = await _db.RequireAlbumEditorAsync(albumId, user.Id, new NotFoundResult());
+        if (memberError != null)
+        {
+            return memberError;
+        }
+
+        if (_expirationService.IsExpired(manifest.Album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
+        {
+            await _expirationService.EnforceManifestExpirationAsync(photoId);
+            return StatusCode(StatusCodes.Status410Gone);
+        }
+
+        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= _timeProvider.GetUtcNow())
+        {
+            return Problem(
+                detail: "expiresAt must be in the future",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var now = DateTime.UtcNow;
+        manifest.ExpiresAt = request.ExpiresAt;
+        manifest.UpdatedAt = now;
+        manifest.Album.CurrentVersion++;
+        manifest.VersionCreated = manifest.Album.CurrentVersion;
+        manifest.Album.UpdatedAt = now;
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            Id = manifest.Id,
+            manifest.ExpiresAt,
+            manifest.VersionCreated,
+            UpdatedAt = now
         });
     }
 
@@ -405,13 +468,87 @@ public class AlbumsController : ControllerBase
             })
             .ToListAsync();
 
+        var currentManifest = await _db.Manifests
+            .AsNoTracking()
+            .Include(m => m.ManifestShards)
+            .Where(m => m.AlbumId == albumId && !m.IsDeleted)
+            .OrderByDescending(m => m.VersionCreated)
+            .FirstOrDefaultAsync();
+
         return Ok(new
         {
+            AlbumId = album.Id,
+            CurrentVersion = album.CurrentVersion,
+            ManifestId = currentManifest?.Id,
+            ManifestUrl = currentManifest == null ? null : $"/api/manifests/{currentManifest.Id}",
+            ExpectedSha256 = currentManifest?.ManifestShards
+                .OrderBy(ms => ms.Tier)
+                .ThenBy(ms => ms.ShardIndex)
+                .Select(ms => ms.Sha256)
+                .FirstOrDefault() ?? string.Empty,
             Manifests = manifests,
             CurrentEpochId = album.CurrentEpochId,
             AlbumVersion = album.CurrentVersion,
             HasMore = manifests.Count == 100
         });
+    }
+
+    /// <summary>
+    /// Get non-deleted, non-expired photo metadata for an album member.
+    /// Send Accept: application/vnd.mosaic.tiered-shards+json to include tieredShards.
+    /// </summary>
+    [HttpGet("{albumId}/photos")]
+    [HttpGet("/api/shared/{albumId}/photos")]
+    public async Task<IActionResult> GetPhotos(Guid albumId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
+    {
+        skip = Math.Max(0, skip);
+        take = Math.Clamp(take, 1, 100);
+
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
+
+        var accessError = await _db.RequireAlbumMemberAsync(albumId, user.Id);
+        if (accessError != null)
+        {
+            return accessError;
+        }
+
+        var album = await _db.Albums.FindAsync(albumId);
+        if (album == null)
+        {
+            return NotFound();
+        }
+
+        if (_expirationService.IsExpired(album.ExpiresAt))
+        {
+            await _expirationService.EnforceAlbumExpirationAsync(albumId);
+            return StatusCode(StatusCodes.Status410Gone);
+        }
+
+        await _expirationService.SweepExpiredManifestsAsync(albumId);
+
+        var now = _timeProvider.GetUtcNow();
+        var query = _db.Manifests
+            .AsNoTracking()
+            .Where(m => m.AlbumId == albumId
+                && !m.IsDeleted
+                && (m.ExpiresAt == null || m.ExpiresAt > now));
+
+        var totalCount = await query.CountAsync();
+        var manifests = await query
+            .Include(m => m.ManifestShards)
+            .OrderBy(m => m.VersionCreated)
+            .Skip(skip)
+            .Take(take)
+            .AsSplitQuery()
+            .ToListAsync();
+
+        var includeTieredShards = PhotoResponseFactory.WantsTieredShards(Request);
+        var photos = manifests
+            .Select(manifest => PhotoResponseFactory.FromManifest(manifest, includeTieredShards, includeAlbumId: false))
+            .ToList();
+
+        Response.AddPaginationHeaders(skip, take, totalCount);
+        return Ok(photos);
     }
 
     /// <summary>

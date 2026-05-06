@@ -2,10 +2,322 @@
 
 #![forbid(unsafe_code)]
 
-use std::fmt;
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::{
+        Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
-use mosaic_domain::{MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier};
+use mosaic_domain::{
+    EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, MetadataSidecar,
+    MetadataSidecarError, MetadataSidecarField, ShardTier,
+};
+use self_cell::self_cell;
 use zeroize::Zeroizing;
+
+type CryptoStreamingEncryptor<'a> = mosaic_crypto::StreamingEncryptor<'a>;
+type CryptoStreamingDecryptor<'a> = mosaic_crypto::StreamingDecryptor<'a>;
+
+struct CryptoStreamingEncryptorState<'a>(Option<CryptoStreamingEncryptor<'a>>);
+struct CryptoStreamingDecryptorState<'a>(Option<CryptoStreamingDecryptor<'a>>);
+
+static NEXT_MASTER_KEY_HANDLE_ID: AtomicU64 = AtomicU64::new(1);
+static MASTER_KEY_HANDLES: OnceLock<Mutex<HashMap<u64, mosaic_crypto::SecretKey>>> =
+    OnceLock::new();
+
+self_cell!(
+    struct StreamingEncryptorCell {
+        owner: mosaic_crypto::EpochKeyMaterial,
+
+        #[not_covariant]
+        dependent: CryptoStreamingEncryptorState,
+    }
+);
+
+self_cell!(
+    struct StreamingDecryptorCell {
+        owner: mosaic_crypto::EpochKeyMaterial,
+
+        #[not_covariant]
+        dependent: CryptoStreamingDecryptorState,
+    }
+);
+
+/// Stable client error codes exported through UniFFI.
+///
+/// This mirrors `mosaic_client::ClientErrorCode`, which remains the single
+/// Rust source of truth for v1-frozen numeric error codes. TypeScript bindings
+/// are generated from that source enum, while UniFFI exposes this wrapper enum
+/// so Android/iOS clients can consume native variants without hand-written
+/// integer maps. Adding a variant requires updating the Rust source enum,
+/// regenerating the TypeScript codegen output, regenerating the UniFFI API
+/// golden, and keeping the parity/lock tests green.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[repr(u16)]
+pub enum ClientErrorCode {
+    Ok = 0,
+    InvalidHeaderLength = 100,
+    InvalidMagic = 101,
+    UnsupportedVersion = 102,
+    InvalidTier = 103,
+    NonZeroReservedByte = 104,
+    UnknownEnvelopeVersion = 106,
+    EmptyContext = 200,
+    InvalidKeyLength = 201,
+    InvalidInputLength = 202,
+    InvalidEnvelope = 203,
+    MissingCiphertext = 204,
+    AuthenticationFailed = 205,
+    RngFailure = 206,
+    WrappedKeyTooShort = 207,
+    KdfProfileTooWeak = 208,
+    InvalidSaltLength = 209,
+    KdfFailure = 210,
+    InvalidSignatureLength = 211,
+    InvalidPublicKey = 212,
+    InvalidUsername = 213,
+    KdfProfileTooCostly = 214,
+    LinkTierMismatch = 215,
+    BundleSignatureInvalid = 216,
+    BundleAlbumIdEmpty = 217,
+    BundleAlbumIdMismatch = 218,
+    BundleEpochTooOld = 219,
+    BundleRecipientMismatch = 220,
+    BundleJsonParse = 221,
+    BundleSealOpenFailed = 222,
+    ShardIntegrityFailed = 223,
+    LegacyRawKeyDecryptFallback = 224,
+    StreamingChunkOutOfOrder = 225,
+    StreamingTotalChunkMismatch = 226,
+    StreamingPlaintextDivergence = 227,
+    OperationCancelled = 300,
+    SecretHandleNotFound = 400,
+    IdentityHandleNotFound = 401,
+    HandleSpaceExhausted = 402,
+    EpochHandleNotFound = 403,
+    InternalStatePoisoned = 500,
+    UnsupportedMediaFormat = 600,
+    InvalidMediaContainer = 601,
+    InvalidMediaDimensions = 602,
+    MediaOutputTooLarge = 603,
+    MediaMetadataMismatch = 604,
+    InvalidMediaSidecar = 605,
+    MediaAdapterOutputMismatch = 606,
+    VideoContainerInvalid = 607,
+    MediaInspectFailed = 608,
+    MediaStripFailed = 609,
+    SidecarFieldOverflow = 610,
+    SidecarTagUnknown = 611,
+    MalformedSidecar = 612,
+    MakerNoteRejected = 613,
+    ExifTraversalLimitExceeded = 614,
+    VideoTooLargeForV1 = 615,
+    VideoSourceUnreadable = 616,
+    VideoTierShapeRejected = 617,
+    MetadataSidecarReservedTagNotPromoted = 618,
+    ClientCoreInvalidTransition = 700,
+    ClientCoreMissingEventPayload = 701,
+    ClientCoreRetryBudgetExhausted = 702,
+    ClientCoreSyncPageDidNotAdvance = 703,
+    ClientCoreManifestOutcomeUnknown = 704,
+    ClientCoreUnsupportedSnapshotVersion = 705,
+    ClientCoreInvalidSnapshot = 706,
+    ManifestShapeRejected = 707,
+    IdempotencyExpired = 708,
+    ManifestSetConflict = 709,
+    BackendIdempotencyConflict = 710,
+    VideoPosterExtractionFailed = 711,
+    DownloadInvalidPlan = 720,
+    DownloadIllegalTransition = 721,
+    DownloadSnapshotMigration = 722,
+    DownloadSnapshotCorrupt = 723,
+    DownloadSnapshotChecksumMismatch = 724,
+    DownloadSnapshotTorn = 725,
+    DownloadTransientNetwork = 726,
+    DownloadIntegrity = 727,
+    DownloadDecrypt = 728,
+    DownloadNotFound = 729,
+    DownloadQuota = 730,
+    DownloadCancelled = 731,
+    DownloadAccessRevoked = 732,
+    DownloadAuthorizationChanged = 733,
+    DownloadIllegalState = 734,
+    PinValidationFailed = 800,
+}
+
+impl ClientErrorCode {
+    /// Returns the stable numeric representation used across generated bindings.
+    #[must_use]
+    pub const fn as_u16(self) -> u16 {
+        self as u16
+    }
+
+    /// Converts the Rust source-of-truth error code into the UniFFI wrapper.
+    #[must_use]
+    pub const fn from_client_code(code: mosaic_client::ClientErrorCode) -> Self {
+        match code {
+            mosaic_client::ClientErrorCode::Ok => Self::Ok,
+            mosaic_client::ClientErrorCode::InvalidHeaderLength => Self::InvalidHeaderLength,
+            mosaic_client::ClientErrorCode::InvalidMagic => Self::InvalidMagic,
+            mosaic_client::ClientErrorCode::UnsupportedVersion => Self::UnsupportedVersion,
+            mosaic_client::ClientErrorCode::InvalidTier => Self::InvalidTier,
+            mosaic_client::ClientErrorCode::NonZeroReservedByte => Self::NonZeroReservedByte,
+            mosaic_client::ClientErrorCode::UnknownEnvelopeVersion => Self::UnknownEnvelopeVersion,
+            mosaic_client::ClientErrorCode::EmptyContext => Self::EmptyContext,
+            mosaic_client::ClientErrorCode::InvalidKeyLength => Self::InvalidKeyLength,
+            mosaic_client::ClientErrorCode::InvalidInputLength => Self::InvalidInputLength,
+            mosaic_client::ClientErrorCode::InvalidEnvelope => Self::InvalidEnvelope,
+            mosaic_client::ClientErrorCode::MissingCiphertext => Self::MissingCiphertext,
+            mosaic_client::ClientErrorCode::AuthenticationFailed => Self::AuthenticationFailed,
+            mosaic_client::ClientErrorCode::RngFailure => Self::RngFailure,
+            mosaic_client::ClientErrorCode::WrappedKeyTooShort => Self::WrappedKeyTooShort,
+            mosaic_client::ClientErrorCode::KdfProfileTooWeak => Self::KdfProfileTooWeak,
+            mosaic_client::ClientErrorCode::InvalidSaltLength => Self::InvalidSaltLength,
+            mosaic_client::ClientErrorCode::KdfFailure => Self::KdfFailure,
+            mosaic_client::ClientErrorCode::InvalidSignatureLength => Self::InvalidSignatureLength,
+            mosaic_client::ClientErrorCode::InvalidPublicKey => Self::InvalidPublicKey,
+            mosaic_client::ClientErrorCode::InvalidUsername => Self::InvalidUsername,
+            mosaic_client::ClientErrorCode::KdfProfileTooCostly => Self::KdfProfileTooCostly,
+            mosaic_client::ClientErrorCode::LinkTierMismatch => Self::LinkTierMismatch,
+            mosaic_client::ClientErrorCode::BundleSignatureInvalid => Self::BundleSignatureInvalid,
+            mosaic_client::ClientErrorCode::BundleAlbumIdEmpty => Self::BundleAlbumIdEmpty,
+            mosaic_client::ClientErrorCode::BundleAlbumIdMismatch => Self::BundleAlbumIdMismatch,
+            mosaic_client::ClientErrorCode::BundleEpochTooOld => Self::BundleEpochTooOld,
+            mosaic_client::ClientErrorCode::BundleRecipientMismatch => {
+                Self::BundleRecipientMismatch
+            }
+            mosaic_client::ClientErrorCode::BundleJsonParse => Self::BundleJsonParse,
+            mosaic_client::ClientErrorCode::BundleSealOpenFailed => Self::BundleSealOpenFailed,
+            mosaic_client::ClientErrorCode::ShardIntegrityFailed => Self::ShardIntegrityFailed,
+            mosaic_client::ClientErrorCode::LegacyRawKeyDecryptFallback => {
+                Self::LegacyRawKeyDecryptFallback
+            }
+            mosaic_client::ClientErrorCode::StreamingChunkOutOfOrder => {
+                Self::StreamingChunkOutOfOrder
+            }
+            mosaic_client::ClientErrorCode::StreamingTotalChunkMismatch => {
+                Self::StreamingTotalChunkMismatch
+            }
+            mosaic_client::ClientErrorCode::StreamingPlaintextDivergence => {
+                Self::StreamingPlaintextDivergence
+            }
+            mosaic_client::ClientErrorCode::OperationCancelled => Self::OperationCancelled,
+            mosaic_client::ClientErrorCode::SecretHandleNotFound => Self::SecretHandleNotFound,
+            mosaic_client::ClientErrorCode::IdentityHandleNotFound => Self::IdentityHandleNotFound,
+            mosaic_client::ClientErrorCode::HandleSpaceExhausted => Self::HandleSpaceExhausted,
+            mosaic_client::ClientErrorCode::EpochHandleNotFound => Self::EpochHandleNotFound,
+            mosaic_client::ClientErrorCode::InternalStatePoisoned => Self::InternalStatePoisoned,
+            mosaic_client::ClientErrorCode::UnsupportedMediaFormat => Self::UnsupportedMediaFormat,
+            mosaic_client::ClientErrorCode::InvalidMediaContainer => Self::InvalidMediaContainer,
+            mosaic_client::ClientErrorCode::InvalidMediaDimensions => Self::InvalidMediaDimensions,
+            mosaic_client::ClientErrorCode::MediaOutputTooLarge => Self::MediaOutputTooLarge,
+            mosaic_client::ClientErrorCode::MediaMetadataMismatch => Self::MediaMetadataMismatch,
+            mosaic_client::ClientErrorCode::InvalidMediaSidecar => Self::InvalidMediaSidecar,
+            mosaic_client::ClientErrorCode::MediaAdapterOutputMismatch => {
+                Self::MediaAdapterOutputMismatch
+            }
+            mosaic_client::ClientErrorCode::VideoContainerInvalid => Self::VideoContainerInvalid,
+            mosaic_client::ClientErrorCode::MediaInspectFailed => Self::MediaInspectFailed,
+            mosaic_client::ClientErrorCode::MediaStripFailed => Self::MediaStripFailed,
+            mosaic_client::ClientErrorCode::SidecarFieldOverflow => Self::SidecarFieldOverflow,
+            mosaic_client::ClientErrorCode::SidecarTagUnknown => Self::SidecarTagUnknown,
+            mosaic_client::ClientErrorCode::MalformedSidecar => Self::MalformedSidecar,
+            mosaic_client::ClientErrorCode::MakerNoteRejected => Self::MakerNoteRejected,
+            mosaic_client::ClientErrorCode::ExifTraversalLimitExceeded => {
+                Self::ExifTraversalLimitExceeded
+            }
+            mosaic_client::ClientErrorCode::VideoTooLargeForV1 => Self::VideoTooLargeForV1,
+            mosaic_client::ClientErrorCode::VideoSourceUnreadable => Self::VideoSourceUnreadable,
+            mosaic_client::ClientErrorCode::VideoTierShapeRejected => Self::VideoTierShapeRejected,
+            mosaic_client::ClientErrorCode::MetadataSidecarReservedTagNotPromoted => {
+                Self::MetadataSidecarReservedTagNotPromoted
+            }
+            mosaic_client::ClientErrorCode::ClientCoreInvalidTransition => {
+                Self::ClientCoreInvalidTransition
+            }
+            mosaic_client::ClientErrorCode::ClientCoreMissingEventPayload => {
+                Self::ClientCoreMissingEventPayload
+            }
+            mosaic_client::ClientErrorCode::ClientCoreRetryBudgetExhausted => {
+                Self::ClientCoreRetryBudgetExhausted
+            }
+            mosaic_client::ClientErrorCode::ClientCoreSyncPageDidNotAdvance => {
+                Self::ClientCoreSyncPageDidNotAdvance
+            }
+            mosaic_client::ClientErrorCode::ClientCoreManifestOutcomeUnknown => {
+                Self::ClientCoreManifestOutcomeUnknown
+            }
+            mosaic_client::ClientErrorCode::ClientCoreUnsupportedSnapshotVersion => {
+                Self::ClientCoreUnsupportedSnapshotVersion
+            }
+            mosaic_client::ClientErrorCode::ClientCoreInvalidSnapshot => {
+                Self::ClientCoreInvalidSnapshot
+            }
+            mosaic_client::ClientErrorCode::ManifestShapeRejected => Self::ManifestShapeRejected,
+            mosaic_client::ClientErrorCode::IdempotencyExpired => Self::IdempotencyExpired,
+            mosaic_client::ClientErrorCode::ManifestSetConflict => Self::ManifestSetConflict,
+            mosaic_client::ClientErrorCode::BackendIdempotencyConflict => {
+                Self::BackendIdempotencyConflict
+            }
+            mosaic_client::ClientErrorCode::VideoPosterExtractionFailed => {
+                Self::VideoPosterExtractionFailed
+            }
+            mosaic_client::ClientErrorCode::DownloadInvalidPlan => Self::DownloadInvalidPlan,
+            mosaic_client::ClientErrorCode::DownloadIllegalTransition => {
+                Self::DownloadIllegalTransition
+            }
+            mosaic_client::ClientErrorCode::DownloadSnapshotMigration => {
+                Self::DownloadSnapshotMigration
+            }
+            mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt => {
+                Self::DownloadSnapshotCorrupt
+            }
+            mosaic_client::ClientErrorCode::DownloadSnapshotChecksumMismatch => {
+                Self::DownloadSnapshotChecksumMismatch
+            }
+            mosaic_client::ClientErrorCode::DownloadSnapshotTorn => Self::DownloadSnapshotTorn,
+            mosaic_client::ClientErrorCode::DownloadTransientNetwork => {
+                Self::DownloadTransientNetwork
+            }
+            mosaic_client::ClientErrorCode::DownloadIntegrity => Self::DownloadIntegrity,
+            mosaic_client::ClientErrorCode::DownloadDecrypt => Self::DownloadDecrypt,
+            mosaic_client::ClientErrorCode::DownloadNotFound => Self::DownloadNotFound,
+            mosaic_client::ClientErrorCode::DownloadQuota => Self::DownloadQuota,
+            mosaic_client::ClientErrorCode::DownloadCancelled => Self::DownloadCancelled,
+            mosaic_client::ClientErrorCode::DownloadAccessRevoked => Self::DownloadAccessRevoked,
+            mosaic_client::ClientErrorCode::DownloadAuthorizationChanged => {
+                Self::DownloadAuthorizationChanged
+            }
+            mosaic_client::ClientErrorCode::DownloadIllegalState => Self::DownloadIllegalState,
+            mosaic_client::ClientErrorCode::PinValidationFailed => Self::PinValidationFailed,
+        }
+    }
+}
+
+/// UniFFI error for stateful streaming AEAD objects.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Error)]
+pub enum MosaicError {
+    Client { code: u16 },
+    Crypto { code: u16 },
+    InternalStatePoisoned,
+    AlreadyFinalized,
+}
+
+impl fmt::Display for MosaicError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Client { code } => write!(f, "Mosaic client error code {code}"),
+            Self::Crypto { code } => write!(f, "Mosaic crypto error code {code}"),
+            Self::InternalStatePoisoned => f.write_str("Mosaic internal state was poisoned"),
+            Self::AlreadyFinalized => f.write_str("Mosaic streaming object was already finalized"),
+        }
+    }
+}
+
+impl std::error::Error for MosaicError {}
 
 /// UniFFI record for header parse results.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -43,6 +355,33 @@ impl fmt::Debug for BytesResult {
         f.debug_struct("BytesResult")
             .field("code", &self.code)
             .field("bytes_len", &self.bytes.len())
+            .finish()
+    }
+}
+
+/// UniFFI media format selector for dependency-free generic metadata stripping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[repr(u8)]
+pub enum MediaFormat {
+    Jpeg = 1,
+    Png = 2,
+    WebP = 3,
+}
+
+/// UniFFI result for metadata stripping.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct StripResult {
+    pub code: u16,
+    pub stripped_bytes: Vec<u8>,
+    pub removed_metadata_count: u32,
+}
+
+impl fmt::Debug for StripResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StripResult")
+            .field("code", &self.code)
+            .field("stripped_bytes_len", &self.stripped_bytes.len())
+            .field("removed_metadata_count", &self.removed_metadata_count)
             .finish()
     }
 }
@@ -154,6 +493,22 @@ impl fmt::Debug for EncryptedShardResult {
     }
 }
 
+/// UniFFI record for one encrypted v0x04 streaming AEAD frame.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct EncryptedFrame {
+    pub frame_index: u32,
+    pub bytes: Vec<u8>,
+}
+
+impl fmt::Debug for EncryptedFrame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EncryptedFrame")
+            .field("frame_index", &self.frame_index)
+            .field("bytes_len", &self.bytes.len())
+            .finish()
+    }
+}
+
 /// UniFFI record for decrypted shard results.
 ///
 /// This record carries client-local plaintext media bytes on success and
@@ -190,6 +545,27 @@ pub struct ClientCoreUploadShardRef {
     pub content_length: u64,
     pub envelope_version: u8,
     pub uploaded: bool,
+}
+
+/// UniFFI record for one opaque shard reference bound into a manifest transcript.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreManifestShardRef {
+    pub tier: u8,
+    pub shard_index: u32,
+    pub shard_id: String,
+    pub sha256: Vec<u8>,
+}
+
+/// UniFFI record for canonical manifest transcript inputs.
+///
+/// `encrypted_metadata_envelope` must contain encrypted/opaque sidecar envelope
+/// bytes. Plaintext metadata must not be supplied to this transcript binding.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClientCoreManifestTranscriptInputs {
+    pub album_id: Vec<u8>,
+    pub epoch_id: u32,
+    pub encrypted_metadata_envelope: Vec<u8>,
+    pub shards: Vec<ClientCoreManifestShardRef>,
 }
 
 /// UniFFI record for initializing a client-core upload job state machine.
@@ -370,6 +746,42 @@ pub struct MediaMetadataResult {
     pub orientation: u8,
 }
 
+/// UniFFI result for image container inspection.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ImageInspectResult {
+    pub code: u16,
+    pub format: u8,
+    pub mime_type: String,
+    pub width: u32,
+    pub height: u32,
+    pub orientation: u8,
+    pub encoded_sidecar_fields: Vec<u8>,
+    pub camera_make: String,
+    pub camera_model: String,
+    pub device_timestamp_ms: u64,
+    pub has_device_timestamp_ms: bool,
+    pub subseconds_ms: u32,
+    pub has_subseconds_ms: bool,
+    pub gps_lat_microdegrees: i32,
+    pub gps_lon_microdegrees: i32,
+    pub gps_altitude_meters: i32,
+    pub gps_accuracy_meters: u16,
+    pub has_gps: bool,
+}
+
+/// UniFFI result for video container inspection.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct VideoInspectResult {
+    pub code: u16,
+    pub container: String,
+    pub video_codec: String,
+    pub width_px: u32,
+    pub height_px: u32,
+    pub duration_ms: u64,
+    pub frame_rate_fps: f64,
+    pub orientation: String,
+}
+
 /// UniFFI record for one planned media tier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
 pub struct MediaTierDimensions {
@@ -400,6 +812,13 @@ pub fn protocol_version() -> String {
     mosaic_client::protocol_version().to_owned()
 }
 
+/// Returns the ADR-022 canonical manifest-finalize idempotency key.
+#[uniffi::export]
+pub fn finalize_idempotency_key(job_id: String) -> Result<String, MosaicError> {
+    let uuid = uuid_from_string(&job_id).map_err(|code| MosaicError::Client { code })?;
+    Ok(mosaic_client::finalize_idempotency_key(&uuid))
+}
+
 /// Returns the historical UniFFI API changelog label for diagnostics.
 ///
 /// This string is documentation only. The authoritative API-shape lock is
@@ -407,16 +826,147 @@ pub fn protocol_version() -> String {
 /// UniFFI records and `#[uniffi::export]` functions in this crate.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
-    "mosaic-uniffi ffi-spike:v10 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt)->EpochKeyHandleResult{code,handle,epoch_id,wrapped_epoch_seed,sign_public_key} metadata(canonical/encrypt,media-canonical/media-encrypt) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance,sync-init/sync-advance) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)"
+    "mosaic-uniffi ffi-spike:v10 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt)->EpochKeyHandleResult{code,handle,epoch_id,wrapped_epoch_seed,sign_public_key} metadata(canonical/encrypt,media-canonical/media-encrypt,manifest-transcript) media(inspect/plan/canonical-tier) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance/upload-advance-uniffi,sync-init/sync-advance/sync-advance-uniffi) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)"
 }
 
 const CLIENT_CORE_STATE_MACHINE_SURFACE: &str = "client-core-state-machines:v1 \
 upload(init_upload_job(ClientCoreUploadJobRequest)->ClientCoreUploadJobResult,\
 advance_upload_job(ClientCoreUploadJobSnapshot,ClientCoreUploadJobEvent)->ClientCoreUploadJobTransitionResult,\
+advance_upload_job_uniffi(ClientCoreUploadJobSnapshot,ClientCoreUploadJobEvent)->ClientCoreUploadJobTransition,\
 ClientCoreUploadJobSnapshot,ClientCoreUploadJobTransition,ClientCoreUploadJobEffect) \
 sync(init_album_sync(ClientCoreAlbumSyncRequest)->ClientCoreAlbumSyncResult,\
 advance_album_sync(ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncEvent)->ClientCoreAlbumSyncTransitionResult,\
-ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncTransition,ClientCoreAlbumSyncEffect)";
+advance_album_sync_uniffi(ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncEvent)->ClientCoreAlbumSyncTransition,\
+ClientCoreAlbumSyncSnapshot,ClientCoreAlbumSyncTransition,ClientCoreAlbumSyncEffect) \
+manifest_transcript(manifest_transcript_bytes_uniffi(ClientCoreManifestTranscriptInputs)->Result<Vec<u8>, MosaicError>,\
+ClientCoreManifestTranscriptInputs,ClientCoreManifestShardRef)";
+
+/// Stateful UniFFI wrapper around the v0x04 streaming AEAD encryptor.
+#[derive(uniffi::Object)]
+pub struct StreamingEncryptor {
+    inner: Mutex<Option<StreamingEncryptorCell>>,
+}
+
+/// Stateful UniFFI wrapper around the v0x04 streaming AEAD decryptor.
+#[derive(uniffi::Object)]
+pub struct StreamingDecryptor {
+    inner: Mutex<Option<StreamingDecryptorCell>>,
+}
+
+#[uniffi::export]
+impl StreamingEncryptor {
+    /// Creates a v0x04 streaming AEAD encryptor for a Rust-owned epoch handle.
+    #[uniffi::constructor]
+    pub fn new(
+        epoch_handle_id: u64,
+        tier: u8,
+        expected_frame_count: Option<u32>,
+    ) -> Result<Self, MosaicError> {
+        let key_material = mosaic_client::epoch_key_material_for_handle(epoch_handle_id)
+            .map_err(mosaic_error_from_client)?;
+        let tier = ShardTier::try_from(tier).map_err(|_| MosaicError::Client {
+            code: mosaic_client::ClientErrorCode::InvalidTier.as_u16(),
+        })?;
+        let cell = StreamingEncryptorCell::try_new(key_material, |handle| {
+            mosaic_crypto::streaming_encrypt_init(handle, tier, expected_frame_count)
+                .map(|inner| CryptoStreamingEncryptorState(Some(inner)))
+        })
+        .map_err(mosaic_error_from_crypto)?;
+        Ok(Self {
+            inner: Mutex::new(Some(cell)),
+        })
+    }
+
+    /// Encrypts one 64 KiB-or-final plaintext frame.
+    pub fn encrypt_frame(&self, plaintext: Vec<u8>) -> Result<EncryptedFrame, MosaicError> {
+        let plaintext = Zeroizing::new(plaintext);
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| MosaicError::InternalStatePoisoned)?;
+        let cell = guard.as_mut().ok_or(MosaicError::AlreadyFinalized)?;
+        cell.with_dependent_mut(|_, state| {
+            let encryptor = state.0.as_mut().ok_or(MosaicError::AlreadyFinalized)?;
+            encryptor
+                .encrypt_frame(&plaintext)
+                .map(|frame| EncryptedFrame {
+                    frame_index: frame.frame_index,
+                    bytes: frame.bytes,
+                })
+                .map_err(mosaic_error_from_crypto)
+        })
+    }
+
+    /// Finalizes the stream and returns the complete v0x04 envelope bytes.
+    pub fn finalize(&self) -> Result<Vec<u8>, MosaicError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| MosaicError::InternalStatePoisoned)?;
+        let mut cell = guard.take().ok_or(MosaicError::AlreadyFinalized)?;
+        cell.with_dependent_mut(|_, state| {
+            let encryptor = state.0.take().ok_or(MosaicError::AlreadyFinalized)?;
+            encryptor
+                .finalize()
+                .map(|envelope| envelope.bytes)
+                .map_err(mosaic_error_from_crypto)
+        })
+    }
+}
+
+#[uniffi::export]
+impl StreamingDecryptor {
+    /// Creates a v0x04 streaming AEAD decryptor from envelope header bytes.
+    #[uniffi::constructor]
+    pub fn new(epoch_handle_id: u64, envelope: Vec<u8>) -> Result<Self, MosaicError> {
+        let key_material = mosaic_client::epoch_key_material_for_handle(epoch_handle_id)
+            .map_err(mosaic_error_from_client)?;
+        let cell = StreamingDecryptorCell::try_new(key_material, |handle| {
+            mosaic_crypto::streaming_decrypt_init(handle, &envelope)
+                .map(|inner| CryptoStreamingDecryptorState(Some(inner)))
+        })
+        .map_err(mosaic_error_from_crypto)?;
+        Ok(Self {
+            inner: Mutex::new(Some(cell)),
+        })
+    }
+
+    /// Decrypts the next serialized streaming AEAD frame.
+    pub fn decrypt_frame(&self, frame: Vec<u8>) -> Result<Vec<u8>, MosaicError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| MosaicError::InternalStatePoisoned)?;
+        let cell = guard.as_mut().ok_or(MosaicError::AlreadyFinalized)?;
+        cell.with_dependent_mut(|_, state| {
+            let decryptor = state.0.as_mut().ok_or(MosaicError::AlreadyFinalized)?;
+            decryptor
+                .decrypt_frame(&frame)
+                .map_err(mosaic_error_from_crypto)
+        })
+    }
+
+    /// Finalizes the stream and verifies all declared frames arrived.
+    pub fn finalize(&self) -> Result<(), MosaicError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| MosaicError::InternalStatePoisoned)?;
+        let mut cell = guard.take().ok_or(MosaicError::AlreadyFinalized)?;
+        cell.with_dependent_mut(|_, state| {
+            let decryptor = state.0.take().ok_or(MosaicError::AlreadyFinalized)?;
+            decryptor.finalize().map_err(mosaic_error_from_crypto)
+        })
+    }
+}
+
+/// Dispatches v0x03/v0x04 envelope decryption through the shared Rust crypto path.
+#[uniffi::export]
+pub fn decrypt_envelope(epoch_handle_id: u64, envelope: Vec<u8>) -> Result<Vec<u8>, MosaicError> {
+    let key_material = mosaic_client::epoch_key_material_for_handle(epoch_handle_id)
+        .map_err(mosaic_error_from_client)?;
+    mosaic_crypto::decrypt_envelope(&key_material, &envelope).map_err(mosaic_error_from_crypto)
+}
 
 /// Parses a shard envelope header through the UniFFI export surface.
 #[uniffi::export]
@@ -448,6 +998,47 @@ pub fn android_progress_probe(total_steps: u32, cancel_after: Option<u32>) -> Pr
             })
             .collect(),
     }
+}
+
+/// Derives the 16-byte deterministic session Argon2id salt.
+#[uniffi::export]
+pub fn derive_session_salt_from_username(
+    domain: String,
+    username: String,
+) -> Result<Vec<u8>, MosaicError> {
+    mosaic_crypto::derive_session_salt(&domain, &username)
+        .map(|salt| salt.to_vec())
+        .map_err(mosaic_error_from_crypto)
+}
+
+/// Derives the session L0 master key and stores it behind an opaque handle.
+#[uniffi::export]
+pub fn derive_master_key_from_password(
+    password: Vec<u8>,
+    salt: Vec<u8>,
+    ops_limit: u32,
+    mem_limit_kib: u32,
+) -> Result<u64, MosaicError> {
+    let password = Zeroizing::new(password);
+    let key = mosaic_crypto::derive_session_master_key(password, &salt, ops_limit, mem_limit_kib)
+        .map_err(mosaic_error_from_crypto)?;
+    open_master_key_handle(key)
+}
+
+/// Consumes a session L0 handle and returns one short-lived AES-GCM import buffer.
+#[uniffi::export]
+pub fn consume_master_key_handle_for_aes_gcm(handle: u64) -> Result<Vec<u8>, MosaicError> {
+    let mut key = {
+        let mut guard = master_key_registry()
+            .lock()
+            .map_err(|_| MosaicError::InternalStatePoisoned)?;
+        guard.remove(&handle).ok_or(MosaicError::Client {
+            code: mosaic_client::ClientErrorCode::SecretHandleNotFound.as_u16(),
+        })?
+    };
+    let bytes = key.as_bytes().to_vec();
+    key.zeroize_in_place();
+    Ok(bytes)
 }
 
 /// Unwraps an account key into a Rust-owned opaque account-key handle.
@@ -587,6 +1178,41 @@ pub fn canonical_metadata_sidecar_bytes(
     }
 }
 
+/// Strips recognized metadata from JPEG/PNG/WebP media through the shared parser.
+#[uniffi::export]
+#[must_use]
+pub fn strip_known_metadata(format: MediaFormat, input_bytes: Vec<u8>) -> StripResult {
+    let input_bytes = Zeroizing::new(input_bytes);
+    strip_with_result(mosaic_media::strip_known_metadata(
+        media_format_to_core(format),
+        &input_bytes,
+    ))
+}
+
+/// Strips AVIF metadata through the shared Rust media parser.
+#[uniffi::export]
+#[must_use]
+pub fn strip_avif_metadata(input_bytes: Vec<u8>) -> StripResult {
+    let input_bytes = Zeroizing::new(input_bytes);
+    strip_with_result(mosaic_media::strip_avif_metadata(&input_bytes))
+}
+
+/// Strips HEIC/HEIF metadata through the shared Rust media parser.
+#[uniffi::export]
+#[must_use]
+pub fn strip_heic_metadata(input_bytes: Vec<u8>) -> StripResult {
+    let input_bytes = Zeroizing::new(input_bytes);
+    strip_with_result(mosaic_media::strip_heic_metadata(&input_bytes))
+}
+
+/// Strips video container metadata through the shared Rust media parser.
+#[uniffi::export]
+#[must_use]
+pub fn strip_video_metadata(input_bytes: Vec<u8>) -> StripResult {
+    let input_bytes = Zeroizing::new(input_bytes);
+    strip_with_result(mosaic_media::strip_video_metadata(&input_bytes))
+}
+
 /// Encrypts canonical metadata sidecar bytes with a Rust-owned epoch-key handle.
 ///
 /// `encoded_fields` is wrapped in `Zeroizing` so the caller-owned buffer is
@@ -645,6 +1271,22 @@ pub fn inspect_media_image(bytes: Vec<u8>) -> MediaMetadataResult {
     }
 }
 
+/// Inspects image container metadata through the shared Rust media parser.
+#[uniffi::export]
+#[must_use]
+pub fn inspect_image(input_bytes: Vec<u8>) -> ImageInspectResult {
+    let input_bytes = Zeroizing::new(input_bytes);
+    image_inspect_result_from_media(mosaic_media::inspect_image(&input_bytes), &input_bytes)
+}
+
+/// Inspects video container metadata through the shared Rust media parser.
+#[uniffi::export]
+#[must_use]
+pub fn inspect_video_container(input_bytes: Vec<u8>) -> VideoInspectResult {
+    let input_bytes = Zeroizing::new(input_bytes);
+    video_inspect_result_from_media(mosaic_media::inspect_video_container(&input_bytes))
+}
+
 /// Plans canonical thumbnail, preview, and original tier dimensions.
 #[uniffi::export]
 #[must_use]
@@ -665,6 +1307,25 @@ pub fn plan_media_tier_layout(width: u32, height: u32) -> MediaTierLayoutResult 
     }
 }
 
+/// Returns the canonical media tier dimensions shared by web and native clients.
+#[uniffi::export]
+#[must_use]
+pub fn canonical_tier_layout() -> MediaTierLayoutResult {
+    let layout = match mosaic_media::plan_tier_layout(
+        mosaic_media::ORIGINAL_MAX_DIMENSION,
+        mosaic_media::ORIGINAL_MAX_DIMENSION,
+    ) {
+        Ok(layout) => layout,
+        Err(error) => panic!("canonical original dimensions must be valid: {error:?}"),
+    };
+    MediaTierLayoutResult {
+        code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+        thumbnail: media_tier_dimensions(layout.thumbnail),
+        preview: media_tier_dimensions(layout.preview),
+        original: media_tier_dimensions(layout.original),
+    }
+}
+
 /// Builds plaintext canonical metadata sidecar bytes from inspected media bytes.
 ///
 /// `media_bytes` is wrapped in `Zeroizing` (via the inner `media_metadata_sidecar_bytes_result`
@@ -681,6 +1342,27 @@ pub fn canonical_media_metadata_sidecar_bytes(
     media_bytes: Vec<u8>,
 ) -> BytesResult {
     match media_metadata_sidecar_bytes_result(&album_id, &photo_id, epoch_id, media_bytes) {
+        Ok(bytes) => BytesResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            bytes,
+        },
+        Err(code) => BytesResult {
+            code,
+            bytes: Vec::new(),
+        },
+    }
+}
+
+/// Builds canonical plaintext video metadata sidecar bytes from inspected video bytes.
+#[uniffi::export]
+#[must_use]
+pub fn canonical_video_sidecar_bytes(
+    album_id: Vec<u8>,
+    photo_id: Vec<u8>,
+    epoch_id: u32,
+    input_bytes: Vec<u8>,
+) -> BytesResult {
+    match video_metadata_sidecar_bytes_result(&album_id, &photo_id, epoch_id, input_bytes) {
         Ok(bytes) => BytesResult {
             code: mosaic_client::ClientErrorCode::Ok.as_u16(),
             bytes,
@@ -933,6 +1615,29 @@ pub fn advance_upload_job(
     }
 }
 
+/// Advances a client-core upload job through a direct UniFFI transition surface.
+///
+/// Invalid host DTOs and reducer errors return an empty transition because this
+/// direct export intentionally has no error channel. Call `advance_upload_job`
+/// when the stable numeric error code is required.
+#[uniffi::export]
+#[must_use]
+pub fn advance_upload_job_uniffi(
+    snapshot: ClientCoreUploadJobSnapshot,
+    event: ClientCoreUploadJobEvent,
+) -> ClientCoreUploadJobTransition {
+    let Ok(snapshot) = upload_snapshot_to_client(snapshot) else {
+        return empty_upload_transition();
+    };
+    let Ok(event) = upload_event_to_client(event) else {
+        return empty_upload_transition();
+    };
+    match mosaic_client::advance_upload_job(&snapshot, event) {
+        Ok(transition) => upload_transition_from_client(transition),
+        Err(_) => empty_upload_transition(),
+    }
+}
+
 /// Initializes an album sync coordinator through the UniFFI DTO surface.
 #[uniffi::export]
 #[must_use]
@@ -986,6 +1691,62 @@ pub fn advance_album_sync(
     }
 }
 
+/// Advances an album sync coordinator through a direct UniFFI transition surface.
+///
+/// Invalid host DTOs and reducer errors return an empty transition because this
+/// direct export intentionally has no error channel. Call `advance_album_sync`
+/// when the stable numeric error code is required.
+#[uniffi::export]
+#[must_use]
+pub fn advance_album_sync_uniffi(
+    snapshot: ClientCoreAlbumSyncSnapshot,
+    event: ClientCoreAlbumSyncEvent,
+) -> ClientCoreAlbumSyncTransition {
+    let Ok(snapshot) = album_sync_snapshot_to_client(snapshot) else {
+        return empty_album_sync_transition();
+    };
+    let Ok(event) = album_sync_event_to_client(event, &snapshot.album_id) else {
+        return empty_album_sync_transition();
+    };
+    match mosaic_client::advance_album_sync(&snapshot, event) {
+        Ok(transition) => album_sync_transition_from_client(transition),
+        Err(_) => empty_album_sync_transition(),
+    }
+}
+
+/// Returns canonical manifest transcript bytes for encrypted metadata/shard refs.
+///
+/// Invalid host DTOs or rejected transcript shapes return a typed MosaicError.
+/// The metadata input is encrypted/opaque bytes and is never parsed as plaintext.
+#[uniffi::export]
+pub fn manifest_transcript_bytes_uniffi(
+    inputs: ClientCoreManifestTranscriptInputs,
+) -> Result<Vec<u8>, MosaicError> {
+    manifest_transcript_bytes_result(inputs)
+}
+
+/// Mints a Rust-owned link-tier handle from a raw 32-byte tier key.
+#[uniffi::export]
+#[must_use]
+pub fn mint_link_tier_handle_from_raw_key(raw_key: Vec<u8>) -> LinkTierHandleFfiResult {
+    let raw_key = Zeroizing::new(raw_key);
+    let result = mosaic_client::mint_link_tier_handle_from_raw_key(&raw_key);
+    LinkTierHandleFfiResult {
+        code: result.code.as_u16(),
+        link_tier_handle_id: result.handle,
+    }
+}
+
+/// Verifies shard ciphertext SHA-256 using Rust core.
+#[uniffi::export]
+pub fn verify_shard_integrity_sha256(
+    envelope: Vec<u8>,
+    expected_sha256: Vec<u8>,
+) -> Result<bool, MosaicError> {
+    mosaic_client::verify_shard_integrity_sha256(&envelope, &expected_sha256)
+        .map_err(mosaic_error_from_client)
+}
+
 fn identity_result_from_client(
     result: mosaic_client::IdentityHandleResult,
 ) -> IdentityHandleResult {
@@ -1031,6 +1792,31 @@ fn decrypted_shard_result_from_client(
     DecryptedShardResult {
         code: result.code.as_u16(),
         plaintext: std::mem::take(&mut result.plaintext),
+    }
+}
+
+fn mosaic_error_from_client(error: mosaic_client::ClientError) -> MosaicError {
+    MosaicError::Client {
+        code: error.code.as_u16(),
+    }
+}
+
+fn master_key_registry() -> &'static Mutex<HashMap<u64, mosaic_crypto::SecretKey>> {
+    MASTER_KEY_HANDLES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn open_master_key_handle(key: mosaic_crypto::SecretKey) -> Result<u64, MosaicError> {
+    let handle = NEXT_MASTER_KEY_HANDLE_ID.fetch_add(1, Ordering::Relaxed);
+    let mut guard = master_key_registry()
+        .lock()
+        .map_err(|_| MosaicError::InternalStatePoisoned)?;
+    guard.insert(handle, key);
+    Ok(handle)
+}
+
+fn mosaic_error_from_crypto(error: mosaic_crypto::MosaicCryptoError) -> MosaicError {
+    MosaicError::Crypto {
+        code: map_crypto_error_uniffi(error),
     }
 }
 
@@ -1224,6 +2010,35 @@ fn upload_transition_from_client(
             .map(upload_effect_from_client)
             .collect(),
     }
+}
+
+fn manifest_transcript_bytes_result(
+    inputs: ClientCoreManifestTranscriptInputs,
+) -> Result<Vec<u8>, MosaicError> {
+    let album_id = uuid_bytes(&inputs.album_id).map_err(|code| MosaicError::Client { code })?;
+    let shards = inputs
+        .shards
+        .iter()
+        .map(manifest_shard_to_domain)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|code| MosaicError::Client { code })?;
+    let encrypted_meta = EncryptedMetadataEnvelope::new(&inputs.encrypted_metadata_envelope);
+    let transcript = ManifestTranscript::new(album_id, inputs.epoch_id, encrypted_meta, &shards);
+    mosaic_domain::canonical_manifest_transcript_bytes(&transcript).map_err(|_| {
+        MosaicError::Client {
+            code: mosaic_client::ClientErrorCode::ManifestShapeRejected.as_u16(),
+        }
+    })
+}
+
+fn manifest_shard_to_domain(shard: &ClientCoreManifestShardRef) -> Result<ManifestShardRef, u16> {
+    Ok(ManifestShardRef::new(
+        shard.shard_index,
+        uuid_bytes_from_string(&shard.shard_id)?,
+        ShardTier::try_from(shard.tier)
+            .map_err(|_| mosaic_client::ClientErrorCode::InvalidTier.as_u16())?,
+        bytes_32(&shard.sha256)?,
+    ))
 }
 
 fn album_sync_request_to_client(
@@ -1646,6 +2461,36 @@ fn uuid_from_string(value: &str) -> Result<mosaic_client::Uuid, u16> {
     Ok(uuid)
 }
 
+fn uuid_bytes_from_string(value: &str) -> Result<[u8; 16], u16> {
+    let invalid_input_length = mosaic_client::ClientErrorCode::InvalidInputLength.as_u16();
+    let mut hex = String::with_capacity(32);
+    for character in value.chars() {
+        if character == '-' {
+            continue;
+        }
+        if !character.is_ascii_hexdigit() {
+            return Err(invalid_input_length);
+        }
+        hex.push(character);
+    }
+    if hex.len() != 32 {
+        return Err(invalid_input_length);
+    }
+    let mut bytes = [0_u8; 16];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        let start = index * 2;
+        let end = start + 2;
+        let Some(pair) = hex.get(start..end) else {
+            return Err(invalid_input_length);
+        };
+        let Ok(parsed) = u8::from_str_radix(pair, 16) else {
+            return Err(invalid_input_length);
+        };
+        *byte = parsed;
+    }
+    Ok(bytes)
+}
+
 fn optional_uuid_from_string(value: &str) -> Result<Option<mosaic_client::Uuid>, u16> {
     if value.is_empty() {
         Ok(None)
@@ -1746,6 +2591,21 @@ fn required_event_error_code(
 pub const fn client_error_code_from_u16(value: u16) -> Option<mosaic_client::ClientErrorCode> {
     mosaic_client::ClientErrorCode::try_from_u16(value)
 }
+
+/// Converts a stable `ClientErrorCode` number into the native UniFFI enum.
+#[uniffi::export]
+#[must_use]
+pub fn client_error_code_enum_from_u16(value: u16) -> Option<ClientErrorCode> {
+    client_error_code_from_u16(value).map(ClientErrorCode::from_client_code)
+}
+
+/// Converts the native UniFFI error enum back to its stable wire number.
+#[uniffi::export]
+#[must_use]
+pub fn client_error_code_to_u16(code: ClientErrorCode) -> u16 {
+    code.as_u16()
+}
+
 fn empty_upload_snapshot() -> ClientCoreUploadJobSnapshot {
     ClientCoreUploadJobSnapshot {
         schema_version: 0,
@@ -1830,6 +2690,33 @@ fn media_metadata_sidecar_bytes_result(
         .map_err(map_media_error)
 }
 
+fn video_metadata_sidecar_bytes_result(
+    album_id: &[u8],
+    photo_id: &[u8],
+    epoch_id: u32,
+    input_bytes: Vec<u8>,
+) -> Result<Vec<u8>, u16> {
+    let input_bytes = Zeroizing::new(input_bytes);
+    let inspect = mosaic_media::inspect_video_container(&input_bytes);
+    if inspect.code != 0 {
+        return Err(inspect.code);
+    }
+
+    let pairs = mosaic_media::video_metadata_sidecar_fields(&inspect);
+    let mut encoded_fields = Vec::new();
+    for (tag, value) in pairs {
+        let value_len = match u32::try_from(value.len()) {
+            Ok(length) => length,
+            Err(_) => return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16()),
+        };
+        encoded_fields.extend_from_slice(&tag.to_le_bytes());
+        encoded_fields.extend_from_slice(&value_len.to_le_bytes());
+        encoded_fields.extend_from_slice(&value);
+    }
+
+    canonical_metadata_sidecar_bytes_result(album_id, photo_id, epoch_id, &encoded_fields)
+}
+
 fn uuid_bytes(bytes: &[u8]) -> Result<[u8; 16], u16> {
     if bytes.len() != 16 {
         return Err(mosaic_client::ClientErrorCode::InvalidInputLength.as_u16());
@@ -1895,7 +2782,8 @@ fn map_metadata_sidecar_error(error: MetadataSidecarError) -> u16 {
         MetadataSidecarError::ZeroFieldTag
         | MetadataSidecarError::EmptyFieldValue { .. }
         | MetadataSidecarError::DuplicateFieldTag { .. }
-        | MetadataSidecarError::UnsortedFieldTag { .. } => {
+        | MetadataSidecarError::UnsortedFieldTag { .. }
+        | MetadataSidecarError::InvalidGpsValue { .. } => {
             mosaic_client::ClientErrorCode::MalformedSidecar.as_u16()
         }
     }
@@ -1929,6 +2817,52 @@ fn map_media_error(error: mosaic_media::MosaicMediaError) -> u16 {
     }
 }
 
+const MEDIA_INVALID_JPEG_CODE: u16 = 601;
+const MEDIA_INVALID_PNG_CODE: u16 = 602;
+const MEDIA_INVALID_WEBP_CODE: u16 = 603;
+const MEDIA_OUTPUT_TOO_LARGE_CODE: u16 = 604;
+const METADATA_STRIP_OVERFLOW_CODE: u16 = 605;
+const MEDIA_UNKNOWN_ERROR_CODE: u16 = 699;
+
+fn media_error_code(error: mosaic_media::MosaicMediaError) -> u16 {
+    match error {
+        mosaic_media::MosaicMediaError::InvalidJpeg => MEDIA_INVALID_JPEG_CODE,
+        mosaic_media::MosaicMediaError::InvalidPng => MEDIA_INVALID_PNG_CODE,
+        mosaic_media::MosaicMediaError::InvalidWebP => MEDIA_INVALID_WEBP_CODE,
+        mosaic_media::MosaicMediaError::OutputTooLarge => MEDIA_OUTPUT_TOO_LARGE_CODE,
+        _ => MEDIA_UNKNOWN_ERROR_CODE,
+    }
+}
+
+fn strip_with_result(
+    result: Result<mosaic_media::StrippedMedia, mosaic_media::MosaicMediaError>,
+) -> StripResult {
+    match result {
+        Ok(stripped) => {
+            let removed_metadata_count = match u32::try_from(stripped.removed.len()) {
+                Ok(value) => value,
+                Err(_) => {
+                    return StripResult {
+                        code: METADATA_STRIP_OVERFLOW_CODE,
+                        stripped_bytes: Vec::new(),
+                        removed_metadata_count: 0,
+                    };
+                }
+            };
+            StripResult {
+                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                stripped_bytes: stripped.bytes,
+                removed_metadata_count,
+            }
+        }
+        Err(error) => StripResult {
+            code: media_error_code(error),
+            stripped_bytes: Vec::new(),
+            removed_metadata_count: 0,
+        },
+    }
+}
+
 fn media_metadata_result_ok(metadata: mosaic_media::ImageMetadata) -> MediaMetadataResult {
     MediaMetadataResult {
         code: mosaic_client::ClientErrorCode::Ok.as_u16(),
@@ -1940,11 +2874,260 @@ fn media_metadata_result_ok(metadata: mosaic_media::ImageMetadata) -> MediaMetad
     }
 }
 
+const fn media_format_to_core(format: MediaFormat) -> mosaic_media::MediaFormat {
+    match format {
+        MediaFormat::Jpeg => mosaic_media::MediaFormat::Jpeg,
+        MediaFormat::Png => mosaic_media::MediaFormat::Png,
+        MediaFormat::WebP => mosaic_media::MediaFormat::WebP,
+    }
+}
+
 const fn media_format_name(format: mosaic_media::MediaFormat) -> &'static str {
     match format {
         mosaic_media::MediaFormat::Jpeg => "jpeg",
         mosaic_media::MediaFormat::Png => "png",
         mosaic_media::MediaFormat::WebP => "webp",
+    }
+}
+
+const fn image_format_code(format: mosaic_media::MediaFormat) -> u8 {
+    match format {
+        mosaic_media::MediaFormat::Jpeg => 1,
+        mosaic_media::MediaFormat::Png => 2,
+        mosaic_media::MediaFormat::WebP => 3,
+    }
+}
+
+const fn video_container_label(container: mosaic_media::VideoContainer) -> &'static str {
+    match container {
+        mosaic_media::VideoContainer::Mp4 => "mp4",
+        mosaic_media::VideoContainer::Mov => "mov",
+        mosaic_media::VideoContainer::WebM => "webm",
+        mosaic_media::VideoContainer::Matroska => "matroska",
+    }
+}
+
+const fn video_codec_label(codec: mosaic_media::VideoCodec) -> &'static str {
+    match codec {
+        mosaic_media::VideoCodec::H264 => "h264",
+        mosaic_media::VideoCodec::H265 => "h265",
+        mosaic_media::VideoCodec::AV1 => "av1",
+        mosaic_media::VideoCodec::VP8 => "vp8",
+        mosaic_media::VideoCodec::VP9 => "vp9",
+    }
+}
+
+const fn orientation_label(orientation: mosaic_media::Orientation) -> &'static str {
+    match orientation {
+        mosaic_media::Orientation::Rotate0 => "rotate0",
+        mosaic_media::Orientation::Rotate90 => "rotate90",
+        mosaic_media::Orientation::Rotate180 => "rotate180",
+        mosaic_media::Orientation::Rotate270 => "rotate270",
+    }
+}
+
+fn image_inspect_result_from_media(
+    result: Result<mosaic_media::ImageMetadata, mosaic_media::MosaicMediaError>,
+    input_bytes: &[u8],
+) -> ImageInspectResult {
+    match result {
+        Ok(metadata) => ImageInspectResult {
+            code: 0,
+            format: image_format_code(metadata.format),
+            mime_type: metadata.mime_type.to_owned(),
+            width: metadata.width,
+            height: metadata.height,
+            orientation: metadata.orientation,
+            ..image_sidecar_fields_for_format(input_bytes, metadata.format)
+        },
+        Err(error) => iso_bmff_image_inspect_result(input_bytes)
+            .unwrap_or_else(|| empty_image_inspect_result(media_error_code(error))),
+    }
+}
+
+fn iso_bmff_image_inspect_result(input_bytes: &[u8]) -> Option<ImageInspectResult> {
+    let boxes = mosaic_media::BoxParser::new(input_bytes).parse().ok()?;
+    let ftyp = boxes
+        .iter()
+        .find(|candidate| candidate.box_type == *b"ftyp")?;
+    let (format, mime_type, sidecar_fields) =
+        if iso_bmff_brands(ftyp.payload).any(|brand| matches!(brand, b"avif" | b"avis")) {
+            (
+                4,
+                "image/avif",
+                image_sidecar_fields_from_extract(
+                    mosaic_media::extract_avif_canonical_sidecar_fields(input_bytes),
+                ),
+            )
+        } else if iso_bmff_brands(ftyp.payload).any(|brand| {
+            matches!(
+                brand,
+                b"heic" | b"heix" | b"hevc" | b"hevx" | b"heim" | b"heis" | b"mif1" | b"msf1"
+            )
+        }) {
+            (
+                5,
+                "image/heic",
+                image_sidecar_fields_from_extract(
+                    mosaic_media::extract_heic_canonical_sidecar_fields(input_bytes),
+                ),
+            )
+        } else {
+            return None;
+        };
+
+    let meta = boxes
+        .iter()
+        .find(|candidate| candidate.box_type == *b"meta")?;
+    let (width, height) = find_ispe_dimensions(&meta.children)?;
+    Some(ImageInspectResult {
+        code: 0,
+        format,
+        mime_type: mime_type.to_owned(),
+        width,
+        height,
+        orientation: mosaic_media::NORMAL_EXIF_ORIENTATION,
+        ..sidecar_fields
+    })
+}
+
+fn iso_bmff_brands(payload: &[u8]) -> impl Iterator<Item = &[u8]> {
+    let first = payload.get(..4).into_iter();
+    let compatible = payload
+        .get(8..)
+        .into_iter()
+        .flat_map(|tail| tail.chunks_exact(4));
+    first.chain(compatible)
+}
+
+fn find_ispe_dimensions(boxes: &[mosaic_media::iso_bmff::Box<'_>]) -> Option<(u32, u32)> {
+    for candidate in boxes {
+        if candidate.box_type == *b"ispe" && candidate.payload.len() >= 12 {
+            let width = u32::from_be_bytes(candidate.payload[4..8].try_into().ok()?);
+            let height = u32::from_be_bytes(candidate.payload[8..12].try_into().ok()?);
+            if width > 0 && height > 0 {
+                return Some((width, height));
+            }
+        }
+        if let Some(dimensions) = find_ispe_dimensions(&candidate.children) {
+            return Some(dimensions);
+        }
+    }
+    None
+}
+
+fn empty_image_inspect_result(code: u16) -> ImageInspectResult {
+    ImageInspectResult {
+        code,
+        format: 0,
+        mime_type: String::new(),
+        width: 0,
+        height: 0,
+        orientation: 0,
+        encoded_sidecar_fields: Vec::new(),
+        camera_make: String::new(),
+        camera_model: String::new(),
+        device_timestamp_ms: 0,
+        has_device_timestamp_ms: false,
+        subseconds_ms: 0,
+        has_subseconds_ms: false,
+        gps_lat_microdegrees: 0,
+        gps_lon_microdegrees: 0,
+        gps_altitude_meters: 0,
+        gps_accuracy_meters: 0,
+        has_gps: false,
+    }
+}
+
+fn image_sidecar_fields_for_format(
+    input_bytes: &[u8],
+    format: mosaic_media::MediaFormat,
+) -> ImageInspectResult {
+    image_sidecar_fields_from_extract(mosaic_media::extract_canonical_sidecar_fields(
+        input_bytes,
+        format,
+    ))
+}
+
+fn image_sidecar_fields_from_extract(
+    result: mosaic_media::SidecarExtractResult,
+) -> ImageInspectResult {
+    let mut fields = empty_image_inspect_result(0);
+    let Some(extracted) = result.fields else {
+        return fields;
+    };
+    if let Some(value) = extracted.device_timestamp_ms {
+        fields.has_device_timestamp_ms = true;
+        fields.device_timestamp_ms = value;
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::DEVICE_TIMESTAMP_MS,
+            &value.to_le_bytes(),
+        );
+    }
+    if let Some(value) = extracted.camera_make {
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::CAMERA_MAKE,
+            value.as_bytes(),
+        );
+        fields.camera_make = value;
+    }
+    if let Some(value) = extracted.camera_model {
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::CAMERA_MODEL,
+            value.as_bytes(),
+        );
+        fields.camera_model = value;
+    }
+    if let Some(value) = extracted.subseconds_ms {
+        fields.has_subseconds_ms = true;
+        fields.subseconds_ms = value;
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::SUBSECONDS_MS,
+            &value.to_le_bytes(),
+        );
+    }
+    if let Some(value) = extracted.gps {
+        fields.has_gps = true;
+        fields.gps_lat_microdegrees = value.lat_microdegrees;
+        fields.gps_lon_microdegrees = value.lon_microdegrees;
+        fields.gps_altitude_meters = value.altitude_meters;
+        fields.gps_accuracy_meters = value.accuracy_meters;
+        append_encoded_sidecar_field(
+            &mut fields.encoded_sidecar_fields,
+            mosaic_domain::metadata_field_tags::GPS,
+            &value.to_tag_value_bytes(),
+        );
+    }
+    fields
+}
+
+fn append_encoded_sidecar_field(encoded: &mut Vec<u8>, tag: u16, value: &[u8]) {
+    let Ok(value_len) = u32::try_from(value.len()) else {
+        return;
+    };
+    encoded.extend_from_slice(&tag.to_le_bytes());
+    encoded.extend_from_slice(&value_len.to_le_bytes());
+    encoded.extend_from_slice(value);
+}
+
+fn video_inspect_result_from_media(result: mosaic_media::VideoInspectResult) -> VideoInspectResult {
+    VideoInspectResult {
+        code: result.code,
+        container: video_container_label(result.container).to_owned(),
+        video_codec: result
+            .video_codec
+            .map_or_else(String::new, |codec| video_codec_label(codec).to_owned()),
+        width_px: result.width_px,
+        height_px: result.height_px,
+        duration_ms: result.duration_ms,
+        frame_rate_fps: result.frame_rate_fps.map_or(f64::NAN, f64::from),
+        orientation: result.orientation.map_or_else(String::new, |orientation| {
+            orientation_label(orientation).to_owned()
+        }),
     }
 }
 
@@ -2058,16 +3241,68 @@ fn map_crypto_error_uniffi(error: mosaic_crypto::MosaicCryptoError) -> u16 {
 // commit `fb26573` (M5) discipline.
 // ---------------------------------------------------------------------------
 
-/// UniFFI record for raw-secret link-key derivation results.
+// UniFFI migration graveyard (pre-v1 R-C5.5 audit).
+//
+// Removed raw-secret FFI surfaces:
+// - `LinkKeysFfiResult.wrapping_key` — removal commit: this R-C5.5 commit;
+//   reason: returned raw derived link wrapping key; replacement:
+//   `LinkKeysFfiResult.link_handle_id` + `wrap_tier_key_for_link_handle`.
+// - `OpenedBundleFfiResult.epoch_seed` — removal commit: this R-C5.5 commit;
+//   reason: returned raw recovered L3 epoch seed; replacement:
+//   `OpenedBundleFfiResult.epoch_handle_id`.
+//
+// Keep this graveyard close to the legacy vector-only FFI block so future
+// audit passes can identify intentionally removed pre-v1 raw-secret fields.
+
+fn parse_uuid_string(input: &str) -> Result<mosaic_client::Uuid, ()> {
+    let mut hex = String::with_capacity(32);
+    for ch in input.chars() {
+        if ch == '-' {
+            continue;
+        }
+        if !ch.is_ascii_hexdigit() {
+            return Err(());
+        }
+        hex.push(ch);
+    }
+    if hex.len() != 32 {
+        return Err(());
+    }
+    let mut bytes = [0_u8; 16];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        let start = index * 2;
+        *byte = u8::from_str_radix(&hex[start..start + 2], 16).map_err(|_| ())?;
+    }
+    Ok(mosaic_client::Uuid::from_bytes(bytes))
+}
+
+/// Builds the canonical v1 share-link URL in Rust for Android and other UniFFI
+/// consumers. Returns an empty string for malformed album UUID input.
+#[uniffi::export]
+#[must_use]
+pub fn build_share_link_url(
+    base_url: String,
+    album_id: String,
+    link_id: String,
+    link_url_token: String,
+) -> String {
+    match parse_uuid_string(&album_id) {
+        Ok(album_uuid) => {
+            mosaic_client::build_share_link_url(&base_url, &album_uuid, &link_id, &link_url_token)
+        }
+        Err(()) => String::new(),
+    }
+}
+
+/// UniFFI record for link-key derivation results.
 ///
-/// `link_id` is server-visible (16 bytes); `wrapping_key` is
-/// secret-equivalent (32 bytes) and the cross-client vector requires
-/// byte-equality on it.
+/// `link_id` is server-visible (16 bytes); the derived wrapping key is retained
+/// inside Rust behind `link_handle_id`.
 #[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct LinkKeysFfiResult {
     pub code: u16,
     pub link_id: Vec<u8>,
-    pub wrapping_key: Vec<u8>,
+    pub link_handle_id: u64,
 }
 
 impl fmt::Debug for LinkKeysFfiResult {
@@ -2075,7 +3310,43 @@ impl fmt::Debug for LinkKeysFfiResult {
         f.debug_struct("LinkKeysFfiResult")
             .field("code", &self.code)
             .field("link_id_len", &self.link_id.len())
-            .field("wrapping_key_len", &self.wrapping_key.len())
+            .field("link_handle_id", &self.link_handle_id)
+            .finish()
+    }
+}
+
+/// UniFFI record for Rust-owned link-tier handle minting.
+#[derive(Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct LinkTierHandleFfiResult {
+    pub code: u16,
+    pub link_tier_handle_id: u64,
+}
+
+impl fmt::Debug for LinkTierHandleFfiResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LinkTierHandleFfiResult")
+            .field("code", &self.code)
+            .field("link_tier_handle_id", &self.link_tier_handle_id)
+            .finish()
+    }
+}
+
+/// UniFFI record for link-share wrapped tier keys.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct WrappedTierKeyFfiResult {
+    pub code: u16,
+    pub tier: u8,
+    pub nonce: Vec<u8>,
+    pub ciphertext: Vec<u8>,
+}
+
+impl fmt::Debug for WrappedTierKeyFfiResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WrappedTierKeyFfiResult")
+            .field("code", &self.code)
+            .field("tier", &self.tier)
+            .field("nonce_len", &self.nonce.len())
+            .field("ciphertext_len", &self.ciphertext.len())
             .finish()
     }
 }
@@ -2124,8 +3395,8 @@ impl fmt::Debug for AuthChallengeVerifyFfiResult {
 /// Mirrors `mosaic_client::OpenedBundleResult` but intentionally omits
 /// `sign_secret_seed` — production sealed-sharing flows use the handle-based
 /// `verify_and_open_bundle_with_identity_handle` so the per-epoch manifest
-/// signing secret stays inside the registry. `epoch_seed` is
-/// secret-equivalent and the cross-client vector asserts byte-equality on it.
+/// signing secret stays inside the registry. The recovered epoch seed is
+/// imported into Rust and exposed only as `epoch_handle_id`.
 #[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct OpenedBundleFfiResult {
     pub code: u16,
@@ -2133,7 +3404,7 @@ pub struct OpenedBundleFfiResult {
     pub album_id: String,
     pub epoch_id: u32,
     pub recipient_pubkey: Vec<u8>,
-    pub epoch_seed: Vec<u8>,
+    pub epoch_handle_id: u64,
     pub sign_public_key: Vec<u8>,
 }
 
@@ -2145,7 +3416,7 @@ impl fmt::Debug for OpenedBundleFfiResult {
             .field("album_id_len", &self.album_id.len())
             .field("epoch_id", &self.epoch_id)
             .field("recipient_pubkey_len", &self.recipient_pubkey.len())
-            .field("epoch_seed_len", &self.epoch_seed.len())
+            .field("epoch_handle_id", &self.epoch_handle_id)
             .field("sign_public_key_len", &self.sign_public_key.len())
             .finish()
     }
@@ -2170,35 +3441,46 @@ impl fmt::Debug for ContentDecryptFfiResult {
     }
 }
 
-/// Derives the `(link_id, wrapping_key)` pair from a 32-byte share-link
-/// secret.
+/// Derives the link identifier from a 32-byte share-link secret and stores the
+/// derived wrapping key behind a Rust-owned handle.
 ///
 /// Used by the cross-client `link_keys.json` corpus driver. Production code
 /// should use the higher-level link-sharing helpers, not this raw-input
 /// surface.
 ///
-/// SECURITY: The caller-provided link secret is wiped on the Rust side
-/// before this function returns. `wrapping_key` in the result is
-/// secret-equivalent — Kotlin callers MUST wipe the byte array after use.
+/// SECURITY: The caller-provided link secret is wiped on the Rust side before
+/// this function returns. The derived wrapping key never crosses FFI.
+#[cfg(feature = "cross-client-vectors")]
 #[uniffi::export]
 #[must_use]
 pub fn derive_link_keys_from_raw_secret(link_secret: Vec<u8>) -> LinkKeysFfiResult {
     let mut secret_buf = link_secret;
-    let result = match mosaic_crypto::derive_link_keys(&secret_buf) {
-        Ok(keys) => LinkKeysFfiResult {
-            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
-            link_id: keys.link_id.to_vec(),
-            wrapping_key: keys.wrapping_key.as_bytes().to_vec(),
-        },
-        Err(error) => LinkKeysFfiResult {
-            code: map_crypto_error_uniffi(error),
-            link_id: Vec::new(),
-            wrapping_key: Vec::new(),
-        },
+    let derived = mosaic_client::derive_link_keys(&secret_buf);
+    let result = LinkKeysFfiResult {
+        code: derived.code.as_u16(),
+        link_id: derived.link_id,
+        link_handle_id: derived.link_handle_id,
     };
     use zeroize::Zeroize;
     secret_buf.zeroize();
     result
+}
+
+/// Wraps a tier key handle for a derived link wrapping-key handle.
+#[uniffi::export]
+#[must_use]
+pub fn wrap_tier_key_for_link_handle(
+    handle_id: u64,
+    tier_key_handle: u64,
+    tier: u8,
+) -> WrappedTierKeyFfiResult {
+    let wrapped = mosaic_client::wrap_tier_key_for_link_handle(handle_id, tier_key_handle, tier);
+    WrappedTierKeyFfiResult {
+        code: wrapped.code.as_u16(),
+        tier: wrapped.tier,
+        nonce: wrapped.nonce,
+        ciphertext: wrapped.encrypted_key,
+    }
 }
 
 /// Derives identity public keys + a deterministic Ed25519 detached
@@ -2210,6 +3492,7 @@ pub fn derive_link_keys_from_raw_secret(link_secret: Vec<u8>) -> LinkKeysFfiResu
 ///
 /// SECURITY: The caller-provided seed is wiped on the Rust side before
 /// this function returns. The result does not contain the seed.
+#[cfg(feature = "cross-client-vectors")]
 #[uniffi::export]
 #[must_use]
 pub fn derive_identity_from_raw_seed(
@@ -2375,11 +3658,12 @@ pub fn verify_auth_challenge_signature(
 /// Production code should use the handle-based
 /// `verify_and_open_bundle_with_identity_handle`.
 ///
-/// SECURITY: `epoch_seed` in the result is secret-equivalent. Kotlin
-/// callers MUST wipe the byte array after use. The recipient seed is wiped
-/// on the Rust side before return. `sign_secret_seed` (the per-epoch
-/// manifest signing secret carried by `mosaic_client::OpenedBundleResult`)
-/// is intentionally NOT exposed across this FFI surface.
+/// SECURITY: The recovered `epoch_seed` is imported into a Rust-owned epoch
+/// handle before return. The recipient seed is wiped on the Rust side before
+/// return. `sign_secret_seed` (the per-epoch manifest signing secret carried by
+/// `mosaic_client::OpenedBundleResult`) is intentionally NOT exposed across
+/// this FFI surface.
+#[cfg(feature = "cross-client-vectors")]
 #[uniffi::export]
 #[must_use]
 #[allow(clippy::too_many_arguments)]
@@ -2400,7 +3684,7 @@ pub fn verify_and_open_bundle_with_recipient_seed(
         album_id: String::new(),
         epoch_id: 0,
         recipient_pubkey: Vec::new(),
-        epoch_seed: Vec::new(),
+        epoch_handle_id: 0,
         sign_public_key: Vec::new(),
     };
 
@@ -2452,15 +3736,23 @@ pub fn verify_and_open_bundle_with_recipient_seed(
     match outcome {
         Ok(bundle) => {
             let recipient_pubkey = bundle.recipient_pubkey.to_vec();
-            let epoch_seed = bundle.epoch_seed.as_bytes().to_vec();
             let sign_public_key = bundle.sign_public_key.as_bytes().to_vec();
+            let epoch_handle = mosaic_client::import_unwrapped_epoch_bundle_handle(
+                bundle.epoch_id,
+                bundle.epoch_seed.as_bytes(),
+                bundle.sign_secret_key.expose_seed_bytes(),
+                bundle.sign_public_key.as_bytes(),
+            );
+            if epoch_handle.code != mosaic_client::ClientErrorCode::Ok {
+                return empty_result(epoch_handle.code.as_u16());
+            }
             OpenedBundleFfiResult {
                 code: mosaic_client::ClientErrorCode::Ok.as_u16(),
                 version: bundle.version,
                 album_id: bundle.album_id,
                 epoch_id: bundle.epoch_id,
                 recipient_pubkey,
-                epoch_seed,
+                epoch_handle_id: epoch_handle.handle,
                 sign_public_key,
             }
         }

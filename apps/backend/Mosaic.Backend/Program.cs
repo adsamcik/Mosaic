@@ -247,6 +247,10 @@ app.UseAuthorization();
 // Admin auth must come after regular auth
 app.UseAdminAuth();
 
+// Idempotency-Key replay cache for authenticated state-changing requests.
+// Tus PATCH chunks intentionally bypass replay caching; Tus POST upload init is cached.
+app.UseMiddleware<IdempotencyMiddleware>();
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {

@@ -5,7 +5,7 @@ const mockData = vi.hoisted(() => {
     shareHandle: 41n,
     tierHandle: 73n,
     linkId: new Uint8Array([1, 2, 3, 4]),
-    linkSecretForUrl: new Uint8Array(32).fill(9),
+    linkUrlToken: new Uint8Array(32).fill(9),
     nonce: new Uint8Array(24).fill(2),
     encryptedKey: new Uint8Array(48).fill(3),
     plaintext: new Uint8Array([7, 8, 9]),
@@ -19,7 +19,7 @@ const mockData = vi.hoisted(() => {
       result({
         handle: state.shareHandle,
         linkId: state.linkId,
-        linkSecretForUrl: state.linkSecretForUrl,
+        linkUrlToken: state.linkUrlToken,
         tier: 1,
         nonce: state.nonce,
         encryptedKey: state.encryptedKey,
@@ -58,14 +58,14 @@ describe('RustHandleFacade link-share handle round trip', () => {
 
     const created = facade.createLinkShareHandle('album', 11n, 1);
     expect(created.handle).toBe(mockData.state.shareHandle);
-    expect([...created.linkSecretForUrl]).toEqual([...mockData.state.linkSecretForUrl]);
+    expect([...created.linkUrlToken]).toEqual([...mockData.state.linkUrlToken]);
     expect([...created.linkId]).toEqual([...mockData.state.linkId]);
 
     const wrapped = facade.wrapLinkTierHandle(created.handle, 11n, 2);
     expect(wrapped.tier).toBe(2);
 
     const imported = facade.importLinkTierHandle(
-      created.linkSecretForUrl,
+      created.linkUrlToken,
       wrapped.nonce,
       wrapped.encryptedKey,
       'album',
@@ -82,7 +82,7 @@ describe('RustHandleFacade link-share handle round trip', () => {
     expect(mockData.wasmMock.createLinkShareHandle).toHaveBeenCalledWith('album', 11n, 1);
     expect(mockData.wasmMock.wrapLinkTierHandle).toHaveBeenCalledWith(mockData.state.shareHandle, 11n, 2);
     expect(mockData.wasmMock.importLinkTierHandle).toHaveBeenCalledWith(
-      mockData.state.linkSecretForUrl,
+      mockData.state.linkUrlToken,
       mockData.state.nonce,
       mockData.state.encryptedKey,
       'album',

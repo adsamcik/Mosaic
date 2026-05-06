@@ -117,12 +117,14 @@ public class TestDataBuilder
         long sizeBytes = 1024,
         string? storageKey = null)
     {
+        var shardId = Guid.NewGuid();
         var shard = new Shard
         {
-            Id = Guid.NewGuid(),
+            Id = shardId,
             UploaderId = uploader.Id,
             StorageKey = storageKey ?? $"shards/{Guid.NewGuid()}",
             SizeBytes = sizeBytes,
+            Sha256 = TestSha256Hex(shardId),
             Status = status,
             PendingExpiresAt = status == ShardStatus.PENDING ? DateTime.UtcNow.AddHours(1) : null
         };
@@ -230,4 +232,7 @@ public class TestDataBuilder
         Random.Shared.NextBytes(bytes);
         return bytes;
     }
+
+    public static string TestSha256Hex(Guid? shardId = null)
+        => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData((shardId ?? Guid.NewGuid()).ToByteArray())).ToLowerInvariant();
 }
