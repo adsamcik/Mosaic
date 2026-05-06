@@ -492,3 +492,159 @@ describe('pairSidecar', () => {
 
 
 
+
+describe('pairSidecarInitiatorBegin', () => {
+  it('returns msg1 before any responder joins, and resume completes when peer joins', async () => {
+    const code = ascii('123456');
+    const pake = makeFakePake(code);
+    const relay = makeRelay();
+    const rtc = makePairedRTC();
+
+    // Begin only — no responder yet.
+    const { pairSidecarInitiatorBegin } = await import('../pairing');
+    const prefix = await pairSidecarInitiatorBegin({
+      code,
+      iceServers: [],
+      _overrides: {
+        openSignaling: () => relay.channelFor('A'),
+        openPakeInitiator: pake.initiator,
+        openPakeResponder: pake.responder,
+        openTunnel: async (h) => makeFakeTunnel(h),
+        deriveRoomId: async () => '0'.repeat(32),
+        rtcPeerConnectionCtor: rtc.ctorA,
+      },
+    });
+
+    // msg1 must be available immediately.
+    expect(prefix.msg1).toBeInstanceOf(Uint8Array);
+    expect(prefix.msg1.byteLength).toBeGreaterThan(0);
+
+    // Defensive copy: mutating the returned buffer must not affect internal state.
+    const original = new Uint8Array(prefix.msg1);
+    prefix.msg1.fill(0xff);
+
+    // Now start resume() and have the responder join.
+    const resumeP = prefix.resume();
+    const respP = pairSidecar({
+      role: 'responder',
+      code,
+      msg1: original,
+      iceServers: [],
+      _overrides: {
+        openSignaling: () => relay.channelFor('B'),
+        openPakeInitiator: pake.initiator,
+        openPakeResponder: pake.responder,
+        openTunnel: async (h) => makeFakeTunnel(h),
+        deriveRoomId: async () => '0'.repeat(32),
+        rtcPeerConnectionCtor: rtc.ctorB,
+      },
+    });
+
+    const [a, b] = await Promise.all([resumeP, respP]);
+    expect(a.peer).toBeDefined();
+    expect(b.peer).toBeDefined();
+
+    // resume() is idempotent — second call returns same promise (already settled).
+    await expect(prefix.resume()).resolves.toBe(a);
+
+    await a.close();
+    await b.close();
+  });
+
+  it('abort() before resume cleans up without throwing', async () => {
+    const code = ascii('123456');
+    const pake = makeFakePake(code);
+    const relay = makeRelay();
+    const { pairSidecarInitiatorBegin } = await import('../pairing');
+    const prefix = await pairSidecarInitiatorBegin({
+      code,
+      iceServers: [],
+      _overrides: {
+        openSignaling: () => relay.channelFor('A'),
+        openPakeInitiator: pake.initiator,
+        openPakeResponder: pake.responder,
+        openTunnel: async (h) => makeFakeTunnel(h),
+        deriveRoomId: async () => '0'.repeat(32),
+      },
+    });
+    // Should not throw.
+    prefix.abort();
+    // Calling abort twice is also safe.
+    prefix.abort();
+  });
+
+  it('msg1 is exposed BEFORE the responder joins (timing assertion)', async () => {
+    const code = ascii('123456');
+    const pake = makeFakePake(code);
+    const relay = makeRelay();
+    const { pairSidecarInitiatorBegin } = await import('../pairing');
+
+    // Track when frames first appear on B's side. Begin must complete before
+    // any frame is delivered (since begin doesn't send anything by itself).
+    let firstFrameAtMs = -1;
+    const start = Date.now();
+    const chB = relay.channelFor('B');
+    chB.onFrame(() => {
+      if (firstFrameAtMs < 0) firstFrameAtMs = Date.now() - start;
+    });
+
+    const prefix = await pairSidecarInitiatorBegin({
+      code,
+      iceServers: [],
+      _overrides: {
+        openSignaling: () => relay.channelFor('A'),
+        openPakeInitiator: pake.initiator,
+        openPakeResponder: pake.responder,
+        openTunnel: async (h) => makeFakeTunnel(h),
+        deriveRoomId: async () => '0'.repeat(32),
+      },
+    });
+    expect(prefix.msg1.byteLength).toBeGreaterThan(0);
+    // No frames have been sent yet (resume not invoked).
+    await new Promise((r) => setTimeout(r, 10));
+    expect(firstFrameAtMs).toBe(-1);
+    prefix.abort();
+  });
+});
+
+describe('pairSidecar(role=initiator) wrapper', () => {
+  it('still works as a thin wrapper around begin+resume', async () => {
+    const code = ascii('123456');
+    const pake = makeFakePake(code);
+    const relay = makeRelay();
+    const rtc = makePairedRTC();
+
+    const initP = pairSidecar({
+      role: 'initiator',
+      code,
+      iceServers: [],
+      _overrides: {
+        openSignaling: () => relay.channelFor('A'),
+        openPakeInitiator: pake.initiator,
+        openPakeResponder: pake.responder,
+        openTunnel: async (h) => makeFakeTunnel(h),
+        deriveRoomId: async () => '0'.repeat(32),
+        rtcPeerConnectionCtor: rtc.ctorA,
+      },
+    });
+    const respP = pairSidecar({
+      role: 'responder',
+      code,
+      msg1: ascii('placeholder-msg1'),
+      iceServers: [],
+      _overrides: {
+        openSignaling: () => relay.channelFor('B'),
+        openPakeInitiator: pake.initiator,
+        openPakeResponder: pake.responder,
+        openTunnel: async (h) => makeFakeTunnel(h),
+        deriveRoomId: async () => '0'.repeat(32),
+        rtcPeerConnectionCtor: rtc.ctorB,
+      },
+    });
+    const [a, b] = await Promise.all([initP, respP]);
+    expect(a.peer).toBeDefined();
+    expect(b.peer).toBeDefined();
+    await a.close();
+    await b.close();
+  });
+});
