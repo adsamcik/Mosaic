@@ -583,6 +583,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mosaic-parity-tests"
+version = "0.1.0"
+dependencies = [
+ "ciborium",
+ "mosaic-client",
+ "mosaic-crypto",
+ "mosaic-domain",
+ "mosaic-media",
+ "mosaic-uniffi",
+ "mosaic-wasm",
+]
+
+[[package]]
 name = "mosaic-uniffi"
 version = "0.1.0"
 dependencies = [
