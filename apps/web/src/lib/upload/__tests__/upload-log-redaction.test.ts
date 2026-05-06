@@ -38,20 +38,14 @@ const mocks = vi.hoisted(() => ({
   stripExifFromBlob: vi.fn(),
   extractVideoFrame: vi.fn(),
   getCryptoClient: vi.fn().mockResolvedValue({
-    encryptShardWithEpoch: vi.fn().mockResolvedValue({
-      envelopeBytes: new Uint8Array([9, 9, 9]),
-      sha256: 'legacy-sha',
-    }),
+    encryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([9, 9, 9])),
   }),
   deriveTierKeys: vi.fn().mockReturnValue({
     thumbKey: new Uint8Array(32).fill(1),
     previewKey: new Uint8Array(32).fill(2),
     fullKey: new Uint8Array(32).fill(3),
   }),
-  encryptShardWithEpoch: vi.fn().mockResolvedValue({
-    envelopeBytes: new Uint8Array([7, 7, 7]),
-    sha256: 'mock-shard-sha',
-  }),
+  encryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([7, 7, 7])),
 }));
 
 // ---------------------------------------------------------------------------
@@ -101,7 +95,7 @@ vi.mock('../../crypto-client', () => ({
 
 vi.mock('@mosaic/crypto', () => ({
   deriveTierKeys: (...a: unknown[]) => mocks.deriveTierKeys(...a),
-  encryptShard: (...a: unknown[]) => mocks.encryptShardWithEpoch(...a),
+  encryptShard: (...a: unknown[]) => mocks.encryptShardWithEpochHandle(...a),
   ShardTier: { THUMB: 1, PREVIEW: 2, ORIGINAL: 3 },
 }));
 
@@ -210,12 +204,9 @@ describe('M7 — upload pipeline log redaction', () => {
       originalHeight: 1080,
     });
     mocks.getCryptoClient.mockResolvedValue({
-      encryptShardWithEpoch: mocks.encryptShardWithEpoch,
+      encryptShardWithEpochHandle: mocks.encryptShardWithEpochHandle,
     });
-    mocks.encryptShardWithEpoch.mockResolvedValue({
-      envelopeBytes: new Uint8Array([7, 7, 7]),
-      sha256: 'mock-shard-sha',
-    });
+    mocks.encryptShardWithEpochHandle.mockResolvedValue(new Uint8Array([7, 7, 7]));
     mocks.generateThumbnail.mockResolvedValue({
       data: new Uint8Array([4, 5, 6]),
       thumbhash: 'th-base64',
@@ -268,7 +259,7 @@ describe('M7 — upload pipeline log redaction', () => {
     });
 
     it('does not leak file.name in error path either', async () => {
-      mocks.encryptShardWithEpoch.mockRejectedValueOnce(new Error('boom'));
+      mocks.encryptShardWithEpochHandle.mockRejectedValueOnce(new Error('boom'));
       const task = createTask(createFile(SECRET_FILENAME, 'image/jpeg'));
       const ctx = createCtx();
 
@@ -324,7 +315,7 @@ describe('M7 — upload pipeline log redaction', () => {
     });
 
     it('does not leak file.name in error path either', async () => {
-      mocks.encryptShardWithEpoch.mockRejectedValueOnce(new Error('encrypt failed'));
+      mocks.encryptShardWithEpochHandle.mockRejectedValueOnce(new Error('encrypt failed'));
       const task = createTask(createFile(SECRET_VIDEO_FILENAME, 'video/mp4'));
       const ctx = createCtx();
 

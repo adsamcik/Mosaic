@@ -73,7 +73,7 @@ vi.mock('../src/lib/api', () => ({
 
 vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn().mockResolvedValue({
-    encryptShardWithEpoch: mockEncryptShardCrypto,
+    encryptShardWithEpochHandle: mockEncryptShardCrypto,
   }),
 }));
 
@@ -630,12 +630,12 @@ describe('UploadQueue — Video Upload Pipeline', () => {
       const task = createTask();
       await queue.processTask(task);
 
-      // First encryptShardWithEpoch call should use the epoch handle and tier 1.
+      // First encryptShardWithEpochHandle call should use the epoch handle and tier 1.
       expect(mockEncryptShardCrypto).toHaveBeenCalledWith(
         'epoch-handle-42',
         expect.any(Uint8Array),
-        0,  // shard index
         1,  // ShardTier.THUMB
+        0,  // shard index
       );
 
       // Should have a tier-1 shard in completedShards
@@ -651,7 +651,7 @@ describe('UploadQueue — Video Upload Pipeline', () => {
 
       // Should have 2 original chunks (7MB → 6MB + 1MB)
       const origCalls = mockEncryptShardCrypto.mock.calls.filter(
-        (call: unknown[]) => call[3] === 3, // ShardTier.ORIGINAL
+        (call: unknown[]) => call[2] === 3, // ShardTier.ORIGINAL
       );
       expect(origCalls).toHaveLength(2);
 

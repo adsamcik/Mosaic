@@ -4,7 +4,7 @@ import type { UploadHandlerContext, UploadTask } from '../types';
 const mocks = vi.hoisted(() => ({
   generateTieredImages: vi.fn(),
   generateThumbnail: vi.fn(),
-  encryptShardWithEpoch: vi.fn(),
+  encryptShardWithEpochHandle: vi.fn(),
   getCryptoClient: vi.fn(),
   shouldStripExifFromOriginals: vi.fn().mockReturnValue(true),
   shouldStoreOriginalsAsAvif: vi.fn().mockReturnValue(false),
@@ -74,12 +74,9 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
     mocks.shouldStripExifFromOriginals.mockReturnValue(true);
     mocks.shouldStoreOriginalsAsAvif.mockReturnValue(false);
     mocks.getCryptoClient.mockResolvedValue({
-      encryptShardWithEpoch: mocks.encryptShardWithEpoch,
+      encryptShardWithEpochHandle: mocks.encryptShardWithEpochHandle,
     });
-    mocks.encryptShardWithEpoch.mockResolvedValue({
-      envelopeBytes: new Uint8Array([9]),
-      sha256: 'sha-handle',
-    });
+    mocks.encryptShardWithEpochHandle.mockResolvedValue(new Uint8Array([9]));
     mocks.generateTieredImages.mockResolvedValue({
       thumbnail: { data: new Uint8Array([1]), width: 100, height: 75, tier: 1 },
       preview: { data: new Uint8Array([2]), width: 800, height: 600, tier: 2 },
@@ -105,7 +102,7 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
 
     await expect(processTieredUpload(task, ctx)).rejects.toThrow(messagePattern);
 
-    expect(mocks.encryptShardWithEpoch).not.toHaveBeenCalled();
+    expect(mocks.encryptShardWithEpochHandle).not.toHaveBeenCalled();
     expect(ctx.tusUpload).not.toHaveBeenCalled();
     expect(ctx.updatePersistedTask).not.toHaveBeenCalled();
     expect(ctx.onComplete).not.toHaveBeenCalled();
@@ -122,7 +119,7 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
 
     expect(mocks.generateTieredImages).not.toHaveBeenCalled();
     expect(mocks.stripExifFromBlob).not.toHaveBeenCalled();
-    expect(mocks.encryptShardWithEpoch).not.toHaveBeenCalled();
+    expect(mocks.encryptShardWithEpochHandle).not.toHaveBeenCalled();
     expect(ctx.tusUpload).not.toHaveBeenCalled();
   });
 
@@ -134,7 +131,7 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
     await expect(processTieredUpload(task, ctx)).resolves.toBeUndefined();
 
     expect(mocks.stripExifFromBlob).not.toHaveBeenCalled();
-    expect(mocks.encryptShardWithEpoch).toHaveBeenCalledTimes(3);
+    expect(mocks.encryptShardWithEpochHandle).toHaveBeenCalledTimes(3);
     expect(ctx.tusUpload).toHaveBeenCalledTimes(3);
     expect(ctx.updatePersistedTask).toHaveBeenCalledWith(task.id, expect.objectContaining({ status: 'complete' }));
     expect(ctx.onComplete).toHaveBeenCalled();

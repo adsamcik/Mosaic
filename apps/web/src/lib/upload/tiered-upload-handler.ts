@@ -8,6 +8,7 @@ import {
 import { getCryptoClient } from '../crypto-client';
 import { generateThumbnail, generateTieredImages } from '../thumbnail-generator';
 import { taskIdentity } from '../upload-errors';
+import { encryptUploadShardWithEpochHandle } from './encrypt-upload-shard';
 import type { TieredShardIds } from '../../workers/types';
 import type {
   UploadTask,
@@ -139,23 +140,26 @@ export async function processTieredUpload(
     log.info('Starting encryption', taskIdentity(task));
     const [thumbnailEncrypted, previewEncrypted, originalEncrypted] =
       await Promise.all([
-        crypto.encryptShardWithEpoch(
+        encryptUploadShardWithEpochHandle(
+          crypto,
           task.epochHandleId,
           tieredImages.thumbnail.data,
-          0,
           1,
+          0,
         ),
-        crypto.encryptShardWithEpoch(
+        encryptUploadShardWithEpochHandle(
+          crypto,
           task.epochHandleId,
           tieredImages.preview.data,
-          0,
           2,
+          0,
         ),
-        crypto.encryptShardWithEpoch(
+        encryptUploadShardWithEpochHandle(
+          crypto,
           task.epochHandleId,
           tieredImages.original.data,
-          0,
           3,
+          0,
         ),
       ]);
     log.info('Tiered shards encrypted successfully', taskIdentity(task));

@@ -6,12 +6,14 @@
  */
 
 import initRustWasm, {
+  canonicalTierLayout,
   stripAvifMetadata,
   stripHeicMetadata,
   stripJpegMetadata,
   stripPngMetadata,
   stripVideoMetadata,
   stripWebpMetadata,
+  type MediaTierDimensions,
   type StripResult,
 } from '../generated/mosaic-wasm/mosaic_wasm.js';
 
@@ -30,6 +32,61 @@ const PNG_MIME_TYPES = new Set(['image/png']);
 const WEBP_MIME_TYPES = new Set(['image/webp']);
 const HEIC_MIME_TYPES = new Set(['image/heic', 'image/heif']);
 const AVIF_MIME_TYPES = new Set(['image/avif']);
+
+
+export interface CanonicalTierDimensions {
+  width: number;
+  height: number;
+  tier: number;
+}
+
+export interface CanonicalTierLayout {
+  thumbnail: CanonicalTierDimensions;
+  preview: CanonicalTierDimensions;
+  original: CanonicalTierDimensions;
+}
+
+let canonicalTierLayoutPromise: Promise<CanonicalTierLayout> | null = null;
+
+function copyMediaTierDimensions(dimensions: MediaTierDimensions): CanonicalTierDimensions {
+  try {
+    return {
+      width: dimensions.width,
+      height: dimensions.height,
+      tier: dimensions.tier,
+    };
+  } finally {
+    dimensions.free();
+  }
+}
+
+export async function getCanonicalTierLayout(): Promise<CanonicalTierLayout> {
+  canonicalTierLayoutPromise ??= ensureRustReady().then(() => {
+    const result = canonicalTierLayout();
+    try {
+      if (result.code !== RUST_OK) {
+        throw new Error(`Failed to read canonical tier layout (rust code ${String(result.code)})`);
+      }
+      return {
+        thumbnail: copyMediaTierDimensions(result.thumbnail),
+        preview: copyMediaTierDimensions(result.preview),
+        original: copyMediaTierDimensions(result.original),
+      };
+    } finally {
+      result.free();
+    }
+  });
+  return canonicalTierLayoutPromise;
+}
+
+export async function getCanonicalTierMaxSizes(): Promise<{ thumbnail: number; preview: number; original: number }> {
+  const layout = await getCanonicalTierLayout();
+  return {
+    thumbnail: Math.max(layout.thumbnail.width, layout.thumbnail.height),
+    preview: Math.max(layout.preview.width, layout.preview.height),
+    original: Math.max(layout.original.width, layout.original.height),
+  };
+}
 
 type SupportedFormat = 'jpeg' | 'png' | 'webp' | 'avif' | 'heic' | 'video';
 type StripFunction = (inputBytes: Uint8Array) => StripResult;

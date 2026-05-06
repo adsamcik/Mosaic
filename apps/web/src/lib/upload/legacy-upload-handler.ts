@@ -1,6 +1,7 @@
 import type { getCryptoClient } from '../crypto-client';
 import type { UploadTask, UploadHandlerContext } from './types';
 import { CHUNK_SIZE } from './types';
+import { encryptUploadShardWithEpochHandle } from './encrypt-upload-shard';
 
 /**
  * Process legacy upload for non-image files.
@@ -31,11 +32,12 @@ export async function processLegacyUpload(
     task.currentAction = 'encrypting';
     ctx.onProgress?.(task);
 
-    const encrypted = await crypto.encryptShardWithEpoch(
+    const encrypted = await encryptUploadShardWithEpochHandle(
+      crypto,
       task.epochHandleId,
       new Uint8Array(chunk),
-      i,
       3,
+      i,
     );
 
     // Upload via Tus resumable protocol

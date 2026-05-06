@@ -2,6 +2,7 @@ import { createLogger } from '../logger';
 import { getCryptoClient } from '../crypto-client';
 import { extractVideoFrame } from '../video-frame-extractor';
 import { taskIdentity } from '../upload-errors';
+import { encryptUploadShardWithEpochHandle } from './encrypt-upload-shard';
 import type { TieredShardIds } from '../../workers/types';
 import type {
   UploadTask,
@@ -110,11 +111,12 @@ export async function processVideoUpload(
       ...taskIdentity(task),
       thumbBytes: thumbData.byteLength,
     });
-    const thumbEncrypted = await crypto.encryptShardWithEpoch(
+    const thumbEncrypted = await encryptUploadShardWithEpochHandle(
+      crypto,
       task.epochHandleId,
       thumbData,
-      0,
       1,
+      0,
     );
 
     task.currentAction = 'uploading';
@@ -155,11 +157,12 @@ export async function processVideoUpload(
       task.currentAction = 'encrypting';
       ctx.onProgress?.(task);
 
-      const chunkEncrypted = await crypto.encryptShardWithEpoch(
+      const chunkEncrypted = await encryptUploadShardWithEpochHandle(
+        crypto,
         task.epochHandleId,
         new Uint8Array(chunk),
-        i,
         3,
+        i,
       );
 
       // Upload via Tus

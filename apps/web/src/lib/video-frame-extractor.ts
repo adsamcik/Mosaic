@@ -12,12 +12,10 @@
 
 import { rgbaToThumbHash } from 'thumbhash';
 import { getPreferredImageFormat } from './thumbnail-generator';
+import { getCanonicalTierMaxSizes } from './exif-stripper';
 import { createLogger } from './logger';
 
 const log = createLogger('VideoFrameExtractor');
-
-/** Max dimension for thumbnail shards (600px) - matches photo thumbnail tier */
-const THUMB_MAX_SIZE = 600;
 
 /** Max dimension for embedded thumbnails in manifest (300px) */
 const EMBEDDED_MAX_SIZE = 300;
@@ -52,7 +50,7 @@ export interface VideoMetadata {
 export interface VideoFrameResult {
   /** Extracted metadata */
   metadata: VideoMetadata;
-  /** Thumbnail blob (600px max dimension, JPEG/WebP) */
+  /** Thumbnail blob (WASM canonical max dimension, JPEG/WebP) */
   thumbnailBlob: Blob;
   /** Thumbnail dimensions */
   thumbnailWidth: number;
@@ -235,8 +233,8 @@ function detectCodec(video: HTMLVideoElement): string | undefined {
  * Extract a frame and metadata from a video file.
  *
  * Uses HTMLVideoElement to load the video, seek to a representative frame,
- * and capture it via Canvas. Generates both a 600px thumbnail for shard
- * storage and a 300px embedded thumbnail for the manifest.
+ * and capture it via Canvas. Generates both a WASM-canonical thumbnail
+ * for shard storage and a 300px embedded thumbnail for the manifest.
  *
  * @param file - Video file to extract frame from
  * @returns Frame extraction result with metadata, thumbnails, and ThumbHash
@@ -308,9 +306,10 @@ export async function extractVideoFrame(file: File): Promise<VideoFrameResult> {
                 };
 
                 const outputFormat = getPreferredImageFormat();
+                const tierMaxSizes = await getCanonicalTierMaxSizes();
 
-                // Draw 600px thumbnail
-                const thumbDims = calculateDimensions(width, height, THUMB_MAX_SIZE);
+                // Draw WASM-canonical thumbnail
+                const thumbDims = calculateDimensions(width, height, tierMaxSizes.thumbnail);
                 const thumbCanvas = drawVideoFrame(currentVideo, thumbDims.width, thumbDims.height);
                 const thumbnailBlob = await canvasToBlob(
                   thumbCanvas,
