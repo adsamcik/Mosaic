@@ -41,6 +41,10 @@ export interface ThumbnailManifestEntry {
   readonly photoId: string;
   readonly epochId: string;
   readonly thumbShardId: string;
+  /** Optional job-bound shard fetcher. Used to avoid cross-job source races. */
+  readonly fetchShard?: (shardId: string, signal: AbortSignal) => Promise<Uint8Array>;
+  /** Optional job-bound key resolver. Used to avoid cross-job album/source races. */
+  readonly resolveThumbKey?: (photoId: string, epochId: string) => Promise<Uint8Array>;
 }
 
 export type ThumbnailEmit = (photoId: string, blobUrl: string) => void;
@@ -165,7 +169,8 @@ export function createThumbnailStreamer(deps: ThumbnailStreamerDeps): ThumbnailS
     try {
       let encrypted: Uint8Array;
       try {
-        encrypted = await deps.fetchShard(entry.thumbShardId, state.abort.signal);
+        const fetchShard = entry.fetchShard ?? deps.fetchShard;
+        encrypted = await fetchShard(entry.thumbShardId, state.abort.signal);
       } catch (err) {
         if (state.abort.signal.aborted) return;
         warn('thumbnail fetch failed; skipping', { photoId: shortenForLog(entry.photoId), errName: errorName(err) });
@@ -174,7 +179,8 @@ export function createThumbnailStreamer(deps: ThumbnailStreamerDeps): ThumbnailS
       if (state.abort.signal.aborted) return;
       let key: Uint8Array;
       try {
-        key = await deps.resolveThumbKey(entry.photoId, entry.epochId);
+        const resolveThumbKey = entry.resolveThumbKey ?? deps.resolveThumbKey;
+        key = await resolveThumbKey(entry.photoId, entry.epochId);
       } catch (err) {
         if (state.abort.signal.aborted) return;
         warn('thumbnail key resolve failed; skipping', { photoId: shortenForLog(entry.photoId), errName: errorName(err) });
