@@ -27,7 +27,7 @@ class FakeWorker implements Worker {
 
 interface FakeApi {
   verifyShard(shardBytes: Uint8Array, expectedHash: Uint8Array): Promise<void>;
-  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array): Promise<Uint8Array>;
+  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array, tier: number): Promise<Uint8Array>;
   decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: Uint8Array): Promise<Uint8Array>;
 }
 
@@ -124,7 +124,24 @@ describe('crypto pool', () => {
     expect(workerRecords).toHaveLength(2);
   });
 
-  it('shutdown is idempotent', async () => {
+  it('forwards shard tier to worker decrypt API', async () => {
+    const seenTiers: number[] = [];
+    __cryptoPoolTestUtils.setWorkerFactory(() => new FakeWorker({
+      async verifyShard(): Promise<void> {},
+      async decryptShard(shardBytes: Uint8Array, _epochSeed: Uint8Array, tier: number): Promise<Uint8Array> {
+        seenTiers.push(tier);
+        return shardBytes;
+      },
+      async decryptShardWithTierKey(shardBytes: Uint8Array): Promise<Uint8Array> {
+        return shardBytes;
+      },
+    }));
+    const pool = await getCryptoPool({ size: 1 });
+    await expect(pool.decryptShard(new Uint8Array([9]), new Uint8Array(32).fill(7), 2)).resolves.toEqual(new Uint8Array([9]));
+    expect(seenTiers).toEqual([2]);
+  });
+
+  it('shutdown is idempotent and terminates worker references', async () => {
     __cryptoPoolTestUtils.setWorkerFactory(() => new FakeWorker(makeApi(0, [])));
     const pool = await getCryptoPool({ size: 1 });
     await pool.verifyShard(new Uint8Array([1]), new Uint8Array([2]));
@@ -133,6 +150,31 @@ describe('crypto pool', () => {
     expect(workerRecords[0]?.terminated).toBe(true);
     await expect(pool.verifyShard(new Uint8Array([1]), new Uint8Array([2]))).rejects.toBeInstanceOf(DownloadError);
   });
+
+  it('does not respawn workers when shutdown races an in-flight worker failure', async () => {
+    let rejectInFlight: ((error: Error) => void) | null = null;
+    __cryptoPoolTestUtils.setWorkerFactory(() => new FakeWorker({
+      async verifyShard(): Promise<void> {
+        await new Promise<void>((_resolve, reject) => {
+          rejectInFlight = reject;
+        });
+      },
+      async decryptShard(shardBytes: Uint8Array): Promise<Uint8Array> {
+        return shardBytes;
+      },
+      async decryptShardWithTierKey(shardBytes: Uint8Array): Promise<Uint8Array> {
+        return shardBytes;
+      },
+    }));
+    const pool = await getCryptoPool({ size: 1 });
+    const inFlight = pool.verifyShard(new Uint8Array([1]), new Uint8Array([2]));
+    await vi.waitFor(() => expect(rejectInFlight).not.toBeNull());
+    await pool.shutdown();
+    const reject = rejectInFlight as ((error: Error) => void) | null;
+    if (!reject) throw new Error('expected in-flight rejection hook');
+    reject(new Error('worker terminated'));
+    await expect(inFlight).rejects.toMatchObject({ code: 'IllegalState' });
+    expect(workerRecords).toHaveLength(1);
+    expect(workerRecords[0]?.terminated).toBe(true);
+  });
 });
-
-

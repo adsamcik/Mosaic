@@ -90,6 +90,16 @@ describe('executePhotoTask', () => {
     expect(deps.pool.verifyShard).toHaveBeenCalledTimes(2);
   });
 
+
+
+  it('passes the download plan tier into pool decryption', async () => {
+    const deps = makeDeps();
+    const previewEntry: DownloadPlanEntry = { ...entry, tier: 2 };
+    await expect(executePhotoTask({ jobId: 'job', albumId: 'album', entry: previewEntry, signal: signal() }, deps))
+      .resolves.toMatchObject({ kind: 'done' });
+    expect(deps.pool.decryptShard).toHaveBeenCalledWith(expect.any(Uint8Array), expect.any(Uint8Array), 2);
+  });
+
   it('returns Decrypt without retrying AEAD failure', async () => {
     const deps = makeDeps();
     vi.mocked(deps.pool.decryptShard).mockRejectedValue(new DownloadError('Decrypt', 'bad tag'));

@@ -141,7 +141,7 @@ async function verifyAndDecrypt(
       const plaintextShards: Uint8Array[] = [];
       for (const shard of encryptedShards) {
         throwIfAborted(input.signal);
-        plaintextShards.push(await deps.pool.decryptShard(shard, epochSeed));
+        plaintextShards.push(await deps.pool.decryptShard(shard, epochSeed, input.entry.tier));
       }
       return { kind: 'done', bytes: concatBytes(plaintextShards) };
     } catch (error) {
