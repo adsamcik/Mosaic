@@ -1447,6 +1447,13 @@ export interface JobSummary {
    * an evaluation. undefined is reserved for older serialized summaries.
    */
   readonly scheduleEvaluation?: ScheduleEvaluation | null;
+  /**
+   * Output mode kind for the job's primary finalizer. In-memory only — not
+   * persisted across worker reconstruction. Used by the tray to surface a
+   * sidecar / Receiving badge. `undefined` falls back to the implicit
+   * `keepOffline` default.
+   */
+  readonly outputModeKind?: DownloadOutputMode['kind'];
 }
 
 /** Job summary useful for resuming a partially completed non-terminal download. */

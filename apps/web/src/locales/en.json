@@ -328,7 +328,7 @@
         "Errored": "Error",
         "Cancelled": "Cancelled"
       },
-      "scheduledBadge": "Scheduled",
+      "scheduledBadge": "Scheduled","sidecarBadge": "Sidecar","sidecarReceiving": "Receiving",
       "scheduledStartNow": "Start now",
       "scheduledEdit": "Edit schedule",
       "scheduledReason": "Waiting: {{reason}}",

@@ -612,7 +612,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     this.assertInitialized();
     await this.reconcilePersistedJobs();
     return [...this.jobs.values()]
-      .map((job) => toJobSummary(job, this.lastEvaluations.get(job.jobId) ?? null))
+      .map((job) => toJobSummary(job, this.lastEvaluations.get(job.jobId) ?? null, this.jobOutputModes.get(job.jobId)?.kind))
       .sort((a, b) => a.jobId.localeCompare(b.jobId));
   }
 
@@ -630,6 +630,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
         job,
         this.pausedNoSourceVisitorJobs.has(job.jobId),
         this.lastEvaluations.get(job.jobId) ?? null,
+        this.jobOutputModes.get(job.jobId)?.kind,
       ))
       .sort((a, b) => a.jobId.localeCompare(b.jobId));
   }
@@ -674,7 +675,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   async getJob(jobId: string): Promise<JobSummary | null> {
     this.assertInitialized();
     const job = this.jobs.get(jobId);
-    return job ? toJobSummary(job, this.lastEvaluations.get(jobId) ?? null) : null;
+    return job ? toJobSummary(job, this.lastEvaluations.get(jobId) ?? null, this.jobOutputModes.get(jobId)?.kind) : null;
   }
 
   /** Subscribe to progress events for one job. Caller must unsubscribe. */
@@ -1665,8 +1666,12 @@ function createInMemoryJob(snapshotBytes: Uint8Array, checksum: Uint8Array): InM
   };
 }
 
-function toJobSummary(job: InMemoryJob, scheduleEvaluation: ScheduleEvaluation | null = null): JobSummary {
-  return {
+function toJobSummary(
+  job: InMemoryJob,
+  scheduleEvaluation: ScheduleEvaluation | null = null,
+  outputModeKind: DownloadOutputMode['kind'] | undefined = undefined,
+): JobSummary {
+  const base: JobSummary = {
     jobId: job.jobId,
     albumId: job.albumId,
     phase: job.state.phase,
@@ -1679,10 +1684,11 @@ function toJobSummary(job: InMemoryJob, scheduleEvaluation: ScheduleEvaluation |
     schedule: job.schedule,
     scheduleEvaluation,
   };
+  return outputModeKind !== undefined ? { ...base, outputModeKind } : base;
 }
 
-function toResumableJobSummary(job: InMemoryJob, pausedNoSource: boolean, scheduleEvaluation: ScheduleEvaluation | null = null): ResumableJobSummary {
-  const summary = toJobSummary(job, scheduleEvaluation);
+function toResumableJobSummary(job: InMemoryJob, pausedNoSource: boolean, scheduleEvaluation: ScheduleEvaluation | null = null, outputModeKind: DownloadOutputMode['kind'] | undefined = undefined): ResumableJobSummary {
+  const summary = toJobSummary(job, scheduleEvaluation, outputModeKind);
   return {
     ...summary,
     photosDone: summary.photoCounts.done,

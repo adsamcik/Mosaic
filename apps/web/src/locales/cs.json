@@ -339,7 +339,7 @@
         "Errored": "Chyba",
         "Cancelled": "Zrušeno"
       },
-      "scheduledBadge": "Naplánováno",
+      "scheduledBadge": "Naplánováno","sidecarBadge": "Sidecar","sidecarReceiving": "Příjem",
       "scheduledStartNow": "Spustit teď",
       "scheduledEdit": "Upravit plán",
       "scheduledReason": "Čeká: {{reason}}",
