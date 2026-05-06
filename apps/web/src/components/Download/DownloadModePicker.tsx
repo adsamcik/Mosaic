@@ -5,11 +5,12 @@ import type { PhotoMeta } from '../../workers/types';
 import type { DownloadSchedule } from '../../lib/download-schedule';
 import { BLOB_ANCHOR_PHOTO_LIMIT, detectPerFileStrategy, supportsStreamingSave } from '../../lib/save-target';
 import { ScheduleControls, loadLastUsedSchedule, persistLastUsedSchedule } from './ScheduleControls';
+import { getFeatureFlag } from '../../lib/feature-flags';
 
 const LAST_MODE_STORAGE_KEY = 'mosaic.download.lastMode';
 
 /** Discriminator for the mode picker's three radio options. */
-type PickerKind = 'zip' | 'keepOffline' | 'perFile';
+type PickerKind = 'zip' | 'keepOffline' | 'perFile' | 'sidecar';
 
 /** Props for {@link DownloadModePicker}. */
 export interface DownloadModePickerProps {
@@ -30,6 +31,21 @@ export interface DownloadModePickerProps {
    * flows where there is no per-account scope key to bind OPFS staging to.
    */
   readonly hideKeepOffline?: boolean;
+  /**
+   * Allow the beta "Send to my phone" sidecar option. The picker also
+   * gates this on the {@link getFeatureFlag}('sidecar') flag and on
+   * `'RTCPeerConnection' in window`. Consumers should pass `true` only
+   * when the user is in an authenticated (FULL) tier — visitor flows
+   * MUST NOT see this option.
+   */
+  readonly allowSidecar?: boolean;
+  /**
+   * Called when the user picks "Send to my phone". The picker does NOT
+   * resolve via {@link onConfirm} for sidecar — instead the consumer is
+   * expected to mount the pairing modal, await a peerHandle, and then
+   * start the job with `{ kind: 'sidecar', peerHandle, fallback }`.
+   */
+  readonly onSidecarChosen?: () => void;
 }
 
 /**
@@ -70,6 +86,12 @@ export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element 
   const effectiveSchedule: DownloadSchedule = selected === 'keepOffline' ? schedule : { kind: 'immediate' };
 
   const handleConfirm = async (): Promise<void> => {
+    if (selected === 'sidecar') {
+      // Sidecar requires an out-of-band pairing step; the consumer mounts
+      // the pairing modal and starts the job once a peerHandle resolves.
+      props.onSidecarChosen?.();
+      return;
+    }
     if (selected === 'perFile') {
       if (perFileStrategy === null || perFileRefusal !== null) return;
       persistLastMode(selected);
@@ -85,6 +107,15 @@ export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element 
       : { kind: 'keepOffline' };
     await props.onConfirm(mode, effectiveSchedule);
   };
+
+  // Sidecar visibility: opt-in prop + beta flag + WebRTC capability.
+  // `hideKeepOffline` is the existing visitor signal; visitor flows MUST
+  // NOT see this option even if the flag is on.
+  const sidecarVisible = props.allowSidecar === true
+    && props.hideKeepOffline !== true
+    && getFeatureFlag('sidecar')
+    && typeof window !== 'undefined'
+    && 'RTCPeerConnection' in window;
 
   const className = `download-mode-picker download-mode-picker--${isMobile ? 'sheet' : 'dialog'}`;
 
@@ -134,6 +165,16 @@ export function DownloadModePicker(props: DownloadModePickerProps): JSX.Element 
             sub={perFileSub}
             disabled={perFileDisabled}
           />
+          {sidecarVisible ? (
+            <ModeOption
+              kind="sidecar"
+              selected={selected}
+              onSelect={setSelected}
+              label={t('download.modePicker.sidecar.label')}
+              sub={t('download.modePicker.sidecar.sub')}
+              badge={t('download.modePicker.sidecar.beta')}
+            />
+          ) : null}
         </fieldset>
         {selected === 'perFile' && perFileRefusal !== null ? (
           <p className="download-mode-picker-status" role="alert">{perFileRefusal}</p>
@@ -174,6 +215,7 @@ interface ModeOptionProps {
   readonly label: string;
   readonly sub: string;
   readonly disabled?: boolean;
+  readonly badge?: string;
 }
 
 function ModeOption(p: ModeOptionProps): JSX.Element {
@@ -191,7 +233,12 @@ function ModeOption(p: ModeOptionProps): JSX.Element {
         data-testid={`download-mode-radio-${p.kind}`}
       />
       <span className="download-mode-option-text">
-        <span className="download-mode-option-label">{p.label}</span>
+        <span className="download-mode-option-label">
+          {p.label}
+          {p.badge !== undefined ? (
+            <span className="download-mode-option-badge" data-testid={`download-mode-badge-${p.kind}`}>{p.badge}</span>
+          ) : null}
+        </span>
         <span className="download-mode-option-sub">{p.sub}</span>
       </span>
     </label>
