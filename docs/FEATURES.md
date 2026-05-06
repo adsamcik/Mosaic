@@ -838,6 +838,30 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 
 ## Android
 
+### Android Sync Confirmation and Photo Picker Staging
+
+**Purpose:** Confirm committed manifest versions have reached album sync and route Android Photo Picker results into app-private staging without broad media permissions.
+
+**Implementation:**
+| Layer | Location |
+|-------|----------|
+| Android sync | `apps/android-main/src/main/kotlin/org/mosaic/android/main/sync/SyncConfirmationLoop.kt` |
+| Android picker | `apps/android-main/src/main/kotlin/org/mosaic/android/main/picker/PhotoPickerStagingAdapter.kt` |
+| Android picker helper | `apps/android-main/src/main/kotlin/org/mosaic/android/main/picker/PhotoPickerStagingLauncher.kt` |
+
+**Features:**
+- Polls album sync until `currentVersion` reaches the locally finalized manifest version.
+- Uses exponential backoff with full jitter and cooperative coroutine cancellation.
+- Treats 404/403 as terminal failures while retrying server errors.
+- Stages Photo Picker `Uri` results via `AppPrivateStagingManager`, preserving original MIME types and falling back to `application/octet-stream`.
+- Provides Activity Result helper functions for Compose `rememberLauncherForActivityResult` integration without adding broad storage permissions.
+
+**Tests:**
+- Android JVM: `apps/android-main/src/test/kotlin/org/mosaic/android/main/sync/SyncConfirmationLoopTest.kt`
+- Android JVM: `apps/android-main/src/test/kotlin/org/mosaic/android/main/picker/PhotoPickerStagingAdapterTest.kt`
+
+---
+
 ### Android Main Module (Rust UniFFI APK)
 
 **Purpose:** First real Android Gradle application module that consumes the Rust UniFFI core directly. Cross-compiled `libmosaic_uniffi.so` is packaged into the APK; JNA-based generated Kotlin bindings call into Rust at runtime. Smoke-tests the FFI end-to-end on a real device.
@@ -944,6 +968,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-05-06 | Android Sync Confirmation and Photo Picker Staging | Added | Added album sync confirmation polling with jittered backoff/cancellation plus Photo Picker staging adapter preserving MIME types |
 | 2026-05-05 | Web Upload Queue Migration  | Added    | Added legacy IndexedDB upload task detection/drain/reset telemetry and PNG/WebP/AVIF/HEIC strip parity coverage |
 | 2026-05-04 | Web Metadata Strip Parity (M0) | Added | Web JPEG/PNG/WebP stripping now delegates to Rust `mosaic-media` WASM; HEIC/AVIF/video source originals reject until parser support lands |
 | 2026-04-30 | Cross-client cryptographic vector parity (Android, Slice 0C) | Added | 7 new raw-input UniFFI exports + 5 Generated*Bridge contracts + 5 AndroidRust*Api adapters + 30 round-trip tests; closes 5 `TODO Slice 0C:` markers in `CrossClientVectorTest.kt`; new `kotlin-raw-input-ffi` architecture guard; new `error_code_table.rs` snapshot test |
