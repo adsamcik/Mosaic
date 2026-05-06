@@ -88,6 +88,8 @@ export interface LegacyDrainOptions {
   readonly requeue?: (record: CurrentUploadRecord, file: File | Blob) => Promise<void>;
 }
 
+let drainInFlight: Promise<LegacyUploadDrainResult> | null = null;
+
 class LegacyUploadTelemetry {
   private readonly counters = new Map<LegacyUploadTelemetryCounter, number>();
 
@@ -247,6 +249,16 @@ export class LegacyUploadQueueDrainer {
   }
 
   async drain(options: LegacyDrainOptions = {}): Promise<LegacyUploadDrainResult> {
+    if (drainInFlight !== null) return drainInFlight;
+    drainInFlight = this.drainInternal(options);
+    try {
+      return await drainInFlight;
+    } finally {
+      drainInFlight = null;
+    }
+  }
+
+  private async drainInternal(options: LegacyDrainOptions = {}): Promise<LegacyUploadDrainResult> {
     const detections = await this.detect();
     const migrated: CurrentUploadRecord[] = [];
     const stranded: LegacyUploadDetection[] = [];

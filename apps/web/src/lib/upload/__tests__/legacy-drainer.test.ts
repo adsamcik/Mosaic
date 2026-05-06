@@ -134,6 +134,66 @@ describe('LegacyUploadQueueDrainer', () => {
     ]));
   });
 
+  it('drain() under concurrent invocation persists exactly one migrated record per legacy task', async () => {
+    const sourceFile = new File([new Uint8Array([7, 8, 9])], 'legacy-concurrent.jpg', { type: 'image/jpeg' });
+    const store = new MemoryStore([
+      {
+        id: 'legacy-concurrent',
+        version: 2,
+        albumId: 'album-concurrent',
+        epochId: 11,
+        epochHandleId: 'epoch-handle-11',
+        file: sourceFile,
+        status: 'queued',
+      },
+    ]);
+    const drainer = new LegacyUploadQueueDrainer(store);
+    const requeue = vi.fn(async () => undefined);
+
+    const [first, second] = await Promise.all([
+      drainer.drain({ requeue }),
+      drainer.drain({ requeue }),
+    ]);
+
+    const migratedRecords = Array.from(store.records.values()).filter(
+      (record): record is CurrentUploadRecord => 'migratedFromLegacyId' in record,
+    );
+    expect(migratedRecords).toHaveLength(1);
+    expect(migratedRecords[0]?.migratedFromLegacyId).toBe('legacy-concurrent');
+    expect(first.migrated).toHaveLength(1);
+    expect(second.migrated).toHaveLength(1);
+    expect(first.migrated[0]).toEqual(second.migrated[0]);
+    expect(requeue).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes StrictMode-style concurrent drains across drainer instances', async () => {
+    const sourceFile = new File([new Uint8Array([10, 11, 12])], 'legacy-strict-mode.jpg', { type: 'image/jpeg' });
+    const store = new MemoryStore([
+      {
+        id: 'legacy-strict-mode',
+        version: 2,
+        albumId: 'album-strict-mode',
+        epochId: 12,
+        epochHandleId: 'epoch-handle-12',
+        file: sourceFile,
+        status: 'queued',
+      },
+    ]);
+    const requeue = vi.fn(async () => undefined);
+
+    await Promise.all([
+      new LegacyUploadQueueDrainer(store).drain({ requeue }),
+      new LegacyUploadQueueDrainer(store).drain({ requeue }),
+    ]);
+
+    const migratedRecords = Array.from(store.records.values()).filter(
+      (record): record is CurrentUploadRecord => 'migratedFromLegacyId' in record,
+    );
+    expect(migratedRecords).toHaveLength(1);
+    expect(migratedRecords[0]?.migratedFromLegacyId).toBe('legacy-strict-mode');
+    expect(requeue).toHaveBeenCalledTimes(1);
+  });
+
   it('drains mixed stores without touching current-schema tasks or counting them as migrations', async () => {
     const keep = currentRecord();
     const sourceFile = new File([new Uint8Array([4, 5, 6])], 'legacy-mixed.jpg', { type: 'image/jpeg' });
