@@ -184,6 +184,10 @@ dependencies {
   implementation("androidx.room:room-runtime:2.6.1")
   implementation("androidx.room:room-ktx:2.6.1")
   ksp("androidx.room:room-compiler:2.6.1")
+  // Tus upload foundation uses direct OkHttp PATCH/HEAD/POST protocol calls.
+  // Maven Central has io.tus.java.client:tus-java-client:0.5.1, but no clear
+  // maintained Android OkHttp-first artifact; keep OkHttp pinned for the A5a
+  // spike and avoid adding a URLConnection-based Tus dependency.
   implementation("com.squareup.okhttp3:okhttp:4.12.0")
   // WorkManager powers the auto-import foreground (`dataSync`) worker. See
   // `apps/android-main/src/main/kotlin/org/mosaic/android/main/work/`.
