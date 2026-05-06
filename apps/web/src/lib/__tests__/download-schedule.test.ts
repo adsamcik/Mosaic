@@ -112,15 +112,17 @@ describe('evaluateSchedule — window', () => {
     { windowStartHour: -1, windowEndHour: 5 },
     { windowStartHour: 5, windowEndHour: 24 },
     { windowStartHour: 1.5, windowEndHour: 5 },
-  ])('rejects misconfigured window %j', (cfg) => {
+  ])('releases misconfigured window %j when maxDelayMs is unset', (cfg) => {
     const r = evaluateSchedule({ kind: 'window', ...cfg } as DownloadSchedule, ctx());
-    expect(r.canStart).toBe(false);
+    expect(r.canStart).toBe(true);
     expect(r.retryAfterMs).toBeNull();
+    expect(r.reason).toBe('schedule invalid; releasing');
   });
-  it('rejects empty window (start === end)', () => {
+  it('releases empty window (start === end) when maxDelayMs is unset', () => {
     const r = evaluateSchedule({ kind: 'window', windowStartHour: 5, windowEndHour: 5 }, ctx({ localHour: 5 }));
-    expect(r.canStart).toBe(false);
-    expect(r.reason).toBe('window empty');
+    expect(r.canStart).toBe(true);
+    expect(r.retryAfterMs).toBeNull();
+    expect(r.reason).toBe('schedule invalid; releasing');
   });
 });
 
