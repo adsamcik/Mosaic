@@ -9,7 +9,6 @@
 import sodium from 'libsodium-wrappers-sumo';
 import { CryptoError, CryptoErrorCode, KEY_SIZE, ShardTier, type EpochKey } from './types';
 import { randomBytes, toBytes } from './utils';
-import { wrapKey, unwrapKey } from './keybox';
 
 /** HKDF context for thumb tier key derivation */
 const THUMB_KEY_CONTEXT = toBytes('mosaic:tier:thumb:v1');
@@ -33,6 +32,9 @@ function deriveTierKey(epochSeed: Uint8Array, context: Uint8Array): Uint8Array {
 
 /**
  * Derive all tier keys from an epoch seed.
+ *
+ * @deprecated Protocol crypto is Rust-owned. New web code must use the
+ * Rust/WASM epoch-handle APIs instead of handling raw epoch seeds.
  *
  * @param epochSeed - 32-byte master seed
  * @returns Object with thumbKey, previewKey, fullKey
@@ -62,6 +64,9 @@ export function deriveTierKeys(epochSeed: Uint8Array): {
  * Content key is used for encrypting album narrative content (blocks, text, etc.)
  * and is derived on-demand rather than stored in EpochKey to keep the interface lean.
  *
+ * @deprecated Protocol crypto is Rust-owned. Use Rust/WASM epoch-handle
+ * content operations instead of deriving raw content keys in TypeScript.
+ *
  * @param epochSeed - 32-byte master seed from epoch
  * @returns 32-byte content encryption key
  */
@@ -77,6 +82,9 @@ export function deriveContentKey(epochSeed: Uint8Array): Uint8Array {
 
 /**
  * Get the appropriate tier key for a given shard tier.
+ *
+ * @deprecated Protocol crypto is Rust-owned. Use Rust/WASM epoch-handle
+ * shard operations instead of selecting raw tier keys in TypeScript.
  *
  * @param epochKey - Epoch key with all tier keys
  * @param tier - Shard tier to get key for
@@ -98,6 +106,9 @@ export function getTierKey(epochKey: EpochKey, tier: ShardTier): Uint8Array {
 /**
  * Generate a new epoch key set with tiered keys.
  * Creates a random seed, derives tier keys, and generates Ed25519 signing keypair.
+ *
+ * @deprecated Epoch lifecycle is Rust-owned. Use the WASM handle API for new
+ * epoch creation and import/export flows.
  *
  * @param epochId - Epoch identifier (increments on key rotation)
  * @returns New epoch key with tiered keys and SignKeypair
@@ -126,120 +137,10 @@ export function generateEpochKey(epochId: number): EpochKey {
 }
 
 /**
- * Serialize epoch key for storage/transmission.
- * Does NOT include secret keys - only public components.
- *
- * @param epochKey - Epoch key to serialize
- * @returns JSON-safe object (public info only)
- */
-export function serializeEpochKeyPublic(epochKey: EpochKey): {
-  epochId: number;
-  signPublicKey: string;
-} {
-  return {
-    epochId: epochKey.epochId,
-    signPublicKey: sodium.to_base64(
-      epochKey.signKeypair.publicKey,
-      sodium.base64_variants.URLSAFE_NO_PADDING,
-    ),
-  };
-}
-
-/**
- * Wrap epoch key for secure storage.
- * Encrypts epochSeed and signKeypair.secretKey.
- * Tier keys can be re-derived from epochSeed when unwrapped.
- *
- * Format: length(2) || wrappedSeed || wrappedSignSecret
- *
- * @param epochKey - Epoch key to wrap
- * @param wrapper - Wrapping key (32 bytes)
- * @returns Wrapped epoch key data
- */
-export function wrapEpochKey(
-  epochKey: EpochKey,
-  wrapper: Uint8Array,
-): {
-  epochId: number;
-  signPublicKey: Uint8Array;
-  wrapped: Uint8Array;
-} {
-  // Wrap the epoch seed (tier keys will be re-derived on unwrap)
-  const wrappedSeed = wrapKey(epochKey.epochSeed, wrapper);
-
-  // Wrap the signing secret key
-  const wrappedSignSecret = wrapKey(epochKey.signKeypair.secretKey, wrapper);
-
-  // Combine: length(2) || wrappedSeed || wrappedSignSecret
-  const wrapped = new Uint8Array(
-    2 + wrappedSeed.length + wrappedSignSecret.length,
-  );
-  const view = new DataView(wrapped.buffer);
-  view.setUint16(0, wrappedSeed.length, true);
-  wrapped.set(wrappedSeed, 2);
-  wrapped.set(wrappedSignSecret, 2 + wrappedSeed.length);
-
-  return {
-    epochId: epochKey.epochId,
-    signPublicKey: epochKey.signKeypair.publicKey,
-    wrapped,
-  };
-}
-
-/**
- * Unwrap epoch key from storage.
- * Derives tier keys from the unwrapped epochSeed.
- *
- * @param epochId - Epoch identifier
- * @param signPublicKey - Ed25519 signing public key
- * @param wrapped - Wrapped key data
- * @param wrapper - Wrapping key (32 bytes)
- * @returns Unwrapped epoch key with all tier keys
- */
-export function unwrapEpochKey(
-  epochId: number,
-  signPublicKey: Uint8Array,
-  wrapped: Uint8Array,
-  wrapper: Uint8Array,
-): EpochKey {
-  const view = new DataView(wrapped.buffer, wrapped.byteOffset);
-  const seedLen = view.getUint16(0, true);
-
-  const wrappedSeed = wrapped.slice(2, 2 + seedLen);
-  const wrappedSignSecret = wrapped.slice(2 + seedLen);
-
-  const epochSeed = unwrapKey(wrappedSeed, wrapper);
-  const signSecretKey = unwrapKey(wrappedSignSecret, wrapper);
-
-  // Derive tier keys from seed
-  const { thumbKey, previewKey, fullKey } = deriveTierKeys(epochSeed);
-
-  return {
-    epochId,
-    epochSeed,
-    thumbKey,
-    previewKey,
-    fullKey,
-    signKeypair: {
-      publicKey: signPublicKey,
-      secretKey: signSecretKey,
-    },
-  };
-}
-
-/**
- * Create the next epoch key (for key rotation).
- * Increments epochId from current epoch.
- *
- * @param currentEpoch - Current epoch key
- * @returns New epoch key with incremented epochId
- */
-export function rotateEpochKey(currentEpoch: EpochKey): EpochKey {
-  return generateEpochKey(currentEpoch.epochId + 1);
-}
-
-/**
  * Validate epoch key structure.
+ *
+ * @deprecated Epoch lifecycle is Rust-owned. Prefer Rust/WASM handle
+ * validation paths for any new code.
  *
  * @param epochKey - Epoch key to validate
  * @returns true if valid

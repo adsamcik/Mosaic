@@ -24,6 +24,7 @@ public class MosaicDbContext : DbContext
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     public DbSet<AlbumLimits> AlbumLimits => Set<AlbumLimits>();
     public DbSet<AlbumContent> AlbumContents => Set<AlbumContent>();
+    public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -113,6 +114,9 @@ public class MosaicDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             e.HasIndex(m => new { m.AlbumId, m.VersionCreated });
+            e.Property(m => m.ProtocolVersion).HasDefaultValue(1);
+            e.Property(m => m.AssetType).HasMaxLength(16).HasDefaultValue("Image");
+            e.Property(m => m.MetadataVersion).HasDefaultValue(1L);
 
             // Index for efficient expired photo cleanup queries
             e.HasIndex(m => m.ExpiresAt)
@@ -148,6 +152,10 @@ public class MosaicDbContext : DbContext
             // Tier column with default value for backward compatibility
             e.Property(ms => ms.Tier)
                 .HasDefaultValue((int)ShardTier.Original);
+            e.Property(ms => ms.ShardIndex).HasDefaultValue(0);
+            e.Property(ms => ms.Sha256).HasMaxLength(64).HasDefaultValue(string.Empty);
+            e.Property(ms => ms.ContentLength).HasDefaultValue(0L);
+            e.Property(ms => ms.EnvelopeVersion).HasDefaultValue(3);
 
             e.HasOne(ms => ms.Manifest)
                 .WithMany(m => m.ManifestShards)
@@ -241,6 +249,19 @@ public class MosaicDbContext : DbContext
 
             e.HasIndex(r => r.ExpiresAt);
             e.HasIndex(r => r.UserId);
+        });
+
+        // IdempotencyRecord
+        modelBuilder.Entity<IdempotencyRecord>(e =>
+        {
+            e.HasKey(r => new { r.UserId, r.IdempotencyKey });
+
+            e.HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(r => r.CreatedAt);
         });
 
         // Session

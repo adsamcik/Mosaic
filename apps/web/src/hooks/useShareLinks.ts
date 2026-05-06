@@ -19,6 +19,7 @@ import { getCryptoClient } from '../lib/crypto-client';
 import { fetchAndUnwrapEpochKeys } from '../lib/epoch-key-service';
 import { getCachedEpochIds, getEpochKey } from '../lib/epoch-key-store';
 import { encodeLinkId, encodeLinkSecret } from '../lib/link-encoding';
+import { buildShareLinkUrl } from '../lib/share-link-url';
 import type { LinkShareHandleId } from '../workers/types';
 
 /** Error thrown by share link operations */
@@ -236,7 +237,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
         }
 
         // Step 2: Create a Rust-owned link-share handle. The returned
-        // linkSecretForUrl is the protocol URL fragment seed, not a wrapping key.
+        // linkUrlToken is a bearer URL fragment token, not a wrapping key.
         let linkSecret: Uint8Array | undefined;
         let linkId: Uint8Array | undefined;
 
@@ -257,7 +258,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
           if (!linkShareHandleId) {
             const created = await cryptoClient.createLinkShareHandle(albumId, epochHandleId, 1);
             linkShareHandleId = created.linkShareHandleId;
-            linkSecret = created.linkSecretForUrl;
+            linkSecret = created.linkUrlToken;
             linkId = created.linkId;
             wrappedThumb = created;
           } else {
@@ -337,7 +338,12 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
         const baseUrl = window.location.origin;
         const encodedLinkId = encodeLinkId(linkId);
         const encodedSecret = encodeLinkSecret(linkSecret);
-        const shareUrl = `${baseUrl}/s/${encodedLinkId}#k=${encodedSecret}`;
+        const shareUrl = await buildShareLinkUrl({
+          baseUrl,
+          albumId,
+          linkId: encodedLinkId,
+          linkUrlToken: encodedSecret,
+        });
 
         // Add to list
         setShareLinks((prev) => [shareLink, ...prev]);

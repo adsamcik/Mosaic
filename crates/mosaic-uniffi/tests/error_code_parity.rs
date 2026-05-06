@@ -9,7 +9,8 @@ use std::collections::BTreeMap;
 use mosaic_client::ClientErrorCode;
 use strum::IntoEnumIterator;
 
-const WORKER_TYPES_TS: &str = include_str!("../../../apps/web/src/workers/types.ts");
+const GENERATED_WORKER_CRYPTO_ERROR_CODE_TS: &str =
+    include_str!("../../../apps/web/src/workers/worker-crypto-error-code.generated.ts");
 
 #[test]
 fn client_error_code_from_u16_matches_canonical_try_from_u16() {
@@ -36,7 +37,8 @@ fn unknown_client_error_codes_are_rejected_by_uniffi() {
 
 #[test]
 fn rust_client_error_codes_below_worker_range_equal_typescript_worker_enum() {
-    let ts_codes = worker_crypto_error_codes_below_worker_range(WORKER_TYPES_TS);
+    let ts_codes =
+        worker_crypto_error_codes_below_worker_range(GENERATED_WORKER_CRYPTO_ERROR_CODE_TS);
     let rust_codes = rust_client_error_codes();
 
     for code in ClientErrorCode::iter() {

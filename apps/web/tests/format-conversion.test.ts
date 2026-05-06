@@ -30,6 +30,18 @@ const mockShouldStoreOriginalsAsAvif = vi.fn(() => true);
 vi.mock('../src/lib/settings-service', () => ({
   shouldStoreOriginalsAsAvif: () => mockShouldStoreOriginalsAsAvif(),
 }));
+vi.mock('../src/lib/exif-stripper', () => ({
+  getCanonicalTierLayout: vi.fn().mockResolvedValue({
+    thumbnail: { width: 256, height: 256, tier: 1 },
+    preview: { width: 1024, height: 1024, tier: 2 },
+    original: { width: 4096, height: 4096, tier: 3 },
+  }),
+  getCanonicalTierMaxSizes: vi.fn().mockResolvedValue({
+    thumbnail: 256,
+    preview: 1024,
+    original: 4096,
+  }),
+}));
 
 // Create the mock function for heic-to at module scope
 const heicToMock = vi.fn();

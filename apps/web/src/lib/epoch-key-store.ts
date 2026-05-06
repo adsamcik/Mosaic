@@ -13,37 +13,23 @@
 
 import { getCryptoClient } from './crypto-client';
 import { createLogger } from './logger';
+import type { EpochHandleId } from '../workers/types';
 
 const log = createLogger('EpochKeyStore');
 
 /**
  * Cached epoch key reference.
  *
- * Slice 3 — the AUTHORITATIVE fields are `epochHandleId` and
- * `signPublicKey`. Secret material — the epoch seed and per-epoch sign
- * secret — never leaves the worker. The legacy `epochSeed` and
- * `signKeypair` fields are kept as zero-filled transitional placeholders
- * so Slice 4-7 callers (manifest, sync, share links, album content, upload)
- * still typecheck during the multi-slice cutover; those slices migrate the
-   * call sites to use `epochHandleId` and remove the placeholders. TODO(R-C6.1):
-   * finish the M0/Slice-5 production decrypt migration so photo thumbnails,
-   * lightbox, album ZIP, upload-triggered sync, and manual sync never read
-   * `epochSeed` and instead call handle-based worker APIs. Reading
- * the placeholder bytes will produce garbage and is treated as a Slice
- * 4-7 migration bug, not a runtime expectation.
+ * Secret material — the epoch seed and per-epoch sign secret — never leaves
+ * the worker. Production callers must use `epochHandleId` with handle-based
+ * worker APIs.
  */
 export interface EpochKeyBundle {
   epochId: number;
   /** Opaque crypto-worker handle id; consumed via worker methods only. */
-  epochHandleId: string;
+  epochHandleId: EpochHandleId;
   /** 32-byte Ed25519 manifest signing public key. */
   signPublicKey: Uint8Array;
-  /**
-   * @deprecated Slice 3 cutover placeholder. Always an empty `Uint8Array`.
-   * Consumers must migrate to handle-based worker methods that take
-   * `epochHandleId`. Removal is tracked alongside Slices 4-7.
-   */
-  epochSeed: Uint8Array;
   /**
    * @deprecated Slice 3 cutover placeholder. `publicKey` mirrors
    * `signPublicKey`; `secretKey` is always an empty `Uint8Array` because
@@ -56,6 +42,8 @@ export interface EpochKeyBundle {
 }
 
 const EMPTY_BYTES: Uint8Array = new Uint8Array(0);
+const EPOCH_SEED_REMOVED_MESSAGE =
+  'epochSeed is removed; use epochHandleId. See R-C6.1 / ADR-006.';
 
 /** Cache structure: albumId -> epochId -> EpochKeyBundle */
 const epochKeyCache = new Map<string, Map<number, EpochKeyBundle>>();
@@ -117,24 +105,15 @@ export function getCurrentEpochKey(albumId: string): EpochKeyBundle | null {
  * `(albumId, bundle.epochId)`, its underlying handle is closed before being
  * replaced so old Rust handles do not leak.
  *
- * Callers may supply only the authoritative fields, only the deprecated
- * fields, or both; the deprecated placeholders are normalised to empty
- * buffers automatically. Slice 4-7 callers that still construct legacy
- * `{ epochSeed, signKeypair }` shapes continue to typecheck during the
- * cutover even though their stored entries will lack a real handle id
- * until those slices migrate the call sites.
+ * Callers must supply the authoritative handle fields. Deprecated
+ * placeholders are normalised to empty buffers automatically.
  */
 export function setEpochKey(
   albumId: string,
   bundle: {
     epochId: number;
-    epochHandleId?: string;
+    epochHandleId: EpochHandleId;
     signPublicKey?: Uint8Array;
-    /**
-     * @deprecated Slice 3 placeholder accepted for transitional callers in
-     * Slice 4-7 territory.
-     */
-    epochSeed?: Uint8Array;
     /**
      * @deprecated Slice 3 placeholder accepted for transitional callers in
      * Slice 4-7 territory.
@@ -153,14 +132,21 @@ export function setEpochKey(
 
   const normalised: EpochKeyBundle = {
     epochId: bundle.epochId,
-    epochHandleId: bundle.epochHandleId ?? '',
+    epochHandleId: bundle.epochHandleId,
     signPublicKey,
-    epochSeed: EMPTY_BYTES,
     signKeypair: {
       publicKey: signPublicKey,
       secretKey: EMPTY_BYTES,
     },
   };
+
+  Object.defineProperty(normalised, 'epochSeed', {
+    configurable: false,
+    enumerable: false,
+    get(): never {
+      throw new Error(EPOCH_SEED_REMOVED_MESSAGE);
+    },
+  });
 
   const existing = albumKeys.get(normalised.epochId);
   if (existing && existing.epochHandleId !== normalised.epochHandleId) {

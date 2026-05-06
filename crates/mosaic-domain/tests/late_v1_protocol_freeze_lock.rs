@@ -16,7 +16,9 @@
 use mosaic_domain::{
     MANIFEST_SIGN_CONTEXT, MANIFEST_TRANSCRIPT_VERSION, METADATA_SIDECAR_CONTEXT,
     METADATA_SIDECAR_VERSION, MosaicDomainError, SHARD_ENVELOPE_HEADER_LEN, SHARD_ENVELOPE_MAGIC,
-    SHARD_ENVELOPE_VERSION, ShardEnvelopeHeader, ShardTier,
+    SHARD_ENVELOPE_VERSION, SHARD_ENVELOPE_VERSION_V04, STREAMING_SHARD_ENVELOPE_HEADER_LEN,
+    STREAMING_SHARD_FRAME_SIZE, STREAMING_SHARD_SALT_LEN, ShardEnvelopeHeader, ShardTier,
+    StreamingShardEnvelopeHeader,
 };
 
 const FREEZE_HINT: &str = "Late-v1 protocol freeze byte-format change — bump \
@@ -155,6 +157,77 @@ fn shard_envelope_reserved_bytes_are_zero_checked_on_decode() {
             ),
         }
     }
+}
+
+#[test]
+fn streaming_shard_envelope_v04_layout_is_frozen() {
+    let salt = [0xa5_u8; STREAMING_SHARD_SALT_LEN];
+    let header = match StreamingShardEnvelopeHeader::new(ShardTier::Original, salt, 3, 17) {
+        Ok(header) => header,
+        Err(error) => panic!("valid v04 header should construct: {error:?}"),
+    };
+    let bytes = header.to_bytes();
+
+    assert_eq!(STREAMING_SHARD_ENVELOPE_HEADER_LEN, 64, "{FREEZE_HINT}");
+    assert_eq!(bytes.len(), 64, "{FREEZE_HINT}");
+    assert_eq!(&bytes[0..4], b"SGzk", "{FREEZE_HINT}");
+    assert_eq!(bytes[4], SHARD_ENVELOPE_VERSION_V04, "{FREEZE_HINT}");
+    assert_eq!(bytes[5], ShardTier::Original.to_byte(), "{FREEZE_HINT}");
+    assert_eq!(&bytes[6..22], salt.as_slice(), "{FREEZE_HINT}");
+    assert_eq!(
+        &bytes[22..26],
+        3_u32.to_le_bytes().as_slice(),
+        "{FREEZE_HINT}"
+    );
+    assert_eq!(
+        &bytes[26..30],
+        17_u32.to_le_bytes().as_slice(),
+        "{FREEZE_HINT}"
+    );
+    assert!(bytes[30..64].iter().all(|byte| *byte == 0), "{FREEZE_HINT}");
+}
+
+#[test]
+fn streaming_shard_envelope_version_is_frozen_at_0x04() {
+    assert_eq!(SHARD_ENVELOPE_VERSION_V04, 0x04_u8, "{FREEZE_HINT}");
+}
+
+#[test]
+fn streaming_shard_stream_salt_is_frozen_at_16_bytes() {
+    assert_eq!(STREAMING_SHARD_SALT_LEN, 16_usize, "{FREEZE_HINT}");
+}
+
+#[test]
+fn streaming_shard_frame_size_is_frozen_at_64_kib() {
+    assert_eq!(STREAMING_SHARD_FRAME_SIZE, 64 * 1024, "{FREEZE_HINT}");
+}
+
+#[test]
+fn streaming_shard_reserved_bytes_are_zero_checked_on_decode() {
+    let salt = [0x55_u8; STREAMING_SHARD_SALT_LEN];
+    for offset in 30..STREAMING_SHARD_ENVELOPE_HEADER_LEN {
+        let mut bytes = match StreamingShardEnvelopeHeader::new(ShardTier::Preview, salt, 1, 1) {
+            Ok(header) => header,
+            Err(error) => panic!("valid v04 header should construct: {error:?}"),
+        }
+        .to_bytes();
+        bytes[offset] = 1;
+        assert_eq!(
+            StreamingShardEnvelopeHeader::parse(&bytes),
+            Err(MosaicDomainError::NonZeroReservedByte { offset }),
+            "{FREEZE_HINT}"
+        );
+    }
+}
+
+#[test]
+fn streaming_shard_final_frame_size_zero_is_rejected() {
+    let salt = [0x66_u8; STREAMING_SHARD_SALT_LEN];
+    assert_eq!(
+        StreamingShardEnvelopeHeader::new(ShardTier::Preview, salt, 1, 0),
+        Err(MosaicDomainError::InvalidHeaderLength { actual: 0 }),
+        "{FREEZE_HINT}"
+    );
 }
 
 #[test]

@@ -15,11 +15,13 @@ mosaic-client = { path = "../mosaic-client", version = "0.1.0" }
 mosaic-crypto = { path = "../mosaic-crypto", version = "0.1.0" }
 mosaic-domain = { path = "../mosaic-domain", version = "0.1.0" }
 mosaic-media = { path = "../mosaic-media", version = "0.1.0" }
+self_cell = "=1.2.2"
 uniffi = { version = "=0.31.1", default-features = false, features = ["scaffolding-ffi-buffer-fns"] }
 zeroize = "=1.8.2"
 
 [features]
 default = []
+cross-client-vectors = []
 # SECURITY: Propagates `mosaic-crypto/weak-kdf`. Test-only. Never enable in
 # production builds. See `mosaic-crypto/Cargo.toml`.
 weak-kdf = ["mosaic-crypto/weak-kdf", "mosaic-client/weak-kdf"]
@@ -30,6 +32,7 @@ weak-kdf = ["mosaic-crypto/weak-kdf", "mosaic-client/weak-kdf"]
 # non-default and only activated during test builds, so production builds
 # of `mosaic-client` remain free of `strum`.
 mosaic-client = { path = "../mosaic-client", version = "0.1.0", features = ["__variant-introspection"] }
+blake3 = "=1.8.2"
 strum = { version = "=0.28.0", default-features = false }
 
 [lints]

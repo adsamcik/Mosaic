@@ -1,6 +1,6 @@
 use mosaic_domain::{
     EncryptedMetadataEnvelope, MAX_SIDECAR_TOTAL_BYTES, ManifestShardRef, ManifestTranscript,
-    MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier,
+    MetadataSidecar, MetadataSidecarError, MetadataSidecarField, ShardTier, SidecarTagStatus,
     canonical_manifest_transcript_bytes, canonical_metadata_sidecar_bytes, metadata_field_tags,
 };
 
@@ -10,6 +10,8 @@ const ALBUM_ID: [u8; 16] = [
 const PHOTO_ID: [u8; 16] = [
     0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
 ];
+const FIXED_METADATA_SIDECAR_HEADER_BYTES: usize = 59;
+const TLV_RECORD_HEADER_BYTES: usize = 2 + 4;
 
 fn hex(bytes: &[u8]) -> String {
     let mut output = String::with_capacity(bytes.len() * 2);
@@ -57,7 +59,7 @@ fn metadata_sidecar_serializes_to_fixed_canonical_golden_bytes() {
     assert_eq!(bytes.len(), 97);
     assert_eq!(
         hex(&bytes),
-        "4d6f736169635f4d657461646174615f763101000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f04030201030000000100020000000600030008000000c00f0000d00b000004000a000000696d6167652f6a706567"
+        "4d6f736169635f4d657461646174615f763101000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f04030201030000000100020000000600020008000000c00f0000d00b000004000a000000696d6167652f6a706567"
     );
 }
 
@@ -254,17 +256,18 @@ fn encoder_rejects_sidecar_total_bytes_above_cap() {
         error,
         MetadataSidecarError::LengthTooLarge {
             field: "sidecar_total_bytes",
-            actual: 59 + 2 + 4 + MAX_SIDECAR_TOTAL_BYTES
+            actual: FIXED_METADATA_SIDECAR_HEADER_BYTES
+                + TLV_RECORD_HEADER_BYTES
+                + MAX_SIDECAR_TOTAL_BYTES
         }
     );
 }
 
 #[test]
 fn encoder_accepts_sidecar_at_exact_cap_boundary() {
-    let fixed_header_bytes = 59;
-    let tlv_record_header_bytes = 2 + 4;
     let largest_legal_value_len =
-        MAX_SIDECAR_TOTAL_BYTES - fixed_header_bytes - tlv_record_header_bytes;
+        MAX_SIDECAR_TOTAL_BYTES - FIXED_METADATA_SIDECAR_HEADER_BYTES - TLV_RECORD_HEADER_BYTES;
+    assert_eq!(largest_legal_value_len, 65_471);
     let boundary_value = vec![0x61; largest_legal_value_len];
     let fields = [MetadataSidecarField::new(
         metadata_field_tags::MIME_OVERRIDE,
@@ -283,10 +286,9 @@ fn encoder_accepts_sidecar_at_exact_cap_boundary() {
 
 #[test]
 fn encoder_rejects_sidecar_one_byte_over_cap() {
-    let fixed_header_bytes = 59;
-    let tlv_record_header_bytes = 2 + 4;
     let one_byte_too_large_value_len =
-        MAX_SIDECAR_TOTAL_BYTES - fixed_header_bytes - tlv_record_header_bytes + 1;
+        MAX_SIDECAR_TOTAL_BYTES - FIXED_METADATA_SIDECAR_HEADER_BYTES - TLV_RECORD_HEADER_BYTES + 1;
+    assert_eq!(one_byte_too_large_value_len, 65_472);
     let over_boundary_value = vec![0x61; one_byte_too_large_value_len];
     let fields = [MetadataSidecarField::new(
         metadata_field_tags::MIME_OVERRIDE,
@@ -305,6 +307,130 @@ fn encoder_rejects_sidecar_one_byte_over_cap() {
         MetadataSidecarError::LengthTooLarge {
             field: "sidecar_total_bytes",
             actual: MAX_SIDECAR_TOTAL_BYTES + 1
+        }
+    );
+}
+
+#[test]
+fn worst_case_active_tag_sidecar_fits_within_cap() {
+    let active_tags: Vec<_> = metadata_field_tags::KNOWN_FIELD_TAGS
+        .iter()
+        .filter(|entry| entry.status() == SidecarTagStatus::Active)
+        .map(|entry| entry.tag_number())
+        .collect();
+    assert_eq!(
+        active_tags,
+        vec![
+            metadata_field_tags::ORIENTATION,
+            metadata_field_tags::ORIGINAL_DIMENSIONS,
+            metadata_field_tags::DEVICE_TIMESTAMP_MS,
+            metadata_field_tags::MIME_OVERRIDE,
+            metadata_field_tags::CAMERA_MAKE,
+            metadata_field_tags::CAMERA_MODEL,
+            metadata_field_tags::SUBSECONDS_MS,
+            metadata_field_tags::GPS,
+            metadata_field_tags::CODEC_FOURCC,
+            metadata_field_tags::DURATION_MS,
+            metadata_field_tags::FRAME_RATE_X100,
+            metadata_field_tags::VIDEO_ORIENTATION,
+            metadata_field_tags::VIDEO_DIMENSIONS,
+            metadata_field_tags::VIDEO_CONTAINER_FORMAT,
+        ],
+        "new Active tags must re-evaluate MAX_SIDECAR_TOTAL_BYTES"
+    );
+
+    let orientation = 8_u16.to_le_bytes();
+    let dimensions = {
+        let mut bytes = [0_u8; 8];
+        bytes[..4].copy_from_slice(&u32::MAX.to_le_bytes());
+        bytes[4..].copy_from_slice(&u32::MAX.to_le_bytes());
+        bytes
+    };
+    let mime_override = b"image/jpeg";
+    let timestamp = u64::MAX.to_le_bytes();
+    let camera_make = [b'M'; 64];
+    let camera_model = [b'Z'; 64];
+    let subseconds = 999_u32.to_le_bytes();
+    let mut gps = [0_u8; 14];
+    gps[..4].copy_from_slice(&90_000_000_i32.to_le_bytes());
+    gps[4..8].copy_from_slice(&180_000_000_i32.to_le_bytes());
+    gps[8..12].copy_from_slice(&i32::MAX.to_le_bytes());
+    gps[12..14].copy_from_slice(&u16::MAX.to_le_bytes());
+    let codec = [u8::MAX];
+    let video_duration = u64::MAX.to_le_bytes();
+    let frame_rate = u32::MAX.to_le_bytes();
+    let video_orientation = [u8::MAX];
+    let mut video_dimensions = [0_u8; 8];
+    video_dimensions[..4].copy_from_slice(&u32::MAX.to_le_bytes());
+    video_dimensions[4..].copy_from_slice(&u32::MAX.to_le_bytes());
+    let video_container = [u8::MAX];
+    let fields = [
+        MetadataSidecarField::new(metadata_field_tags::ORIENTATION, &orientation),
+        MetadataSidecarField::new(metadata_field_tags::ORIGINAL_DIMENSIONS, &dimensions),
+        MetadataSidecarField::new(metadata_field_tags::DEVICE_TIMESTAMP_MS, &timestamp),
+        MetadataSidecarField::new(metadata_field_tags::MIME_OVERRIDE, mime_override),
+        MetadataSidecarField::new(metadata_field_tags::CAMERA_MAKE, &camera_make),
+        MetadataSidecarField::new(metadata_field_tags::CAMERA_MODEL, &camera_model),
+        MetadataSidecarField::new(metadata_field_tags::SUBSECONDS_MS, &subseconds),
+        MetadataSidecarField::new(metadata_field_tags::GPS, &gps),
+        MetadataSidecarField::new(metadata_field_tags::CODEC_FOURCC, &codec),
+        MetadataSidecarField::new(metadata_field_tags::DURATION_MS, &video_duration),
+        MetadataSidecarField::new(metadata_field_tags::FRAME_RATE_X100, &frame_rate),
+        MetadataSidecarField::new(metadata_field_tags::VIDEO_ORIENTATION, &video_orientation),
+        MetadataSidecarField::new(metadata_field_tags::VIDEO_DIMENSIONS, &video_dimensions),
+        MetadataSidecarField::new(
+            metadata_field_tags::VIDEO_CONTAINER_FORMAT,
+            &video_container,
+        ),
+    ];
+
+    let bytes = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
+        ALBUM_ID, PHOTO_ID, 1, &fields,
+    )) {
+        Ok(bytes) => bytes,
+        Err(error) => panic!("worst-case active-tag sidecar should serialize: {error:?}"),
+    };
+
+    let expected_len = FIXED_METADATA_SIDECAR_HEADER_BYTES
+        + (14 * TLV_RECORD_HEADER_BYTES)
+        + orientation.len()
+        + dimensions.len()
+        + timestamp.len()
+        + mime_override.len()
+        + camera_make.len()
+        + camera_model.len()
+        + subseconds.len()
+        + gps.len()
+        + codec.len()
+        + video_duration.len()
+        + frame_rate.len()
+        + video_orientation.len()
+        + video_dimensions.len()
+        + video_container.len();
+    assert_eq!(bytes.len(), expected_len);
+    assert_eq!(bytes.len(), 340);
+    assert!(bytes.len() < MAX_SIDECAR_TOTAL_BYTES);
+}
+
+#[test]
+fn encoder_rejects_out_of_range_gps_with_specific_error_code() {
+    let mut gps = [0_u8; 14];
+    gps[..4].copy_from_slice(&90_000_001_i32.to_le_bytes());
+    gps[4..8].copy_from_slice(&0_i32.to_le_bytes());
+    let fields = [MetadataSidecarField::new(metadata_field_tags::GPS, &gps)];
+
+    let error = match canonical_metadata_sidecar_bytes(&MetadataSidecar::new(
+        ALBUM_ID, PHOTO_ID, 1, &fields,
+    )) {
+        Ok(_) => panic!("out-of-range GPS latitude should fail"),
+        Err(error) => error,
+    };
+
+    assert_eq!(
+        error,
+        MetadataSidecarError::InvalidGpsValue {
+            latitude_e7: 90_000_001,
+            longitude_e7: 0,
         }
     );
 }

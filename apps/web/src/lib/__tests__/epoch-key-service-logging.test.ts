@@ -57,7 +57,7 @@ describe('Epoch Key Service - logging hygiene (L6)', () => {
 
     setEpochKey(albumId, {
       epochId: 7,
-      epochSeed: new Uint8Array(32).fill(1),
+      epochHandleId: 'epoch-handle-7' as never,
       signKeypair: { publicKey, secretKey },
     });
 

@@ -14,8 +14,16 @@
  * separated BLAKE2b hash of the username and is therefore not stored.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
+import initRustWasm, {
+  consumeMasterKeyHandleForAesGcm,
+  deriveMasterKeyFromPassword,
+  deriveSessionSaltFromUsername,
+  initSync,
+} from '../../generated/mosaic-wasm/mosaic_wasm.js';
 
 // ---------------------------------------------------------------------------
 // Mocks (registered before the SUT import)
@@ -104,6 +112,14 @@ import { getArgon2Params } from '@mosaic/crypto';
 
 const SALT_VERSION_V2 = 0x02;
 const LEGACY_PBKDF2_ITERATIONS = 100000;
+const SALT_ENCRYPTION_DOMAIN_V2 = 'mosaic-salt-encryption-v2|';
+const WASM_BYTES_PATH = resolve(
+  process.cwd(),
+  'src',
+  'generated',
+  'mosaic-wasm',
+  'mosaic_wasm_bg.wasm',
+);
 
 /**
  * Hand-craft a legacy v1 payload using PBKDF2-100k(username) + AES-GCM.
@@ -153,6 +169,11 @@ const TEST_SALT = new Uint8Array([
   0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
   0x1d, 0x1e, 0x1f,
 ]);
+
+beforeAll(async () => {
+  initSync({ module: readFileSync(WASM_BYTES_PATH) });
+  await initRustWasm();
+});
 
 beforeEach(() => {
   updateCurrentUserMock.mockReset();
@@ -309,38 +330,51 @@ describe('decryptSalt - legacy v1 → v2 migration', () => {
   });
 });
 
-describe('Argon2id KDF parameters', () => {
-  it('uses crypto_pwhash with ALG_ARGON2ID13 and getArgon2Params() limits', async () => {
+describe('Rust-core Argon2id KDF parameters', () => {
+  it('matches libsodium BLAKE2b salt and Argon2id master-key reference bytes', async () => {
     await sodium.ready;
-    const spy = vi.spyOn(sodium, 'crypto_pwhash');
-
-    await encryptSalt(TEST_SALT, TEST_PASSWORD, TEST_USERNAME);
-
-    expect(spy).toHaveBeenCalled();
-    const callArgs = spy.mock.calls[0];
-    // crypto_pwhash(outLen, password, salt, opslimit, memlimit, alg)
-    const [outLen, , saltArg, opslimit, memlimit, alg] = callArgs as unknown as [
-      number,
-      unknown,
-      Uint8Array,
-      number,
-      number,
-      number,
-    ];
-
-    expect(outLen).toBe(32);
-    expect(alg).toBe(sodium.crypto_pwhash_ALG_ARGON2ID13);
-
     const params = getArgon2Params();
-    expect(opslimit).toBe(params.iterations);
-    expect(memlimit).toBe(params.memory * 1024);
+    const encodedDomainUsername = new TextEncoder().encode(
+      SALT_ENCRYPTION_DOMAIN_V2 + TEST_USERNAME,
+    );
+    const sodiumSalt = sodium.crypto_generichash(16, encodedDomainUsername);
+    const rustSalt = deriveSessionSaltFromUsername(
+      SALT_ENCRYPTION_DOMAIN_V2,
+      TEST_USERNAME,
+    );
 
-    // The salt must be 16 bytes and domain-separated (i.e. NOT just the raw
-    // username bytes — that was the H2 finding). A trivial way to assert this
-    // is to verify the salt does not equal `TextEncoder().encode(username)`.
-    expect(saltArg).toBeInstanceOf(Uint8Array);
-    expect(saltArg.length).toBe(16);
-    const rawUsernameBytes = new TextEncoder().encode(TEST_USERNAME);
-    expect(saltArg).not.toEqual(rawUsernameBytes.slice(0, 16));
+    expect(rustSalt).toEqual(sodiumSalt);
+    expect(rustSalt.length).toBe(16);
+    expect(rustSalt).not.toEqual(new TextEncoder().encode(TEST_USERNAME).slice(0, 16));
+
+    const passwordBytesForRust = new TextEncoder().encode(TEST_PASSWORD);
+    const passwordBytesForSodium = new TextEncoder().encode(TEST_PASSWORD);
+    let rustMasterKey: Uint8Array | null = null;
+    let sodiumMasterKey: Uint8Array | null = null;
+    try {
+      const handle = deriveMasterKeyFromPassword(
+        passwordBytesForRust,
+        rustSalt,
+        params.iterations,
+        params.memory,
+      );
+      rustMasterKey = consumeMasterKeyHandleForAesGcm(handle);
+      sodiumMasterKey = sodium.crypto_pwhash(
+        32,
+        passwordBytesForSodium,
+        sodiumSalt,
+        params.iterations,
+        params.memory * 1024,
+        sodium.crypto_pwhash_ALG_ARGON2ID13,
+      );
+      expect(rustMasterKey).toEqual(sodiumMasterKey);
+    } finally {
+      sodium.memzero(passwordBytesForRust);
+      sodium.memzero(passwordBytesForSodium);
+      sodium.memzero(sodiumSalt);
+      sodium.memzero(rustSalt);
+      if (rustMasterKey) sodium.memzero(rustMasterKey);
+      if (sodiumMasterKey) sodium.memzero(sodiumMasterKey);
+    }
   });
 });

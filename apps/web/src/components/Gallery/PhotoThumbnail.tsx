@@ -3,14 +3,14 @@ import {
   getCachedPlaceholderDataURL,
   isValidPlaceholderHash,
 } from '../../lib/thumbhash-decoder';
-import type { PhotoMeta } from '../../workers/types';
+import type { EpochHandleId, PhotoMeta } from '../../workers/types';
 import { formatDuration } from '../../lib/video-frame-extractor';
 import { useThumbnailShard } from '../../hooks/useThumbnailShard';
 
 interface PhotoThumbnailProps {
   photo: PhotoMeta;
-  /** Epoch read key for decryption */
-  epochReadKey?: Uint8Array;
+  /** Epoch handle id for decryption */
+  epochReadKey?: EpochHandleId;
   /** Callback when thumbnail is clicked */
   onClick?: () => void;
   /** Whether this photo is selected (for bulk operations) */

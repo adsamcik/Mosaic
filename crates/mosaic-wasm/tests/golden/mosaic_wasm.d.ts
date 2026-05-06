@@ -128,9 +128,9 @@ export class CreateLinkShareHandleResult {
     readonly handle: bigint;
     readonly linkId: Uint8Array;
     /**
-     * URL fragment seed allowed by the link-share protocol; not a derived key.
+     * Bearer URL fragment token allowed by the link-share protocol.
      */
-    readonly linkSecretForUrl: Uint8Array;
+    readonly linkUrlToken: Uint8Array;
     readonly nonce: Uint8Array;
     readonly tier: number;
 }
@@ -387,6 +387,75 @@ export class IdentityHandleResult {
 }
 
 /**
+ * WASM-bindgen class for image inspection results.
+ */
+export class ImageInspectResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Camera make extracted from EXIF, or empty when absent.
+     */
+    readonly cameraMake: string;
+    /**
+     * Camera model extracted from EXIF, or empty when absent.
+     */
+    readonly cameraModel: string;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Device timestamp extracted from EXIF, valid when `hasDeviceTimestampMs` is true.
+     */
+    readonly deviceTimestampMs: bigint;
+    /**
+     * Compact encoded canonical metadata sidecar fields.
+     */
+    readonly encodedSidecarFields: Uint8Array;
+    /**
+     * Stable media format code derived from container bytes (JPEG=1, PNG=2, WebP=3, AVIF=4, HEIC=5).
+     */
+    readonly format: number;
+    readonly gpsAccuracyMeters: number;
+    readonly gpsAltitudeMeters: number;
+    readonly gpsLatMicrodegrees: number;
+    readonly gpsLonMicrodegrees: number;
+    /**
+     * Whether `deviceTimestampMs` carries an extracted EXIF timestamp.
+     */
+    readonly hasDeviceTimestampMs: boolean;
+    /**
+     * Whether GPS fields were extracted from EXIF.
+     */
+    readonly hasGps: boolean;
+    /**
+     * Whether `subsecondsMs` carries extracted EXIF subseconds.
+     */
+    readonly hasSubsecondsMs: boolean;
+    /**
+     * Display height after orientation normalization.
+     */
+    readonly height: number;
+    /**
+     * Trusted MIME type derived from container bytes.
+     */
+    readonly mimeType: string;
+    /**
+     * EXIF orientation value normalized by the Rust media parser.
+     */
+    readonly orientation: number;
+    /**
+     * EXIF subseconds in milliseconds, valid when `hasSubsecondsMs` is true.
+     */
+    readonly subsecondsMs: number;
+    /**
+     * Display width after orientation normalization.
+     */
+    readonly width: number;
+}
+
+/**
  * WASM-bindgen class for imported link-tier handle results.
  */
 export class LinkTierHandleResult {
@@ -406,6 +475,52 @@ export class LoadSnapshotResult {
     readonly code: number;
     readonly schemaVersionLoaded: number;
     readonly snapshotCbor: Uint8Array;
+}
+
+/**
+ * WASM-bindgen class for one canonical media tier.
+ */
+export class MediaTierDimensions {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Canonical max height for this tier.
+     */
+    readonly height: number;
+    /**
+     * Shard tier protocol byte.
+     */
+    readonly tier: number;
+    /**
+     * Canonical max width for this tier.
+     */
+    readonly width: number;
+}
+
+/**
+ * WASM-bindgen class for canonical media tier dimensions.
+ */
+export class MediaTierLayoutResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Canonical original tier dimensions.
+     */
+    readonly original: MediaTierDimensions;
+    /**
+     * Canonical preview tier dimensions.
+     */
+    readonly preview: MediaTierDimensions;
+    /**
+     * Canonical thumbnail tier dimensions.
+     */
+    readonly thumbnail: MediaTierDimensions;
 }
 
 /**
@@ -476,12 +591,115 @@ export class SerializeSnapshotResult {
     readonly code: number;
 }
 
+/**
+ * WASM-visible shard tiers pinned to the Mosaic envelope wire protocol.
+ */
+export enum ShardTier {
+    Thumbnail = 1,
+    Preview = 2,
+    Original = 3,
+}
+
+/**
+ * WASM-bindgen class for finalized streaming envelope results.
+ */
+export class StreamingEnvelopeResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Full v0x04 streaming envelope bytes: header followed by frames.
+     */
+    readonly bytes: Uint8Array;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Plaintext byte length of the final frame.
+     */
+    readonly finalFrameSize: number;
+    /**
+     * Declared frame count.
+     */
+    readonly frameCount: number;
+    /**
+     * Final v0x04 streaming envelope header bytes.
+     */
+    readonly header: Uint8Array;
+}
+
+/**
+ * WASM-bindgen class for streaming encrypted/decrypted frame results.
+ */
+export class StreamingFrameResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Serialized frame bytes.
+     */
+    readonly bytes: Uint8Array;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Zero-based frame index assigned by the streaming encryptor.
+     */
+    readonly frameIndex: number;
+}
+
 export class StreamingShardChunkResult {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
     readonly code: number;
     readonly plaintext: Uint8Array;
+}
+
+/**
+ * Stateful v0x04 streaming shard decryptor exposed to WASM.
+ */
+export class StreamingShardDecryptor {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Decrypts one serialized streaming frame.
+     */
+    decryptFrame(_frame: Uint8Array): any;
+    /**
+     * Returns a `BytesResult` whose `bytes` field is always empty by contract.
+     * Future callers should ignore `bytes` and check only `code`. Reason: the
+     * finalize step performs final-frame AAD verification only — there is no
+     * payload data to return. UniFFI mirror returns `Result<(), MosaicError>` honestly;
+     * WASM uses `BytesResult` for cross-API uniformity.
+     */
+    finalize(): any;
+    /**
+     * Initializes a streaming decryptor from a v0x04 envelope header.
+     */
+    constructor(_epoch_handle_id: bigint, _envelope_header: Uint8Array);
+}
+
+/**
+ * Stateful v0x04 streaming shard encryptor exposed to WASM.
+ */
+export class StreamingShardEncryptor {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Encrypts one plaintext frame.
+     */
+    encryptFrame(_plaintext: Uint8Array): any;
+    /**
+     * Finalizes the stream and returns the v0x04 envelope.
+     */
+    finalize(): any;
+    /**
+     * Initializes a streaming encryptor for an existing epoch handle.
+     */
+    constructor(_epoch_handle_id: bigint, _tier: number, _expected_frame_count?: number | null);
 }
 
 export class StreamingShardOpenResult {
@@ -509,7 +727,7 @@ export class StripResult {
      */
     readonly removedMetadataCount: number;
     /**
-     * Image bytes after metadata stripping.
+     * Image or video bytes after metadata stripping.
      */
     readonly strippedBytes: Uint8Array;
 }
@@ -533,6 +751,47 @@ export class VerifySnapshotResult {
     [Symbol.dispose](): void;
     readonly code: number;
     readonly valid: boolean;
+}
+
+/**
+ * WASM-bindgen class for video inspection results.
+ */
+export class VideoInspectResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Trusted video container label derived from bytes.
+     */
+    readonly container: string;
+    /**
+     * Video duration in milliseconds.
+     */
+    readonly durationMs: bigint;
+    /**
+     * Video frame rate in frames per second, or NaN when unavailable.
+     */
+    readonly frameRateFps: number;
+    /**
+     * Video track height in pixels.
+     */
+    readonly heightPx: number;
+    /**
+     * Rotation label, or empty string when unavailable.
+     */
+    readonly orientation: string;
+    /**
+     * Trusted codec label, or empty string when unavailable.
+     */
+    readonly videoCodec: string;
+    /**
+     * Video track width in pixels.
+     */
+    readonly widthPx: number;
 }
 
 /**
@@ -583,9 +842,26 @@ export function advanceUploadJob(job_id: string, album_id: string, idempotency_k
 export function buildAuthChallengeTranscript(username: string, timestamp_ms: bigint, timestamp_ms_present: boolean, challenge: Uint8Array): BytesResult;
 
 /**
+ * Builds the canonical v1 share-link URL in Rust so web callers do not
+ * duplicate route assembly logic. The fragment token is a bearer token by
+ * design and remains after `#k=` so it is never sent to the server.
+ */
+export function buildShareLinkUrl(base_url: string, album_id: string, link_id: string, link_url_token: string): string;
+
+/**
  * Builds canonical metadata sidecar bytes through WASM.
  */
 export function canonicalMetadataSidecarBytes(album_id: Uint8Array, photo_id: Uint8Array, epoch_id: number, encoded_fields: Uint8Array): BytesResult;
+
+/**
+ * Returns the canonical media tier dimensions through WASM.
+ */
+export function canonicalTierLayout(): MediaTierLayoutResult;
+
+/**
+ * Builds canonical video metadata sidecar bytes through WASM.
+ */
+export function canonicalVideoSidecarBytes(album_id: Uint8Array, photo_id: Uint8Array, epoch_id: number, input_bytes: Uint8Array): BytesResult;
 
 /**
  * Returns the client-core state machine surface through WASM.
@@ -616,6 +892,17 @@ export function closeLinkShareHandle(handle: bigint): number;
  * Closes a link-tier handle through WASM.
  */
 export function closeLinkTierHandle(handle: bigint): number;
+
+/**
+ * Consumes a session L0 handle and returns one short-lived AES-GCM import buffer.
+ *
+ * WebCrypto cannot import a Rust-owned handle directly, so the web boundary
+ * immediately imports these 32 bytes with `extractable = false` and zeroizes
+ * the returned `Uint8Array`. The Rust handle is removed and the registry copy
+ * is zeroized before this function returns, limiting raw L0 exposure to the
+ * WebCrypto import handoff.
+ */
+export function consumeMasterKeyHandleForAesGcm(handle: bigint): Uint8Array;
 
 /**
  * Creates a fresh account-key handle through the generated WASM binding
@@ -650,6 +937,11 @@ export function cryptoDomainGoldenVectorSnapshot(): CryptoDomainGoldenVectorSnap
 export function decryptAlbumContent(epoch_handle: bigint, nonce: Uint8Array, ciphertext: Uint8Array): DecryptedContentResult;
 
 /**
+ * Decrypts a v0x03/v0x04 envelope using the epoch-handle dispatcher surface.
+ */
+export function decryptEnvelope(epoch_handle_id: bigint, envelope: Uint8Array): any;
+
+/**
  * Decrypts shard envelope bytes with an epoch-key handle through WASM.
  */
 export function decryptShardWithEpochHandle(handle: bigint, envelope_bytes: Uint8Array): DecryptedShardResult;
@@ -670,6 +962,13 @@ export function decryptShardWithLinkTierHandle(link_tier_handle: bigint, envelop
 export function decryptShardWithSeedV1(envelope: Uint8Array, key: Uint8Array): DecryptShardResult;
 
 /**
+ * Decrypts shard envelope bytes with an epoch-key handle through WASM.
+ *
+ * The shard tier is read from the envelope header by the client core.
+ */
+export function decryptShardWithTier(handle: bigint, envelope_bytes: Uint8Array): BytesResult;
+
+/**
  * Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
  */
 export function deriveAuthKeypairFromAccount(account_handle: bigint): AuthKeypairResult;
@@ -682,6 +981,16 @@ export function deriveAuthKeypairFromAccount(account_handle: bigint): AuthKeypai
  * key crosses the WASM boundary.
  */
 export function deriveAuthKeypairFromPassword(password: Uint8Array, user_salt: Uint8Array, kdf_memory_kib: number, kdf_iterations: number, kdf_parallelism: number): AuthKeypairResult;
+
+/**
+ * Derives the session L0 master key and stores it behind an opaque handle.
+ */
+export function deriveMasterKeyFromPassword(password: Uint8Array, salt: Uint8Array, ops_limit: number, mem_limit_kib: number): bigint;
+
+/**
+ * Derives the 16-byte deterministic session Argon2id salt.
+ */
+export function deriveSessionSaltFromUsername(domain: string, username: string): Uint8Array;
 
 /**
  * Applies a download state-machine event through WASM.
@@ -729,9 +1038,19 @@ export function encryptMetadataSidecarWithEpochHandle(handle: bigint, album_id: 
 export function encryptShardWithEpochHandle(handle: bigint, plaintext: Uint8Array, shard_index: number, tier_byte: number): EncryptedShardResult;
 
 /**
+ * Encrypts shard bytes with an epoch-key handle and typed shard tier through WASM.
+ */
+export function encryptShardWithTier(handle: bigint, plaintext: Uint8Array, shard_index: number, tier: ShardTier): EncryptedShardResult;
+
+/**
  * Returns epoch-key handle status through WASM.
  */
 export function epochKeyHandleIsOpen(handle: bigint): EpochKeyHandleStatusResult;
+
+/**
+ * Returns the ADR-022 canonical manifest-finalize idempotency key through WASM.
+ */
+export function finalizeIdempotencyKey(job_id: string): string;
 
 /**
  * Returns the LocalAuth Ed25519 public key for an account-key handle through WASM.
@@ -757,12 +1076,12 @@ export function identitySigningPubkey(handle: bigint): BytesResult;
 /**
  * Imports a URL fragment seed into a share-link handle through WASM.
  */
-export function importLinkShareHandle(link_secret_for_url: Uint8Array): LinkTierHandleResult;
+export function importLinkShareHandle(link_url_token: Uint8Array): LinkTierHandleResult;
 
 /**
  * Imports a wrapped tier key into a link-tier handle through WASM.
  */
-export function importLinkTierHandle(link_secret_for_url: Uint8Array, nonce: Uint8Array, encrypted_key: Uint8Array, album_id: string, tier_byte: number): LinkTierHandleResult;
+export function importLinkTierHandle(link_url_token: Uint8Array, nonce: Uint8Array, encrypted_key: Uint8Array, album_id: string, tier_byte: number): LinkTierHandleResult;
 
 /**
  * Initializes an album sync coordinator through a primitive WASM proof surface.
@@ -773,6 +1092,34 @@ export function initAlbumSync(album_id: string, request_id: string, start_cursor
  * Initializes a client-core upload job through a primitive WASM proof surface.
  */
 export function initUploadJob(job_id: string, album_id: string, asset_id: string, idempotency_key: string, max_retry_count: number): string;
+
+/**
+ * Inspects image container metadata through the shared Rust media parser.
+ */
+export function inspectImage(input_bytes: Uint8Array): ImageInspectResult;
+
+/**
+ * Inspects video container metadata through the shared Rust media parser.
+ */
+export function inspectVideoContainer(input_bytes: Uint8Array): VideoInspectResult;
+
+/**
+ * Lists all protocol-supported shard tiers in ascending wire-byte order.
+ */
+export function listShardTiers(): any[];
+
+/**
+ * Builds canonical manifest transcript bytes through WASM.
+ *
+ * `encoded_shards` is a repeated sequence of
+ * `chunk_index:u32le | tier:u8 | shard_id:16 bytes | sha256:32 bytes`.
+ */
+export function manifestTranscriptBytes(album_id: Uint8Array, epoch_id: number, encrypted_meta: Uint8Array, encoded_shards: Uint8Array): BytesResult;
+
+/**
+ * Mints a link-tier handle from a raw 32-byte tier key through WASM.
+ */
+export function mintLinkTierHandleFromRawKey(raw_key: Uint8Array): LinkTierHandleResult;
 
 /**
  * Opens an epoch-key handle through WASM.
@@ -804,6 +1151,16 @@ export function progressProbe(total_steps: number, cancel_after: bigint): Progre
 export function sealBundleWithEpochHandle(identity_handle: bigint, epoch_handle: bigint, recipient_pubkey: Uint8Array, album_id: string): SealedBundleResult;
 
 /**
+ * Returns the protocol byte pinned for a WASM shard tier.
+ */
+export function shardTierByte(tier: ShardTier): number;
+
+/**
+ * Parses a protocol byte into a typed WASM shard tier.
+ */
+export function shardTierFromByte(byte: number): ShardTier;
+
+/**
  * Signs a LocalAuth challenge transcript with an account-key handle through WASM.
  */
 export function signAuthChallengeWithAccount(account_handle: bigint, challenge_bytes: Uint8Array): BytesResult;
@@ -830,6 +1187,16 @@ export function streamingShardCloseV1(handle_id: number): number;
 export function streamingShardProcessChunkV1(handle_id: number, chunk: Uint8Array, is_final: boolean): StreamingShardChunkResult;
 
 /**
+ * Strips AVIF metadata through the shared Rust media parser.
+ */
+export function stripAvifMetadata(input_bytes: Uint8Array): StripResult;
+
+/**
+ * Strips HEIC/HEIF metadata through the shared Rust media parser.
+ */
+export function stripHeicMetadata(input_bytes: Uint8Array): StripResult;
+
+/**
  * Strips JPEG metadata through the shared Rust media parser.
  */
 export function stripJpegMetadata(input_bytes: Uint8Array): StripResult;
@@ -838,6 +1205,11 @@ export function stripJpegMetadata(input_bytes: Uint8Array): StripResult;
  * Strips PNG metadata through the shared Rust media parser.
  */
 export function stripPngMetadata(input_bytes: Uint8Array): StripResult;
+
+/**
+ * Strips video container metadata through the shared Rust media parser.
+ */
+export function stripVideoMetadata(input_bytes: Uint8Array): StripResult;
 
 /**
  * Strips WebP metadata through the shared Rust media parser.
@@ -872,6 +1244,11 @@ export function verifyManifestWithEpoch(transcript_bytes: Uint8Array, signature:
 export function verifyManifestWithIdentity(transcript_bytes: Uint8Array, signature: Uint8Array, public_key: Uint8Array): number;
 
 /**
+ * Verifies shard ciphertext SHA-256 through WASM.
+ */
+export function verifyShardIntegritySha256(envelope_bytes: Uint8Array, expected_sha256: Uint8Array): boolean;
+
+/**
  * Stateless shard integrity verification through WASM.
  */
 export function verifyShardIntegrityV1(envelope: Uint8Array, expected_hash: Uint8Array): VerifyShardResult;
@@ -902,13 +1279,19 @@ export interface InitOutput {
     readonly __wbg_epochkeyhandleresult_free: (a: number, b: number) => void;
     readonly __wbg_headerresult_free: (a: number, b: number) => void;
     readonly __wbg_identityhandleresult_free: (a: number, b: number) => void;
+    readonly __wbg_imageinspectresult_free: (a: number, b: number) => void;
     readonly __wbg_loadsnapshotresult_free: (a: number, b: number) => void;
+    readonly __wbg_mediatierdimensions_free: (a: number, b: number) => void;
+    readonly __wbg_mediatierlayoutresult_free: (a: number, b: number) => void;
     readonly __wbg_progressevent_free: (a: number, b: number) => void;
     readonly __wbg_progressresult_free: (a: number, b: number) => void;
     readonly __wbg_sealedbundleresult_free: (a: number, b: number) => void;
-    readonly __wbg_streamingshardopenresult_free: (a: number, b: number) => void;
+    readonly __wbg_streamingenveloperesult_free: (a: number, b: number) => void;
+    readonly __wbg_streamingsharddecryptor_free: (a: number, b: number) => void;
+    readonly __wbg_streamingshardencryptor_free: (a: number, b: number) => void;
     readonly __wbg_verifyshardresult_free: (a: number, b: number) => void;
     readonly __wbg_verifysnapshotresult_free: (a: number, b: number) => void;
+    readonly __wbg_videoinspectresult_free: (a: number, b: number) => void;
     readonly accountKeyHandleIsOpen: (a: bigint) => number;
     readonly accountkeyhandlestatusresult_code: (a: number) => number;
     readonly accountkeyhandlestatusresult_isOpen: (a: number) => number;
@@ -920,16 +1303,20 @@ export interface InitOutput {
     readonly applyeventresult_newStateCbor: (a: number, b: number) => void;
     readonly authkeypairresult_code: (a: number) => number;
     readonly buildAuthChallengeTranscript: (a: number, b: number, c: bigint, d: number, e: number, f: number) => number;
+    readonly buildShareLinkUrl: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
     readonly buildplanresult_code: (a: number) => number;
     readonly buildplanresult_errorDetail: (a: number, b: number) => void;
     readonly buildplanresult_planCbor: (a: number, b: number) => void;
     readonly canonicalMetadataSidecarBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly canonicalTierLayout: () => number;
+    readonly canonicalVideoSidecarBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly clientCoreStateMachineSnapshot: (a: number) => void;
     readonly closeAccountKeyHandle: (a: bigint) => number;
     readonly closeEpochKeyHandle: (a: bigint) => number;
     readonly closeIdentityHandle: (a: bigint) => number;
     readonly closeLinkShareHandle: (a: bigint) => number;
     readonly closeLinkTierHandle: (a: bigint) => number;
+    readonly consumeMasterKeyHandleForAesGcm: (a: number, b: bigint) => void;
     readonly createAccount: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly createEpochKeyHandle: (a: bigint, b: number) => number;
     readonly createIdentityHandle: (a: bigint) => number;
@@ -941,7 +1328,7 @@ export interface InitOutput {
     readonly createlinksharehandleresult_encryptedKey: (a: number, b: number) => void;
     readonly createlinksharehandleresult_handle: (a: number) => bigint;
     readonly createlinksharehandleresult_linkId: (a: number, b: number) => void;
-    readonly createlinksharehandleresult_linkSecretForUrl: (a: number, b: number) => void;
+    readonly createlinksharehandleresult_linkUrlToken: (a: number, b: number) => void;
     readonly createlinksharehandleresult_nonce: (a: number, b: number) => void;
     readonly createlinksharehandleresult_tier: (a: number) => number;
     readonly cryptoDomainGoldenVectorSnapshot: () => number;
@@ -957,14 +1344,18 @@ export interface InitOutput {
     readonly cryptodomaingoldenvectorsnapshot_identitySigningPubkey: (a: number, b: number) => void;
     readonly cryptodomaingoldenvectorsnapshot_manifestTranscript: (a: number, b: number) => void;
     readonly decryptAlbumContent: (a: bigint, b: number, c: number, d: number, e: number) => number;
+    readonly decryptEnvelope: (a: bigint, b: number, c: number) => number;
     readonly decryptShardWithEpochHandle: (a: bigint, b: number, c: number) => number;
     readonly decryptShardWithLegacyRawKeyHandle: (a: bigint, b: number, c: number) => number;
     readonly decryptShardWithLinkTierHandle: (a: bigint, b: number, c: number) => number;
     readonly decryptShardWithSeedV1: (a: number, b: number, c: number, d: number) => number;
+    readonly decryptShardWithTier: (a: bigint, b: number, c: number) => number;
     readonly decryptshardresult_code: (a: number) => number;
     readonly decryptshardresult_plaintext: (a: number, b: number) => void;
     readonly deriveAuthKeypairFromAccount: (a: bigint) => number;
     readonly deriveAuthKeypairFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly deriveMasterKeyFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly deriveSessionSaltFromUsername: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly downloadApplyEventV1: (a: number, b: number, c: number, d: number) => number;
     readonly downloadBuildPlanV1: (a: number, b: number) => number;
     readonly downloadCommitSnapshotV1: (a: number, b: number) => number;
@@ -974,6 +1365,7 @@ export interface InitOutput {
     readonly encryptAlbumContent: (a: bigint, b: number, c: number) => number;
     readonly encryptMetadataSidecarWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly encryptShardWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number) => number;
+    readonly encryptShardWithTier: (a: bigint, b: number, c: number, d: number, e: number) => number;
     readonly encryptedcontentresult_ciphertext: (a: number, b: number) => void;
     readonly encryptedcontentresult_code: (a: number) => number;
     readonly epochKeyHandleIsOpen: (a: bigint) => number;
@@ -982,6 +1374,7 @@ export interface InitOutput {
     readonly epochkeyhandleresult_handle: (a: number) => bigint;
     readonly epochkeyhandleresult_signPublicKey: (a: number, b: number) => void;
     readonly epochkeyhandleresult_wrappedEpochSeed: (a: number, b: number) => void;
+    readonly finalizeIdempotencyKey: (a: number, b: number, c: number) => void;
     readonly getAuthPublicKeyFromAccount: (a: bigint) => number;
     readonly getAuthPublicKeyFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly headerresult_code: (a: number) => number;
@@ -996,14 +1389,44 @@ export interface InitOutput {
     readonly identityhandleresult_handle: (a: number) => bigint;
     readonly identityhandleresult_signingPubkey: (a: number, b: number) => void;
     readonly identityhandleresult_wrappedSeed: (a: number, b: number) => void;
+    readonly imageinspectresult_cameraMake: (a: number, b: number) => void;
+    readonly imageinspectresult_cameraModel: (a: number, b: number) => void;
+    readonly imageinspectresult_code: (a: number) => number;
+    readonly imageinspectresult_deviceTimestampMs: (a: number) => bigint;
+    readonly imageinspectresult_encodedSidecarFields: (a: number, b: number) => void;
+    readonly imageinspectresult_format: (a: number) => number;
+    readonly imageinspectresult_gpsAccuracyMeters: (a: number) => number;
+    readonly imageinspectresult_gpsAltitudeMeters: (a: number) => number;
+    readonly imageinspectresult_gpsLatMicrodegrees: (a: number) => number;
+    readonly imageinspectresult_gpsLonMicrodegrees: (a: number) => number;
+    readonly imageinspectresult_hasDeviceTimestampMs: (a: number) => number;
+    readonly imageinspectresult_hasGps: (a: number) => number;
+    readonly imageinspectresult_hasSubsecondsMs: (a: number) => number;
+    readonly imageinspectresult_height: (a: number) => number;
+    readonly imageinspectresult_mimeType: (a: number, b: number) => void;
+    readonly imageinspectresult_orientation: (a: number) => number;
+    readonly imageinspectresult_subsecondsMs: (a: number) => number;
+    readonly imageinspectresult_width: (a: number) => number;
     readonly importLinkShareHandle: (a: number, b: number) => number;
     readonly importLinkTierHandle: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly initAlbumSync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: number) => void;
     readonly initUploadJob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
+    readonly inspectImage: (a: number, b: number) => number;
+    readonly inspectVideoContainer: (a: number, b: number) => number;
     readonly linktierhandleresult_tier: (a: number) => number;
+    readonly listShardTiers: (a: number) => void;
     readonly loadsnapshotresult_code: (a: number) => number;
     readonly loadsnapshotresult_schemaVersionLoaded: (a: number) => number;
     readonly loadsnapshotresult_snapshotCbor: (a: number, b: number) => void;
+    readonly manifestTranscriptBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly mediatierdimensions_height: (a: number) => number;
+    readonly mediatierdimensions_tier: (a: number) => number;
+    readonly mediatierdimensions_width: (a: number) => number;
+    readonly mediatierlayoutresult_code: (a: number) => number;
+    readonly mediatierlayoutresult_original: (a: number) => number;
+    readonly mediatierlayoutresult_preview: (a: number) => number;
+    readonly mediatierlayoutresult_thumbnail: (a: number) => number;
+    readonly mintLinkTierHandleFromRawKey: (a: number, b: number) => number;
     readonly openEpochKeyHandle: (a: number, b: number, c: bigint, d: number) => number;
     readonly openIdentityHandle: (a: number, b: number, c: bigint) => number;
     readonly openStreamingShardV1: (a: number, b: number, c: number, d: number) => number;
@@ -1018,70 +1441,100 @@ export interface InitOutput {
     readonly sealedbundleresult_sealed: (a: number, b: number) => void;
     readonly sealedbundleresult_sharerPubkey: (a: number, b: number) => void;
     readonly sealedbundleresult_signature: (a: number, b: number) => void;
+    readonly shardTierByte: (a: number) => number;
+    readonly shardTierFromByte: (a: number, b: number) => void;
     readonly signAuthChallengeWithAccount: (a: bigint, b: number, c: number) => number;
     readonly signAuthChallengeWithPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly signManifestWithEpochHandle: (a: bigint, b: number, c: number) => number;
     readonly signManifestWithIdentity: (a: bigint, b: number, c: number) => number;
     readonly streamingShardCloseV1: (a: number) => number;
     readonly streamingShardProcessChunkV1: (a: number, b: number, c: number, d: number) => number;
+    readonly streamingenveloperesult_bytes: (a: number, b: number) => void;
+    readonly streamingenveloperesult_code: (a: number) => number;
+    readonly streamingenveloperesult_finalFrameSize: (a: number) => number;
+    readonly streamingenveloperesult_frameCount: (a: number) => number;
+    readonly streamingenveloperesult_header: (a: number, b: number) => void;
+    readonly streamingframeresult_code: (a: number) => number;
+    readonly streamingsharddecryptor_decryptFrame: (a: number, b: number, c: number) => number;
+    readonly streamingsharddecryptor_finalize: (a: number) => number;
+    readonly streamingsharddecryptor_new: (a: bigint, b: number, c: number) => number;
+    readonly streamingshardencryptor_encryptFrame: (a: number, b: number, c: number) => number;
+    readonly streamingshardencryptor_finalize: (a: number) => number;
+    readonly streamingshardencryptor_new: (a: bigint, b: number, c: number) => number;
     readonly streamingshardopenresult_chunkSizeBytes: (a: number) => number;
-    readonly streamingshardopenresult_code: (a: number) => number;
-    readonly streamingshardopenresult_handleId: (a: number) => number;
+    readonly stripAvifMetadata: (a: number, b: number) => number;
+    readonly stripHeicMetadata: (a: number, b: number) => number;
     readonly stripJpegMetadata: (a: number, b: number) => number;
     readonly stripPngMetadata: (a: number, b: number) => number;
+    readonly stripVideoMetadata: (a: number, b: number) => number;
     readonly stripWebpMetadata: (a: number, b: number) => number;
-    readonly stripresult_code: (a: number) => number;
     readonly unlockAccountKey: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly unwrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly verifyAndImportEpochBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly verifyManifestWithEpoch: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly verifyManifestWithIdentity: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly verifyShardIntegritySha256: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly verifyShardIntegrityV1: (a: number, b: number, c: number, d: number) => number;
     readonly verifyshardresult_code: (a: number) => number;
     readonly verifysnapshotresult_valid: (a: number) => number;
+    readonly videoinspectresult_code: (a: number) => number;
+    readonly videoinspectresult_container: (a: number, b: number) => void;
+    readonly videoinspectresult_durationMs: (a: number) => bigint;
+    readonly videoinspectresult_frameRateFps: (a: number) => number;
+    readonly videoinspectresult_heightPx: (a: number) => number;
+    readonly videoinspectresult_orientation: (a: number, b: number) => void;
+    readonly videoinspectresult_videoCodec: (a: number, b: number) => void;
+    readonly videoinspectresult_widthPx: (a: number) => number;
     readonly wrapLinkTierHandle: (a: bigint, b: bigint, c: number) => number;
     readonly wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly wrappedtierkeyresult_tier: (a: number) => number;
     readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
     readonly __wbg_epochkeyhandlestatusresult_free: (a: number, b: number) => void;
+    readonly __wbg_streamingshardopenresult_free: (a: number, b: number) => void;
     readonly __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
     readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_encryptedcontentresult_free: (a: number, b: number) => void;
     readonly __wbg_serializesnapshotresult_free: (a: number, b: number) => void;
-    readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
+    readonly __wbg_stripresult_free: (a: number, b: number) => void;
+    readonly __wbg_streamingshardchunkresult_free: (a: number, b: number) => void;
+    readonly __wbg_streamingframeresult_free: (a: number, b: number) => void;
     readonly __wbg_bytesresult_free: (a: number, b: number) => void;
+    readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
     readonly __wbg_authkeypairresult_free: (a: number, b: number) => void;
-    readonly __wbg_streamingshardchunkresult_free: (a: number, b: number) => void;
-    readonly __wbg_stripresult_free: (a: number, b: number) => void;
     readonly __wbg_commitsnapshotresult_free: (a: number, b: number) => void;
     readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
     readonly epochkeyhandlestatusresult_code: (a: number) => number;
+    readonly streamingshardopenresult_code: (a: number) => number;
+    readonly streamingshardopenresult_handleId: (a: number) => number;
     readonly verifysnapshotresult_code: (a: number) => number;
     readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
+    readonly wrappedtierkeyresult_code: (a: number) => number;
     readonly encryptedshardresult_sha256: (a: number, b: number) => void;
     readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
-    readonly wrappedtierkeyresult_code: (a: number) => number;
+    readonly encryptedshardresult_code: (a: number) => number;
     readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
     readonly encryptedcontentresult_nonce: (a: number, b: number) => void;
-    readonly encryptedshardresult_code: (a: number) => number;
-    readonly serializesnapshotresult_checksum: (a: number, b: number) => void;
     readonly serializesnapshotresult_body: (a: number, b: number) => void;
     readonly serializesnapshotresult_code: (a: number) => number;
-    readonly bytesresult_code: (a: number) => number;
-    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
-    readonly bytesresult_bytes: (a: number, b: number) => void;
-    readonly decryptedcontentresult_code: (a: number) => number;
-    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
-    readonly linktierhandleresult_code: (a: number) => number;
-    readonly linktierhandleresult_handle: (a: number) => bigint;
-    readonly linktierhandleresult_linkId: (a: number, b: number) => void;
-    readonly decryptedshardresult_code: (a: number) => number;
-    readonly authkeypairresult_authPublicKey: (a: number, b: number) => void;
-    readonly streamingshardchunkresult_code: (a: number) => number;
-    readonly streamingshardchunkresult_plaintext: (a: number, b: number) => void;
+    readonly serializesnapshotresult_checksum: (a: number, b: number) => void;
+    readonly stripresult_code: (a: number) => number;
     readonly stripresult_removedMetadataCount: (a: number) => number;
     readonly stripresult_strippedBytes: (a: number, b: number) => void;
+    readonly streamingshardchunkresult_code: (a: number) => number;
+    readonly streamingshardchunkresult_plaintext: (a: number, b: number) => void;
+    readonly streamingframeresult_frameIndex: (a: number) => number;
+    readonly streamingframeresult_bytes: (a: number, b: number) => void;
+    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
+    readonly decryptedshardresult_code: (a: number) => number;
+    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
+    readonly bytesresult_code: (a: number) => number;
+    readonly decryptedcontentresult_code: (a: number) => number;
+    readonly bytesresult_bytes: (a: number, b: number) => void;
+    readonly authkeypairresult_authPublicKey: (a: number, b: number) => void;
+    readonly linktierhandleresult_linkId: (a: number, b: number) => void;
+    readonly linktierhandleresult_handle: (a: number) => bigint;
+    readonly linktierhandleresult_code: (a: number) => number;
     readonly commitsnapshotresult_code: (a: number) => number;
     readonly commitsnapshotresult_checksum: (a: number, b: number) => void;
     readonly __wbindgen_export: (a: number) => void;

@@ -9,4 +9,9 @@
   <string name="auto_import_notification_channel_name">Mosaic auto-import</string>
   <string name="auto_import_notification_title">Mosaic auto-import</string>
   <string name="auto_import_notification_text">Encrypting and uploading queued items.</string>
+  <string name="upload_notification_channel_name">Mosaic uploads</string>
+  <string name="upload_notification_channel_description">Upload progress and cancellation controls.</string>
+  <string name="upload_in_progress">Mosaic upload in progress</string>
+  <string name="upload_n_of_m">%1$d of %2$d shards uploaded</string>
+  <string name="cancel">Cancel</string>
 </resources>

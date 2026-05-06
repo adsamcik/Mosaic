@@ -23,7 +23,7 @@ import {
 import { isVideoMimeType } from '../../lib/image-decoder';
 import { createLogger } from '../../lib/logger';
 import { rotatePhoto, updatePhotoDescription } from '../../lib/photo-edit-service';
-import type { PhotoMeta } from '../../workers/types';
+import type { EpochHandleId, PhotoMeta } from '../../workers/types';
 
 const log = createLogger('PhotoLightbox');
 
@@ -31,8 +31,8 @@ const log = createLogger('PhotoLightbox');
 export interface PhotoLightboxProps {
   /** The photo to display */
   photo: PhotoMeta;
-  /** Epoch read key for decryption */
-  epochReadKey: Uint8Array;
+  /** Epoch handle id for decryption */
+  epochReadKey: EpochHandleId;
   /** Callback to close the lightbox */
   onClose: () => void;
   /** Callback to navigate to next photo */

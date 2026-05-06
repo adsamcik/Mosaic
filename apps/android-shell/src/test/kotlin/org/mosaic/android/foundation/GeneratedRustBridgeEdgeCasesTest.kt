@@ -364,9 +364,9 @@ private fun rustIdentityHandleFfiResultEquality() {
 }
 
 private fun rustEpochHandleFfiResultEquality() {
-  val a = RustEpochHandleFfiResult(0, 1, 5, ByteArray(8))
-  val b = RustEpochHandleFfiResult(0, 1, 5, ByteArray(8))
-  val c = RustEpochHandleFfiResult(0, 1, 6, ByteArray(8))
+  val a = RustEpochHandleFfiResult(0, 1, 5, ByteArray(8), ByteArray(32))
+  val b = RustEpochHandleFfiResult(0, 1, 5, ByteArray(8), ByteArray(32))
+  val c = RustEpochHandleFfiResult(0, 1, 6, ByteArray(8), ByteArray(32))
   edgeAssertTrue(a == b)
   edgeAssertTrue(a.hashCode() == b.hashCode())
   edgeAssertTrue(a != c)
@@ -413,7 +413,7 @@ private fun identityBridgeMapsUnknownCodes() {
 
 private fun epochBridgeMapsUnknownCodes() {
   val api = SimpleEpochApi(
-    create = RustEpochHandleFfiResult(99, 0, 0, ByteArray(0)),
+    create = RustEpochHandleFfiResult(99, 0, 0, ByteArray(0), ByteArray(0)),
   )
   val result = GeneratedRustEpochBridge(api).createEpoch(AccountKeyHandle(7), 1)
   edgeAssertTrue(result.code == EpochCreateCode.INTERNAL_ERROR)

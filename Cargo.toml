@@ -5,6 +5,7 @@ members = [
   "crates/mosaic-crypto",
   "crates/mosaic-client",
   "crates/mosaic-media",
+  "crates/mosaic-parity-tests",
   "crates/mosaic-wasm",
   "crates/mosaic-uniffi",
   "crates/mosaic-vectors",

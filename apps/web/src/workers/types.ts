@@ -2,131 +2,41 @@
  * Shared types for worker communication
  */
 import type { EncryptedShard } from '@mosaic/crypto';
+import { WorkerCryptoErrorCode } from './worker-crypto-error-code.generated';
 import type { SourceStrategy } from './coordinator/source-strategy';
 import type { DownloadSchedule, ScheduleEvaluation } from '../lib/download-schedule';
 
 // Re-export EncryptedShard from crypto lib (single source of truth)
 export type { EncryptedShard };
 
+export type ShardTier = import('../generated/mosaic-wasm/mosaic_wasm.js').ShardTier;
+export type ManifestTranscriptBytesBinding =
+  typeof import('../generated/mosaic-wasm/mosaic_wasm.js').manifestTranscriptBytes;
+export type DecryptEnvelopeBinding =
+  typeof import('../generated/mosaic-wasm/mosaic_wasm.js').decryptEnvelope;
+export type StreamingFrameResult =
+  import('../generated/mosaic-wasm/mosaic_wasm.js').StreamingFrameResult;
+export type StreamingEnvelopeResult =
+  import('../generated/mosaic-wasm/mosaic_wasm.js').StreamingEnvelopeResult;
+export type StreamingShardEncryptor =
+  import('../generated/mosaic-wasm/mosaic_wasm.js').StreamingShardEncryptor;
+export type StreamingShardDecryptor =
+  import('../generated/mosaic-wasm/mosaic_wasm.js').StreamingShardDecryptor;
+export type StreamingDecryptFrameResult =
+  import('../generated/mosaic-wasm/mosaic_wasm.js').DecryptedShardResult;
+/**
+ * WASM `StreamingShardDecryptor.finalize()` returns a BytesResult whose bytes
+ * field is always empty by contract. Callers must ignore bytes and check code:
+ * finalize performs final-frame AAD verification only, with no payload return.
+ */
+export type StreamingFinalizeResult =
+  import('../generated/mosaic-wasm/mosaic_wasm.js').BytesResult;
+
+export { WorkerCryptoErrorCode };
+
 // =============================================================================
 // Stable error codes for the Rust cutover handle-based contract
 // =============================================================================
-
-/**
- * Stable numeric error codes mirroring `mosaic_client::ClientErrorCode`
- * (subset that is reachable through the worker), plus worker-only codes for
- * handle-lifecycle errors that originate inside the TypeScript worker layer.
- *
- * Worker-only codes start at 1000 to avoid collisions with the Rust enum
- * (which currently maxes out at 706 — `ClientCoreInvalidSnapshot`). Adding
- * a new worker-only code? Pick the next free value above 1000 and document
- * the failure mode here.
- */
-export enum WorkerCryptoErrorCode {
-  Ok = 0,
-
-  // Mirrors `mosaic_client::ClientErrorCode` — keep in sync.
-  InvalidHeaderLength = 100,
-  InvalidMagic = 101,
-  UnsupportedVersion = 102,
-  InvalidTier = 103,
-  NonZeroReservedByte = 104,
-  EmptyContext = 200,
-  InvalidKeyLength = 201,
-  InvalidInputLength = 202,
-  InvalidEnvelope = 203,
-  MissingCiphertext = 204,
-  AuthenticationFailed = 205,
-  RngFailure = 206,
-  WrappedKeyTooShort = 207,
-  KdfProfileTooWeak = 208,
-  InvalidSaltLength = 209,
-  KdfFailure = 210,
-  InvalidSignatureLength = 211,
-  InvalidPublicKey = 212,
-  InvalidUsername = 213,
-  KdfProfileTooCostly = 214,
-  LinkTierMismatch = 215,
-  BundleSignatureInvalid = 216,
-  BundleAlbumIdEmpty = 217,
-  BundleAlbumIdMismatch = 218,
-  BundleEpochTooOld = 219,
-  BundleRecipientMismatch = 220,
-  BundleJsonParse = 221,
-  BundleSealOpenFailed = 222,
-  ShardIntegrityFailed = 223,
-  LegacyRawKeyDecryptFallback = 224,
-  StreamingChunkOutOfOrder = 225,
-  StreamingTotalChunkMismatch = 226,
-  StreamingPlaintextDivergence = 227,
-  OperationCancelled = 300,
-  SecretHandleNotFound = 400,
-  IdentityHandleNotFound = 401,
-  HandleSpaceExhausted = 402,
-  EpochHandleNotFound = 403,
-  InternalStatePoisoned = 500,
-  UnsupportedMediaFormat = 600,
-  InvalidMediaContainer = 601,
-  InvalidMediaDimensions = 602,
-  MediaOutputTooLarge = 603,
-  MediaMetadataMismatch = 604,
-  InvalidMediaSidecar = 605,
-  MediaAdapterOutputMismatch = 606,
-  VideoContainerInvalid = 607,
-  MediaInspectFailed = 608,
-  MediaStripFailed = 609,
-  SidecarFieldOverflow = 610,
-  SidecarTagUnknown = 611,
-  MalformedSidecar = 612,
-  MakerNoteRejected = 613,
-  ExifTraversalLimitExceeded = 614,
-  VideoTooLargeForV1 = 615,
-  VideoSourceUnreadable = 616,
-  VideoTierShapeRejected = 617,
-  MetadataSidecarReservedTagNotPromoted = 618,
-  ClientCoreInvalidTransition = 700,
-  ClientCoreMissingEventPayload = 701,
-  ClientCoreRetryBudgetExhausted = 702,
-  ClientCoreSyncPageDidNotAdvance = 703,
-  ClientCoreManifestOutcomeUnknown = 704,
-  ClientCoreUnsupportedSnapshotVersion = 705,
-  ClientCoreInvalidSnapshot = 706,
-  ManifestShapeRejected = 707,
-  IdempotencyExpired = 708,
-  ManifestSetConflict = 709,
-  BackendIdempotencyConflict = 710,
-  VideoPosterExtractionFailed = 711,
-  DownloadInvalidPlan = 720,
-  DownloadIllegalTransition = 721,
-  DownloadSnapshotMigration = 722,
-  DownloadSnapshotCorrupt = 723,
-  DownloadSnapshotChecksumMismatch = 724,
-  DownloadSnapshotTorn = 725,
-  DownloadTransientNetwork = 726,
-  DownloadIntegrity = 727,
-  DownloadDecrypt = 728,
-  DownloadNotFound = 729,
-  DownloadQuota = 730,
-  DownloadCancelled = 731,
-  DownloadAccessRevoked = 732,
-  DownloadAuthorizationChanged = 733,
-  DownloadIllegalState = 734,
-  PinValidationFailed = 800,
-
-  // Worker-only error codes start at 1000.
-  /** Operation issued against a handle whose generation no longer matches. */
-  StaleHandle = 1000,
-  /** Handle ID is not registered with the worker's handle registry. */
-  HandleNotFound = 1001,
-  /** Handle ID exists but refers to a handle of a different kind than expected. */
-  HandleWrongKind = 1002,
-  /** Handle has been closed; subsequent operations are rejected. */
-  ClosedHandle = 1003,
-  /** Worker has not been bootstrapped or has been cleared via clear(). */
-  WorkerNotInitialized = 1004,
-  /** Download job id is not known to the coordinator worker. */
-  JobNotFound = 1005,
-}
 
 /**
  * Wire-shape used to round-trip a `WorkerCryptoError` across the Comlink
@@ -206,6 +116,26 @@ export type EpochHandleId = string & { readonly __brand: 'EpochHandleId' };
 export type LinkShareHandleId = string & { readonly __brand: 'LinkShareHandleId' };
 export type LinkTierHandleId = string & { readonly __brand: 'LinkTierHandleId' };
 export type LinkDecryptionKey = Uint8Array | LinkTierHandleId;
+
+export type EnvelopeHeader =
+  | {
+      readonly version: 0x03;
+      readonly magic: 'SGzk';
+      readonly epoch: number;
+      readonly shard: number;
+      readonly tier: number;
+      readonly nonce: Uint8Array;
+    }
+  | {
+      readonly version: 0x04;
+      readonly magic: 'SGzk';
+      readonly epoch: 0;
+      readonly shard: 0;
+      readonly tier: number;
+      readonly streamSalt: Uint8Array;
+      readonly frameCount: number;
+      readonly finalFrameSize: number;
+    };
 
 /** Photo metadata stored in local SQLite */
 export interface PhotoMeta {
@@ -438,8 +368,6 @@ export interface DbWorkerApi {
   clearAlbumPhotos(albumId: string): Promise<void>;
 }
 
-// EncryptedShard is re-exported from @mosaic/crypto at the top of this file
-
 /**
  * Crypto Worker API
  * Handles all cryptographic operations in a dedicated worker
@@ -552,30 +480,6 @@ export interface CryptoWorkerApi {
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
   ): Promise<void>;
-
-  /**
-   * Encrypt a photo shard
-   * @param data - Plaintext data to encrypt
-   * @param epochSeed - Epoch seed for deriving tier keys (32 bytes)
-   * @param epochId - Current epoch ID
-   * @param shardIndex - Shard index within photo
-   */
-  encryptShard(
-    data: Uint8Array,
-    epochSeed: Uint8Array,
-    epochId: number,
-    shardIndex: number,
-  ): Promise<EncryptedShard>;
-
-  /**
-   * Decrypt a photo shard (for owner/member viewing)
-   * @param envelope - Complete envelope (header + ciphertext)
-   * @param epochSeed - Epoch seed for deriving tier keys (32 bytes)
-   */
-  decryptShard(
-    envelope: Uint8Array,
-    epochSeed: Uint8Array,
-  ): Promise<Uint8Array>;
 
   /**
    * Decrypt a photo shard with a tier key directly (for share link viewing)
@@ -736,6 +640,11 @@ export interface CryptoWorkerApi {
     epochHandleId: EpochHandleId,
     manifestBytes: Uint8Array,
   ): Promise<Uint8Array>;
+
+  /**
+   * Build the ADR-022 manifest-finalize Idempotency-Key in Rust/WASM.
+   */
+  finalizeIdempotencyKey(jobId: string): Promise<string>;
 
   /**
    * Decrypt a manifest envelope using a Rust-owned epoch handle's
@@ -902,7 +811,7 @@ export interface CryptoWorkerApi {
   /**
    * Decrypt an album-name envelope previously produced by
    * {@link encryptAlbumName}. Thin wrapper over
-   * {@link decryptShardWithEpoch} — the envelope header carries the tier
+   * {@link decryptShardWithEpochHandle} — the envelope header carries the tier
    * byte so callers do not specify it.
    *
    * @param epochHandleId - Opaque epoch handle id from the worker.
@@ -1045,23 +954,43 @@ export interface CryptoWorkerApi {
 
   /**
    * Encrypt a single shard using the epoch handle's tier sub-key.
-   * `tier`: 0=thumb, 1=preview, 2=original (matches the WASM contract).
+   * `tier`: 1=thumb, 2=preview, 3=original (matches the WASM contract).
    */
   encryptShardWithEpoch(
     epochHandleId: EpochHandleId,
     plaintext: Uint8Array,
     shardIndex: number,
-    tier: 0 | 1 | 2,
+    tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{ envelopeBytes: Uint8Array; sha256: string }>;
 
-  /**
-   * Decrypt a complete shard envelope (header + ciphertext) using the
-   * epoch handle.
-   */
-  decryptShardWithEpoch(
-    epochHandleId: EpochHandleId,
-    envelopeBytes: Uint8Array,
+  encryptShardWithEpochHandle(
+    epochHandleId: bigint,
+    plaintext: Uint8Array,
+    tier: number,
+    shardIndex: number,
   ): Promise<Uint8Array>;
+  encryptShardWithEpochHandle(
+    epochHandleId: EpochHandleId,
+    plaintext: Uint8Array,
+    tier: number,
+    shardIndex: number,
+  ): Promise<Uint8Array>;
+
+  decryptShardWithEpochHandle(
+    epochHandleId: bigint,
+    envelope: Uint8Array,
+  ): Promise<Uint8Array>;
+  decryptShardWithEpochHandle(
+    epochHandleId: EpochHandleId,
+    envelope: Uint8Array,
+  ): Promise<Uint8Array>;
+
+  verifyShardIntegrity(
+    envelope: Uint8Array,
+    expectedSha256: Uint8Array,
+  ): Promise<boolean>;
+
+  peekEnvelopeHeader(envelope: Uint8Array): Promise<EnvelopeHeader>;
 
   /**
    * Encrypt a metadata sidecar using the epoch handle. Output is a shard
@@ -1079,21 +1008,32 @@ export interface CryptoWorkerApi {
 
   // ---- Link sharing (P-W7.6 handle-based) ----
 
+  /**
+   * Build the canonical share-link URL through the Rust/WASM facade.
+   * The linkUrlToken is a bearer fragment token and must remain after #k=.
+   */
+  buildShareLinkUrl(opts: {
+    baseUrl: string;
+    albumId: string;
+    linkId: string;
+    linkUrlToken: string;
+  }): Promise<string>;
+
   createLinkShareHandle(
     albumId: string,
     epochHandleId: EpochHandleId,
-    tier: 1 | 2 | 3,
+    tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{
     linkShareHandleId: LinkShareHandleId;
     linkId: Uint8Array;
-    linkSecretForUrl: Uint8Array;
+    linkUrlToken: Uint8Array;
     tier: number;
     nonce: Uint8Array;
     encryptedKey: Uint8Array;
   }>;
 
   importLinkShareHandle(
-    linkSecretForUrl: Uint8Array,
+    linkUrlToken: Uint8Array,
   ): Promise<{
     linkShareHandleId: LinkShareHandleId;
     linkId: Uint8Array;
@@ -1102,15 +1042,15 @@ export interface CryptoWorkerApi {
   wrapLinkTierHandle(
     linkShareHandleId: LinkShareHandleId,
     epochHandleId: EpochHandleId,
-    tier: 1 | 2 | 3,
+    tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }>;
 
   importLinkTierHandle(
-    linkSecretForUrl: Uint8Array,
+    linkUrlToken: Uint8Array,
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
     albumId: string,
-    tier: 1 | 2 | 3,
+    tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{ linkTierHandleId: LinkTierHandleId; linkId: Uint8Array; tier: number }>;
 
   decryptShardWithLinkTierHandle(

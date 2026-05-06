@@ -28,6 +28,7 @@ export class ShardDownloadError extends Error {
   }
 }
 
+
 /**
  * Download a single encrypted shard by ID
  *
@@ -39,7 +40,7 @@ export class ShardDownloadError extends Error {
 /** Build the shard-fetch URL for the authenticated endpoint. Exposed so the
  *  Background Fetch launcher can pre-warm the same URLs the SW will receive. */
 export function buildAuthShardUrl(shardId: string): string {
-  return `/api/shards/${shardId}`;
+  return `/api/shards/${encodeURIComponent(shardId)}`;
 }
 
 /** Build the share-link shard-fetch URL. */

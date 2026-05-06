@@ -55,6 +55,27 @@ fn upload_snapshot(phase: UploadJobPhase, tiered_shards: Vec<UploadShardRef>) ->
     }
 }
 
+fn upload_snapshot_with_legacy_retry_target(
+    snapshot: &UploadJobSnapshot,
+    target_phase: UploadJobPhase,
+) -> Vec<u8> {
+    let bytes = snapshot.to_canonical_cbor();
+    let mut value: ciborium::value::Value = ciborium::de::from_reader(std::io::Cursor::new(&bytes))
+        .expect("canonical snapshot CBOR decodes");
+    let ciborium::value::Value::Map(entries) = &mut value else {
+        panic!("upload snapshot encodes as a map");
+    };
+    entries.push((
+        ciborium::value::Value::from(14_u32),
+        ciborium::value::Value::from(target_phase.to_u8()),
+    ));
+    entries.sort_by_key(|(key, _)| key.as_integer().expect("snapshot keys are integers"));
+
+    let mut encoded = Vec::new();
+    ciborium::ser::into_writer(&value, &mut encoded).expect("legacy snapshot CBOR encodes");
+    encoded
+}
+
 fn sync_retry_default(max_attempts: u32) -> AlbumSyncRetryMetadata {
     AlbumSyncRetryMetadata {
         attempt_count: 0,
@@ -80,6 +101,50 @@ fn sync_snapshot(phase: AlbumSyncPhase) -> AlbumSyncSnapshot {
         retry: sync_retry_default(2),
         failure_code: None,
     }
+}
+
+#[test]
+fn legacy_retry_waiting_to_manifest_commit_unknown_is_migrated_on_decode() {
+    let mut legacy_snapshot = upload_snapshot(UploadJobPhase::RetryWaiting, vec![shard(3, 0)]);
+    legacy_snapshot.retry_count = 1;
+    legacy_snapshot.next_retry_not_before_ms = Some(12_345);
+    for shard in &mut legacy_snapshot.tiered_shards {
+        shard.uploaded = true;
+    }
+
+    let legacy_bytes = upload_snapshot_with_legacy_retry_target(
+        &legacy_snapshot,
+        UploadJobPhase::ManifestCommitUnknown,
+    );
+    let migrated = UploadJobSnapshot::from_canonical_cbor(&legacy_bytes)
+        .expect("legacy stuck snapshot migrates");
+
+    assert_eq!(migrated.phase, UploadJobPhase::ManifestCommitUnknown);
+    assert_eq!(migrated.retry_count, 1);
+    assert_eq!(migrated.max_retry_count, legacy_snapshot.max_retry_count);
+    assert_eq!(
+        migrated.next_retry_not_before_ms,
+        legacy_snapshot.next_retry_not_before_ms
+    );
+
+    let migrated_again = UploadJobSnapshot::from_canonical_cbor(&migrated.to_canonical_cbor())
+        .expect("already migrated snapshot remains valid");
+    assert_eq!(migrated_again, migrated);
+}
+
+#[test]
+fn legacy_retry_target_key_only_migrates_retry_waiting_manifest_commit_unknown() {
+    let creating_manifest = upload_snapshot(UploadJobPhase::CreatingManifest, vec![shard(3, 0)]);
+    let bytes = upload_snapshot_with_legacy_retry_target(
+        &creating_manifest,
+        UploadJobPhase::ManifestCommitUnknown,
+    );
+    assert!(UploadJobSnapshot::from_canonical_cbor(&bytes).is_err());
+
+    let retry_waiting = upload_snapshot(UploadJobPhase::RetryWaiting, vec![shard(3, 0)]);
+    let bytes =
+        upload_snapshot_with_legacy_retry_target(&retry_waiting, UploadJobPhase::CreatingManifest);
+    assert!(UploadJobSnapshot::from_canonical_cbor(&bytes).is_err());
 }
 
 #[test]
