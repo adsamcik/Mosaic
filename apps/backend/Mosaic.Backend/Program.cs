@@ -7,6 +7,7 @@ using Mosaic.Backend.Data;
 using Mosaic.Backend.Infrastructure;
 using Mosaic.Backend.Middleware;
 using Mosaic.Backend.Services;
+using Mosaic.Backend.SidecarSignaling;
 using Scalar.AspNetCore;
 using tusdotnet;
 using tusdotnet.Stores;
@@ -50,6 +51,13 @@ builder.Services.AddMemoryCache();
 builder.Services.AddHostedService<GarbageCollectionService>();
 builder.Services.AddExceptionHandler<DatabaseExceptionHandler>();
 builder.Services.AddProblemDetails();
+
+// Sidecar Beacon: in-memory WebSocket signaling relay (no DB persistence, no auth).
+builder.Services.Configure<SidecarSignalingOptions>(
+    builder.Configuration.GetSection("SidecarSignaling"));
+builder.Services.AddSingleton<RoomManager>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RoomManager>());
+builder.Services.AddSingleton<SidecarRateLimiter>();
 
 // Controllers with camelCase JSON to match JavaScript conventions
 builder.Services.AddControllers()
@@ -219,6 +227,7 @@ if (authConfiguration.UsesLegacyMode)
 // 7. Auth middleware - authenticate user
 app.UseForwardedHeaders();
 app.UseRateLimiter();
+app.UseWebSockets();
 app.UseExceptionHandler();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseMiddleware<CorrelationIdMiddleware>();
@@ -290,6 +299,8 @@ app.MapTus("/api/files", async httpContext => new tusdotnet.Models.DefaultTusCon
     }
 });
 
+app.MapSidecarSignaling();
+app.MapSidecarTelemetry();
 app.MapControllers();
 
 // Apply migrations on startup (dev mode or RUN_MIGRATIONS=true)

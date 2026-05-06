@@ -339,7 +339,7 @@
         "Errored": "Chyba",
         "Cancelled": "Zrušeno"
       },
-      "scheduledBadge": "Naplánováno",
+      "scheduledBadge": "Naplánováno","sidecarBadge": "Sidecar","sidecarReceiving": "Příjem",
       "scheduledStartNow": "Spustit teď",
       "scheduledEdit": "Upravit plán",
       "scheduledReason": "Čeká: {{reason}}",
@@ -411,7 +411,12 @@
       "perFileBlobAnchorRefusal": "Příliš mnoho fotek ({{count}}) pro jednotlivá stažení v tomto prohlížeči. Zkuste uložit jako ZIP.",
       "perFileNotSupported": "Ukládání po jednotlivých souborech není v tomto prohlížeči podporováno",
       "perFilePromptCountOne": "1 výzva",
-      "perFilePromptCountMany": "{{count}} výzev"
+      "perFilePromptCountMany": "{{count}} výzev",
+      "sidecar": {
+        "label": "Poslat do telefonu",
+        "sub": "Stream fotek do spárovaného zařízení",
+        "beta": "Beta"
+      }
     },
     "persistencePrompt": {
       "title": "Uchovejte offline fotky v bezpečí",
@@ -445,6 +450,43 @@
       "editSchedule": "Upravit plán",
       "cancel": "Zrušit",
       "save": "Uložit"
+    },
+    "sidecarPairing": {
+      "title": "Poslat do telefonu",
+      "instructions": "Otevřete Mosaic v telefonu a jděte na /pair, pak zadejte tento kód:",
+      "codeLabel": "Párovací kód",
+      "expiresIn": "Platí ještě {{seconds}}s",
+      "cancel": "Zrušit",
+      "qrHint": "Nebo načtěte QR kód telefonem","qrAriaLabel": "QR kód pro spárování","preparingQr": "Připravuji QR…",
+      "connecting": "Připojuji…",
+      "errors": {
+        "WrongCode": "Nesprávný kód nebo se nikdo nepřipojil.",
+        "SignalingTimeout": "Párování trvalo příliš dlouho. Zkuste znovu.",
+        "IceFailed": "Nepodařilo se navázat spojení.",
+        "Aborted": "Zrušeno.",
+        "SignalingClosed": "Signalizační kanál byl uzavřen.",
+        "InvalidResponderInput": "Neplatná párovací data.",
+        "Generic": "Párování selhalo."
+      }
+    },
+    "sidecarReceive": {
+      "pageTitle": "Přijmout fotky",
+      "instructions": "Zadejte 6místný kód zobrazený na druhém zařízení.",
+      "codeLabel": "Párovací kód",
+      "connect": "Připojit",
+      "connecting": "Připojuji…",
+      "connected": "Připojeno. Přijímám fotky…",
+      "done": "Hotovo. Uloženo {{count}} fotek.",
+      "errors": {
+        "WrongCode": "Nesprávný kód. Zkontrolujte ho a zkuste znovu.",
+        "SignalingTimeout": "Trvalo to příliš dlouho. Zkuste znovu.",
+        "IceFailed": "Nepodařilo se navázat spojení.",
+        "Aborted": "Zrušeno.",
+        "SignalingClosed": "Signalizační kanál byl uzavřen.",
+        "InvalidResponderInput": "Neplatná párovací data.",
+        "Generic": "Připojení selhalo.",
+        "MissingPrefill": "Tato stránka musí být otevřena přes QR kód nebo párovací odkaz od odesílatele."
+      }
     }
   },
   "lightbox": {
@@ -845,3 +887,4 @@
     }
   }
 }
+

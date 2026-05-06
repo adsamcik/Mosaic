@@ -7317,7 +7317,6 @@ fn js_verify_snapshot_result_from_rust(result: VerifySnapshotResult) -> JsVerify
 // removes the entry automatically) to avoid leaking decryptors.
 // ---------------------------------------------------------------------------
 
-
 fn streaming_registry() -> &'static Mutex<HashMap<u32, CryptoStreamingShardDecryptor>> {
     static REGISTRY: OnceLock<Mutex<HashMap<u32, CryptoStreamingShardDecryptor>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
@@ -7763,3 +7762,818 @@ mod tests {
 }
 
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Sidecar Beacon (cross-device WebRTC handoff): PAKE handshake + AEAD tunnel.
+//
+// Handle pattern mirrors `streaming_shard_*_v1`: each role (initiator,
+// responder, send, recv, key-material) has its own Mutex<HashMap<u32, _>>
+// registry keyed by an AtomicU32 id. Callers MUST invoke the matching
+// `*_close_v1` (or finish path) to avoid leaking state.
+//
+// Domain-tag and protocol details live in `mosaic_crypto::sidecar`. This
+// module is purely the WASM marshaling layer.
+// ---------------------------------------------------------------------------
+
+use mosaic_crypto::sidecar::{
+    Confirm as SidecarConfirm, Msg1 as SidecarMsg1, Msg2 as SidecarMsg2, PakeInitiator,
+    PakeResponder, RecvTunnel, SendTunnel, SidecarError, TunnelKeyMaterial,
+    open_tunnel as sidecar_open_tunnel, pake_initiator_start as sidecar_pake_initiator_start,
+    pake_responder as sidecar_pake_responder,
+};
+
+fn sidecar_error_code(error: SidecarError) -> u32 {
+    let code = match error {
+        SidecarError::InvalidPairingCodeLength { .. }
+        | SidecarError::TruncatedFrame
+        | SidecarError::NonceOverflow => mosaic_client::ClientErrorCode::InvalidInputLength,
+        SidecarError::InvalidPakeMessageLength { .. } => {
+            mosaic_client::ClientErrorCode::InvalidEnvelope
+        }
+        SidecarError::PakeFailed
+        | SidecarError::ConfirmationFailed
+        | SidecarError::TunnelDecryptFailed => mosaic_client::ClientErrorCode::AuthenticationFailed,
+        SidecarError::OutOfOrderFrame => mosaic_client::ClientErrorCode::StreamingChunkOutOfOrder,
+        SidecarError::KdfFailure => mosaic_client::ClientErrorCode::KdfFailure,
+    };
+    client_code(code)
+}
+
+fn sidecar_initiator_registry() -> &'static Mutex<HashMap<u32, PakeInitiator>> {
+    static R: OnceLock<Mutex<HashMap<u32, PakeInitiator>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+fn sidecar_responder_registry() -> &'static Mutex<HashMap<u32, PakeResponder>> {
+    static R: OnceLock<Mutex<HashMap<u32, PakeResponder>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+fn sidecar_material_registry() -> &'static Mutex<HashMap<u32, TunnelKeyMaterial>> {
+    static R: OnceLock<Mutex<HashMap<u32, TunnelKeyMaterial>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+fn sidecar_send_registry() -> &'static Mutex<HashMap<u32, SendTunnel>> {
+    static R: OnceLock<Mutex<HashMap<u32, SendTunnel>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+fn sidecar_recv_registry() -> &'static Mutex<HashMap<u32, RecvTunnel>> {
+    static R: OnceLock<Mutex<HashMap<u32, RecvTunnel>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn sidecar_next_id() -> u32 {
+    static NEXT: AtomicU32 = AtomicU32::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+fn poison_code() -> u32 {
+    client_code(mosaic_client::ClientErrorCode::InternalStatePoisoned)
+}
+fn handle_not_found_code() -> u32 {
+    client_code(mosaic_client::ClientErrorCode::SecretHandleNotFound)
+}
+
+#[derive(Debug, Clone)]
+pub struct SidecarPakeStartResult {
+    pub code: u32,
+    pub handle_id: u32,
+    pub msg1: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SidecarPakeResponderResult {
+    pub code: u32,
+    pub responder_handle_id: u32,
+    pub msg2: Vec<u8>,
+    pub responder_confirm: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SidecarPakeInitiatorFinishResult {
+    pub code: u32,
+    pub material_handle_id: u32,
+    pub initiator_confirm: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SidecarPakeResponderFinishResult {
+    pub code: u32,
+    pub material_handle_id: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SidecarTunnelOpenResult {
+    pub code: u32,
+    pub send_handle_id: u32,
+    pub recv_handle_id: u32,
+}
+
+#[derive(Clone)]
+pub struct SidecarTunnelSealResult {
+    pub code: u32,
+    pub sealed: Vec<u8>,
+}
+
+impl fmt::Debug for SidecarTunnelSealResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SidecarTunnelSealResult")
+            .field("code", &self.code)
+            .field("sealed_len", &self.sealed.len())
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+pub struct SidecarTunnelOpenMsgResult {
+    pub code: u32,
+    pub plaintext: Vec<u8>,
+}
+
+impl Drop for SidecarTunnelOpenMsgResult {
+    fn drop(&mut self) {
+        self.plaintext.zeroize();
+    }
+}
+
+impl fmt::Debug for SidecarTunnelOpenMsgResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SidecarTunnelOpenMsgResult")
+            .field("code", &self.code)
+            .field("plaintext_len", &self.plaintext.len())
+            .finish()
+    }
+}
+
+#[must_use]
+pub fn sidecar_pake_initiator_start_v1(code: &[u8]) -> SidecarPakeStartResult {
+    let (initiator, msg1) = match sidecar_pake_initiator_start(code) {
+        Ok(value) => value,
+        Err(error) => {
+            return SidecarPakeStartResult {
+                code: sidecar_error_code(error),
+                handle_id: 0,
+                msg1: Vec::new(),
+            };
+        }
+    };
+    let id = sidecar_next_id();
+    let mut guard = match sidecar_initiator_registry().lock() {
+        Ok(g) => g,
+        Err(_) => {
+            return SidecarPakeStartResult {
+                code: poison_code(),
+                handle_id: 0,
+                msg1: Vec::new(),
+            };
+        }
+    };
+    guard.insert(id, initiator);
+    SidecarPakeStartResult {
+        code: client_ok(),
+        handle_id: id,
+        msg1: msg1.as_bytes().to_vec(),
+    }
+}
+
+#[must_use]
+pub fn sidecar_pake_responder_v1(code: &[u8], msg1: &[u8]) -> SidecarPakeResponderResult {
+    let msg1_parsed = match SidecarMsg1::from_slice(msg1) {
+        Ok(v) => v,
+        Err(e) => {
+            return SidecarPakeResponderResult {
+                code: sidecar_error_code(e),
+                responder_handle_id: 0,
+                msg2: Vec::new(),
+                responder_confirm: Vec::new(),
+            };
+        }
+    };
+    let (responder, msg2, confirm) = match sidecar_pake_responder(code, &msg1_parsed) {
+        Ok(v) => v,
+        Err(e) => {
+            return SidecarPakeResponderResult {
+                code: sidecar_error_code(e),
+                responder_handle_id: 0,
+                msg2: Vec::new(),
+                responder_confirm: Vec::new(),
+            };
+        }
+    };
+    let id = sidecar_next_id();
+    let mut guard = match sidecar_responder_registry().lock() {
+        Ok(g) => g,
+        Err(_) => {
+            return SidecarPakeResponderResult {
+                code: poison_code(),
+                responder_handle_id: 0,
+                msg2: Vec::new(),
+                responder_confirm: Vec::new(),
+            };
+        }
+    };
+    guard.insert(id, responder);
+    SidecarPakeResponderResult {
+        code: client_ok(),
+        responder_handle_id: id,
+        msg2: msg2.as_bytes().to_vec(),
+        responder_confirm: confirm.as_bytes().to_vec(),
+    }
+}
+
+#[must_use]
+pub fn sidecar_pake_initiator_finish_v1(
+    handle_id: u32,
+    msg2: &[u8],
+    responder_confirm: &[u8],
+) -> SidecarPakeInitiatorFinishResult {
+    let initiator = {
+        let mut guard = match sidecar_initiator_registry().lock() {
+            Ok(g) => g,
+            Err(_) => {
+                return SidecarPakeInitiatorFinishResult {
+                    code: poison_code(),
+                    material_handle_id: 0,
+                    initiator_confirm: Vec::new(),
+                };
+            }
+        };
+        match guard.remove(&handle_id) {
+            Some(v) => v,
+            None => {
+                return SidecarPakeInitiatorFinishResult {
+                    code: handle_not_found_code(),
+                    material_handle_id: 0,
+                    initiator_confirm: Vec::new(),
+                };
+            }
+        }
+    };
+    let msg2_parsed = match SidecarMsg2::from_slice(msg2) {
+        Ok(v) => v,
+        Err(e) => {
+            return SidecarPakeInitiatorFinishResult {
+                code: sidecar_error_code(e),
+                material_handle_id: 0,
+                initiator_confirm: Vec::new(),
+            };
+        }
+    };
+    let confirm_parsed = match SidecarConfirm::from_slice(responder_confirm) {
+        Ok(v) => v,
+        Err(e) => {
+            return SidecarPakeInitiatorFinishResult {
+                code: sidecar_error_code(e),
+                material_handle_id: 0,
+                initiator_confirm: Vec::new(),
+            };
+        }
+    };
+    let (material, init_confirm) = match initiator.finish(&msg2_parsed, &confirm_parsed) {
+        Ok(v) => v,
+        Err(e) => {
+            return SidecarPakeInitiatorFinishResult {
+                code: sidecar_error_code(e),
+                material_handle_id: 0,
+                initiator_confirm: Vec::new(),
+            };
+        }
+    };
+    let mat_id = sidecar_next_id();
+    let mut guard = match sidecar_material_registry().lock() {
+        Ok(g) => g,
+        Err(_) => {
+            return SidecarPakeInitiatorFinishResult {
+                code: poison_code(),
+                material_handle_id: 0,
+                initiator_confirm: Vec::new(),
+            };
+        }
+    };
+    guard.insert(mat_id, material);
+    SidecarPakeInitiatorFinishResult {
+        code: client_ok(),
+        material_handle_id: mat_id,
+        initiator_confirm: init_confirm.as_bytes().to_vec(),
+    }
+}
+
+#[must_use]
+pub fn sidecar_pake_responder_finish_v1(
+    handle_id: u32,
+    initiator_confirm: &[u8],
+) -> SidecarPakeResponderFinishResult {
+    let responder = {
+        let mut guard = match sidecar_responder_registry().lock() {
+            Ok(g) => g,
+            Err(_) => {
+                return SidecarPakeResponderFinishResult {
+                    code: poison_code(),
+                    material_handle_id: 0,
+                };
+            }
+        };
+        match guard.remove(&handle_id) {
+            Some(v) => v,
+            None => {
+                return SidecarPakeResponderFinishResult {
+                    code: handle_not_found_code(),
+                    material_handle_id: 0,
+                };
+            }
+        }
+    };
+    let confirm_parsed = match SidecarConfirm::from_slice(initiator_confirm) {
+        Ok(v) => v,
+        Err(e) => {
+            return SidecarPakeResponderFinishResult {
+                code: sidecar_error_code(e),
+                material_handle_id: 0,
+            };
+        }
+    };
+    let material = match responder.finish(&confirm_parsed) {
+        Ok(v) => v,
+        Err(e) => {
+            return SidecarPakeResponderFinishResult {
+                code: sidecar_error_code(e),
+                material_handle_id: 0,
+            };
+        }
+    };
+    let mat_id = sidecar_next_id();
+    let mut guard = match sidecar_material_registry().lock() {
+        Ok(g) => g,
+        Err(_) => {
+            return SidecarPakeResponderFinishResult {
+                code: poison_code(),
+                material_handle_id: 0,
+            };
+        }
+    };
+    guard.insert(mat_id, material);
+    SidecarPakeResponderFinishResult {
+        code: client_ok(),
+        material_handle_id: mat_id,
+    }
+}
+
+#[must_use]
+pub fn sidecar_tunnel_open_v1(material_handle_id: u32) -> SidecarTunnelOpenResult {
+    let material = {
+        let mut guard = match sidecar_material_registry().lock() {
+            Ok(g) => g,
+            Err(_) => {
+                return SidecarTunnelOpenResult {
+                    code: poison_code(),
+                    send_handle_id: 0,
+                    recv_handle_id: 0,
+                };
+            }
+        };
+        match guard.remove(&material_handle_id) {
+            Some(v) => v,
+            None => {
+                return SidecarTunnelOpenResult {
+                    code: handle_not_found_code(),
+                    send_handle_id: 0,
+                    recv_handle_id: 0,
+                };
+            }
+        }
+    };
+    let (send, recv) = sidecar_open_tunnel(material);
+    let send_id = sidecar_next_id();
+    let recv_id = sidecar_next_id();
+    {
+        let mut guard = match sidecar_send_registry().lock() {
+            Ok(g) => g,
+            Err(_) => {
+                return SidecarTunnelOpenResult {
+                    code: poison_code(),
+                    send_handle_id: 0,
+                    recv_handle_id: 0,
+                };
+            }
+        };
+        guard.insert(send_id, send);
+    }
+    {
+        let mut guard = match sidecar_recv_registry().lock() {
+            Ok(g) => g,
+            Err(_) => {
+                // Best-effort: drop the half we just inserted so the caller cannot leak it.
+                if let Ok(mut g) = sidecar_send_registry().lock() {
+                    g.remove(&send_id);
+                }
+                return SidecarTunnelOpenResult {
+                    code: poison_code(),
+                    send_handle_id: 0,
+                    recv_handle_id: 0,
+                };
+            }
+        };
+        guard.insert(recv_id, recv);
+    }
+    SidecarTunnelOpenResult {
+        code: client_ok(),
+        send_handle_id: send_id,
+        recv_handle_id: recv_id,
+    }
+}
+
+#[must_use]
+pub fn sidecar_tunnel_seal_v1(send_handle_id: u32, plaintext: &[u8]) -> SidecarTunnelSealResult {
+    let mut guard = match sidecar_send_registry().lock() {
+        Ok(g) => g,
+        Err(_) => {
+            return SidecarTunnelSealResult {
+                code: poison_code(),
+                sealed: Vec::new(),
+            };
+        }
+    };
+    let send = match guard.get_mut(&send_handle_id) {
+        Some(v) => v,
+        None => {
+            return SidecarTunnelSealResult {
+                code: handle_not_found_code(),
+                sealed: Vec::new(),
+            };
+        }
+    };
+    match send.seal(plaintext) {
+        Ok(sealed) => SidecarTunnelSealResult {
+            code: client_ok(),
+            sealed,
+        },
+        Err(e) => SidecarTunnelSealResult {
+            code: sidecar_error_code(e),
+            sealed: Vec::new(),
+        },
+    }
+}
+
+#[must_use]
+pub fn sidecar_tunnel_open_message_v1(
+    recv_handle_id: u32,
+    sealed: &[u8],
+) -> SidecarTunnelOpenMsgResult {
+    let mut guard = match sidecar_recv_registry().lock() {
+        Ok(g) => g,
+        Err(_) => {
+            return SidecarTunnelOpenMsgResult {
+                code: poison_code(),
+                plaintext: Vec::new(),
+            };
+        }
+    };
+    let recv = match guard.get_mut(&recv_handle_id) {
+        Some(v) => v,
+        None => {
+            return SidecarTunnelOpenMsgResult {
+                code: handle_not_found_code(),
+                plaintext: Vec::new(),
+            };
+        }
+    };
+    match recv.open(sealed) {
+        Ok(plaintext) => SidecarTunnelOpenMsgResult {
+            code: client_ok(),
+            plaintext,
+        },
+        Err(e) => SidecarTunnelOpenMsgResult {
+            code: sidecar_error_code(e),
+            plaintext: Vec::new(),
+        },
+    }
+}
+
+#[must_use]
+pub fn sidecar_tunnel_close_v1(send_handle_id: u32, recv_handle_id: u32) -> u32 {
+    // Each `remove` triggers Drop which zeroizes the per-direction sub-key.
+    let r1 = match sidecar_send_registry().lock() {
+        Ok(mut g) => {
+            g.remove(&send_handle_id);
+            client_ok()
+        }
+        Err(_) => poison_code(),
+    };
+    let r2 = match sidecar_recv_registry().lock() {
+        Ok(mut g) => {
+            g.remove(&recv_handle_id);
+            client_ok()
+        }
+        Err(_) => poison_code(),
+    };
+    if r1 != client_ok() { r1 } else { r2 }
+}
+
+#[must_use]
+pub fn sidecar_pake_initiator_close_v1(handle_id: u32) -> u32 {
+    match sidecar_initiator_registry().lock() {
+        Ok(mut g) => {
+            g.remove(&handle_id);
+            client_ok()
+        }
+        Err(_) => poison_code(),
+    }
+}
+
+#[must_use]
+pub fn sidecar_pake_responder_close_v1(handle_id: u32) -> u32 {
+    match sidecar_responder_registry().lock() {
+        Ok(mut g) => {
+            g.remove(&handle_id);
+            client_ok()
+        }
+        Err(_) => poison_code(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// wasm_bindgen JS surface.
+// ---------------------------------------------------------------------------
+
+#[wasm_bindgen(js_name = SidecarPakeStartResult)]
+pub struct JsSidecarPakeStartResult {
+    code: u32,
+    handle_id: u32,
+    msg1: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = SidecarPakeStartResult)]
+impl JsSidecarPakeStartResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter, js_name = handleId)]
+    #[must_use]
+    pub fn handle_id(&self) -> u32 {
+        self.handle_id
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn msg1(&self) -> Vec<u8> {
+        self.msg1.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = SidecarPakeResponderResult)]
+pub struct JsSidecarPakeResponderResult {
+    code: u32,
+    responder_handle_id: u32,
+    msg2: Vec<u8>,
+    responder_confirm: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = SidecarPakeResponderResult)]
+impl JsSidecarPakeResponderResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter, js_name = responderHandleId)]
+    #[must_use]
+    pub fn responder_handle_id(&self) -> u32 {
+        self.responder_handle_id
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn msg2(&self) -> Vec<u8> {
+        self.msg2.clone()
+    }
+    #[wasm_bindgen(getter, js_name = responderConfirm)]
+    #[must_use]
+    pub fn responder_confirm(&self) -> Vec<u8> {
+        self.responder_confirm.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = SidecarPakeInitiatorFinishResult)]
+pub struct JsSidecarPakeInitiatorFinishResult {
+    code: u32,
+    material_handle_id: u32,
+    initiator_confirm: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = SidecarPakeInitiatorFinishResult)]
+impl JsSidecarPakeInitiatorFinishResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter, js_name = materialHandleId)]
+    #[must_use]
+    pub fn material_handle_id(&self) -> u32 {
+        self.material_handle_id
+    }
+    #[wasm_bindgen(getter, js_name = initiatorConfirm)]
+    #[must_use]
+    pub fn initiator_confirm(&self) -> Vec<u8> {
+        self.initiator_confirm.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = SidecarPakeResponderFinishResult)]
+#[derive(Clone, Copy)]
+pub struct JsSidecarPakeResponderFinishResult {
+    code: u32,
+    material_handle_id: u32,
+}
+
+#[wasm_bindgen(js_class = SidecarPakeResponderFinishResult)]
+impl JsSidecarPakeResponderFinishResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter, js_name = materialHandleId)]
+    #[must_use]
+    pub fn material_handle_id(&self) -> u32 {
+        self.material_handle_id
+    }
+}
+
+#[wasm_bindgen(js_name = SidecarTunnelOpenResult)]
+#[derive(Clone, Copy)]
+pub struct JsSidecarTunnelOpenResult {
+    code: u32,
+    send_handle_id: u32,
+    recv_handle_id: u32,
+}
+
+#[wasm_bindgen(js_class = SidecarTunnelOpenResult)]
+impl JsSidecarTunnelOpenResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter, js_name = sendHandleId)]
+    #[must_use]
+    pub fn send_handle_id(&self) -> u32 {
+        self.send_handle_id
+    }
+    #[wasm_bindgen(getter, js_name = recvHandleId)]
+    #[must_use]
+    pub fn recv_handle_id(&self) -> u32 {
+        self.recv_handle_id
+    }
+}
+
+#[wasm_bindgen(js_name = SidecarTunnelSealResult)]
+pub struct JsSidecarTunnelSealResult {
+    code: u32,
+    sealed: Vec<u8>,
+}
+
+#[wasm_bindgen(js_class = SidecarTunnelSealResult)]
+impl JsSidecarTunnelSealResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn sealed(&self) -> Vec<u8> {
+        self.sealed.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = SidecarTunnelOpenMsgResult)]
+pub struct JsSidecarTunnelOpenMsgResult {
+    code: u32,
+    plaintext: Vec<u8>,
+}
+
+impl Drop for JsSidecarTunnelOpenMsgResult {
+    fn drop(&mut self) {
+        self.plaintext.zeroize();
+    }
+}
+
+#[wasm_bindgen(js_class = SidecarTunnelOpenMsgResult)]
+impl JsSidecarTunnelOpenMsgResult {
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u32 {
+        self.code
+    }
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn plaintext(&self) -> Vec<u8> {
+        self.plaintext.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = sidecarPakeInitiatorStartV1)]
+#[must_use]
+pub fn sidecar_pake_initiator_start_v1_js(code: Vec<u8>) -> JsSidecarPakeStartResult {
+    let r = sidecar_pake_initiator_start_v1(&code);
+    JsSidecarPakeStartResult {
+        code: r.code,
+        handle_id: r.handle_id,
+        msg1: r.msg1,
+    }
+}
+
+#[wasm_bindgen(js_name = sidecarPakeResponderV1)]
+#[must_use]
+pub fn sidecar_pake_responder_v1_js(code: Vec<u8>, msg1: Vec<u8>) -> JsSidecarPakeResponderResult {
+    let r = sidecar_pake_responder_v1(&code, &msg1);
+    JsSidecarPakeResponderResult {
+        code: r.code,
+        responder_handle_id: r.responder_handle_id,
+        msg2: r.msg2,
+        responder_confirm: r.responder_confirm,
+    }
+}
+
+#[wasm_bindgen(js_name = sidecarPakeInitiatorFinishV1)]
+#[must_use]
+pub fn sidecar_pake_initiator_finish_v1_js(
+    handle_id: u32,
+    msg2: Vec<u8>,
+    responder_confirm: Vec<u8>,
+) -> JsSidecarPakeInitiatorFinishResult {
+    let r = sidecar_pake_initiator_finish_v1(handle_id, &msg2, &responder_confirm);
+    JsSidecarPakeInitiatorFinishResult {
+        code: r.code,
+        material_handle_id: r.material_handle_id,
+        initiator_confirm: r.initiator_confirm,
+    }
+}
+
+#[wasm_bindgen(js_name = sidecarPakeResponderFinishV1)]
+#[must_use]
+pub fn sidecar_pake_responder_finish_v1_js(
+    handle_id: u32,
+    initiator_confirm: Vec<u8>,
+) -> JsSidecarPakeResponderFinishResult {
+    let r = sidecar_pake_responder_finish_v1(handle_id, &initiator_confirm);
+    JsSidecarPakeResponderFinishResult {
+        code: r.code,
+        material_handle_id: r.material_handle_id,
+    }
+}
+
+#[wasm_bindgen(js_name = sidecarTunnelOpenV1)]
+#[must_use]
+pub fn sidecar_tunnel_open_v1_js(material_handle_id: u32) -> JsSidecarTunnelOpenResult {
+    let r = sidecar_tunnel_open_v1(material_handle_id);
+    JsSidecarTunnelOpenResult {
+        code: r.code,
+        send_handle_id: r.send_handle_id,
+        recv_handle_id: r.recv_handle_id,
+    }
+}
+
+#[wasm_bindgen(js_name = sidecarTunnelSealV1)]
+#[must_use]
+pub fn sidecar_tunnel_seal_v1_js(
+    send_handle_id: u32,
+    plaintext: Vec<u8>,
+) -> JsSidecarTunnelSealResult {
+    let r = sidecar_tunnel_seal_v1(send_handle_id, &plaintext);
+    JsSidecarTunnelSealResult {
+        code: r.code,
+        sealed: r.sealed,
+    }
+}
+
+#[wasm_bindgen(js_name = sidecarTunnelOpenMessageV1)]
+#[must_use]
+pub fn sidecar_tunnel_open_message_v1_js(
+    recv_handle_id: u32,
+    sealed: Vec<u8>,
+) -> JsSidecarTunnelOpenMsgResult {
+    let mut r = sidecar_tunnel_open_message_v1(recv_handle_id, &sealed);
+    let plaintext = std::mem::take(&mut r.plaintext);
+    JsSidecarTunnelOpenMsgResult {
+        code: r.code,
+        plaintext,
+    }
+}
+
+#[wasm_bindgen(js_name = sidecarTunnelCloseV1)]
+#[must_use]
+pub fn sidecar_tunnel_close_v1_js(send_handle_id: u32, recv_handle_id: u32) -> u32 {
+    sidecar_tunnel_close_v1(send_handle_id, recv_handle_id)
+}
+
+#[wasm_bindgen(js_name = sidecarPakeInitiatorCloseV1)]
+#[must_use]
+pub fn sidecar_pake_initiator_close_v1_js(handle_id: u32) -> u32 {
+    sidecar_pake_initiator_close_v1(handle_id)
+}
+
+#[wasm_bindgen(js_name = sidecarPakeResponderCloseV1)]
+#[must_use]
+pub fn sidecar_pake_responder_close_v1_js(handle_id: u32) -> u32 {
+    sidecar_pake_responder_close_v1(handle_id)
+}

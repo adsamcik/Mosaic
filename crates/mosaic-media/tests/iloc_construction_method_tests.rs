@@ -3,7 +3,10 @@ use mosaic_media::strip_avif_metadata;
 #[test]
 fn iloc_construction_method_0_rewrites_file_offsets_after_metadata_strip() {
     let input = iso_with_image_construction_method(0);
-    let stripped = strip_avif_metadata(&input).expect("cm=0 file offsets should strip");
+    let stripped = match strip_avif_metadata(&input) {
+        Ok(stripped) => stripped,
+        Err(error) => panic!("cm=0 file offsets should strip: {error:?}"),
+    };
     let entry = find_item_iloc(&stripped.bytes, 1);
     let (mdat_start, _) = find_mdat_range(&stripped.bytes);
 
@@ -20,7 +23,10 @@ fn iloc_construction_method_0_rewrites_file_offsets_after_metadata_strip() {
 #[test]
 fn iloc_construction_method_1_idat_offsets_are_preserved_without_file_rewrite() {
     let input = iso_with_image_construction_method(1);
-    let stripped = strip_avif_metadata(&input).expect("cm=1 idat offsets should remain supported");
+    let stripped = match strip_avif_metadata(&input) {
+        Ok(stripped) => stripped,
+        Err(error) => panic!("cm=1 idat offsets should remain supported: {error:?}"),
+    };
     let entry = find_item_iloc(&stripped.bytes, 1);
 
     assert_eq!(entry.construction_method, 1);
@@ -36,7 +42,10 @@ fn iloc_construction_method_1_idat_offsets_are_preserved_without_file_rewrite() 
 #[test]
 fn iloc_construction_method_2_item_offsets_are_preserved_without_file_rewrite() {
     let input = iso_with_image_construction_method(2);
-    let stripped = strip_avif_metadata(&input).expect("cm=2 item offsets should remain supported");
+    let stripped = match strip_avif_metadata(&input) {
+        Ok(stripped) => stripped,
+        Err(error) => panic!("cm=2 item offsets should remain supported: {error:?}"),
+    };
     let entry = find_item_iloc(&stripped.bytes, 1);
 
     assert_eq!(entry.construction_method, 2);
@@ -127,11 +136,11 @@ fn iloc_box(construction_method: u16, image_offset: usize) -> Vec<u8> {
     payload.extend_from_slice(&(construction_method & 0x000f).to_be_bytes());
     payload.extend_from_slice(&0_u16.to_be_bytes());
     payload.extend_from_slice(&1_u16.to_be_bytes());
-    payload.extend_from_slice(
-        &u32::try_from(image_offset)
-            .expect("image offset fits")
-            .to_be_bytes(),
-    );
+    let image_offset = match u32::try_from(image_offset) {
+        Ok(image_offset) => image_offset,
+        Err(error) => panic!("image offset does not fit: {error:?}"),
+    };
+    payload.extend_from_slice(&image_offset.to_be_bytes());
     payload.extend_from_slice(&5_u32.to_be_bytes());
 
     payload.extend_from_slice(&2_u16.to_be_bytes());
@@ -152,8 +161,14 @@ fn iprp_box() -> Vec<u8> {
 }
 
 fn find_item_iloc(input: &[u8], target_item_id: u32) -> IlocEntry {
-    let meta_payload = find_box_payload(input, *b"meta").expect("meta box");
-    let iloc_payload = find_box_payload(&meta_payload[4..], *b"iloc").expect("iloc box");
+    let meta_payload = match find_box_payload(input, *b"meta") {
+        Some(meta_payload) => meta_payload,
+        None => panic!("meta box missing"),
+    };
+    let iloc_payload = match find_box_payload(&meta_payload[4..], *b"iloc") {
+        Some(iloc_payload) => iloc_payload,
+        None => panic!("iloc box missing"),
+    };
     let version = iloc_payload[0];
     assert_eq!(version, 1);
     let offset_size = iloc_payload[4] >> 4;
@@ -201,7 +216,10 @@ fn find_item_iloc(input: &[u8], target_item_id: u32) -> IlocEntry {
 fn find_mdat_range(input: &[u8]) -> (usize, usize) {
     let mut cursor = 0_usize;
     while cursor < input.len() {
-        let (box_type, payload_start, end) = read_box_header(input, cursor).expect("valid box");
+        let (box_type, payload_start, end) = match read_box_header(input, cursor) {
+            Some(header) => header,
+            None => panic!("invalid box at cursor {cursor}"),
+        };
         if box_type == *b"mdat" {
             return (payload_start, end);
         }
@@ -235,14 +253,16 @@ fn read_box_header(input: &[u8], cursor: usize) -> Option<([u8; 4], usize, usize
 fn read_sized_uint(payload: &[u8], offset: usize, size: u8) -> usize {
     match size {
         0 => 0,
-        4 => usize::try_from(u32::from_be_bytes([
+        4 => match usize::try_from(u32::from_be_bytes([
             payload[offset],
             payload[offset + 1],
             payload[offset + 2],
             payload[offset + 3],
-        ]))
-        .expect("u32 fits usize"),
-        8 => usize::try_from(u64::from_be_bytes([
+        ])) {
+            Ok(value) => value,
+            Err(error) => panic!("u32 does not fit usize: {error:?}"),
+        },
+        8 => match usize::try_from(u64::from_be_bytes([
             payload[offset],
             payload[offset + 1],
             payload[offset + 2],
@@ -251,14 +271,19 @@ fn read_sized_uint(payload: &[u8], offset: usize, size: u8) -> usize {
             payload[offset + 5],
             payload[offset + 6],
             payload[offset + 7],
-        ]))
-        .expect("u64 fits usize"),
+        ])) {
+            Ok(value) => value,
+            Err(error) => panic!("u64 does not fit usize: {error:?}"),
+        },
         _ => panic!("unsupported iloc integer size"),
     }
 }
 
 fn bmff_box(box_type: [u8; 4], payload: &[u8]) -> Vec<u8> {
-    let size = u32::try_from(payload.len() + 8).expect("test box size fits");
+    let size = match u32::try_from(payload.len() + 8) {
+        Ok(size) => size,
+        Err(error) => panic!("test box size does not fit: {error:?}"),
+    };
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&size.to_be_bytes());
     bytes.extend_from_slice(&box_type);

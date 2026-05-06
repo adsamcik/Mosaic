@@ -693,8 +693,10 @@ fn manifest_transcript_bytes_uniffi_matches_domain_vector() {
         shards,
     };
 
-    let result = mosaic_uniffi::manifest_transcript_bytes_uniffi(inputs)
-        .expect("valid manifest transcript inputs should serialize");
+    let result = match mosaic_uniffi::manifest_transcript_bytes_uniffi(inputs) {
+        Ok(result) => result,
+        Err(error) => panic!("valid manifest transcript inputs should serialize: {error:?}"),
+    };
 
     assert_eq!(
         result,
@@ -713,8 +715,10 @@ fn manifest_transcript_bytes_uniffi_rejects_malformed_inputs_without_panic() {
         shards: Vec::new(),
     };
 
-    let error = mosaic_uniffi::manifest_transcript_bytes_uniffi(inputs)
-        .expect_err("malformed manifest transcript inputs should return MosaicError");
+    let error = match mosaic_uniffi::manifest_transcript_bytes_uniffi(inputs) {
+        Ok(_) => panic!("malformed manifest transcript inputs should return MosaicError"),
+        Err(error) => error,
+    };
 
     assert_eq!(
         error,

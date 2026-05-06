@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DownloadModePicker } from '../DownloadModePicker';
+import { __setFeatureFlagForTests, __resetFeatureFlagsForTests } from '../../../lib/feature-flags';
 import type { PerFileStrategy, PhotoMeta } from '../../../workers/types';
 import { click, render, requireElement } from './DownloadTestUtils';
 
@@ -41,6 +42,9 @@ vi.mock('react-i18next', () => ({
         'download.modePicker.perFileDirectoryDisclosure': "We'll open a folder picker and write each photo into it.",
         'download.modePicker.perFileNotSupported': 'Per-file save not supported in this browser',
         'download.modePicker.perFilePromptCountOne': '1 prompt',
+        'download.modePicker.sidecar.label': 'Send to my phone',
+        'download.modePicker.sidecar.sub': 'Stream photos to a paired device',
+        'download.modePicker.sidecar.beta': 'Beta',
       };
       return dict[key] ?? key;
     },
@@ -214,6 +218,80 @@ describe('DownloadModePicker', () => {
     );
     expect(r.container.querySelector('[role="dialog"]')).toBeNull();
     await r.unmount();
+  });
+
+  describe('sidecar option (beta)', () => {
+    afterEach(() => { __resetFeatureFlagsForTests(); });
+
+    it('is hidden by default (flag off, allowSidecar undefined)', async () => {
+      const r = await render(
+        <DownloadModePicker open albumId="alb" suggestedFileName="album" photos={[samplePhoto]} onConfirm={vi.fn()} onClose={vi.fn()} />,
+      );
+      expect(r.container.querySelector('[data-testid="download-mode-radio-sidecar"]')).toBeNull();
+      await r.unmount();
+    });
+
+    it('is hidden when flag is on but allowSidecar is false', async () => {
+      __setFeatureFlagForTests('sidecar', true);
+      const r = await render(
+        <DownloadModePicker open albumId="alb" suggestedFileName="album" photos={[samplePhoto]} onConfirm={vi.fn()} onClose={vi.fn()} />,
+      );
+      expect(r.container.querySelector('[data-testid="download-mode-radio-sidecar"]')).toBeNull();
+      await r.unmount();
+    });
+
+    it('is hidden in visitor flow (hideKeepOffline=true) even with flag on', async () => {
+      __setFeatureFlagForTests('sidecar', true);
+      const r = await render(
+        <DownloadModePicker open allowSidecar hideKeepOffline albumId="alb" suggestedFileName="album" photos={[samplePhoto]} onConfirm={vi.fn()} onClose={vi.fn()} />,
+      );
+      expect(r.container.querySelector('[data-testid="download-mode-radio-sidecar"]')).toBeNull();
+      await r.unmount();
+    });
+
+    it('is hidden when RTCPeerConnection is missing', async () => {
+      __setFeatureFlagForTests('sidecar', true);
+      const orig = (window as unknown as { RTCPeerConnection?: unknown }).RTCPeerConnection;
+      // Delete RTCPeerConnection if present
+      delete (window as unknown as { RTCPeerConnection?: unknown }).RTCPeerConnection;
+      try {
+        const r = await render(
+          <DownloadModePicker open allowSidecar albumId="alb" suggestedFileName="album" photos={[samplePhoto]} onConfirm={vi.fn()} onClose={vi.fn()} />,
+        );
+        expect(r.container.querySelector('[data-testid="download-mode-radio-sidecar"]')).toBeNull();
+        await r.unmount();
+      } finally {
+        if (orig !== undefined) (window as unknown as { RTCPeerConnection?: unknown }).RTCPeerConnection = orig;
+      }
+    });
+
+    it('is visible with flag on + allowSidecar + RTCPeerConnection', async () => {
+      __setFeatureFlagForTests('sidecar', true);
+      (window as unknown as { RTCPeerConnection: unknown }).RTCPeerConnection = function MockRTC() { /* stub */ } as unknown;
+      const r = await render(
+        <DownloadModePicker open allowSidecar albumId="alb" suggestedFileName="album" photos={[samplePhoto]} onConfirm={vi.fn()} onClose={vi.fn()} />,
+      );
+      expect(r.container.querySelector('[data-testid="download-mode-radio-sidecar"]')).not.toBeNull();
+      expect(r.container.querySelector('[data-testid="download-mode-badge-sidecar"]')?.textContent).toBe('Beta');
+      expect(r.container.textContent).toContain('Send to my phone');
+      await r.unmount();
+    });
+
+    it('selecting sidecar fires onSidecarChosen instead of onConfirm', async () => {
+      __setFeatureFlagForTests('sidecar', true);
+      (window as unknown as { RTCPeerConnection: unknown }).RTCPeerConnection = function MockRTC() { /* stub */ } as unknown;
+      const onConfirm = vi.fn();
+      const onSidecarChosen = vi.fn();
+      const r = await render(
+        <DownloadModePicker open allowSidecar onSidecarChosen={onSidecarChosen} albumId="alb" suggestedFileName="album" photos={[samplePhoto]} onConfirm={onConfirm} onClose={vi.fn()} />,
+      );
+      const radio = requireElement<HTMLInputElement>(r.container.querySelector('[data-testid="download-mode-radio-sidecar"]'));
+      await click(radio);
+      await click(requireElement(r.container.querySelector('[data-testid="download-mode-picker-start"]')));
+      expect(onSidecarChosen).toHaveBeenCalledTimes(1);
+      expect(onConfirm).not.toHaveBeenCalled();
+      await r.unmount();
+    });
   });
 });
 

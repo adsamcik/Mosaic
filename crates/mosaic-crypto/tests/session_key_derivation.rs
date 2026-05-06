@@ -14,25 +14,33 @@ const GOLDEN_MASTER_KEY: [u8; 32] = [
 
 #[test]
 fn derive_session_salt_matches_libsodium_blake2b_128_vector() {
-    let salt = derive_session_salt(DOMAIN, USERNAME).expect("derive session salt");
+    let salt = match derive_session_salt(DOMAIN, USERNAME) {
+        Ok(salt) => salt,
+        Err(error) => panic!("derive session salt failed: {error:?}"),
+    };
     assert_eq!(salt, GOLDEN_SALT);
 }
 
 #[test]
 fn derive_session_salt_accepts_empty_username_for_web_compatibility() {
-    let salt = derive_session_salt(DOMAIN, "").expect("derive session salt for empty username");
+    let salt = match derive_session_salt(DOMAIN, "") {
+        Ok(salt) => salt,
+        Err(error) => panic!("derive session salt for empty username failed: {error:?}"),
+    };
     assert_eq!(salt.len(), 16);
 }
 
 #[test]
 fn derive_session_master_key_matches_libsodium_argon2id13_vector() {
-    let key = derive_session_master_key(
+    let key = match derive_session_master_key(
         Zeroizing::new(PASSWORD.to_vec()),
         &GOLDEN_SALT,
         2,
         64 * 1024,
-    )
-    .expect("derive session master key");
+    ) {
+        Ok(key) => key,
+        Err(error) => panic!("derive session master key failed: {error:?}"),
+    };
 
     assert_eq!(key.as_bytes(), &GOLDEN_MASTER_KEY);
 }

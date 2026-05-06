@@ -1,8 +1,9 @@
 import { useCallback, useState, type JSX } from 'react';
 import { DownloadModePicker } from '../components/Download/DownloadModePicker';
 import { PersistencePrompt } from '../components/Download/PersistencePrompt';
+import { SidecarPairingModal } from '../components/Download/SidecarPairingModal';
 import { useStoragePersistence } from './useStoragePersistence';
-import type { DownloadOutputMode, PhotoMeta } from '../workers/types';
+import type { DownloadOutputMode, PhotoMeta, SidecarPeerHandle, SidecarFallbackKind } from '../workers/types';
 import type { DownloadSchedule } from '../lib/download-schedule';
 
 /** Bundle returned by the picker promise. */
@@ -46,6 +47,18 @@ interface PromptArgs {
    * no per-account scope key.
    */
   readonly hideKeepOffline?: boolean;
+  /**
+   * Allow the beta "Send to my phone" sidecar option. Caller is responsible
+   * for gating on `accessTier === FULL` (visitor flows MUST NOT pass this).
+   * The picker further requires the `sidecar` feature flag and
+   * `RTCPeerConnection` to be present in the runtime.
+   */
+  readonly allowSidecar?: boolean;
+  /**
+   * Fallback finalizer if the paired peer drops mid-job. Only meaningful
+   * when {@link allowSidecar} is true. Defaults to `'zip'`.
+   */
+  readonly sidecarFallback?: SidecarFallbackKind;
 }
 
 interface PickerSession {
@@ -53,6 +66,8 @@ interface PickerSession {
   readonly suggestedFileName: string;
   readonly photos: ReadonlyArray<PhotoMeta>;
   readonly hideKeepOffline: boolean;
+  readonly allowSidecar: boolean;
+  readonly sidecarFallback: SidecarFallbackKind;
   readonly resolve: (resolution: PickerResolution | null) => void;
 }
 
@@ -66,6 +81,8 @@ export function useAlbumDownloadModePicker(): UseAlbumDownloadModePickerResult {
   // DownloadTray when request() resolves false. Out of scope here.
   const [persistencePromptActive, setPersistencePromptActive] = useState(false);
   const persistence = useStoragePersistence();
+  // Active when the user picked 'sidecar' on the picker; mounts the pairing modal.
+  const [pairingActive, setPairingActive] = useState(false);
 
   const prompt = useCallback((args: PromptArgs): Promise<PickerResolution | null> => {
     return new Promise<PickerResolution | null>((resolve) => {
@@ -74,6 +91,8 @@ export function useAlbumDownloadModePicker(): UseAlbumDownloadModePickerResult {
         suggestedFileName: args.suggestedFileName,
         photos: args.photos,
         hideKeepOffline: args.hideKeepOffline ?? false,
+        allowSidecar: args.allowSidecar ?? false,
+        sidecarFallback: args.sidecarFallback ?? 'zip',
         resolve,
       });
     });
@@ -97,13 +116,36 @@ export function useAlbumDownloadModePicker(): UseAlbumDownloadModePickerResult {
     setSession(null);
   }, [session]);
 
+  const handleSidecarChosen = useCallback((): void => {
+    if (!session) return;
+    // Keep the session alive (resolves once pairing succeeds or is cancelled).
+    setPairingActive(true);
+  }, [session]);
+
+  const handleSidecarPaired = useCallback((peerHandle: SidecarPeerHandle, fallback: SidecarFallbackKind): void => {
+    if (!session) return;
+    setPairingActive(false);
+    session.resolve({
+      mode: { kind: 'sidecar', peerHandle, fallback },
+      schedule: { kind: 'immediate' },
+    });
+    setSession(null);
+  }, [session]);
+
+  const handleSidecarCancel = useCallback((): void => {
+    setPairingActive(false);
+    if (!session) return;
+    session.resolve(null);
+    setSession(null);
+  }, [session]);
+
   const handlePersistenceResolved = useCallback((): void => {
     setPersistencePromptActive(false);
   }, []);
 
   const pickerElement = (
     <>
-      {session
+      {session && !pairingActive
         ? (
             <DownloadModePicker
               open
@@ -111,8 +153,20 @@ export function useAlbumDownloadModePicker(): UseAlbumDownloadModePickerResult {
               suggestedFileName={session.suggestedFileName}
               photos={session.photos}
               hideKeepOffline={session.hideKeepOffline}
+              allowSidecar={session.allowSidecar}
+              onSidecarChosen={handleSidecarChosen}
               onConfirm={handleConfirm}
               onClose={handleClose}
+            />
+          )
+        : null}
+      {session && pairingActive
+        ? (
+            <SidecarPairingModal
+              open
+              fallback={session.sidecarFallback}
+              onPaired={handleSidecarPaired}
+              onCancel={handleSidecarCancel}
             />
           )
         : null}

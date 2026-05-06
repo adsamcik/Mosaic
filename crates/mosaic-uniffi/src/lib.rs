@@ -1317,11 +1317,13 @@ pub fn plan_media_tier_layout(width: u32, height: u32) -> MediaTierLayoutResult 
 #[uniffi::export]
 #[must_use]
 pub fn canonical_tier_layout() -> MediaTierLayoutResult {
-    let layout = mosaic_media::plan_tier_layout(
+    let layout = match mosaic_media::plan_tier_layout(
         mosaic_media::ORIGINAL_MAX_DIMENSION,
         mosaic_media::ORIGINAL_MAX_DIMENSION,
-    )
-    .expect("canonical original dimensions must be valid");
+    ) {
+        Ok(layout) => layout,
+        Err(error) => panic!("canonical original dimensions must be valid: {error:?}"),
+    };
     MediaTierLayoutResult {
         code: mosaic_client::ClientErrorCode::Ok.as_u16(),
         thumbnail: media_tier_dimensions(layout.thumbnail),
@@ -4013,9 +4015,10 @@ pub fn init_download_job(input: DownloadInitInput) -> SnapshotBytesResult {
             retry_count: 0,
         })
         .collect();
+    let job_id = mosaic_client::download::snapshot::JobId::from_bytes(job_id);
     let snapshot = mosaic_client::download::snapshot::DownloadJobSnapshot {
         schema_version: mosaic_client::download::snapshot::CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION,
-        job_id: mosaic_client::download::snapshot::JobId::from_bytes(job_id),
+        job_id,
         album_id: mosaic_client::Uuid::from_bytes(album_id),
         created_at_ms: input.now_ms,
         last_updated_at_ms: input.now_ms,
@@ -4024,6 +4027,8 @@ pub fn init_download_job(input: DownloadInitInput) -> SnapshotBytesResult {
         photos,
         failure_log: Vec::new(),
         lease_token: None,
+        scope_key: mosaic_client::download::scope::legacy_scope_for(&job_id),
+        schedule: None,
     };
     match mosaic_client::download::snapshot::prepare_snapshot_bytes(&snapshot) {
         Ok(bytes) => SnapshotBytesResult {

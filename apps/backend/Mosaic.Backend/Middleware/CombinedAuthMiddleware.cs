@@ -38,6 +38,7 @@ public partial class CombinedAuthMiddleware
         "/api/auth/register",
         "/api/dev-auth",
         "/api/s", // Intentionally broad for anonymous share-link routes; exact-plus-slash matching keeps /api/settings and /api/secrets private.
+        "/api/sidecar", // Sidecar Beacon signaling relay; intentionally unauthenticated (room-id is PAKE-derived, server cannot enumerate).
         "/swagger",
         "/openapi"
     ];

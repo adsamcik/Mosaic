@@ -3,13 +3,12 @@
 
 use ciborium::value::{Integer, Value};
 use mosaic_client::Uuid;
-use mosaic_client::download::*;
 use mosaic_client::download::scope::legacy_scope_for;
 use mosaic_client::download::snapshot::{
     CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION, DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1,
-    DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3,
-    download_job_snapshot_keys,
+    DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3, download_job_snapshot_keys,
 };
+use mosaic_client::download::*;
 
 fn uuid(seed: u8) -> Uuid {
     let mut bytes = [seed; 16];
@@ -33,15 +32,33 @@ fn uint<T: Into<u64>>(value: T) -> Value {
 /// a `legacy:<job-id-hex>` scope key.
 fn synthesize_v1_body(job: JobId, album: Uuid) -> Vec<u8> {
     let value = Value::Map(vec![
-        kv(download_job_snapshot_keys::SCHEMA_VERSION, uint(DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1)),
-        kv(download_job_snapshot_keys::JOB_ID, Value::Bytes(job.as_bytes().to_vec())),
-        kv(download_job_snapshot_keys::ALBUM_ID, Value::Bytes(album.as_bytes().to_vec())),
+        kv(
+            download_job_snapshot_keys::SCHEMA_VERSION,
+            uint(DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1),
+        ),
+        kv(
+            download_job_snapshot_keys::JOB_ID,
+            Value::Bytes(job.as_bytes().to_vec()),
+        ),
+        kv(
+            download_job_snapshot_keys::ALBUM_ID,
+            Value::Bytes(album.as_bytes().to_vec()),
+        ),
         kv(download_job_snapshot_keys::CREATED_AT_MS, uint(100_u64)),
-        kv(download_job_snapshot_keys::LAST_UPDATED_AT_MS, uint(200_u64)),
-        kv(download_job_snapshot_keys::STATE, Value::Map(vec![kv(0, uint(0_u8))])),
+        kv(
+            download_job_snapshot_keys::LAST_UPDATED_AT_MS,
+            uint(200_u64),
+        ),
+        kv(
+            download_job_snapshot_keys::STATE,
+            Value::Map(vec![kv(0, uint(0_u8))]),
+        ),
         kv(download_job_snapshot_keys::PLAN, Value::Array(Vec::new())),
         kv(download_job_snapshot_keys::PHOTOS, Value::Array(Vec::new())),
-        kv(download_job_snapshot_keys::FAILURE_LOG, Value::Array(Vec::new())),
+        kv(
+            download_job_snapshot_keys::FAILURE_LOG,
+            Value::Array(Vec::new()),
+        ),
         kv(download_job_snapshot_keys::LEASE_TOKEN, Value::Null),
     ]);
     let mut out = Vec::new();
@@ -51,7 +68,10 @@ fn synthesize_v1_body(job: JobId, album: Uuid) -> Vec<u8> {
 
 #[test]
 fn current_schema_version_is_v3() {
-    assert_eq!(CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION, DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3);
+    assert_eq!(
+        CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION,
+        DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V3
+    );
 }
 
 #[test]
@@ -86,12 +106,14 @@ fn v2_snapshot_round_trips_scope_key() {
         created_at_ms: 1,
         last_updated_at_ms: 2,
         state: DownloadJobState::Idle,
-        plan: DownloadPlan { entries: Vec::new() },
+        plan: DownloadPlan {
+            entries: Vec::new(),
+        },
         photos: Vec::new(),
         failure_log: Vec::new(),
         lease_token: None,
         scope_key: String::from("auth:abcdef0123456789abcdef0123456789"),
-    schedule: None,
+        schedule: None,
     };
     let bytes = snapshot.to_canonical_cbor().expect("encode v2");
     let reloaded = DownloadJobSnapshot::from_canonical_cbor(&bytes).expect("decode v2");
@@ -104,20 +126,40 @@ fn v1_with_extra_key_is_rejected() {
     let job = job_id(7);
     let album = uuid(8);
     let value = Value::Map(vec![
-        kv(download_job_snapshot_keys::SCHEMA_VERSION, uint(DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1)),
-        kv(download_job_snapshot_keys::JOB_ID, Value::Bytes(job.as_bytes().to_vec())),
-        kv(download_job_snapshot_keys::ALBUM_ID, Value::Bytes(album.as_bytes().to_vec())),
+        kv(
+            download_job_snapshot_keys::SCHEMA_VERSION,
+            uint(DOWNLOAD_SNAPSHOT_SCHEMA_VERSION_V1),
+        ),
+        kv(
+            download_job_snapshot_keys::JOB_ID,
+            Value::Bytes(job.as_bytes().to_vec()),
+        ),
+        kv(
+            download_job_snapshot_keys::ALBUM_ID,
+            Value::Bytes(album.as_bytes().to_vec()),
+        ),
         kv(download_job_snapshot_keys::CREATED_AT_MS, uint(100_u64)),
-        kv(download_job_snapshot_keys::LAST_UPDATED_AT_MS, uint(200_u64)),
-        kv(download_job_snapshot_keys::STATE, Value::Map(vec![kv(0, uint(0_u8))])),
+        kv(
+            download_job_snapshot_keys::LAST_UPDATED_AT_MS,
+            uint(200_u64),
+        ),
+        kv(
+            download_job_snapshot_keys::STATE,
+            Value::Map(vec![kv(0, uint(0_u8))]),
+        ),
         kv(download_job_snapshot_keys::PLAN, Value::Array(Vec::new())),
         kv(download_job_snapshot_keys::PHOTOS, Value::Array(Vec::new())),
-        kv(download_job_snapshot_keys::FAILURE_LOG, Value::Array(Vec::new())),
+        kv(
+            download_job_snapshot_keys::FAILURE_LOG,
+            Value::Array(Vec::new()),
+        ),
         kv(download_job_snapshot_keys::LEASE_TOKEN, Value::Null),
-        kv(download_job_snapshot_keys::SCOPE_KEY, Value::Text(String::from("auth:x"))),
+        kv(
+            download_job_snapshot_keys::SCOPE_KEY,
+            Value::Text(String::from("auth:x")),
+        ),
     ]);
     let mut bytes = Vec::new();
     ciborium::ser::into_writer(&value, &mut bytes).expect("encode");
     assert!(DownloadJobSnapshot::from_canonical_cbor(&bytes).is_err());
 }
-

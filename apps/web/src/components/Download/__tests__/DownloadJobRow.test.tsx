@@ -141,6 +141,33 @@ describe('DownloadJobRow', () => {
     expect(textContent(rendered.container)).not.toContain('Share link revoked');
     await rendered.unmount();
   });
+
+  it('renders a Sidecar badge for jobs whose outputModeKind is sidecar', async () => {
+    const job: JobSummary = { ...baseJob, outputModeKind: 'sidecar' };
+    const rendered = await render(
+      <DownloadJobRow job={job} onPause={vi.fn()} onResume={vi.fn()} onCancelSoft={vi.fn()} onCancelHard={vi.fn()} />,
+    );
+    expect(rendered.container.querySelector('[data-testid="download-tray-sidecar-badge"]')).not.toBeNull();
+    expect(textContent(rendered.container)).toContain('Sidecar');
+    await rendered.unmount();
+  });
+
+  it('does not render the Sidecar badge for non-sidecar jobs', async () => {
+    const rendered = await render(
+      <DownloadJobRow job={baseJob} onPause={vi.fn()} onResume={vi.fn()} onCancelSoft={vi.fn()} onCancelHard={vi.fn()} />,
+    );
+    expect(rendered.container.querySelector('[data-testid="download-tray-sidecar-badge"]')).toBeNull();
+    await rendered.unmount();
+  });
+
+  it('renders a Receiving badge for jobs in the sidecar: scope', async () => {
+    const job: JobSummary = { ...baseJob, scopeKey: 'sidecar:11111111111111111111111111111111' };
+    const rendered = await render(
+      <DownloadJobRow job={job} onPause={vi.fn()} onResume={vi.fn()} onCancelSoft={vi.fn()} onCancelHard={vi.fn()} />,
+    );
+    expect(rendered.container.querySelector('[data-testid="download-tray-sidecar-receiving-badge"]')).not.toBeNull();
+    await rendered.unmount();
+  });
 });
 
 function translate(key: string, values?: Record<string, unknown>): string {
@@ -164,6 +191,8 @@ function translate(key: string, values?: Record<string, unknown>): string {
     'download.tray.scheduledReason': 'Waiting: {{reason}}',
     'download.tray.scheduledReasons.connectionTooSlow': 'connection too slow',
     'download.tray.scheduledReasons.notCharging': 'not charging',
+    'download.tray.sidecarBadge': 'Sidecar',
+    'download.tray.sidecarReceiving': 'Receiving',
     'download.tray.phase.Idle': 'Idle',
   };
   let output = map[key] ?? key;

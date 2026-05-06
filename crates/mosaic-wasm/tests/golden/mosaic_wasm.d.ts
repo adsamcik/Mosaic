@@ -600,6 +600,67 @@ export enum ShardTier {
     Original = 3,
 }
 
+export class SidecarPakeInitiatorFinishResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly code: number;
+    readonly initiatorConfirm: Uint8Array;
+    readonly materialHandleId: number;
+}
+
+export class SidecarPakeResponderFinishResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly code: number;
+    readonly materialHandleId: number;
+}
+
+export class SidecarPakeResponderResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly code: number;
+    readonly msg2: Uint8Array;
+    readonly responderConfirm: Uint8Array;
+    readonly responderHandleId: number;
+}
+
+export class SidecarPakeStartResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly code: number;
+    readonly handleId: number;
+    readonly msg1: Uint8Array;
+}
+
+export class SidecarTunnelOpenMsgResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly code: number;
+    readonly plaintext: Uint8Array;
+}
+
+export class SidecarTunnelOpenResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly code: number;
+    readonly recvHandleId: number;
+    readonly sendHandleId: number;
+}
+
+export class SidecarTunnelSealResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly code: number;
+    readonly sealed: Uint8Array;
+}
+
 /**
  * WASM-bindgen class for finalized streaming envelope results.
  */
@@ -1160,6 +1221,26 @@ export function shardTierByte(tier: ShardTier): number;
  */
 export function shardTierFromByte(byte: number): ShardTier;
 
+export function sidecarPakeInitiatorCloseV1(handle_id: number): number;
+
+export function sidecarPakeInitiatorFinishV1(handle_id: number, msg2: Uint8Array, responder_confirm: Uint8Array): SidecarPakeInitiatorFinishResult;
+
+export function sidecarPakeInitiatorStartV1(code: Uint8Array): SidecarPakeStartResult;
+
+export function sidecarPakeResponderCloseV1(handle_id: number): number;
+
+export function sidecarPakeResponderFinishV1(handle_id: number, initiator_confirm: Uint8Array): SidecarPakeResponderFinishResult;
+
+export function sidecarPakeResponderV1(code: Uint8Array, msg1: Uint8Array): SidecarPakeResponderResult;
+
+export function sidecarTunnelCloseV1(send_handle_id: number, recv_handle_id: number): number;
+
+export function sidecarTunnelOpenMessageV1(recv_handle_id: number, sealed: Uint8Array): SidecarTunnelOpenMsgResult;
+
+export function sidecarTunnelOpenV1(material_handle_id: number): SidecarTunnelOpenResult;
+
+export function sidecarTunnelSealV1(send_handle_id: number, plaintext: Uint8Array): SidecarTunnelSealResult;
+
 /**
  * Signs a LocalAuth challenge transcript with an account-key handle through WASM.
  */
@@ -1286,6 +1367,7 @@ export interface InitOutput {
     readonly __wbg_progressevent_free: (a: number, b: number) => void;
     readonly __wbg_progressresult_free: (a: number, b: number) => void;
     readonly __wbg_sealedbundleresult_free: (a: number, b: number) => void;
+    readonly __wbg_sidecarpakeresponderresult_free: (a: number, b: number) => void;
     readonly __wbg_streamingenveloperesult_free: (a: number, b: number) => void;
     readonly __wbg_streamingsharddecryptor_free: (a: number, b: number) => void;
     readonly __wbg_streamingshardencryptor_free: (a: number, b: number) => void;
@@ -1443,6 +1525,21 @@ export interface InitOutput {
     readonly sealedbundleresult_signature: (a: number, b: number) => void;
     readonly shardTierByte: (a: number) => number;
     readonly shardTierFromByte: (a: number, b: number) => void;
+    readonly sidecarPakeInitiatorCloseV1: (a: number) => number;
+    readonly sidecarPakeInitiatorFinishV1: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly sidecarPakeInitiatorStartV1: (a: number, b: number) => number;
+    readonly sidecarPakeResponderCloseV1: (a: number) => number;
+    readonly sidecarPakeResponderFinishV1: (a: number, b: number, c: number) => number;
+    readonly sidecarPakeResponderV1: (a: number, b: number, c: number, d: number) => number;
+    readonly sidecarTunnelCloseV1: (a: number, b: number) => number;
+    readonly sidecarTunnelOpenMessageV1: (a: number, b: number, c: number) => number;
+    readonly sidecarTunnelOpenV1: (a: number) => number;
+    readonly sidecarTunnelSealV1: (a: number, b: number, c: number) => number;
+    readonly sidecarpakeresponderresult_code: (a: number) => number;
+    readonly sidecarpakeresponderresult_msg2: (a: number, b: number) => void;
+    readonly sidecarpakeresponderresult_responderConfirm: (a: number, b: number) => void;
+    readonly sidecarpakeresponderresult_responderHandleId: (a: number) => number;
+    readonly sidecartunnelopenresult_recvHandleId: (a: number) => number;
     readonly signAuthChallengeWithAccount: (a: bigint, b: number, c: number) => number;
     readonly signAuthChallengeWithPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly signManifestWithEpochHandle: (a: bigint, b: number, c: number) => number;
@@ -1461,7 +1558,6 @@ export interface InitOutput {
     readonly streamingshardencryptor_encryptFrame: (a: number, b: number, c: number) => number;
     readonly streamingshardencryptor_finalize: (a: number) => number;
     readonly streamingshardencryptor_new: (a: bigint, b: number, c: number) => number;
-    readonly streamingshardopenresult_chunkSizeBytes: (a: number) => number;
     readonly stripAvifMetadata: (a: number, b: number) => number;
     readonly stripHeicMetadata: (a: number, b: number) => number;
     readonly stripJpegMetadata: (a: number, b: number) => number;
@@ -1489,54 +1585,75 @@ export interface InitOutput {
     readonly wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly wrappedtierkeyresult_tier: (a: number) => number;
     readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
-    readonly __wbg_epochkeyhandlestatusresult_free: (a: number, b: number) => void;
+    readonly __wbg_sidecarpakeresponderfinishresult_free: (a: number, b: number) => void;
+    readonly __wbg_sidecartunnelopenresult_free: (a: number, b: number) => void;
     readonly __wbg_streamingshardopenresult_free: (a: number, b: number) => void;
-    readonly __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
-    readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
+    readonly __wbg_epochkeyhandlestatusresult_free: (a: number, b: number) => void;
     readonly __wbg_encryptedcontentresult_free: (a: number, b: number) => void;
+    readonly __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
     readonly __wbg_serializesnapshotresult_free: (a: number, b: number) => void;
-    readonly __wbg_stripresult_free: (a: number, b: number) => void;
+    readonly __wbg_sidecartunnelsealresult_free: (a: number, b: number) => void;
     readonly __wbg_streamingshardchunkresult_free: (a: number, b: number) => void;
+    readonly __wbg_stripresult_free: (a: number, b: number) => void;
+    readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_streamingframeresult_free: (a: number, b: number) => void;
-    readonly __wbg_bytesresult_free: (a: number, b: number) => void;
+    readonly __wbg_sidecartunnelopenmsgresult_free: (a: number, b: number) => void;
     readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
-    readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
-    readonly __wbg_authkeypairresult_free: (a: number, b: number) => void;
     readonly __wbg_commitsnapshotresult_free: (a: number, b: number) => void;
-    readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
-    readonly epochkeyhandlestatusresult_code: (a: number) => number;
-    readonly streamingshardopenresult_code: (a: number) => number;
-    readonly streamingshardopenresult_handleId: (a: number) => number;
+    readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
+    readonly __wbg_sidecarpakestartresult_free: (a: number, b: number) => void;
+    readonly __wbg_sidecarpakeinitiatorfinishresult_free: (a: number, b: number) => void;
+    readonly __wbg_bytesresult_free: (a: number, b: number) => void;
+    readonly __wbg_authkeypairresult_free: (a: number, b: number) => void;
     readonly verifysnapshotresult_code: (a: number) => number;
-    readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
-    readonly wrappedtierkeyresult_code: (a: number) => number;
-    readonly encryptedshardresult_sha256: (a: number, b: number) => void;
+    readonly sidecarpakeresponderfinishresult_code: (a: number) => number;
+    readonly sidecarpakeresponderfinishresult_materialHandleId: (a: number) => number;
+    readonly sidecartunnelopenresult_code: (a: number) => number;
+    readonly sidecartunnelopenresult_sendHandleId: (a: number) => number;
+    readonly streamingshardopenresult_handleId: (a: number) => number;
+    readonly streamingshardopenresult_chunkSizeBytes: (a: number) => number;
+    readonly streamingshardopenresult_code: (a: number) => number;
+    readonly epochkeyhandlestatusresult_code: (a: number) => number;
+    readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
     readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
-    readonly encryptedshardresult_code: (a: number) => number;
-    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
     readonly encryptedcontentresult_nonce: (a: number, b: number) => void;
-    readonly serializesnapshotresult_body: (a: number, b: number) => void;
-    readonly serializesnapshotresult_code: (a: number) => number;
+    readonly wrappedtierkeyresult_code: (a: number) => number;
     readonly serializesnapshotresult_checksum: (a: number, b: number) => void;
-    readonly stripresult_code: (a: number) => number;
-    readonly stripresult_removedMetadataCount: (a: number) => number;
-    readonly stripresult_strippedBytes: (a: number, b: number) => void;
+    readonly serializesnapshotresult_code: (a: number) => number;
+    readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
+    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
+    readonly sidecartunnelsealresult_sealed: (a: number, b: number) => void;
+    readonly sidecartunnelopenmsgresult_plaintext: (a: number, b: number) => void;
     readonly streamingshardchunkresult_code: (a: number) => number;
-    readonly streamingshardchunkresult_plaintext: (a: number, b: number) => void;
-    readonly streamingframeresult_frameIndex: (a: number) => number;
-    readonly streamingframeresult_bytes: (a: number, b: number) => void;
-    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
-    readonly decryptedshardresult_code: (a: number) => number;
-    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
-    readonly bytesresult_code: (a: number) => number;
-    readonly decryptedcontentresult_code: (a: number) => number;
-    readonly bytesresult_bytes: (a: number, b: number) => void;
-    readonly authkeypairresult_authPublicKey: (a: number, b: number) => void;
-    readonly linktierhandleresult_linkId: (a: number, b: number) => void;
     readonly linktierhandleresult_handle: (a: number) => bigint;
+    readonly linktierhandleresult_linkId: (a: number, b: number) => void;
     readonly linktierhandleresult_code: (a: number) => number;
-    readonly commitsnapshotresult_code: (a: number) => number;
+    readonly stripresult_removedMetadataCount: (a: number) => number;
+    readonly sidecarpakeinitiatorfinishresult_materialHandleId: (a: number) => number;
+    readonly sidecarpakestartresult_msg1: (a: number, b: number) => void;
+    readonly encryptedshardresult_code: (a: number) => number;
+    readonly serializesnapshotresult_body: (a: number, b: number) => void;
+    readonly encryptedshardresult_sha256: (a: number, b: number) => void;
+    readonly streamingframeresult_bytes: (a: number, b: number) => void;
+    readonly streamingframeresult_frameIndex: (a: number) => number;
+    readonly sidecartunnelopenmsgresult_code: (a: number) => number;
+    readonly streamingshardchunkresult_plaintext: (a: number, b: number) => void;
+    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
+    readonly decryptedshardresult_code: (a: number) => number;
     readonly commitsnapshotresult_checksum: (a: number, b: number) => void;
+    readonly sidecartunnelsealresult_code: (a: number) => number;
+    readonly decryptedcontentresult_code: (a: number) => number;
+    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
+    readonly stripresult_code: (a: number) => number;
+    readonly stripresult_strippedBytes: (a: number, b: number) => void;
+    readonly sidecarpakestartresult_code: (a: number) => number;
+    readonly sidecarpakeinitiatorfinishresult_code: (a: number) => number;
+    readonly sidecarpakeinitiatorfinishresult_initiatorConfirm: (a: number, b: number) => void;
+    readonly sidecarpakestartresult_handleId: (a: number) => number;
+    readonly bytesresult_bytes: (a: number, b: number) => void;
+    readonly bytesresult_code: (a: number) => number;
+    readonly commitsnapshotresult_code: (a: number) => number;
+    readonly authkeypairresult_authPublicKey: (a: number, b: number) => void;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export2: (a: number, b: number) => number;

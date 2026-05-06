@@ -35,6 +35,13 @@ const IDEMPOTENCY_KEY: &str = "018f0000-0000-7000-8000-000000000004";
 const EFFECT_ID: &str = "018f0000-0000-7000-8000-000000000005";
 const SHARD_ID: &str = "018f0000-0000-7000-8000-000000000006";
 
+fn must<T, E: core::fmt::Debug>(result: Result<T, E>, context: &str) -> T {
+    match result {
+        Ok(value) => value,
+        Err(error) => panic!("{context}: {error:?}"),
+    }
+}
+
 #[test]
 fn finalize_idempotency_key_parity() {
     let job_id = mosaic_client::Uuid::from_bytes([
@@ -43,8 +50,14 @@ fn finalize_idempotency_key_parity() {
     ]);
     let job_id_string = "01950000-0000-7000-8000-000000000000".to_owned();
 
-    let from_wasm = mosaic_wasm::finalize_idempotency_key(job_id_string.clone()).unwrap();
-    let from_uniffi = mosaic_uniffi::finalize_idempotency_key(job_id_string).unwrap();
+    let from_wasm = must(
+        mosaic_wasm::finalize_idempotency_key(job_id_string.clone()),
+        "wasm finalize idempotency key",
+    );
+    let from_uniffi = must(
+        mosaic_uniffi::finalize_idempotency_key(job_id_string),
+        "uniffi finalize idempotency key",
+    );
     let from_client = mosaic_client::finalize_idempotency_key(&job_id);
 
     assert_eq!(from_wasm, from_uniffi);
@@ -101,42 +114,57 @@ fn session_key_derivation_matches_crypto_wasm_and_uniffi() {
         0xe1, 0x6b,
     ];
 
-    let crypto_salt = mosaic_crypto::derive_session_salt(DOMAIN, USERNAME).expect("crypto salt");
-    let wasm_salt =
-        mosaic_wasm::derive_session_salt_from_username(DOMAIN.to_owned(), USERNAME.to_owned())
-            .expect("wasm salt");
-    let uniffi_salt =
-        mosaic_uniffi::derive_session_salt_from_username(DOMAIN.to_owned(), USERNAME.to_owned())
-            .expect("uniffi salt");
+    let crypto_salt = must(
+        mosaic_crypto::derive_session_salt(DOMAIN, USERNAME),
+        "crypto salt",
+    );
+    let wasm_salt = must(
+        mosaic_wasm::derive_session_salt_from_username(DOMAIN.to_owned(), USERNAME.to_owned()),
+        "wasm salt",
+    );
+    let uniffi_salt = must(
+        mosaic_uniffi::derive_session_salt_from_username(DOMAIN.to_owned(), USERNAME.to_owned()),
+        "uniffi salt",
+    );
     assert_eq!(crypto_salt, GOLDEN_SALT);
     assert_eq!(wasm_salt, GOLDEN_SALT);
     assert_eq!(uniffi_salt, GOLDEN_SALT);
 
-    let crypto_key = mosaic_crypto::derive_session_master_key(
-        PASSWORD.to_vec().into(),
-        &crypto_salt,
-        2,
-        64 * 1024,
-    )
-    .expect("crypto master key");
-    let wasm_handle = mosaic_wasm::derive_master_key_from_password(
-        PASSWORD.to_vec(),
-        wasm_salt.clone(),
-        2,
-        64 * 1024,
-    )
-    .expect("wasm master key handle");
-    let uniffi_handle = mosaic_uniffi::derive_master_key_from_password(
-        PASSWORD.to_vec(),
-        uniffi_salt.clone(),
-        2,
-        64 * 1024,
-    )
-    .expect("uniffi master key handle");
-    let wasm_key =
-        mosaic_wasm::consume_master_key_handle_for_aes_gcm(wasm_handle).expect("wasm consume");
-    let uniffi_key = mosaic_uniffi::consume_master_key_handle_for_aes_gcm(uniffi_handle)
-        .expect("uniffi consume");
+    let crypto_key = must(
+        mosaic_crypto::derive_session_master_key(
+            PASSWORD.to_vec().into(),
+            &crypto_salt,
+            2,
+            64 * 1024,
+        ),
+        "crypto master key",
+    );
+    let wasm_handle = must(
+        mosaic_wasm::derive_master_key_from_password(
+            PASSWORD.to_vec(),
+            wasm_salt.clone(),
+            2,
+            64 * 1024,
+        ),
+        "wasm master key handle",
+    );
+    let uniffi_handle = must(
+        mosaic_uniffi::derive_master_key_from_password(
+            PASSWORD.to_vec(),
+            uniffi_salt.clone(),
+            2,
+            64 * 1024,
+        ),
+        "uniffi master key handle",
+    );
+    let wasm_key = must(
+        mosaic_wasm::consume_master_key_handle_for_aes_gcm(wasm_handle),
+        "wasm consume",
+    );
+    let uniffi_key = must(
+        mosaic_uniffi::consume_master_key_handle_for_aes_gcm(uniffi_handle),
+        "uniffi consume",
+    );
 
     assert_eq!(crypto_key.as_bytes(), &GOLDEN_MASTER_KEY);
     assert_eq!(wasm_key, GOLDEN_MASTER_KEY);
@@ -213,22 +241,26 @@ fn encrypted_envelopes_round_trip_between_wasm_and_uniffi() {
     );
     assert_ok(uniffi_decrypted.code, "uniffi decrypt wasm envelope");
     assert_eq!(uniffi_decrypted.plaintext, plaintext);
-    let ciphertext_digest = Sha256::digest(&wasm_encrypted.envelope_bytes[64..]).to_vec();
+    let envelope_digest = Sha256::digest(&wasm_encrypted.envelope_bytes).to_vec();
     assert!(
-        mosaic_wasm::verify_shard_integrity_sha256(
-            wasm_encrypted.envelope_bytes.clone(),
-            ciphertext_digest.clone()
-        )
-        .expect("wasm sha256 verify"),
-        "wasm sha256 verify should match ciphertext digest"
+        must(
+            mosaic_wasm::verify_shard_integrity_sha256(
+                wasm_encrypted.envelope_bytes.clone(),
+                envelope_digest.clone(),
+            ),
+            "wasm sha256 verify",
+        ),
+        "wasm sha256 verify should match envelope digest"
     );
     assert!(
-        mosaic_uniffi::verify_shard_integrity_sha256(
-            wasm_encrypted.envelope_bytes.clone(),
-            ciphertext_digest
-        )
-        .expect("uniffi sha256 verify"),
-        "uniffi sha256 verify should match ciphertext digest"
+        must(
+            mosaic_uniffi::verify_shard_integrity_sha256(
+                wasm_encrypted.envelope_bytes.clone(),
+                envelope_digest,
+            ),
+            "uniffi sha256 verify",
+        ),
+        "uniffi sha256 verify should match envelope digest"
     );
 
     let uniffi_created_epoch = mosaic_uniffi::create_epoch_key_handle(uniffi_account, 43);

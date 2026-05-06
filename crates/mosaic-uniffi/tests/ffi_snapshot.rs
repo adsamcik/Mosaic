@@ -1176,7 +1176,10 @@ mod download_round_trip {
         let loaded = load_download_snapshot(init.body.clone(), init.checksum.clone());
         assert_eq!(loaded.code, ClientErrorCode::Ok.as_u16());
         assert_eq!(loaded.snapshot_cbor, init.body);
-        assert_eq!(loaded.schema_version_loaded, 1);
+        assert_eq!(
+            loaded.schema_version_loaded,
+            mosaic_client::download::snapshot::CURRENT_DOWNLOAD_SNAPSHOT_SCHEMA_VERSION
+        );
     }
 
     #[test]

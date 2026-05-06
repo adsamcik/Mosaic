@@ -1901,6 +1901,340 @@ export const ShardTier = Object.freeze({
     Original: 3, "3": "Original",
 });
 
+export class SidecarPakeInitiatorFinishResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(SidecarPakeInitiatorFinishResult.prototype);
+        obj.__wbg_ptr = ptr;
+        SidecarPakeInitiatorFinishResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SidecarPakeInitiatorFinishResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_sidecarpakeinitiatorfinishresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.sidecarpakeinitiatorfinishresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get initiatorConfirm() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.sidecarpakeinitiatorfinishresult_initiatorConfirm(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @returns {number}
+     */
+    get materialHandleId() {
+        const ret = wasm.sidecarpakeinitiatorfinishresult_materialHandleId(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) SidecarPakeInitiatorFinishResult.prototype[Symbol.dispose] = SidecarPakeInitiatorFinishResult.prototype.free;
+
+export class SidecarPakeResponderFinishResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(SidecarPakeResponderFinishResult.prototype);
+        obj.__wbg_ptr = ptr;
+        SidecarPakeResponderFinishResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SidecarPakeResponderFinishResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_sidecarpakeresponderfinishresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.sidecarpakeresponderfinishresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get materialHandleId() {
+        const ret = wasm.sidecarpakeresponderfinishresult_materialHandleId(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) SidecarPakeResponderFinishResult.prototype[Symbol.dispose] = SidecarPakeResponderFinishResult.prototype.free;
+
+export class SidecarPakeResponderResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(SidecarPakeResponderResult.prototype);
+        obj.__wbg_ptr = ptr;
+        SidecarPakeResponderResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SidecarPakeResponderResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_sidecarpakeresponderresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.sidecarpakeresponderresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get msg2() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.sidecarpakeresponderresult_msg2(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get responderConfirm() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.sidecarpakeresponderresult_responderConfirm(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+     * @returns {number}
+     */
+    get responderHandleId() {
+        const ret = wasm.sidecarpakeresponderresult_responderHandleId(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) SidecarPakeResponderResult.prototype[Symbol.dispose] = SidecarPakeResponderResult.prototype.free;
+
+export class SidecarPakeStartResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(SidecarPakeStartResult.prototype);
+        obj.__wbg_ptr = ptr;
+        SidecarPakeStartResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SidecarPakeStartResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_sidecarpakestartresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.sidecarpakestartresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get handleId() {
+        const ret = wasm.sidecarpakestartresult_handleId(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get msg1() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.sidecarpakestartresult_msg1(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) SidecarPakeStartResult.prototype[Symbol.dispose] = SidecarPakeStartResult.prototype.free;
+
+export class SidecarTunnelOpenMsgResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(SidecarTunnelOpenMsgResult.prototype);
+        obj.__wbg_ptr = ptr;
+        SidecarTunnelOpenMsgResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SidecarTunnelOpenMsgResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_sidecartunnelopenmsgresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.sidecartunnelopenmsgresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get plaintext() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.sidecartunnelopenmsgresult_plaintext(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) SidecarTunnelOpenMsgResult.prototype[Symbol.dispose] = SidecarTunnelOpenMsgResult.prototype.free;
+
+export class SidecarTunnelOpenResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(SidecarTunnelOpenResult.prototype);
+        obj.__wbg_ptr = ptr;
+        SidecarTunnelOpenResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SidecarTunnelOpenResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_sidecartunnelopenresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.sidecartunnelopenresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get recvHandleId() {
+        const ret = wasm.sidecartunnelopenresult_recvHandleId(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    get sendHandleId() {
+        const ret = wasm.sidecartunnelopenresult_sendHandleId(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) SidecarTunnelOpenResult.prototype[Symbol.dispose] = SidecarTunnelOpenResult.prototype.free;
+
+export class SidecarTunnelSealResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(SidecarTunnelSealResult.prototype);
+        obj.__wbg_ptr = ptr;
+        SidecarTunnelSealResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SidecarTunnelSealResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_sidecartunnelsealresult_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.sidecartunnelsealresult_code(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    get sealed() {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            wasm.sidecartunnelsealresult_sealed(retptr, this.__wbg_ptr);
+            var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+            var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+            var v1 = getArrayU8FromWasm0(r0, r1).slice();
+            wasm.__wbindgen_export4(r0, r1 * 1, 1);
+            return v1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+}
+if (Symbol.dispose) SidecarTunnelSealResult.prototype[Symbol.dispose] = SidecarTunnelSealResult.prototype.free;
+
 /**
  * WASM-bindgen class for finalized streaming envelope results.
  */
@@ -3670,6 +4004,119 @@ export function shardTierFromByte(byte) {
 }
 
 /**
+ * @param {number} handle_id
+ * @returns {number}
+ */
+export function sidecarPakeInitiatorCloseV1(handle_id) {
+    const ret = wasm.sidecarPakeInitiatorCloseV1(handle_id);
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} handle_id
+ * @param {Uint8Array} msg2
+ * @param {Uint8Array} responder_confirm
+ * @returns {SidecarPakeInitiatorFinishResult}
+ */
+export function sidecarPakeInitiatorFinishV1(handle_id, msg2, responder_confirm) {
+    const ptr0 = passArray8ToWasm0(msg2, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(responder_confirm, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.sidecarPakeInitiatorFinishV1(handle_id, ptr0, len0, ptr1, len1);
+    return SidecarPakeInitiatorFinishResult.__wrap(ret);
+}
+
+/**
+ * @param {Uint8Array} code
+ * @returns {SidecarPakeStartResult}
+ */
+export function sidecarPakeInitiatorStartV1(code) {
+    const ptr0 = passArray8ToWasm0(code, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.sidecarPakeInitiatorStartV1(ptr0, len0);
+    return SidecarPakeStartResult.__wrap(ret);
+}
+
+/**
+ * @param {number} handle_id
+ * @returns {number}
+ */
+export function sidecarPakeResponderCloseV1(handle_id) {
+    const ret = wasm.sidecarPakeResponderCloseV1(handle_id);
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} handle_id
+ * @param {Uint8Array} initiator_confirm
+ * @returns {SidecarPakeResponderFinishResult}
+ */
+export function sidecarPakeResponderFinishV1(handle_id, initiator_confirm) {
+    const ptr0 = passArray8ToWasm0(initiator_confirm, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.sidecarPakeResponderFinishV1(handle_id, ptr0, len0);
+    return SidecarPakeResponderFinishResult.__wrap(ret);
+}
+
+/**
+ * @param {Uint8Array} code
+ * @param {Uint8Array} msg1
+ * @returns {SidecarPakeResponderResult}
+ */
+export function sidecarPakeResponderV1(code, msg1) {
+    const ptr0 = passArray8ToWasm0(code, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(msg1, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.sidecarPakeResponderV1(ptr0, len0, ptr1, len1);
+    return SidecarPakeResponderResult.__wrap(ret);
+}
+
+/**
+ * @param {number} send_handle_id
+ * @param {number} recv_handle_id
+ * @returns {number}
+ */
+export function sidecarTunnelCloseV1(send_handle_id, recv_handle_id) {
+    const ret = wasm.sidecarTunnelCloseV1(send_handle_id, recv_handle_id);
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} recv_handle_id
+ * @param {Uint8Array} sealed
+ * @returns {SidecarTunnelOpenMsgResult}
+ */
+export function sidecarTunnelOpenMessageV1(recv_handle_id, sealed) {
+    const ptr0 = passArray8ToWasm0(sealed, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.sidecarTunnelOpenMessageV1(recv_handle_id, ptr0, len0);
+    return SidecarTunnelOpenMsgResult.__wrap(ret);
+}
+
+/**
+ * @param {number} material_handle_id
+ * @returns {SidecarTunnelOpenResult}
+ */
+export function sidecarTunnelOpenV1(material_handle_id) {
+    const ret = wasm.sidecarTunnelOpenV1(material_handle_id);
+    return SidecarTunnelOpenResult.__wrap(ret);
+}
+
+/**
+ * @param {number} send_handle_id
+ * @param {Uint8Array} plaintext
+ * @returns {SidecarTunnelSealResult}
+ */
+export function sidecarTunnelSealV1(send_handle_id, plaintext) {
+    const ptr0 = passArray8ToWasm0(plaintext, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.sidecarTunnelSealV1(send_handle_id, ptr0, len0);
+    return SidecarTunnelSealResult.__wrap(ret);
+}
+
+/**
  * Signs a LocalAuth challenge transcript with an account-key handle through WASM.
  * @param {bigint} account_handle
  * @param {Uint8Array} challenge_bytes
@@ -4118,6 +4565,27 @@ const SealedBundleResultFinalization = (typeof FinalizationRegistry === 'undefin
 const SerializeSnapshotResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_serializesnapshotresult_free(ptr >>> 0, 1));
+const SidecarPakeInitiatorFinishResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_sidecarpakeinitiatorfinishresult_free(ptr >>> 0, 1));
+const SidecarPakeResponderFinishResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_sidecarpakeresponderfinishresult_free(ptr >>> 0, 1));
+const SidecarPakeResponderResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_sidecarpakeresponderresult_free(ptr >>> 0, 1));
+const SidecarPakeStartResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_sidecarpakestartresult_free(ptr >>> 0, 1));
+const SidecarTunnelOpenMsgResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_sidecartunnelopenmsgresult_free(ptr >>> 0, 1));
+const SidecarTunnelOpenResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_sidecartunnelopenresult_free(ptr >>> 0, 1));
+const SidecarTunnelSealResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_sidecartunnelsealresult_free(ptr >>> 0, 1));
 const StreamingEnvelopeResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_streamingenveloperesult_free(ptr >>> 0, 1));

@@ -131,6 +131,16 @@ export function DownloadJobRow({
         </span>
         <span className="download-tray-job-album" title={safeAlbumId}>{safeAlbumId}</span>
         <span className="download-tray-phase-badge">{statusLabel}</span>
+        {job.outputModeKind === 'sidecar' && (
+          <span className="download-tray-sidecar-badge" data-testid="download-tray-sidecar-badge">
+            {t('download.tray.sidecarBadge')}
+          </span>
+        )}
+        {job.scopeKey.startsWith('sidecar:') && (
+          <span className="download-tray-sidecar-receiving-badge" data-testid="download-tray-sidecar-receiving-badge">
+            {t('download.tray.sidecarReceiving')}
+          </span>
+        )}
         {phase === 'Running' && <span className="download-tray-wake-badge">{t('download.tray.screenOnRequired')}</span>}
         {failureCount > 0 && <span className="download-tray-failure-badge">{t('download.tray.failureBadge', { count: failureCount })}</span>}
         {isScheduled && scheduledReasonLabel !== null && (

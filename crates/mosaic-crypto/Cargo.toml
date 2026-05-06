@@ -13,7 +13,7 @@ chacha20poly1305 = { version = "=0.10.1", default-features = false, features = [
 ed25519-dalek = { version = "=2.1.0", default-features = false, features = ["alloc", "fast", "zeroize"] }
 sha2 = { version = "=0.10.9", default-features = false }
 subtle = "=2.6.1"
-zeroize = "=1.8.2"
+zeroize = { version = "=1.8.2", features = ["derive"] }
 getrandom = { version = "=0.4.2", features = ["wasm_js"] }
 argon2 = { version = "=0.5.3", default-features = false, features = ["zeroize"] }
 hkdf = { version = "=0.12.4", default-features = false }
@@ -23,6 +23,8 @@ crypto_secretbox = { version = "=0.1.1", default-features = false, features = ["
 rand_core = { version = "=0.6.4", default-features = false }
 serde = { version = "=1.0.228", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "=1.0.149", default-features = false, features = ["alloc"] }
+spake2 = { version = "=0.4.0", default-features = false }
+hmac = { version = "=0.12.1", default-features = false }
 
 [features]
 default = []
@@ -33,6 +35,8 @@ default = []
 # `--no-default-features` (or the production feature set) and verify this flag
 # is off.
 weak-kdf = []
+# Test-only introspection accessors (counter peek). Never enable in production.
+__test-introspection = []
 
 [dev-dependencies]
 crypto_box = { version = "=0.9.1", default-features = false, features = ["alloc", "rand_core", "salsa20", "seal"] }

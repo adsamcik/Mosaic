@@ -301,6 +301,8 @@ describe('web Rust crypto cutover boundaries', () => {
     expect(
       importersMatching(/from\s+['"][^'"]*rust-crypto-core['"]/),
     ).toEqual([
+        'lib/sidecar/pairing.ts',
+        'lib/sidecar/peer.ts',
         'workers/coordinator.worker.ts',
         'workers/coordinator/photo-pipeline.ts',
         'workers/crypto.worker-pool-member.ts',
@@ -651,5 +653,6 @@ describe('Rust cutover slice retirement guards', () => {
     });
   }
 });
+
 
 

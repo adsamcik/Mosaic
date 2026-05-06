@@ -16,6 +16,7 @@ Mosaic is a self-hosted photo gallery where the server never sees your photos. A
 - 🗺️ **Map view** - Browse photos by location (GPS metadata encrypted)
 - 🔍 **Full-text search** - Search photo metadata (client-side)
 - 📱 **Offline capable** - Local database with sync
+- 📡 **Sidecar Beacon (beta)** - download an album directly to a second device (phone/tablet) over an end-to-end encrypted WebRTC channel; the server only relays opaque PAKE+AEAD bytes. Build with `VITE_FEATURE_SIDECAR=1` to enable. See [docs/architecture/SIDECAR.md](docs/architecture/SIDECAR.md), [docs/sidecar-beta-rollout.md](docs/sidecar-beta-rollout.md), and [docs/sidecar-test-matrix.md](docs/sidecar-test-matrix.md).
 - 🦀 **Shared Rust client core** - Web (`mosaic-wasm`) and Android (`mosaic-uniffi`) call into the same audited Rust workspace; cross-client byte-equality is enforced by the golden-vector corpus under `tests/vectors/`
 
 ## Architecture

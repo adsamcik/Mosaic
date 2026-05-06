@@ -1355,3 +1355,241 @@ function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
 function copyBytes(bytes: Uint8Array): Uint8Array {
   return new Uint8Array(bytes);
 }
+
+// ---------------------------------------------------------------------------
+// Sidecar Beacon: PAKE handshake + AEAD tunnel facade.
+//
+// Phase 4A scope: cryptographic primitives only (no WebRTC, no signaling, no
+// UI). Mirrors the streaming-shard handle facade: each PAKE role and each
+// tunnel half lives behind a numeric Rust-owned handle id. close() is
+// idempotent on every wrapper; calling it twice is a no-op.
+//
+// ZK-safe logging policy: this module never logs the pairing code, the PAKE
+// session secret, the tunnel sub-keys, the message bytes, or any plaintext.
+// Errors carry only WorkerCryptoErrorCode values.
+// ---------------------------------------------------------------------------
+
+const PAIRING_CODE_DIGITS = 6;
+
+export interface SidecarPakeInitiator {
+  /** Begin the handshake; consumes the pairing code and returns Msg1 to send. */
+  start(code: Uint8Array): Promise<{ msg1: Uint8Array }>;
+  /** Finish on receipt of the responder's Msg2 + confirm tag. */
+  finish(
+    msg2: Uint8Array,
+    responderConfirm: Uint8Array,
+  ): Promise<{ keyMaterialHandle: number; initiatorConfirm: Uint8Array }>;
+  /** Release the in-flight Rust state. Idempotent. */
+  close(): Promise<void>;
+}
+
+export interface SidecarPakeResponder {
+  /** Run msg1 -> (msg2, responderConfirm). */
+  step(
+    code: Uint8Array,
+    msg1: Uint8Array,
+  ): Promise<{
+    msg2: Uint8Array;
+    responderConfirm: Uint8Array;
+  }>;
+  /** Verify the initiator's confirm tag and surface the tunnel-key material handle. */
+  finish(initiatorConfirm: Uint8Array): Promise<{ keyMaterialHandle: number }>;
+  /** Release the in-flight Rust state. Idempotent. */
+  close(): Promise<void>;
+}
+
+export interface SidecarTunnel {
+  readonly send: { seal(plaintext: Uint8Array): Promise<Uint8Array> };
+  readonly recv: { open(sealed: Uint8Array): Promise<Uint8Array> };
+  /** Zeroize + free both halves. Idempotent. */
+  close(): Promise<void>;
+}
+
+class SidecarPakeInitiatorImpl implements SidecarPakeInitiator {
+  private handleId: number | null = null;
+
+  async start(code: Uint8Array): Promise<{ msg1: Uint8Array }> {
+    if (code.byteLength !== PAIRING_CODE_DIGITS) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidInputLength,
+        'sidecar pairing code must be 6 bytes',
+      );
+    }
+    if (this.handleId !== null) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.StaleHandle,
+        'sidecar PAKE initiator start called twice',
+      );
+    }
+    await ensureRustReady();
+    const result = rustWasm.sidecarPakeInitiatorStartV1(code);
+    return consumeResult(result, 'sidecarPakeInitiatorStartV1', (r) => {
+      this.handleId = r.handleId;
+      return { msg1: copyBytes(r.msg1) };
+    });
+  }
+
+  async finish(
+    msg2: Uint8Array,
+    responderConfirm: Uint8Array,
+  ): Promise<{ keyMaterialHandle: number; initiatorConfirm: Uint8Array }> {
+    if (this.handleId === null) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.StaleHandle,
+        'sidecar PAKE initiator finish called before start (or after close)',
+      );
+    }
+    const handleId = this.handleId;
+    // Rust side removes the initiator from the registry on finish (success or
+    // failure) -- mirror that here so close() is idempotent.
+    this.handleId = null;
+    await ensureRustReady();
+    const result = rustWasm.sidecarPakeInitiatorFinishV1(handleId, msg2, responderConfirm);
+    return consumeResult(result, 'sidecarPakeInitiatorFinishV1', (r) => ({
+      keyMaterialHandle: r.materialHandleId,
+      initiatorConfirm: copyBytes(r.initiatorConfirm),
+    }));
+  }
+
+  async close(): Promise<void> {
+    if (this.handleId === null) return;
+    const handleId = this.handleId;
+    this.handleId = null;
+    await ensureRustReady();
+    // Best-effort; non-zero is swallowed so close() in finally never masks.
+    void rustWasm.sidecarPakeInitiatorCloseV1(handleId);
+  }
+}
+
+class SidecarPakeResponderImpl implements SidecarPakeResponder {
+  private handleId: number | null = null;
+
+  async step(
+    code: Uint8Array,
+    msg1: Uint8Array,
+  ): Promise<{ msg2: Uint8Array; responderConfirm: Uint8Array }> {
+    if (code.byteLength !== PAIRING_CODE_DIGITS) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.InvalidInputLength,
+        'sidecar pairing code must be 6 bytes',
+      );
+    }
+    if (this.handleId !== null) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.StaleHandle,
+        'sidecar PAKE responder step called twice',
+      );
+    }
+    await ensureRustReady();
+    const result = rustWasm.sidecarPakeResponderV1(code, msg1);
+    return consumeResult(result, 'sidecarPakeResponderV1', (r) => {
+      this.handleId = r.responderHandleId;
+      return {
+        msg2: copyBytes(r.msg2),
+        responderConfirm: copyBytes(r.responderConfirm),
+      };
+    });
+  }
+
+  async finish(initiatorConfirm: Uint8Array): Promise<{ keyMaterialHandle: number }> {
+    if (this.handleId === null) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.StaleHandle,
+        'sidecar PAKE responder finish called before step (or after close)',
+      );
+    }
+    const handleId = this.handleId;
+    this.handleId = null;
+    await ensureRustReady();
+    const result = rustWasm.sidecarPakeResponderFinishV1(handleId, initiatorConfirm);
+    return consumeResult(result, 'sidecarPakeResponderFinishV1', (r) => ({
+      keyMaterialHandle: r.materialHandleId,
+    }));
+  }
+
+  async close(): Promise<void> {
+    if (this.handleId === null) return;
+    const handleId = this.handleId;
+    this.handleId = null;
+    await ensureRustReady();
+    void rustWasm.sidecarPakeResponderCloseV1(handleId);
+  }
+}
+
+class SidecarTunnelImpl implements SidecarTunnel {
+  private sendId: number | null;
+  private recvId: number | null;
+
+  constructor(sendHandleId: number, recvHandleId: number) {
+    this.sendId = sendHandleId;
+    this.recvId = recvHandleId;
+  }
+
+  readonly send = {
+    seal: async (plaintext: Uint8Array): Promise<Uint8Array> => {
+      if (this.sendId === null) {
+        throw new WorkerCryptoError(
+          WorkerCryptoErrorCode.StaleHandle,
+          'sidecar tunnel seal called after close',
+        );
+      }
+      await ensureRustReady();
+      const result = rustWasm.sidecarTunnelSealV1(this.sendId, plaintext);
+      return consumeResult(result, 'sidecarTunnelSealV1', (r) => copyBytes(r.sealed));
+    },
+  };
+
+  readonly recv = {
+    open: async (sealed: Uint8Array): Promise<Uint8Array> => {
+      if (this.recvId === null) {
+        throw new WorkerCryptoError(
+          WorkerCryptoErrorCode.StaleHandle,
+          'sidecar tunnel open called after close',
+        );
+      }
+      await ensureRustReady();
+      const result = rustWasm.sidecarTunnelOpenMessageV1(this.recvId, sealed);
+      return consumeResult(result, 'sidecarTunnelOpenMessageV1', (r) => copyBytes(r.plaintext));
+    },
+  };
+
+  async close(): Promise<void> {
+    if (this.sendId === null && this.recvId === null) return;
+    const sendId = this.sendId ?? 0;
+    const recvId = this.recvId ?? 0;
+    this.sendId = null;
+    this.recvId = null;
+    await ensureRustReady();
+    void rustWasm.sidecarTunnelCloseV1(sendId, recvId);
+  }
+}
+
+
+
+/** Construct an idle PAKE initiator. Call start() to begin the handshake. */
+export async function rustOpenSidecarPakeInitiator(): Promise<SidecarPakeInitiator> {
+  await ensureRustReady();
+  return new SidecarPakeInitiatorImpl();
+}
+
+/** Construct an idle PAKE responder. Call step() with msg1 to derive msg2 + confirm. */
+export async function rustOpenSidecarPakeResponder(): Promise<SidecarPakeResponder> {
+  await ensureRustReady();
+  return new SidecarPakeResponderImpl();
+}
+
+/**
+ * Open a duplex sidecar tunnel from PAKE-derived material. Consumes the
+ * material handle (the Rust registry removes it). Caller MUST call close()
+ * (e.g., in a finally block) regardless of seal/open outcomes - close() is
+ * idempotent.
+ */
+export async function rustOpenSidecarTunnel(
+  keyMaterialHandle: number,
+): Promise<SidecarTunnel> {
+  await ensureRustReady();
+  const result = rustWasm.sidecarTunnelOpenV1(keyMaterialHandle);
+  return consumeResult(result, 'sidecarTunnelOpenV1', (r) => {
+    return new SidecarTunnelImpl(r.sendHandleId, r.recvHandleId);
+  });
+}

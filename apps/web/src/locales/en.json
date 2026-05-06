@@ -328,7 +328,7 @@
         "Errored": "Error",
         "Cancelled": "Cancelled"
       },
-      "scheduledBadge": "Scheduled",
+      "scheduledBadge": "Scheduled","sidecarBadge": "Sidecar","sidecarReceiving": "Receiving",
       "scheduledStartNow": "Start now",
       "scheduledEdit": "Edit schedule",
       "scheduledReason": "Waiting: {{reason}}",
@@ -400,7 +400,12 @@
       "perFileBlobAnchorRefusal": "Too many photos ({{count}}) for individual downloads in this browser. Try Save as ZIP.",
       "perFileNotSupported": "Per-file save not supported in this browser",
       "perFilePromptCountOne": "1 prompt",
-      "perFilePromptCountMany": "{{count}} prompts"
+      "perFilePromptCountMany": "{{count}} prompts",
+      "sidecar": {
+        "label": "Send to my phone",
+        "sub": "Stream photos to a paired device",
+        "beta": "Beta"
+      }
     },
     "persistencePrompt": {
       "title": "Keep your offline photos safe",
@@ -434,6 +439,43 @@
       "editSchedule": "Edit schedule",
       "cancel": "Cancel",
       "save": "Save"
+    },
+    "sidecarPairing": {
+      "title": "Send to my phone",
+      "instructions": "Open Mosaic on your phone and go to /pair, then enter this code:",
+      "codeLabel": "Pairing code",
+      "expiresIn": "Expires in {{seconds}}s",
+      "cancel": "Cancel",
+      "qrHint": "Or scan the QR code with your phone","qrAriaLabel": "Pairing QR code","preparingQr": "Preparing QR…",
+      "connecting": "Connecting…",
+      "errors": {
+        "WrongCode": "Wrong code or no peer joined.",
+        "SignalingTimeout": "Took too long to pair. Try again.",
+        "IceFailed": "Could not establish a peer connection.",
+        "Aborted": "Cancelled.",
+        "SignalingClosed": "Signaling channel closed.",
+        "InvalidResponderInput": "Pairing data was invalid.",
+        "Generic": "Pairing failed."
+      }
+    },
+    "sidecarReceive": {
+      "pageTitle": "Receive photos",
+      "instructions": "Enter the 6-digit code shown on your other device.",
+      "codeLabel": "Pairing code",
+      "connect": "Connect",
+      "connecting": "Connecting…",
+      "connected": "Connected. Receiving photos…",
+      "done": "Done. {{count}} photos saved.",
+      "errors": {
+        "WrongCode": "Wrong code. Check the code and try again.",
+        "SignalingTimeout": "Took too long. Try again.",
+        "IceFailed": "Could not establish a peer connection.",
+        "Aborted": "Cancelled.",
+        "SignalingClosed": "Signaling channel closed.",
+        "InvalidResponderInput": "Pairing data was invalid.",
+        "Generic": "Connection failed.",
+        "MissingPrefill": "This page must be opened via the QR code or pairing link from the sender."
+      }
     }
   },
   "lightbox": {
@@ -833,3 +875,4 @@
     }
   }
 }
+
