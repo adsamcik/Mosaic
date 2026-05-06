@@ -23,12 +23,14 @@ public sealed class RoomManager : BackgroundService
         IOptions<SidecarSignalingOptions> options,
         TimeProvider time,
         ILogger<RoomManager> logger,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        SidecarRateLimiter rateLimiter)
     {
         _options = options.Value;
         _time = time;
         _logger = logger;
         _loggerFactory = loggerFactory;
+        _rateLimiter = rateLimiter ?? throw new ArgumentNullException(nameof(rateLimiter));
     }
 
     /// <summary>Snapshot of currently tracked rooms (test/diagnostic only).</summary>

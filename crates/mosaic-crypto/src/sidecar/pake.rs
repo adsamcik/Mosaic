@@ -361,19 +361,16 @@ struct GetrandomRng;
 impl RngCore for GetrandomRng {
     fn next_u32(&mut self) -> u32 {
         let mut buf = [0u8; 4];
-        // Fall back to a fixed value on RNG failure: callers always wrap
-        // operations that may bubble PakeFailed; a corrupted handshake fails
-        // safely. Logging is intentionally absent (no key/transcript leak).
-        let _ = getrandom::fill(&mut buf);
+        self.fill_bytes(&mut buf);
         u32::from_le_bytes(buf)
     }
     fn next_u64(&mut self) -> u64 {
         let mut buf = [0u8; 8];
-        let _ = getrandom::fill(&mut buf);
+        self.fill_bytes(&mut buf);
         u64::from_le_bytes(buf)
     }
     fn fill_bytes(&mut self, dest: &mut [u8]) {
-        let _ = getrandom::fill(dest);
+        require_getrandom_success(getrandom::fill(dest));
     }
     fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_core::Error> {
         // Stable nonzero opaque code; we deliberately do not surface the
@@ -386,6 +383,15 @@ impl RngCore for GetrandomRng {
             rand_core::Error::from(code)
         })
     }
+}
+
+fn require_getrandom_success(result: Result<(), getrandom::Error>) {
+    // SECURITY: SPAKE2 draws its secret scalar through `RngCore::fill_bytes`.
+    // Continuing after an OS CSPRNG failure can leave an all-zero scalar and
+    // expose the pairing code to offline dictionary attacks. `RngCore` requires
+    // fill-or-panic semantics here, so fail closed instead of producing bytes.
+    #[allow(clippy::expect_used)]
+    result.expect("OS CSPRNG failed while generating SPAKE2 scalar");
 }
 
 impl CryptoRng for GetrandomRng {}
@@ -479,4 +485,15 @@ fn derive_tunnel_seed(
     hk.expand(&info, &mut out)
         .map_err(|_| SidecarError::KdfFailure)?;
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = "OS CSPRNG failed while generating SPAKE2 scalar")]
+    fn getrandom_failure_panics_before_scalar_generation() {
+        require_getrandom_success(Err(getrandom::Error::new_custom(7)));
+    }
 }

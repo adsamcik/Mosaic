@@ -9,7 +9,11 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using Mosaic.Backend.SidecarSignaling;
 using Xunit;
 
@@ -294,6 +298,72 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
     }
 
     [Fact]
+    public async Task Sweep_PrunesExpiredRateLimitBuckets_WithInjectedLimiter()
+    {
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        await using var factory = new Factory(opts =>
+        {
+            opts.RateLimitWindow = TimeSpan.FromSeconds(1);
+            opts.SweepInterval = TimeSpan.FromMilliseconds(100);
+        }, timeProvider);
+        using var http = factory.CreateClient();
+        var limiter = factory.Services.GetRequiredService<SidecarRateLimiter>();
+
+        Assert.True(limiter.TryAcquire("203.0.113.7"));
+        Assert.Equal(1, GetRateLimitBucketCount(limiter));
+
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        await WaitUntilAsync(() => GetRateLimitBucketCount(limiter) == 0, TimeSpan.FromSeconds(5));
+        Assert.Equal(0, GetRateLimitBucketCount(limiter));
+    }
+
+    [Fact]
+    public void Constructor_NullRateLimiter_ThrowsArgumentNullException()
+    {
+        var options = Options.Create(new SidecarSignalingOptions());
+
+        var ex = Assert.Throws<ArgumentNullException>(() => new RoomManager(
+            options,
+            TimeProvider.System,
+            NullLogger<RoomManager>.Instance,
+            NullLoggerFactory.Instance,
+            null!));
+
+        Assert.Equal("rateLimiter", ex.ParamName);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(10);
+        }
+
+        Assert.True(condition(), "condition was not met before the timeout elapsed");
+    }
+
+    private static int GetRateLimitBucketCount(SidecarRateLimiter limiter)
+    {
+        var field = typeof(SidecarRateLimiter).GetField(
+            "_buckets",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("SidecarRateLimiter._buckets was not found");
+        var buckets = field.GetValue(limiter)
+            ?? throw new InvalidOperationException("SidecarRateLimiter._buckets was null");
+        var countProperty = buckets.GetType().GetProperty("Count")
+            ?? throw new InvalidOperationException("SidecarRateLimiter._buckets.Count was not found");
+        return (int)(countProperty.GetValue(buckets)
+            ?? throw new InvalidOperationException("SidecarRateLimiter._buckets.Count was null"));
+    }
+
+    [Fact]
     public async Task HealthEndpoint_ReturnsRoomCount()
     {
         using var http = _factory.CreateClient();
@@ -314,10 +384,12 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
     public class Factory : WebApplicationFactory<Program>
     {
         private readonly Action<SidecarSignalingOptions>? _configureSidecar;
+        private readonly TimeProvider? _timeProvider;
 
-        public Factory(Action<SidecarSignalingOptions>? configureSidecar = null)
+        public Factory(Action<SidecarSignalingOptions>? configureSidecar = null, TimeProvider? timeProvider = null)
         {
             _configureSidecar = configureSidecar;
+            _timeProvider = timeProvider;
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -325,6 +397,12 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
             builder.UseEnvironment("Testing");
             builder.ConfigureServices(services =>
             {
+                if (_timeProvider is not null)
+                {
+                    services.RemoveAll<TimeProvider>();
+                    services.AddSingleton(_timeProvider);
+                }
+
                 if (_configureSidecar is not null)
                 {
                     services.Configure(_configureSidecar);
