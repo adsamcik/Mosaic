@@ -51,6 +51,10 @@ describe('stripExifFromBlob', () => {
     ['image/jpeg', 'malformed-jpeg'],
     ['image/png', 'malformed-png'],
     ['image/webp', 'malformed-webp'],
+    ['image/heic', 'malformed-heic'],
+    ['image/heif', 'malformed-heic'],
+    ['image/avif', 'malformed-avif'],
+    ['video/mp4', 'malformed-video'],
   ])('maps malformed %s to %s without throwing', async (mimeType, reason) => {
     const input = new Uint8Array([1, 2, 3, 4]);
 
@@ -60,10 +64,6 @@ describe('stripExifFromBlob', () => {
   });
 
   it.each([
-    ['image/heic', 'unsupported-heic'],
-    ['image/heif', 'unsupported-heic'],
-    ['image/avif', 'unsupported-avif'],
-    ['video/mp4', 'unsupported-video'],
     ['image/gif', 'unsupported-mime'],
     ['image/bmp', 'unsupported-mime'],
   ])('classifies unsupported %s as %s', async (mimeType, reason) => {

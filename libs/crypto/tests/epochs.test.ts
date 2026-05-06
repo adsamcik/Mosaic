@@ -2,10 +2,6 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
 import {
   generateEpochKey,
-  serializeEpochKeyPublic,
-  wrapEpochKey,
-  unwrapEpochKey,
-  rotateEpochKey,
   isValidEpochKey,
   deriveTierKeys,
   getTierKey,
@@ -17,8 +13,6 @@ beforeAll(async () => {
 });
 
 describe('epochs', () => {
-  const wrapper = sodium.randombytes_buf(32);
-
   it('generates valid epoch keys with tiered keys', () => {
     const epoch = generateEpochKey(1);
     expect(epoch.epochId).toBe(1);
@@ -45,44 +39,6 @@ describe('epochs', () => {
     expect(derived.thumbKey).toEqual(epoch.thumbKey);
     expect(derived.previewKey).toEqual(epoch.previewKey);
     expect(derived.fullKey).toEqual(epoch.fullKey);
-  });
-
-  it('serializes epoch key public info', () => {
-    const epoch = generateEpochKey(5);
-    const serialized = serializeEpochKeyPublic(epoch);
-    expect(serialized.epochId).toBe(5);
-    expect(typeof serialized.signPublicKey).toBe('string');
-  });
-
-  it('round-trips wrap/unwrap', () => {
-    const epoch = generateEpochKey(5);
-    const wrapped = wrapEpochKey(epoch, wrapper);
-    const unwrapped = unwrapEpochKey(
-      wrapped.epochId,
-      wrapped.signPublicKey,
-      wrapped.wrapped,
-      wrapper,
-    );
-
-    expect(unwrapped.epochId).toBe(epoch.epochId);
-    expect(unwrapped.epochSeed).toEqual(epoch.epochSeed);
-    expect(unwrapped.thumbKey).toEqual(epoch.thumbKey);
-    expect(unwrapped.previewKey).toEqual(epoch.previewKey);
-    expect(unwrapped.fullKey).toEqual(epoch.fullKey);
-    expect(unwrapped.signKeypair.publicKey).toEqual(
-      epoch.signKeypair.publicKey,
-    );
-    expect(unwrapped.signKeypair.secretKey).toEqual(
-      epoch.signKeypair.secretKey,
-    );
-  });
-
-  it('rotates epoch with incremented id', () => {
-    const current = generateEpochKey(3);
-    const next = rotateEpochKey(current);
-    expect(next.epochId).toBe(4);
-    expect(next.epochSeed).not.toEqual(current.epochSeed);
-    expect(next.fullKey).not.toEqual(current.fullKey);
   });
 
   it('validates epoch key structure', () => {

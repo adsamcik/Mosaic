@@ -38,6 +38,24 @@ import {
 vi.mock('../src/lib/settings-service', () => ({
   shouldStoreOriginalsAsAvif: vi.fn(() => false),
 }));
+vi.mock('../src/generated/mosaic-wasm/mosaic_wasm.js', () => {
+  const dim = (width: number, height: number, tier: number) => ({
+    width,
+    height,
+    tier,
+    free: vi.fn(),
+  });
+  return {
+    default: vi.fn().mockResolvedValue(undefined),
+    canonicalTierLayout: vi.fn(() => ({
+      code: 0,
+      get thumbnail() { return dim(256, 256, 1); },
+      get preview() { return dim(1024, 1024, 2); },
+      get original() { return dim(4096, 4096, 3); },
+      free: vi.fn(),
+    })),
+  };
+});
 
 beforeAll(async () => {
   await sodium.ready;
@@ -689,24 +707,24 @@ describe('generateTieredImages', () => {
     expect(result.original.tier).toBe(ShardTier.ORIGINAL);
   });
 
-  it('thumbnail is scaled to 600px max dimension', async () => {
+  it('thumbnail is scaled to canonical max dimension', async () => {
     const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
 
     const result = await generateTieredImages(file);
 
-    // 2000x1500 scaled to 600px max -> 600x450
-    expect(result.thumbnail.width).toBe(600);
-    expect(result.thumbnail.height).toBe(450);
+    // 2000x1500 scaled to 256px max -> 256x192
+    expect(result.thumbnail.width).toBe(256);
+    expect(result.thumbnail.height).toBe(192);
   });
 
-  it('preview is scaled to 1200px max dimension', async () => {
+  it('preview is scaled to canonical max dimension', async () => {
     const file = createTestFile(mockFileData, 'test.jpg', 'image/jpeg');
 
     const result = await generateTieredImages(file);
 
-    // 2000x1500 scaled to 1200px max -> 1200x900
-    expect(result.preview.width).toBe(1200);
-    expect(result.preview.height).toBe(900);
+    // 2000x1500 scaled to 1024px max -> 1024x768
+    expect(result.preview.width).toBe(1024);
+    expect(result.preview.height).toBe(768);
   });
 
   it('original preserves full dimensions', async () => {
@@ -734,13 +752,13 @@ describe('generateTieredImages', () => {
 
     const result = await generateTieredImages(file);
 
-    // Portrait: 1500x2000 scaled to 600px max -> 450x600
-    expect(result.thumbnail.width).toBe(450);
-    expect(result.thumbnail.height).toBe(600);
+    // Portrait: 1500x2000 scaled to 256px max -> 192x256
+    expect(result.thumbnail.width).toBe(192);
+    expect(result.thumbnail.height).toBe(256);
 
-    // Portrait: 1500x2000 scaled to 1200px max -> 900x1200
-    expect(result.preview.width).toBe(900);
-    expect(result.preview.height).toBe(1200);
+    // Portrait: 1500x2000 scaled to 1024px max -> 768x1024
+    expect(result.preview.width).toBe(768);
+    expect(result.preview.height).toBe(1024);
   });
 
   it('handles small images without upscaling', async () => {
@@ -932,11 +950,11 @@ describe('generateTieredShards', () => {
 
     const result = await generateTieredShards(file, epochKey);
 
-    // 800x600 scaled to 600px max -> 600x450
-    expect(result.thumbnail.width).toBe(600);
-    expect(result.thumbnail.height).toBe(450);
+    // 800x600 scaled to 256px max -> 256x192
+    expect(result.thumbnail.width).toBe(256);
+    expect(result.thumbnail.height).toBe(192);
 
-    // 800x600 scaled to 1200px max (smaller, no upscale) -> 800x600
+    // 800x600 within 1024px canonical preview max -> 800x600
     expect(result.preview.width).toBe(800);
     expect(result.preview.height).toBe(600);
 

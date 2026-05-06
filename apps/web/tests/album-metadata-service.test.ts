@@ -10,10 +10,8 @@ import {
   clearAllCachedMetadata,
   clearCachedMetadata,
   clearStoredEncryptedName,
-  decryptAlbumName,
   decryptAlbumNameWithTierKey,
   getCachedMetadata,
-  getDecryptedAlbumName,
   getStoredEncryptedName,
   setCachedMetadata,
   setStoredEncryptedName,
@@ -23,6 +21,7 @@ import {
 const mockCryptoClient = {
   decryptShard: vi.fn(),
   decryptShardWithTierKey: vi.fn(),
+  decryptShardWithLinkTierHandle: vi.fn(),
 };
 
 vi.mock('../src/lib/crypto-client', () => ({
@@ -80,106 +79,13 @@ describe('Album Metadata Service', () => {
     });
   });
 
-  describe('decryptAlbumName', () => {
-    it('decrypts album name from Uint8Array', async () => {
-      const albumName = 'My Test Album';
-      const encryptedBytes = createEncryptedNameBytes(albumName);
-      const readKey = new Uint8Array(32).fill(1);
-
-      // Mock the decryptShard to return the decrypted name bytes
-      mockCryptoClient.decryptShard.mockResolvedValue(
-        new TextEncoder().encode(albumName),
-      );
-
-      const result = await decryptAlbumName(
-        encryptedBytes,
-        readKey,
-        'album-123',
-      );
-
-      expect(result).toBe(albumName);
-      expect(mockCryptoClient.decryptShard).toHaveBeenCalledWith(
-        encryptedBytes,
-        readKey,
-      );
-    });
-
-    it('decrypts album name from base64 string', async () => {
-      const albumName = 'My Test Album';
-      const encryptedBytes = createEncryptedNameBytes(albumName);
-      const base64Encrypted = toBase64(encryptedBytes);
-      const readKey = new Uint8Array(32).fill(1);
-
-      mockCryptoClient.decryptShard.mockResolvedValue(
-        new TextEncoder().encode(albumName),
-      );
-
-      const result = await decryptAlbumName(
-        base64Encrypted,
-        readKey,
-        'album-123',
-      );
-
-      expect(result).toBe(albumName);
-      expect(mockCryptoClient.decryptShard).toHaveBeenCalled();
-    });
-
-    it('throws error for empty encrypted name', async () => {
-      const readKey = new Uint8Array(32).fill(1);
-
-      await expect(
-        decryptAlbumName(new Uint8Array(0), readKey, 'album-123'),
-      ).rejects.toThrow(AlbumMetadataError);
-    });
-
-    it('throws error for invalid read key length', async () => {
-      const encryptedBytes = createEncryptedNameBytes('Test');
-      const invalidKey = new Uint8Array(16); // Should be 32 bytes
-
-      await expect(
-        decryptAlbumName(encryptedBytes, invalidKey, 'album-123'),
-      ).rejects.toThrow(AlbumMetadataError);
-    });
-
-    it('throws AlbumMetadataError on decryption failure', async () => {
-      const encryptedBytes = createEncryptedNameBytes('Test');
-      const readKey = new Uint8Array(32).fill(1);
-
-      mockCryptoClient.decryptShard.mockRejectedValue(
-        new Error('Decryption failed'),
-      );
-
-      await expect(
-        decryptAlbumName(encryptedBytes, readKey, 'album-123'),
-      ).rejects.toThrow(AlbumMetadataError);
-    });
-
-    it('handles unicode album names', async () => {
-      const albumName = '相册名称 📷 Álbum';
-      const readKey = new Uint8Array(32).fill(1);
-
-      mockCryptoClient.decryptShard.mockResolvedValue(
-        new TextEncoder().encode(albumName),
-      );
-
-      const result = await decryptAlbumName(
-        createEncryptedNameBytes(albumName),
-        readKey,
-        'album-123',
-      );
-
-      expect(result).toBe(albumName);
-    });
-  });
-
   describe('decryptAlbumNameWithTierKey', () => {
     it('decrypts album name using tier key directly (for share links)', async () => {
       const albumName = 'Shared Album Name';
       const encryptedBytes = createEncryptedNameBytes(albumName);
-      const tierKey = new Uint8Array(32).fill(2); // Tier key, not epoch seed
+      const tierKey = 'link-tier-handle-2' as never;
 
-      // Mock decryptShardWithTierKey for share link context
-      mockCryptoClient.decryptShardWithTierKey.mockResolvedValue(
+      mockCryptoClient.decryptShardWithLinkTierHandle.mockResolvedValue(
         new TextEncoder().encode(albumName),
       );
 
@@ -190,12 +96,13 @@ describe('Album Metadata Service', () => {
       );
 
       expect(result).toBe(albumName);
-      expect(mockCryptoClient.decryptShardWithTierKey).toHaveBeenCalledWith(
-        encryptedBytes,
+      expect(mockCryptoClient.decryptShardWithLinkTierHandle).toHaveBeenCalledWith(
         tierKey,
+        encryptedBytes,
       );
       // Should NOT call decryptShard (which derives tier keys)
       expect(mockCryptoClient.decryptShard).not.toHaveBeenCalled();
+      expect(mockCryptoClient.decryptShardWithTierKey).not.toHaveBeenCalled();
     });
 
     it('decrypts album name from base64 string with tier key', async () => {
@@ -283,63 +190,6 @@ describe('Album Metadata Service', () => {
     });
   });
 
-  describe('getDecryptedAlbumName', () => {
-    it('returns cached name without decrypting again', async () => {
-      setCachedMetadata('album-123', { name: 'Cached Album' });
-
-      const result = await getDecryptedAlbumName(
-        'album-123',
-        new Uint8Array(10),
-        new Uint8Array(32),
-      );
-
-      expect(result).toBe('Cached Album');
-      expect(mockCryptoClient.decryptShard).not.toHaveBeenCalled();
-    });
-
-    it('decrypts and caches name on first call', async () => {
-      const albumName = 'New Album';
-      const encryptedBytes = createEncryptedNameBytes(albumName);
-      const readKey = new Uint8Array(32).fill(1);
-
-      mockCryptoClient.decryptShard.mockResolvedValue(
-        new TextEncoder().encode(albumName),
-      );
-
-      const result = await getDecryptedAlbumName(
-        'album-123',
-        encryptedBytes,
-        readKey,
-      );
-
-      expect(result).toBe(albumName);
-      expect(getCachedMetadata('album-123')).toEqual({ name: albumName });
-    });
-
-    it('subsequent calls use cache', async () => {
-      const albumName = 'My Album';
-      const encryptedBytes = createEncryptedNameBytes(albumName);
-      const readKey = new Uint8Array(32).fill(1);
-
-      mockCryptoClient.decryptShard.mockResolvedValue(
-        new TextEncoder().encode(albumName),
-      );
-
-      // First call - should decrypt
-      await getDecryptedAlbumName('album-123', encryptedBytes, readKey);
-      expect(mockCryptoClient.decryptShard).toHaveBeenCalledTimes(1);
-
-      // Second call - should use cache
-      const result = await getDecryptedAlbumName(
-        'album-123',
-        encryptedBytes,
-        readKey,
-      );
-      expect(result).toBe(albumName);
-      expect(mockCryptoClient.decryptShard).toHaveBeenCalledTimes(1);
-    });
-  });
-
   describe('localStorage helpers', () => {
     it('getStoredEncryptedName returns null for missing key', () => {
       const result = getStoredEncryptedName('album-123');
@@ -377,13 +227,15 @@ describe('Album Metadata Service', () => {
   describe('edge cases', () => {
     it('handles empty album name', async () => {
       const albumName = '';
-      const readKey = new Uint8Array(32).fill(1);
+      const tierKey = new Uint8Array(32).fill(1);
 
-      mockCryptoClient.decryptShard.mockResolvedValue(new Uint8Array(0));
+      mockCryptoClient.decryptShardWithTierKey.mockResolvedValue(
+        new Uint8Array(0),
+      );
 
-      const result = await decryptAlbumName(
+      const result = await decryptAlbumNameWithTierKey(
         new Uint8Array([1]), // Some encrypted content
-        readKey,
+        tierKey,
         'album-123',
       );
 
@@ -392,15 +244,15 @@ describe('Album Metadata Service', () => {
 
     it('handles very long album names', async () => {
       const albumName = 'A'.repeat(1000);
-      const readKey = new Uint8Array(32).fill(1);
+      const tierKey = new Uint8Array(32).fill(1);
 
-      mockCryptoClient.decryptShard.mockResolvedValue(
+      mockCryptoClient.decryptShardWithTierKey.mockResolvedValue(
         new TextEncoder().encode(albumName),
       );
 
-      const result = await decryptAlbumName(
+      const result = await decryptAlbumNameWithTierKey(
         createEncryptedNameBytes(albumName),
-        readKey,
+        tierKey,
         'album-123',
       );
 
@@ -410,15 +262,15 @@ describe('Album Metadata Service', () => {
 
     it('handles album names with special characters', async () => {
       const albumName = '<script>alert("XSS")</script> & "quotes" \'single\'';
-      const readKey = new Uint8Array(32).fill(1);
+      const tierKey = new Uint8Array(32).fill(1);
 
-      mockCryptoClient.decryptShard.mockResolvedValue(
+      mockCryptoClient.decryptShardWithTierKey.mockResolvedValue(
         new TextEncoder().encode(albumName),
       );
 
-      const result = await decryptAlbumName(
+      const result = await decryptAlbumNameWithTierKey(
         createEncryptedNameBytes(albumName),
-        readKey,
+        tierKey,
         'album-123',
       );
 

@@ -2,11 +2,11 @@
 
 ## Status
 
-Accepted. Decision: **defer streaming shard AEAD shipping to v1.x**; in this programme, ship only the framing design + golden vectors so that v1 envelopes remain forward-compatible.
+Implemented in R-C4. Decision: ship the Rust domain/crypto implementation and lock tests for streaming shard AEAD envelope `v0x04`; production callers remain on `v0x03` until a later activation ticket wires this path through client surfaces.
 
 ## Context
 
-The Mosaic v1 shard envelope is `SGzk`/version `0x03`, 64-byte header, 24-byte XChaCha20-Poly1305 nonce, tier byte, 26 reserved zero bytes, AAD = entire 64-byte header. This frames *one* AEAD operation per shard. The largest tiers (originals) currently flow through this single-shot path, requiring the full plaintext in memory at encrypt time.
+The Mosaic v1 shard envelope is `SGzk`/version `0x03`, 64-byte header, 24-byte XChaCha20-Poly1305 nonce, tier byte, 26 reserved zero bytes, AAD = entire 64-byte header. This frames *one* AEAD operation per shard. The streaming envelope keeps the same `SGzk` family magic and uses version byte `0x04`; the version byte distinguishes the two wire layouts. The largest tiers (originals) currently flow through this single-shot path, requiring the full plaintext in memory at encrypt time.
 
 The Rust core completion programme targets Android originals up to **4 GiB** and web originals up to **1 GiB** (`plan.md` v2 §G5 fixture matrix). Single-shot AEAD on those sizes:
 
@@ -26,107 +26,101 @@ The Rust core completion programme **freezes the design** of the streaming shard
 
 ### Streaming envelope framing (frozen by this ADR)
 
-The streaming envelope is composed of a **stream header** (written once per stream) plus a sequence of **chunk envelopes** (one per encrypted chunk) plus a **stream footer** (written once at the end). Each is an independent byte string; backend storage stitches them together as one shard blob keyed by `shardId`.
+The streaming envelope is composed of a **64-byte stream header** followed by a sequence of fixed-order encrypted frames. Backend storage treats the result as one opaque shard blob keyed by `shardId`.
 
 #### Stream header — exactly 64 bytes (matches v3 envelope length for layout reuse)
 
 | Offset | Length | Field | Notes |
 |---|---|---|---|
-| 0 | 4 | `magic` | `SGzs` (0x53 0x47 0x7A 0x73). Distinct from v3's `SGzk`. |
+| 0 | 4 | `magic` | `SGzk` (0x53 0x47 0x7A 0x6B). Same family magic as v3; version byte distinguishes layout. |
 | 4 | 1 | `version` | `0x04`. |
-| 5 | 16 | `stream_salt` | Random bytes from CSPRNG. Authenticated. Per-stream uniqueness root. |
-| 21 | 16 | `asset_id` | UUIDv7 of the upload job. Authenticated. |
-| 37 | 16 | `shard_id` | Client-generated UUIDv7 of *this* shard within the upload job. Authenticated. Sourced from upload-job snapshot per ADR-022 + ADR-023; identical client retries produce identical `shard_id` (idempotency). |
-| 53 | 4 | `total_chunks` (`u32 LE`) | Number of chunk envelopes that follow. Range `1..=u32::MAX`. `0` rejected. Authenticated. |
-| 57 | 1 | `tier` | `1` thumbnail, `2` preview, `3` original. ADR-024 governs per-asset-type validity. |
-| 58 | 1 | `chunk_size_class` | `0` = uniform-256KiB chunks (last chunk may be smaller); `1` = uniform-1MiB chunks; `2` = uniform-4MiB chunks; `3` = uniform-16MiB chunks. Other values reserved; rejected. Encoder MUST emit one chunk_size_class per stream; decoder MUST reject any chunk whose ciphertext length implies a different class. Bounds adversarial tiny-chunk amplification. |
-| 59 | 5 | `reserved` | All zero bytes; non-zero rejected on decrypt (matches v3's reserved-bytes policy). |
+| 5 | 1 | `tier` | `1` thumbnail, `2` preview, `3` original. |
+| 6 | 16 | `stream_salt` | Random bytes from CSPRNG. Per-stream uniqueness root. |
+| 22 | 4 | `frame_count` (`u32 LE`) | Number of frames that follow. Range `1..=u32::MAX`; `0` rejected in finalized headers. |
+| 26 | 4 | `final_frame_size` (`u32 LE`) | Plaintext byte length of the final frame. Range `1..=65536`; `0` rejected in finalized headers. |
+| 30 | 34 | `reserved` | All zero bytes; non-zero rejected on decrypt (matches v3's reserved-bytes policy). |
 
-Header is **not encrypted**; it is fully covered by every chunk's AAD.
+Header is **not encrypted**. The frame AEAD AAD includes `STREAM_FRAME_AAD || header_context || frame_index_le`. Non-final frames use a provisional `header_context`: the v0x04 header with `frame_count = 0` and `final_frame_size = 0`. The final frame uses the finalized header bytes with the real `frame_count` and `final_frame_size`.
 
-#### Chunk envelope (variable length)
+This final-frame AAD binds the stream length without a separate footer tag. If an attacker mutates an on-wire 3-frame header to claim `frame_count = 2`, drops the third frame, and sets `final_frame_size = 65536`, decrypt treats frame 1 as the claimed final frame and authenticates it with the finalized header. Frame 1 was encrypted as a non-final frame with provisional AAD, so XChaCha20-Poly1305 returns `AuthenticationFailed` before any truncated prefix is accepted. One-frame streams encrypt their only frame with finalized-header AAD.
 
-| Offset | Length | Field | Notes |
-|---|---|---|---|
-| 0 | 4 | `chunk_idx` (`u32 LE`) | Strictly monotonically increasing within a stream; first chunk = `0`. |
-| 4 | 1 | `is_final` | `0x01` exactly when `chunk_idx == total_chunks - 1`; `0x00` otherwise. Mismatch rejected. |
-| 5 | 4 | `ciphertext_len` (`u32 LE`) | Length of the AEAD output (ciphertext + 16-byte tag); upper-bounded by `chunk_size_class` × buffer + 16. |
-| 9 | `ciphertext_len` | `ciphertext` | XChaCha20-Poly1305 output (ciphertext + tag). |
-
-Chunk-level nonces are **derived, not stored** (per below); decryptor reconstructs them from header fields + `chunk_idx`.
-
-#### Stream footer — exactly 32 bytes
+#### Frame envelope (variable length)
 
 | Offset | Length | Field | Notes |
 |---|---|---|---|
-| 0 | 4 | `footer_magic` | `SGzf` (0x53 0x47 0x7A 0x66). Distinguishes footer from chunk envelope. |
-| 4 | 4 | `final_chunk_idx` (`u32 LE`) | Must equal `total_chunks - 1`; mismatch rejected. |
-| 8 | 8 | `total_plaintext_bytes` (`u64 LE`) | Sum of plaintext byte counts across all chunks. Independently authenticated by `footer_tag`; allows upload-time integrity check. |
-| 16 | 16 | `footer_tag` | Poly1305 tag of `(magic_4 || version_1 || stream_salt_16 || asset_id_16 || shard_id_16 || total_chunks_4_le || final_chunk_idx_4_le || total_plaintext_bytes_8_le)` keyed by HKDF-SHA256(`epoch_tier_key`, `salt = "Mosaic_StreamFooter_v1" || stream_salt || asset_id`, `info = empty`, L = 32). Verified at decrypt before any chunk is treated as committed. |
+| 0 | 24 | `nonce` | Deterministic XChaCha20-Poly1305 nonce: `stream_salt[0..16] || frame_index_le_u32 || 0x04 00 00 00`. |
+| 24 | `plaintext_len + 16` | `ciphertext` | XChaCha20-Poly1305 output (ciphertext + tag). Non-final plaintext frames are exactly 64 KiB; the final frame length is `final_frame_size`. |
 
-The footer ensures that a partial-write or premature-close adversary cannot fool a reader into accepting a truncated stream as complete.
+The serialized nonce is also checked against the deterministic reconstruction so copied/reordered frames fail before or during AEAD authentication.
 
 ### Per-chunk nonce derivation (frozen by this ADR — RFC 5869 conventional usage)
 
 ```text
-chunk_nonce_24 = HKDF-SHA256(
-  ikm  = epoch_tier_key_32,                                   // secret material
-  salt = "Mosaic_ShardChunk_v1",                              // fixed protocol label (public, deterministic)
-  info = stream_salt_16 || asset_id_16 || shard_id_16
-       || tier_byte_1   || total_chunks_4_le || chunk_idx_4_le, // per-instance + per-chunk public context
-  L    = 24,
+frame_key_32 = HKDF-SHA256(
+  ikm  = epoch_tier_key_32,
+  salt = stream_salt_16,
+  info = "mosaic:stream-frame-key:v1" || frame_index_4_le,
+  L    = 32,
 )
+frame_nonce_24 = stream_salt_16 || frame_index_4_le || 0x04 00 00 00
 ```
 
 `epoch_tier_key_32` is materialized only inside the secret registry; **no FFI surface exposes it** (preserves the no-raw-secret-FFI invariant of ADR-006).
 
-The `info` argument carries the per-stream public context (`stream_salt`, `asset_id`, `shard_id`, `tier`, `total_chunks`) plus the per-chunk index. Two chunks across any two streams under any one `epoch_tier_key` derive the same nonce only if every byte of `info` matches — i.e. only on legitimate replay of the *same* chunk of the *same* stream, never on cross-stream reuse. Property test enforces uniqueness over ≥ 2²⁰ random `(stream_salt, asset_id, shard_id, total_chunks, tier, chunk_idx)` tuples.
+Two frames under one `epoch_tier_key` derive the same key/nonce pair only if both `stream_salt` and `frame_index` match. `stream_salt` is CSPRNG-generated per stream; replay under another stream fails because both key derivation and nonce reconstruction bind the salt.
 
 ### Per-chunk AAD (frozen by this ADR)
 
 ```text
-AAD = magic_4 || version_1 || stream_salt_16 || asset_id_16 || shard_id_16 ||
-      tier_byte_1 || chunk_size_class_1 || total_chunks_4_le || chunk_idx_4_le ||
-      is_final_byte_1 || ciphertext_len_4_le
+AAD(non-final) = "mosaic:stream-frame:v1" ||
+                 (magic_4 || version_1 || tier_1 || stream_salt_16 ||
+                  0_u32_le frame_count_placeholder || 0_u32_le final_size_placeholder ||
+                  reserved_zero_34) ||
+                 frame_index_4_le
+
+AAD(final)     = "mosaic:stream-frame:v1" ||
+                 finalized_header_64_with_real_frame_count_and_final_frame_size ||
+                 frame_index_4_le
 ```
 
 `is_final_byte` is true exactly on `chunk_idx == total_chunks - 1`. Decrypt rejects:
 
-- `is_final_byte = true` with `chunk_idx != total_chunks - 1`,
-- `is_final_byte = false` with `chunk_idx == total_chunks - 1`,
-- monotonicity violation (received chunk indices not strictly increasing within a stream),
-- duplicate chunks within one stream,
-- `total_chunks` mismatch between any two chunks of the same stream,
-- `stream_salt` / `asset_id` / `shard_id` / `tier` / `chunk_size_class` mismatch,
-- `ciphertext_len` exceeding `chunk_size_class`'s nominal bound (+ 16 for tag).
+- monotonicity violation (received frame is not the next expected frame index),
+- duplicate frames within one stream,
+- cross-stream replay (`stream_salt` mismatch),
+- non-final plaintext frame length not equal to 64 KiB,
+- mutated `frame_count`/`final_frame_size` plus dropped tail frames (`AuthenticationFailed` on the claimed final frame),
+- missing final frame (`InvalidInputLength` in the current crypto crate error surface),
+- extra frame bytes after declared `frame_count` (`InvalidInputLength`).
 
-These rejections produce stable error codes: `StreamingChunkOutOfOrder`, `StreamingTotalChunkMismatch`, `InvalidEnvelope`. Per ADR-022's `envelopeVersion` field, manifest readers in v1 reject `envelopeVersion = 4` until v1.x activation.
+These rejections produce stable crypto errors without exposing plaintext or key material: `AuthenticationFailed`, `InvalidInputLength`, or `InvalidEnvelope`. Per ADR-022's `envelopeVersion` field, manifest readers in v1 reject `envelopeVersion = 4` until v1.x activation.
 
 ### Edge cases (frozen by this ADR)
 
-- **`total_chunks = 0`** is rejected at `EncryptionStream::init` and at decode (`InvalidEnvelope`).
-- **`total_chunks = 1`** is the smallest valid stream: chunk 0 has `chunk_idx = 0`, `is_final = 0x01`. Footer's `final_chunk_idx = 0`.
-- **Variable-size chunks within a stream** are forbidden by `chunk_size_class`. The final chunk MAY be smaller than the class (its `ciphertext_len` is allowed to be less than the class bound + 16); intermediate chunks MUST equal the class size + 16 exactly.
-- **Retries that re-encrypt the same chunk_idx with same plaintext** produce identical ciphertext (deterministic from staged file) — fine. **Retries that re-encrypt the same chunk_idx with different plaintext** reuse the chunk_nonce: this is the standard "do not re-use a key/nonce with two different messages" rule. The encrypt API panics (`StreamingPlaintextDivergence`) if the same `chunk_idx` is offered twice with bytes that hash differently; encoders MUST handle the panic by aborting the stream and starting fresh with a new `stream_salt`.
+- **`frame_count = 0`** is rejected at finalized header decode (`InvalidEnvelope`).
+- **`frame_count = 1`** is the smallest valid stream: frame 0 is the final frame and must have `final_frame_size` in `1..=65536`.
+- **Variable-size frames within a stream** are forbidden except for the final frame. Intermediate plaintext frames MUST equal 64 KiB exactly.
+- **Encrypt-side caller commitment** requires `expected_frame_count = Some(n)` for `n >= 1`. `None` is rejected because the encryptor must know which frame is final in order to bind the finalized header into that frame's AAD. Non-final plaintext frames MUST be exactly 64 KiB; final plaintext frames MUST be non-empty and no larger than 64 KiB.
+- **Retries** must start a fresh stream salt unless replaying identical already-produced bytes.
 
 ### API shape (frozen by this ADR)
 
 ```rust
 // Encrypt side
-EncryptionStream::init(handle: EpochHandle, tier: ShardTier, total_chunks: u32, chunk_size_class: ChunkSizeClass) -> StreamHandle
-StreamHandle::header() -> [u8; 64]                              // serialized stream header
-StreamHandle::encrypt_chunk(chunk_idx: u32, plaintext: &[u8]) -> Result<Vec<u8>, MosaicCryptoError>  // returns chunk envelope bytes
-StreamHandle::finalize() -> Result<[u8; 32], MosaicCryptoError> // returns stream footer bytes; consumes the handle
+streaming_encrypt_init(epoch_handle: &EpochHandle, tier: ShardTier, expected_frame_count: Option<u32>) -> Result<StreamingEncryptor, MosaicCryptoError>
+StreamingEncryptor::encrypt_frame(&mut self, plaintext: &[u8]) -> Result<EncryptedFrame, MosaicCryptoError>
+StreamingEncryptor::finalize(self) -> Result<StreamingEnvelope, MosaicCryptoError>
 
 // Decrypt side
-DecryptionStream::open(handle: EpochHandle, header: &[u8; 64]) -> Result<StreamHandle, MosaicCryptoError>
-StreamHandle::decrypt_chunk(envelope: &[u8]) -> Result<Vec<u8>, MosaicCryptoError>  // chunk_idx parsed from envelope; reducer maintains expectation
-StreamHandle::finalize(footer: &[u8; 32]) -> Result<(), MosaicCryptoError>          // verifies footer_tag + total_plaintext_bytes
+streaming_decrypt_init(epoch_handle: &EpochHandle, envelope: &[u8]) -> Result<StreamingDecryptor, MosaicCryptoError>
+StreamingDecryptor::decrypt_frame(&mut self, frame: &[u8]) -> Result<Vec<u8>, MosaicCryptoError>
+StreamingDecryptor::finalize(self) -> Result<(), MosaicCryptoError>
+decrypt_envelope(epoch_handle: &EpochHandle, envelope_bytes: &[u8]) -> Result<Vec<u8>, MosaicCryptoError>
 ```
 
 Stream handles drop wipe internal state via `ZeroizeOnDrop`. Panic-firewall: every method `catch_unwind`s and translates panics to a stable `ClientErrorCode` *without* re-throwing the panic message and without leaving plaintext on the worker scope.
 
-**Caller commitment contract.** A `ChunkEnvelope` returned by `encrypt_chunk` is independently authenticated (ciphertext + tag); the caller MAY upload it before `finalize()`. Until `finalize()` succeeds, the *stream* is not committed; readers will reject any prefix that lacks a valid footer. This permits parallel chunk upload while preserving stream integrity.
+**Caller commitment contract.** A non-final `ChunkEnvelope` returned by `encrypt_chunk` is independently authenticated with provisional-header AAD; the final chunk is authenticated with the finalized header. The caller MAY upload chunks before `finalize()`, but readers accept the stream only when the claimed final frame authenticates against the real `frame_count` and `final_frame_size`. There is no separate footer tag: the final frame's AEAD tag is the footer-equivalent commitment.
 
 ### What this programme ships
 
@@ -134,8 +128,8 @@ R-C4 ships:
 
 - the framing and KDF spec frozen above,
 - pure-Rust implementation behind `#[cfg(feature = "shard_streaming")]`. The CI guard `no-streaming-export-without-feature` rejects any WASM/UniFFI export of streaming symbols when the feature is off; fuzz/test entry points use a separate `[dev-dependencies]` test feature.
-- `SPEC-StreamingShardAEAD.md` documenting the byte layout, rejection rules, and footer verification,
-- golden vectors for: known plaintexts, multi-chunk streams, single-chunk streams (`total_chunks = 1`), last-byte truncation, mid-stream truncation, missing footer, mutated footer, duplicate chunk, swapped chunks, replay across streams (cross-`stream_salt`), mutated `total_chunks`, mutated `is_final_byte`, mismatched `chunk_size_class`, old-reader-rejection (a v3-only reader given a v4 envelope must produce `InvalidEnvelope`),
+- `SPEC-StreamingShardAEAD.md` documenting the byte layout, rejection rules, and final-frame commitment verification,
+- golden vectors for: known plaintexts, multi-chunk streams, single-chunk streams (`total_chunks = 1`), last-byte truncation, mid-stream truncation, header mutation plus tail truncation, duplicate chunk, swapped chunks, replay across streams (cross-`stream_salt`), mutated `total_chunks`, mismatched `chunk_size_class`, old-reader-rejection (a v3-only reader given a v4 envelope must produce `InvalidEnvelope`),
 - `cargo fuzz` corpora,
 - nonce-uniqueness property test (≥ 2²⁰ random tuples per the derivation above),
 - `StreamingPlaintextDivergence` test (re-encrypting same `chunk_idx` with different plaintext panics with the right error code).
@@ -180,7 +174,7 @@ A future ADR-NNN will activate streaming for production callers in v1.x, after t
 - New SPEC `docs/specs/SPEC-StreamingShardAEAD.md` documents the framing.
 - `crates/mosaic-domain/tests/sidecar_tag_table.rs` (per ADR-017) and a parallel `streaming_envelope_lock.rs` lock-test pin the byte layout.
 - `mosaic-crypto/Cargo.toml` adds `shard_streaming` feature; default off.
-- ClientErrorCode allocations: `StreamingChunkOutOfOrder` (already in R-C1), `StreamingTotalChunkMismatch` (added by R-C1).
+- The Rust crypto crate maps v0x04 stream-state failures onto its existing `MosaicCryptoError` surface to preserve downstream exhaustive matches in `mosaic-client`; future FFI activation can map those to the pre-allocated client error codes without changing the wire bytes.
 - Panic firewall: every streaming entry point calls `std::panic::catch_unwind` and zeroes any plaintext-bearing temporary on panic.
 - Q-final-4 budgets cap originals at the size that single-shot AEAD can handle without OOM on the device matrix; programme documents this cap and ties Android 4 GiB to v1.x.
 - A future "activate streaming for production" decision lands as a separate ADR + a feature-flag flip; no protocol bytes change.

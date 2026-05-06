@@ -58,9 +58,11 @@ const mockDownloadShards = vi.mocked(downloadShards);
 // ---------------------------------------------------------------------------
 
 const mockCryptoClient = {
-  decryptShardWithEpoch: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3, 4])),
-  verifyShard: vi.fn().mockResolvedValue(true),
+  decryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3, 4])),
+  verifyShardIntegrity: vi.fn().mockResolvedValue(true),
 };
+
+const VALID_SHA256 = 'A'.repeat(43);
 
 function createMockPhoto(overrides: Partial<PhotoMeta> = {}): PhotoMeta {
   return {
@@ -83,9 +85,8 @@ function createMockPhoto(overrides: Partial<PhotoMeta> = {}): PhotoMeta {
 function makeEpochBundle(epochId = 1) {
   return {
     epochId,
-    epochHandleId: `epch_test-${String(epochId)}`,
+    epochHandleId: `epch_test-${String(epochId)}` as never,
     signPublicKey: new Uint8Array(32),
-    epochSeed: new Uint8Array(32),
     signKeypair: {
       publicKey: new Uint8Array(32),
       secretKey: new Uint8Array(64),
@@ -160,7 +161,7 @@ describe('album-download-service', () => {
     it('downloads and decrypts a single photo into the ZIP', async () => {
       const photo = createMockPhoto({ filename: 'sunset.jpg' });
       const decryptedData = new Uint8Array([255, 254, 253]);
-      mockCryptoClient.decryptShardWithEpoch.mockResolvedValue(decryptedData);
+      mockCryptoClient.decryptShardWithEpochHandle.mockResolvedValue(decryptedData);
 
       await downloadAlbumAsZip({
         albumName: 'Vacation',
@@ -172,7 +173,7 @@ describe('album-download-service', () => {
       expect(capturedFiles).toHaveLength(1);
       expect(capturedFiles[0]!.name).toBe('sunset.jpg');
       expect(capturedFiles[0]!.input).toEqual(decryptedData);
-      expect(mockCryptoClient.decryptShardWithEpoch).toHaveBeenCalledWith(
+      expect(mockCryptoClient.decryptShardWithEpochHandle).toHaveBeenCalledWith(
         'epch_test-1',
         expect.any(Uint8Array),
       );
@@ -282,7 +283,7 @@ describe('album-download-service', () => {
         new Uint8Array([0xAA]),
         new Uint8Array([0xBB]),
       ]);
-      mockCryptoClient.decryptShardWithEpoch
+      mockCryptoClient.decryptShardWithEpochHandle
         .mockResolvedValueOnce(chunk1)
         .mockResolvedValueOnce(chunk2);
 
@@ -304,7 +305,7 @@ describe('album-download-service', () => {
     it('verifies shard hashes when originalShardHashes are available', async () => {
       const photo = createMockPhoto({
         originalShardIds: ['shard-1'],
-        originalShardHashes: ['hash-1'],
+        originalShardHashes: [VALID_SHA256],
       });
 
       await downloadAlbumAsZip({
@@ -313,16 +314,16 @@ describe('album-download-service', () => {
         albumId: 'album-1',
       });
 
-      expect(mockCryptoClient.verifyShard).toHaveBeenCalledWith(
+      expect(mockCryptoClient.verifyShardIntegrity).toHaveBeenCalledWith(
         expect.any(Uint8Array),
-        'hash-1',
+        new Uint8Array(32),
       );
     });
 
     it('uses legacy shard hashes (shardHashes[2:]) when no originalShardHashes', async () => {
       const { originalShardIds: _a, originalShardHashes: _b, ...base } = createMockPhoto({
         shardIds: ['t', 'p', 'o1'],
-        shardHashes: ['h-t', 'h-p', 'h-o1'],
+        shardHashes: ['h-t', 'h-p', VALID_SHA256],
       });
       const photo: PhotoMeta = base;
 
@@ -332,9 +333,9 @@ describe('album-download-service', () => {
         albumId: 'album-1',
       });
 
-      expect(mockCryptoClient.verifyShard).toHaveBeenCalledWith(
+      expect(mockCryptoClient.verifyShardIntegrity).toHaveBeenCalledWith(
         expect.any(Uint8Array),
-        'h-o1',
+        new Uint8Array(32),
       );
     });
 

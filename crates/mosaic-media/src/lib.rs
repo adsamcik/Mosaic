@@ -6,6 +6,19 @@ use std::fmt;
 
 use zeroize::Zeroizing;
 
+mod exif_sidecar;
+pub mod iso_bmff;
+mod video;
+pub use exif_sidecar::{
+    ExtractedGpsFields, ExtractedSidecarFields, SidecarExtractResult,
+    extract_canonical_sidecar_fields,
+};
+pub use iso_bmff::BoxParser;
+pub use video::{
+    VideoCodec, VideoContainer, VideoInspectResult, inspect_video_container,
+    video_metadata_sidecar_fields,
+};
+
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 const WEBP_VP8X_ICC_FLAG: u8 = 0b0010_0000;
 const WEBP_VP8X_EXIF_FLAG: u8 = 0b0000_0100;
@@ -17,6 +30,8 @@ pub const MAX_IMAGE_PIXELS: u32 = 32 * 1024 * 1024;
 pub const THUMBNAIL_MAX_DIMENSION: u32 = 256;
 /// Maximum canonical preview tier edge length in pixels.
 pub const PREVIEW_MAX_DIMENSION: u32 = 1024;
+/// Maximum canonical original tier edge length in pixels for cross-platform parity locks.
+pub const ORIGINAL_MAX_DIMENSION: u32 = 4096;
 /// Defense-in-depth cap on the number of TIFF IFD entries scanned while
 /// looking for the EXIF orientation tag. Real-world cameras rarely exceed
 /// a few dozen IFD entries; the TIFF on-wire ceiling is `u16::MAX` (65 535)
@@ -44,6 +59,15 @@ impl MediaFormat {
     }
 }
 
+/// Canonical rotation metadata extracted from video track transforms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Orientation {
+    Rotate0,
+    Rotate90,
+    Rotate180,
+    Rotate270,
+}
+
 /// Recognized metadata categories stripped from gallery tier bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MetadataKind {
@@ -57,6 +81,8 @@ pub enum MetadataKind {
     PhysicalDimensions,
     SuggestedPalette,
     RenderingHint,
+    VideoMetadata,
+    Attachment,
 }
 
 /// Media processing errors.
@@ -243,6 +269,52 @@ pub fn strip_known_metadata(
         MediaFormat::Png => strip_png_metadata(bytes),
         MediaFormat::WebP => strip_webp_metadata(bytes),
     }
+}
+
+/// Removes recognized metadata carriers from supported video containers.
+///
+/// # Errors
+/// Returns `UnsupportedFormat` when the container cannot be parsed safely.
+pub fn strip_video_metadata(input: &[u8]) -> Result<StrippedMedia, MosaicMediaError> {
+    video::strip_video_metadata(input)
+}
+
+/// Removes recognized metadata carriers from an AVIF ISO-BMFF image container.
+///
+/// # Errors
+/// Returns `UnsupportedFormat` when ISO-BMFF boundaries or AVIF brands are malformed.
+pub fn strip_avif_metadata(input: &[u8]) -> Result<StrippedMedia, MosaicMediaError> {
+    iso_bmff::strip_avif_metadata(input)
+}
+
+/// Removes recognized metadata carriers from a HEIC/HEIF ISO-BMFF image container.
+///
+/// # Errors
+/// Returns `UnsupportedFormat` when ISO-BMFF boundaries or HEIC brands are malformed.
+pub fn strip_heic_metadata(input: &[u8]) -> Result<StrippedMedia, MosaicMediaError> {
+    iso_bmff::strip_heic_metadata(input)
+}
+
+/// Extracts canonical EXIF sidecar fields from an AVIF EXIF item before stripping.
+#[must_use]
+pub fn extract_avif_canonical_sidecar_fields(input: &[u8]) -> SidecarExtractResult {
+    iso_bmff::extract_exif_item_payload(input, iso_bmff::IsoBmffFormat::Avif)
+        .map(exif_sidecar::extract_exif_payload_canonical_sidecar_fields)
+        .unwrap_or(SidecarExtractResult {
+            code: 0,
+            fields: None,
+        })
+}
+
+/// Extracts canonical EXIF sidecar fields from a HEIC/HEIF EXIF item before stripping.
+#[must_use]
+pub fn extract_heic_canonical_sidecar_fields(input: &[u8]) -> SidecarExtractResult {
+    iso_bmff::extract_exif_item_payload(input, iso_bmff::IsoBmffFormat::Heic)
+        .map(exif_sidecar::extract_exif_payload_canonical_sidecar_fields)
+        .unwrap_or(SidecarExtractResult {
+            code: 0,
+            fields: None,
+        })
 }
 
 /// Inspects supported image bytes and returns dependency-free container metadata.
@@ -601,28 +673,20 @@ fn extract_jpeg_exif_orientation(bytes: &[u8]) -> Result<u8, MosaicMediaError> {
             continue;
         }
 
-        let length_end = match offset.checked_add(2) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidJpeg),
-        };
-        let length_bytes = match bytes.get(offset..length_end) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidJpeg),
-        };
+        let length_end = offset.saturating_add(2);
+        let length_bytes = bytes
+            .get(offset..length_end)
+            .ok_or(MosaicMediaError::InvalidJpeg)?;
         let segment_len = usize::from(u16::from_be_bytes([length_bytes[0], length_bytes[1]]));
         if segment_len < 2 {
             return Err(MosaicMediaError::InvalidJpeg);
         }
 
-        let segment_end = match offset.checked_add(segment_len) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidJpeg),
-        };
+        let segment_end = offset.saturating_add(segment_len);
         let payload_start = offset + 2;
-        let payload = match bytes.get(payload_start..segment_end) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidJpeg),
-        };
+        let payload = bytes
+            .get(payload_start..segment_end)
+            .ok_or(MosaicMediaError::InvalidJpeg)?;
 
         if marker == 0xe1 && payload.starts_with(b"Exif\0\0") {
             return Ok(parse_tiff_orientation(&payload[6..]));
@@ -733,10 +797,6 @@ fn orientation_swaps_dimensions(orientation: u8) -> bool {
 }
 
 fn inspect_jpeg_dimensions(bytes: &[u8]) -> Result<(u32, u32), MosaicMediaError> {
-    if !bytes.starts_with(&[0xff, 0xd8]) {
-        return Err(MosaicMediaError::InvalidJpeg);
-    }
-
     let mut offset = 2;
     while offset < bytes.len() {
         if bytes.get(offset) != Some(&0xff) {
@@ -762,28 +822,20 @@ fn inspect_jpeg_dimensions(bytes: &[u8]) -> Result<(u32, u32), MosaicMediaError>
             continue;
         }
 
-        let length_end = match offset.checked_add(2) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidJpeg),
-        };
-        let length_bytes = match bytes.get(offset..length_end) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidJpeg),
-        };
+        let length_end = offset.saturating_add(2);
+        let length_bytes = bytes
+            .get(offset..length_end)
+            .ok_or(MosaicMediaError::InvalidJpeg)?;
         let segment_len = usize::from(u16::from_be_bytes([length_bytes[0], length_bytes[1]]));
         if segment_len < 2 {
             return Err(MosaicMediaError::InvalidJpeg);
         }
 
-        let segment_end = match offset.checked_add(segment_len) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidJpeg),
-        };
+        let segment_end = offset.saturating_add(segment_len);
         let payload_start = offset + 2;
-        let payload = match bytes.get(payload_start..segment_end) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidJpeg),
-        };
+        let payload = bytes
+            .get(payload_start..segment_end)
+            .ok_or(MosaicMediaError::InvalidJpeg)?;
 
         if is_jpeg_start_of_frame(marker) {
             if payload.len() < 5 {
@@ -810,10 +862,6 @@ fn is_jpeg_start_of_frame(marker: u8) -> bool {
 }
 
 fn inspect_png_dimensions(bytes: &[u8]) -> Result<(u32, u32), MosaicMediaError> {
-    if !bytes.starts_with(PNG_SIGNATURE) {
-        return Err(MosaicMediaError::InvalidPng);
-    }
-
     let mut offset = PNG_SIGNATURE.len();
     let length_bytes = match bytes.get(offset..offset + 4) {
         Some(value) => value,
@@ -845,30 +893,18 @@ fn inspect_png_dimensions(bytes: &[u8]) -> Result<(u32, u32), MosaicMediaError> 
 }
 
 fn inspect_webp_dimensions(bytes: &[u8]) -> Result<(u32, u32), MosaicMediaError> {
-    if bytes.len() < 12 || !bytes.starts_with(b"RIFF") || bytes.get(8..12) != Some(b"WEBP") {
-        return Err(MosaicMediaError::InvalidWebP);
-    }
-
     let mut offset = 12;
     while offset < bytes.len() {
-        let kind_end = match offset.checked_add(4) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidWebP),
-        };
-        let chunk_type = match bytes.get(offset..kind_end) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidWebP),
-        };
+        let kind_end = offset.saturating_add(4);
+        let chunk_type = bytes
+            .get(offset..kind_end)
+            .ok_or(MosaicMediaError::InvalidWebP)?;
         offset = kind_end;
 
-        let size_end = match offset.checked_add(4) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidWebP),
-        };
-        let size_bytes = match bytes.get(offset..size_end) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidWebP),
-        };
+        let size_end = offset.saturating_add(4);
+        let size_bytes = bytes
+            .get(offset..size_end)
+            .ok_or(MosaicMediaError::InvalidWebP)?;
         let payload_len_u32 =
             u32::from_le_bytes([size_bytes[0], size_bytes[1], size_bytes[2], size_bytes[3]]);
         let payload_len = match usize::try_from(payload_len_u32) {
@@ -877,14 +913,8 @@ fn inspect_webp_dimensions(bytes: &[u8]) -> Result<(u32, u32), MosaicMediaError>
         };
         offset = size_end;
 
-        let payload_end = match offset.checked_add(payload_len) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidWebP),
-        };
-        let padded_end = match payload_end.checked_add(payload_len % 2) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidWebP),
-        };
+        let payload_end = offset.saturating_add(payload_len);
+        let padded_end = payload_end.saturating_add(payload_len % 2);
         let payload = match bytes.get(offset..payload_end) {
             Some(value) => value,
             None => return Err(MosaicMediaError::InvalidWebP),
@@ -993,28 +1023,20 @@ fn strip_jpeg_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> 
             continue;
         }
 
-        let length_end = match offset.checked_add(2) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidJpeg),
-        };
-        let length_bytes = match bytes.get(offset..length_end) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidJpeg),
-        };
+        let length_end = offset.saturating_add(2);
+        let length_bytes = bytes
+            .get(offset..length_end)
+            .ok_or(MosaicMediaError::InvalidJpeg)?;
         let segment_len = usize::from(u16::from_be_bytes([length_bytes[0], length_bytes[1]]));
         if segment_len < 2 {
             return Err(MosaicMediaError::InvalidJpeg);
         }
 
-        let segment_end = match offset.checked_add(segment_len) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidJpeg),
-        };
+        let segment_end = offset.saturating_add(segment_len);
         let payload_start = offset + 2;
-        let payload = match bytes.get(payload_start..segment_end) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidJpeg),
-        };
+        let payload = bytes
+            .get(payload_start..segment_end)
+            .ok_or(MosaicMediaError::InvalidJpeg)?;
 
         if let Some(kind) = classify_jpeg_metadata(marker, payload) {
             removed.push(kind);
@@ -1062,14 +1084,10 @@ fn strip_png_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> {
     let mut offset = PNG_SIGNATURE.len();
     while offset < bytes.len() {
         let chunk_start = offset;
-        let length_end = match offset.checked_add(4) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidPng),
-        };
-        let length_bytes = match bytes.get(offset..length_end) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidPng),
-        };
+        let length_end = offset.saturating_add(4);
+        let length_bytes = bytes
+            .get(offset..length_end)
+            .ok_or(MosaicMediaError::InvalidPng)?;
         let payload_len_u32 = u32::from_be_bytes([
             length_bytes[0],
             length_bytes[1],
@@ -1082,24 +1100,14 @@ fn strip_png_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> {
         };
         offset = length_end;
 
-        let chunk_type_end = match offset.checked_add(4) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidPng),
-        };
-        let chunk_type = match bytes.get(offset..chunk_type_end) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidPng),
-        };
+        let chunk_type_end = offset.saturating_add(4);
+        let chunk_type = bytes
+            .get(offset..chunk_type_end)
+            .ok_or(MosaicMediaError::InvalidPng)?;
         offset = chunk_type_end;
 
-        let payload_end = match offset.checked_add(payload_len) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidPng),
-        };
-        let crc_end = match payload_end.checked_add(4) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidPng),
-        };
+        let payload_end = offset.saturating_add(payload_len);
+        let crc_end = payload_end.saturating_add(4);
         if bytes.get(offset..payload_end).is_none() || bytes.get(payload_end..crc_end).is_none() {
             return Err(MosaicMediaError::InvalidPng);
         }
@@ -1126,7 +1134,7 @@ fn classify_png_metadata(chunk_type: &[u8]) -> Option<MetadataKind> {
         b"iCCP" | b"sRGB" | b"cHRM" | b"gAMA" => Some(MetadataKind::ColorProfile),
         b"pHYs" => Some(MetadataKind::PhysicalDimensions),
         b"sPLT" => Some(MetadataKind::SuggestedPalette),
-        b"bKGD" | b"hIST" => Some(MetadataKind::RenderingHint),
+        [first, ..] if first.is_ascii_lowercase() => Some(MetadataKind::RenderingHint),
         _ => None,
     }
 }
@@ -1146,24 +1154,16 @@ fn strip_webp_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> 
 
     while offset < bytes.len() {
         let chunk_start = offset;
-        let kind_end = match offset.checked_add(4) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidWebP),
-        };
-        let chunk_type = match bytes.get(offset..kind_end) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidWebP),
-        };
+        let kind_end = offset.saturating_add(4);
+        let chunk_type = bytes
+            .get(offset..kind_end)
+            .ok_or(MosaicMediaError::InvalidWebP)?;
         offset = kind_end;
 
-        let size_end = match offset.checked_add(4) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidWebP),
-        };
-        let size_bytes = match bytes.get(offset..size_end) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidWebP),
-        };
+        let size_end = offset.saturating_add(4);
+        let size_bytes = bytes
+            .get(offset..size_end)
+            .ok_or(MosaicMediaError::InvalidWebP)?;
         let payload_len_u32 =
             u32::from_le_bytes([size_bytes[0], size_bytes[1], size_bytes[2], size_bytes[3]]);
         let payload_len = match usize::try_from(payload_len_u32) {
@@ -1172,14 +1172,8 @@ fn strip_webp_metadata(bytes: &[u8]) -> Result<StrippedMedia, MosaicMediaError> 
         };
         offset = size_end;
 
-        let payload_end = match offset.checked_add(payload_len) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidWebP),
-        };
-        let padded_end = match payload_end.checked_add(payload_len % 2) {
-            Some(value) => value,
-            None => return Err(MosaicMediaError::InvalidWebP),
-        };
+        let payload_end = offset.saturating_add(payload_len);
+        let padded_end = payload_end.saturating_add(payload_len % 2);
         if bytes.get(offset..payload_end).is_none() || bytes.get(payload_end..padded_end).is_none()
         {
             return Err(MosaicMediaError::InvalidWebP);
@@ -1942,6 +1936,7 @@ mod tests {
                 MetadataKind::SuggestedPalette,
                 MetadataKind::RenderingHint,
                 MetadataKind::RenderingHint,
+                MetadataKind::RenderingHint,
             ]
         );
         assert!(!contains_ascii(&stripped.bytes, b"eXIf"));
@@ -1951,8 +1946,8 @@ mod tests {
         assert!(!contains_ascii(&stripped.bytes, b"editing palette"));
         assert!(!contains_ascii(&stripped.bytes, b"bKGD"));
         assert!(!contains_ascii(&stripped.bytes, b"hIST"));
-        assert!(contains_ascii(&stripped.bytes, b"tRNS"));
-        assert!(contains_ascii(&stripped.bytes, b"rendering transparency"));
+        assert!(!contains_ascii(&stripped.bytes, b"tRNS"));
+        assert!(!contains_ascii(&stripped.bytes, b"rendering transparency"));
         assert!(contains_ascii(&stripped.bytes, b"IDAT"));
         assert!(contains_ascii(&stripped.bytes, b"pixel bytes"));
     }

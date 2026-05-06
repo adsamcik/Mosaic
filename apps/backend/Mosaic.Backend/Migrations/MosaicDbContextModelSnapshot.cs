@@ -351,6 +351,14 @@ namespace Mosaic.Backend.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("album_id");
 
+                    b.Property<string>("AssetType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("Image")
+                        .HasColumnName("asset_type");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -360,6 +368,10 @@ namespace Mosaic.Backend.Migrations
                         .HasColumnType("bytea")
                         .HasColumnName("encrypted_meta");
 
+                    b.Property<byte[]>("EncryptedMetaSidecar")
+                        .HasColumnType("bytea")
+                        .HasColumnName("encrypted_meta_sidecar");
+
                     b.Property<DateTimeOffset?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
@@ -367,6 +379,18 @@ namespace Mosaic.Backend.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
+
+                    b.Property<long>("MetadataVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L)
+                        .HasColumnName("metadata_version");
+
+                    b.Property<int>("ProtocolVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("protocol_version");
 
                     b.Property<long>("RowVersion")
                         .IsConcurrencyToken()
@@ -419,6 +443,32 @@ namespace Mosaic.Backend.Migrations
                     b.Property<int>("ChunkIndex")
                         .HasColumnType("integer")
                         .HasColumnName("chunk_index");
+
+                    b.Property<long>("ContentLength")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("content_length");
+
+                    b.Property<int>("EnvelopeVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(3)
+                        .HasColumnName("envelope_version");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasDefaultValue("")
+                        .HasColumnName("sha256");
+
+                    b.Property<int>("ShardIndex")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("shard_index");
 
                     b.Property<int>("Tier")
                         .ValueGeneratedOnAdd()

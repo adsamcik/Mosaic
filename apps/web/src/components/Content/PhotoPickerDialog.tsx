@@ -13,7 +13,7 @@ import {
   getCachedPlaceholderDataURL,
   isValidPlaceholderHash,
 } from '../../lib/thumbhash-decoder';
-import type { PhotoMeta } from '../../workers/types';
+import type { EpochHandleId, PhotoMeta } from '../../workers/types';
 import { Dialog } from '../Shared/Dialog';
 import './PhotoPickerDialog.css';
 
@@ -46,7 +46,7 @@ const PickerThumbnail = memo(function PickerThumbnail({
   photo: PhotoMeta;
   isSelected: boolean;
   onToggle: (id: string) => void;
-  epochReadKey: Uint8Array | undefined;
+  epochReadKey: EpochHandleId | undefined;
 }) {
   // Get thumbnail URL - prefer embedded thumbnail, then thumbhash placeholder
   const thumbnailUrl = useMemo(() => {

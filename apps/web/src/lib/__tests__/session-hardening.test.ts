@@ -9,6 +9,7 @@
 
 import {
   afterEach,
+  beforeAll,
   beforeEach,
   describe,
   expect,
@@ -16,6 +17,7 @@ import {
   vi,
   type Mock,
 } from 'vitest';
+import { initializeRustWasmForTests } from '../../../tests/wasm-test-init';
 
 // =============================================================================
 // Mock collaborators
@@ -167,6 +169,8 @@ async function getSessionModule() {
     subscribeToSettings: vi.fn(() => () => {}),
   }));
 
+  const { initializeRustWasmForTests } = await import('../../../tests/wasm-test-init');
+  await initializeRustWasmForTests();
   const sessionModule = await import('../session');
   const apiModule = await import('../api');
   const cryptoClient = await import('../crypto-client');
@@ -214,6 +218,10 @@ function makeDbClientMock() {
     close: vi.fn(),
   };
 }
+
+beforeAll(async () => {
+  await initializeRustWasmForTests();
+});
 
 beforeEach(() => {
   vi.clearAllMocks();

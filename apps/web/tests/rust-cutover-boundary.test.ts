@@ -267,7 +267,7 @@ describe('web Rust crypto cutover boundaries', () => {
       importersMatching(
         /from\s+['"][^'"]*generated\/mosaic-wasm\/mosaic_wasm\.js['"]/,
       ),
-    ).toEqual(['lib/exif-stripper.ts', 'workers/rust-crypto-core.ts']);
+    ).toEqual(['lib/exif-stripper.ts', 'lib/session.ts', 'workers/rust-crypto-core.ts']);
   });
 
   it('keeps the Rust crypto facade behind Comlink workers', () => {
@@ -432,6 +432,8 @@ describe('web Rust crypto cutover per-symbol allowlist', () => {
 
 const typesPath = resolve(srcRoot, 'workers/types.ts');
 const typesSource = readFileSync(typesPath, 'utf8');
+const generatedErrorCodesPath = resolve(srcRoot, 'workers/worker-crypto-error-code.generated.ts');
+const generatedErrorCodesSource = readFileSync(generatedErrorCodesPath, 'utf8');
 
 /**
  * Methods that mint or close handle objects. We assert each declares a
@@ -500,7 +502,12 @@ describe('web Rust cutover handle-id boundary (Slice 1)', () => {
   }
 
   it('exposes a stable WorkerCryptoErrorCode enum mirroring Rust ClientErrorCode', () => {
-    // Anchor that the enum exports the codes Slice 1 callers branch on.
+    expect(typesSource).toContain(
+      "import { WorkerCryptoErrorCode } from './worker-crypto-error-code.generated';",
+    );
+    expect(typesSource).toContain('export { WorkerCryptoErrorCode };');
+
+    // Anchor that the generated enum exports the codes Slice 1 callers branch on.
     const requiredCodes = [
       'StaleHandle = 1000',
       'HandleNotFound = 1001',
@@ -512,7 +519,7 @@ describe('web Rust cutover handle-id boundary (Slice 1)', () => {
       'BundleSignatureInvalid = 216',
     ];
     for (const code of requiredCodes) {
-      expect(typesSource).toContain(code);
+      expect(generatedErrorCodesSource).toContain(code);
     }
   });
 

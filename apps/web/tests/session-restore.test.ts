@@ -5,7 +5,8 @@
  * Verifies that users can restore their session after page refresh.
  */
 
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, beforeAll, afterEach } from 'vitest';
+import { initializeRustWasmForTests } from './wasm-test-init';
 
 // Mock the dependencies before importing session
 vi.mock('../src/lib/api', async () => {
@@ -62,10 +63,16 @@ import type { User } from '../src/lib/api-types';
 async function getSessionModule() {
   // Reset module registry to get fresh instance
   vi.resetModules();
+  const { initializeRustWasmForTests } = await import('./wasm-test-init');
+  await initializeRustWasmForTests();
   return import('../src/lib/session');
 }
 
 describe('Session Restore', () => {
+  beforeAll(async () => {
+    await initializeRustWasmForTests();
+  });
+
   const mockUser: User = {
     id: 'user-123',
     authSub: 'testuser@example.com',

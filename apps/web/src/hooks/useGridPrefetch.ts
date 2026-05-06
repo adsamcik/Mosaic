@@ -15,7 +15,7 @@ import { useEffect, useRef } from 'react';
 import type { Virtualizer } from '@tanstack/react-virtual';
 import { preloadPhotos, getCacheStats } from '../lib/photo-service';
 import { createLogger } from '../lib/logger';
-import type { PhotoMeta } from '../workers/types';
+import type { EpochHandleId, PhotoMeta } from '../workers/types';
 
 const log = createLogger('GridPrefetch');
 
@@ -30,8 +30,8 @@ export interface UseGridPrefetchOptions<T> {
   virtualizer: Virtualizer<HTMLDivElement, Element>;
   /** All photos in the grid */
   photos: PhotoMeta[];
-  /** Function to get epoch read key for a photo's epoch */
-  getEpochReadKey: (epochId: number) => Uint8Array | undefined;
+  /** Function to get epoch handle id for a photo's epoch */
+  getEpochReadKey: (epochId: number) => EpochHandleId | undefined;
   /** Whether prefetching is enabled */
   enabled?: boolean;
   /** Extract photos from a virtual row item (for mosaic layouts) */

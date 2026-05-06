@@ -1,57 +1,231 @@
 #requires -Version 7
 $ErrorActionPreference = 'Stop'
 
+# Architecture-guard regex maintenance protocol:
+# 1. Every regex extension MUST be accompanied by a negative-test fixture
+#    proving the new pattern catches what the old missed.
+# 2. Fixtures live inline in Invoke-NegativeFixtures below and run as part of CI.
+# 3. PR adding a new pattern without a fixture should be rejected at review.
+# 4. Option B: mosaic-wasm producer exports with exotic byte-array returns
+#    (Cow<[u8]>, Box<[u8]>, Uint8Array, ArrayBuffer) are name-agnostic.
+#
+# Allowlist audit checkpoint:
+# Last full audit: R-C5.5 at 2d17c47
+# Each allowlist entry below MUST carry an explicit classifier prefix and a
+# SPECIFIC cryptographic safety argument as its rationale comment. "Reviewed existing API" / "Internal
+# use" / "Not a secret" are NOT acceptable rationales. Audits should be
+# repeated whenever an entry is added; v1 freeze checkpoint should re-run
+# this audit.
+# R-C5.5.1 mechanical enforcement: rationales missing a classifier, shorter than 40 chars, or
+# matching banned phrases ('reviewed existing api', 'internal use', etc.)
+# fail at script execution time. See R-C5.5 audit checkpoint above.
+# Classifier vocabulary is locked by SPEC-FfiSecretClassifiers.md (v1).
+# Permitted classifiers: SAFE, BEARER-TOKEN-PERMITTED, CORPUS-DRIVER-ONLY,
+# MIGRATION-PENDING. Adding a new classifier requires a SPEC amendment.
+
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 Set-Location $ProjectRoot
 
 $ffiFiles = @('crates/mosaic-wasm/src/lib.rs', 'crates/mosaic-uniffi/src/lib.rs')
 $dtsFiles = @('apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts')
-$secretResultTypes = '(Vec\s*<\s*u8\s*>|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)'
+# JsValue is intentionally treated as secret-shaped for wasm exports. It is fuzzy
+# because serde_wasm_bindgen can smuggle byte arrays through JsValue; reviewers can
+# use the explicit allowlist when a non-secret JsValue API is justified.
+$secretResultTypes = '(Vec\s*<\s*u8\s*>|Box\s*<\s*\[\s*u8\s*\]\s*>|Cow\s*<[^>]*\[\s*u8\s*\][^>]*>|(?:js_sys\s*::\s*)?Uint8Array|(?:js_sys\s*::\s*)?ArrayBuffer|JsValue|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)'
+$exoticWasmResultTypes = '(Box\s*<\s*\[\s*u8\s*\]\s*>|Cow\s*<[^>]*\[\s*u8\s*\][^>]*>|(?:js_sys\s*::\s*)?Uint8Array|(?:js_sys\s*::\s*)?ArrayBuffer)'
 $secretNamePattern = '(derive.*(key|keys|secret)|generate.*secret|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)'
 $domainHandlePattern = '(?i)(^(wrap|unwrap)_.*(account|epoch|identity|link).*(handle|seed|key|secret)|^(seal|unseal)_.*(account|epoch|identity|link).*handle)'
 $genericBytesWrapPattern = '(?i)^(wrap|unwrap)(_|$)'
+$domainNounPattern = '(?i)(account|epoch|identity|link)'
 $secretShapedName = '(?i)(seed|secret|key)$'
 $publicKeyName = '(public_?key|pub_?key|PublicKey|PubKey|pubkey)'
 $forbiddenRawBundleApis = @(
   'seal_and_sign_bundle',
   'seal_and_sign_bundle_js',
+  'decrypt_shard_with_epoch',
+  'decrypt_shard_with_epoch_js',
   'import_epoch_key_handle_from_bundle',
   'import_epoch_key_handle_from_bundle_js'
 )
+$forbiddenLegacyDtsFunctions = @(
+  'decryptShardWithEpoch'
+)
 $allowlist = @{
-  'crates/mosaic-wasm/src/lib.rs::wrapped_account_key' = 'Getter for server-storable wrapped account key.'
-  'crates/mosaic-wasm/src/lib.rs::wrap_with_account_handle' = 'R-C6 AAD-bound account-data wrapper; returns only ACCOUNT_DATA_AAD ciphertext.'
-  'crates/mosaic-wasm/src/lib.rs::unwrap_with_account_handle' = 'R-C6 AAD-bound account-data unwrap; cannot decrypt seed domains.'
-  'crates/mosaic-wasm/src/lib.rs::wrap_with_account_handle_js' = 'R-C6 AAD-bound account-data wrapper; returns only ACCOUNT_DATA_AAD ciphertext.'
-  'crates/mosaic-wasm/src/lib.rs::unwrap_with_account_handle_js' = 'R-C6 AAD-bound account-data unwrap; cannot decrypt seed domains.'
-  'crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret' = 'Cross-client vector driver only; returns wrapping_key for parity tests.'
-  'crates/mosaic-uniffi/src/lib.rs::verify_and_open_bundle_with_recipient_seed' = 'Cross-client vector driver only; OpenedBundleFfiResult carries epoch_seed.'
+  'crates/mosaic-wasm/src/lib.rs::wrapped_account_key' = 'SAFE: Returns L2 account key encrypted under password-derived L1; unwrap requires password and account salt.'
+  'crates/mosaic-wasm/src/lib.rs::wrap_with_account_handle' = 'SAFE: Returns ACCOUNT_DATA_AAD AEAD ciphertext; L2 account key remains inside Rust handle registry.'
+  'crates/mosaic-wasm/src/lib.rs::unwrap_with_account_handle' = 'SAFE: Decrypts only ACCOUNT_DATA_AAD blobs via an open handle; does not expose L2 or seed-domain key material.'
+  'crates/mosaic-wasm/src/lib.rs::wrap_with_account_handle_js' = 'SAFE: Returns ACCOUNT_DATA_AAD AEAD ciphertext to JS; L2 account key remains inside Rust handle registry.'
+  'crates/mosaic-wasm/src/lib.rs::unwrap_with_account_handle_js' = 'SAFE: Decrypts only ACCOUNT_DATA_AAD blobs via JS handle; does not expose L2 or seed-domain key material.'
+  'crates/mosaic-wasm/src/lib.rs::wrapped_epoch_seed' = 'SAFE: Returns epoch seed encrypted under the account handle wrap key; plaintext seed requires matching L2.'
+  'crates/mosaic-wasm/src/lib.rs::identity_message' = 'SAFE: Returns fixed golden-vector message bytes for signature verification; contains no key material.'
+  'crates/mosaic-wasm/src/lib.rs::identity_signature' = 'SAFE: Returns Ed25519 detached signature bytes; verifier gains no private signing key material.'
+  'crates/mosaic-wasm/src/lib.rs::link_id' = 'SAFE: Returns public link identifier derived from link secret; cannot recover wrapping key from identifier alone.'
+  'crates/mosaic-wasm/src/lib.rs::link_url_token' = 'BEARER-TOKEN-PERMITTED: This struct field returns a 32-byte share-link URL fragment seed designed to be base64url-encoded and embedded in a user-shareable URL. The bytes are a bearer token by design (same threat model as Bitwarden Send or Dropbox share links); secrecy property is "anyone with the URL has access". See SPEC-R-C5.5-MigrationDesign.md §2 Option B for full rationale; future r-c8-rust-owned-share-link-urls will offer a Rust-owned URL-assembly path as defense-in-depth.'
+  'crates/mosaic-wasm/src/lib.rs::sign_manifest_with_identity' = 'SAFE: Returns a 64-byte Ed25519 manifest signature; identity signing key remains inside Rust handle.'
+  'crates/mosaic-wasm/src/lib.rs::sign_manifest_with_epoch_handle' = 'SAFE: Returns a 64-byte Ed25519 manifest signature; epoch signing seed remains inside Rust handle.'
+  'crates/mosaic-wasm/src/lib.rs::sign_auth_challenge_with_account' = 'SAFE: Returns a 64-byte Ed25519 auth signature; account-derived signing secret is not exported.'
+  'crates/mosaic-wasm/src/lib.rs::sign_manifest_with_identity_js' = 'SAFE: Returns JS-visible Ed25519 manifest signature bytes; identity signing key remains inside Rust handle.'
+  'crates/mosaic-wasm/src/lib.rs::sign_manifest_with_epoch_handle_js' = 'SAFE: Returns JS-visible Ed25519 manifest signature bytes; epoch signing seed remains inside Rust handle.'
+  'crates/mosaic-wasm/src/lib.rs::sign_auth_challenge_with_account_js' = 'SAFE: Returns JS-visible Ed25519 auth signature bytes; account-derived signing secret is not exported.'
+  'crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret' = "CORPUS-DRIVER-ONLY: gated by feature='cross-client-vectors'; production builds do not expose this symbol. Gradle invariant in apps/android-main/build.gradle.kts forbids scheduling test and production tasks in same invocation. Verified by crates/mosaic-uniffi/tests/api_shape_lock.rs::production_uniffi_bindings_do_not_expose_corpus_drivers. The raw-secret input is consumed by the cross-client link_keys.json corpus parity test."
+  'crates/mosaic-uniffi/src/lib.rs::derive_identity_from_raw_seed' = "CORPUS-DRIVER-ONLY: gated by feature='cross-client-vectors'; production builds do not expose this symbol. Gradle invariant in apps/android-main/build.gradle.kts forbids scheduling test and production tasks in same invocation. Verified by crates/mosaic-uniffi/tests/api_shape_lock.rs::production_uniffi_bindings_do_not_expose_corpus_drivers. The raw-seed input is consumed by the cross-client identity.json corpus parity test."
+  'crates/mosaic-uniffi/src/lib.rs::verify_and_open_bundle_with_recipient_seed' = "CORPUS-DRIVER-ONLY: gated by feature='cross-client-vectors'; production builds do not expose this symbol. Gradle invariant in apps/android-main/build.gradle.kts forbids scheduling test and production tasks in same invocation. Verified by crates/mosaic-uniffi/tests/api_shape_lock.rs::production_uniffi_bindings_do_not_expose_corpus_drivers. The raw-seed input is consumed by the cross-client sealed_bundle.json corpus parity test."
+  'crates/mosaic-uniffi/src/lib.rs::sign_manifest_with_identity' = 'SAFE: Returns a 64-byte Ed25519 manifest signature; identity signing key remains inside Rust handle.'
 }
 $structFieldAllowlist = @{
-  'crates/mosaic-wasm/src/lib.rs::AccountUnlockRequest.wrapped_account_key' = 'Wrapped input for account unlock.'
-  'crates/mosaic-wasm/src/lib.rs::CreateAccountResult.wrapped_account_key' = 'Server-storable wrapped account key.'
-  'crates/mosaic-wasm/src/lib.rs::IdentityHandleResult.wrapped_seed' = 'Server-storable wrapped identity seed.'
-  'crates/mosaic-wasm/src/lib.rs::EpochKeyHandleResult.wrapped_epoch_seed' = 'Server-storable wrapped epoch seed.'
-  'crates/mosaic-wasm/src/lib.rs::CreateLinkShareHandleResult.encrypted_key' = 'Encrypted tier key ciphertext.'
-  'crates/mosaic-wasm/src/lib.rs::WrappedTierKeyResult.encrypted_key' = 'Encrypted tier key ciphertext.'
-  'crates/mosaic-uniffi/src/lib.rs::AccountUnlockRequest.wrapped_account_key' = 'Wrapped input for account unlock.'
-  'crates/mosaic-uniffi/src/lib.rs::IdentityHandleResult.wrapped_seed' = 'Server-storable wrapped identity seed.'
-  'crates/mosaic-uniffi/src/lib.rs::EpochKeyHandleResult.wrapped_epoch_seed' = 'Server-storable wrapped epoch seed.'
-  'crates/mosaic-uniffi/src/lib.rs::LinkKeysFfiResult.wrapping_key' = 'Cross-client vector compatibility debt.'
-  'crates/mosaic-uniffi/src/lib.rs::OpenedBundleFfiResult.epoch_seed' = 'Cross-client vector compatibility debt.'
+  'crates/mosaic-wasm/src/lib.rs::AccountUnlockRequest.wrapped_account_key' = 'SAFE: Input is L2 encrypted under password-derived L1; unlock still requires the password-derived wrap key.'
+  'crates/mosaic-wasm/src/lib.rs::CreateAccountResult.wrapped_account_key' = 'SAFE: Field stores L2 encrypted under password-derived L1; plaintext L2 never crosses FFI.'
+  'crates/mosaic-wasm/src/lib.rs::IdentityHandleResult.wrapped_seed' = 'SAFE: Field stores identity seed encrypted by account L2; opening requires matching account handle.'
+  'crates/mosaic-wasm/src/lib.rs::EpochKeyHandleResult.wrapped_epoch_seed' = 'SAFE: Field stores epoch seed encrypted by account L2; opening requires matching account handle.'
+  'crates/mosaic-wasm/src/lib.rs::CreateLinkShareHandleResult.encrypted_key' = 'SAFE: Field is AEAD ciphertext of tier key under link wrapping key; plaintext tier key is not exported.'
+  'crates/mosaic-wasm/src/lib.rs::WrappedTierKeyResult.encrypted_key' = 'SAFE: Field is AEAD ciphertext of tier key under link wrapping key; plaintext tier key is not exported.'
+  'crates/mosaic-uniffi/src/lib.rs::AccountUnlockRequest.wrapped_account_key' = 'SAFE: Input is L2 encrypted under password-derived L1; unlock still requires the password-derived wrap key.'
+  'crates/mosaic-uniffi/src/lib.rs::IdentityHandleResult.wrapped_seed' = 'SAFE: Field stores identity seed encrypted by account L2; opening requires matching account handle.'
+  'crates/mosaic-uniffi/src/lib.rs::EpochKeyHandleResult.wrapped_epoch_seed' = 'SAFE: Field stores epoch seed encrypted by account L2; opening requires matching account handle.'
 }
 $dtsAllowlist = @{
-  'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::CreateAccountResult.wrappedAccountKey' = 'Server-storable wrapped account key.'
-  'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::EpochKeyHandleResult.wrappedEpochSeed' = 'Server-storable wrapped epoch seed.'
-  'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::IdentityHandleResult.wrappedSeed' = 'Server-storable wrapped identity seed.'
-  'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::CreateLinkShareHandleResult.encryptedKey' = 'Encrypted tier key ciphertext.'
-  'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::WrappedTierKeyResult.encryptedKey' = 'Encrypted tier key ciphertext.'
+  'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::CreateAccountResult.wrappedAccountKey' = 'SAFE: Type exposes L2 encrypted under password-derived L1; plaintext L2 is not typed as JS output.'
+  'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::EpochKeyHandleResult.wrappedEpochSeed' = 'SAFE: Type exposes epoch seed encrypted by account L2; opening requires matching account handle.'
+  'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::IdentityHandleResult.wrappedSeed' = 'SAFE: Type exposes identity seed encrypted by account L2; opening requires matching account handle.'
+  'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::CreateLinkShareHandleResult.encryptedKey' = 'SAFE: Type exposes AEAD tier-key ciphertext under link wrapping key; plaintext tier key is absent.'
+  'apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts::WrappedTierKeyResult.encryptedKey' = 'SAFE: Type exposes AEAD tier-key ciphertext under link wrapping key; plaintext tier key is absent.'
+}
+
+$BannedRationalePhrases = @(
+  'reviewed existing api',
+  'internal use',
+  'not a secret',
+  'todo',
+  'trust me',
+  'fixme',
+  'tbd'
+)
+$MinRationaleLength = 40
+$RationaleFixSuggestion = 'Replace with a sentence stating the SPECIFIC bytes returned and why an attacker gains no advantage.'
+$PermittedClassifiers = @('SAFE', 'BEARER-TOKEN-PERMITTED', 'CORPUS-DRIVER-ONLY', 'MIGRATION-PENDING')
+$ClassifierPattern = '^([A-Z][A-Z0-9-]+):'
+
+function Get-AllowlistRationaleErrors([hashtable[]]$AllowlistTables) {
+  $rationaleErrors = New-Object System.Collections.Generic.List[string]
+  foreach ($table in $AllowlistTables) {
+    foreach ($entry in $table.GetEnumerator()) {
+      $rationale = ($entry.Value ?? '').Trim()
+      if ($rationale.Length -lt $MinRationaleLength) {
+        $rationaleErrors.Add("Allowlist entry '$($entry.Key)' failed length check: `"$rationale`" ($RationaleFixSuggestion)")
+      }
+      foreach ($phrase in $BannedRationalePhrases) {
+        if ($rationale.ToLowerInvariant().Contains($phrase)) {
+          $rationaleErrors.Add("Allowlist entry '$($entry.Key)' failed banned phrase check ('$phrase'): `"$rationale`" ($RationaleFixSuggestion)")
+        }
+      }
+      if ($rationale -match $ClassifierPattern) {
+        $classifier = $Matches[1]
+        if ($PermittedClassifiers -notcontains $classifier) {
+          $rationaleErrors.Add("Allowlist entry '$($entry.Key)' failed classifier check ('$classifier'): classifier vocabulary is locked by SPEC-FfiSecretClassifiers.md")
+        }
+      } else {
+        $rationaleErrors.Add("Allowlist entry '$($entry.Key)' failed missing classifier check: rationale must start with one of $($PermittedClassifiers -join ', ') followed by ':'")
+      }
+    }
+  }
+  return $rationaleErrors
+}
+
+function Assert-RationaleQualityFixtureCaught([string]$Name, [string]$Rationale, [string]$ExpectedCheck) {
+  $fixture = @{ "tests/architecture/negative-fixtures/$Name" = $Rationale }
+  $fixtureErrors = Get-AllowlistRationaleErrors @($fixture)
+  if (-not ($fixtureErrors | Where-Object { $_ -match [regex]::Escape($ExpectedCheck) })) {
+    throw "rationale negative fixture '$Name' did not catch expected check '$ExpectedCheck'. Errors: $($fixtureErrors -join '; ')"
+  }
+}
+
+function Invoke-AllowlistRationaleQualityCheck([hashtable[]]$AllowlistTables) {
+  $rationaleErrors = Get-AllowlistRationaleErrors $AllowlistTables
+  if ($rationaleErrors.Count -gt 0) {
+    Write-Host 'Allowlist rationale quality check FAILED:' -ForegroundColor Red
+    foreach ($rationaleError in $rationaleErrors) { Write-Host "  $rationaleError" -ForegroundColor Red }
+    Write-Host ''
+    Write-Host 'Each rationale MUST state the SPECIFIC bytes returned and why an attacker gains no advantage.'
+    Write-Host 'See R-C5.5 audit checkpoint comment block for the standard.'
+    exit 1
+  }
 }
 
 function Test-SecretName([string]$Name) {
   return ($Name -match $secretShapedName) -and ($Name -notmatch $publicKeyName)
 }
+
+function Assert-NegativeFixtureCaught([string]$Name, [string]$Source, [string]$ExpectedSymbol, [string]$SourcePath = "tests/architecture/negative-fixtures/$Name.rs") {
+  $fixturePath = $SourcePath
+  $fixtureLines = $Source -split "`r?`n"
+  $fixtureViolations = New-Object System.Collections.Generic.List[string]
+
+  for ($i = 0; $i -lt $fixtureLines.Count; $i++) {
+    if ($fixtureLines[$i] -notmatch '^\s*pub\s+(?:async\s+)?fn\s+([A-Za-z0-9_]+)') { continue }
+    $name = $Matches[1]
+    $signature = $fixtureLines[$i]
+    $j = $i
+    while ($signature -notmatch '\{' -and $j + 1 -lt $fixtureLines.Count) {
+      $j++
+      $signature += ' ' + $fixtureLines[$j].Trim()
+    }
+
+    $isSecretShapedExport = (($name -match $secretNamePattern) -or
+      ($name -match $domainHandlePattern) -or
+      (($name -match $genericBytesWrapPattern) -and ($signature -match '->\s*(BytesResult|JsBytesResult)')) -or
+      ($name -match $domainNounPattern))
+    $isNameAgnosticWasmExotic = ($fixturePath -eq 'crates/mosaic-wasm/src/lib.rs') -and ($signature -match "->\s*$exoticWasmResultTypes")
+    if (($name -notmatch $publicKeyName) -and (($isSecretShapedExport -and $signature -match "->\s*$secretResultTypes") -or $isNameAgnosticWasmExotic)) {
+      $fixtureViolations.Add("$fixturePath`:$($i + 1): forbidden raw-secret-shaped FFI export '$name' -> $($signature.Trim())")
+    }
+  }
+
+  if (-not ($fixtureViolations | Where-Object { $_ -match [regex]::Escape($ExpectedSymbol) })) {
+    throw "negative fixture '$Name' did not catch expected symbol '$ExpectedSymbol'. Violations: $($fixtureViolations -join '; ')"
+  }
+}
+
+function Assert-DtsNegativeFixtureCaught([string]$Name, [string]$Source, [string]$ExpectedSymbol) {
+  $fixtureViolations = New-Object System.Collections.Generic.List[string]
+  $fixtureLines = $Source -split "`r?`n"
+  for ($i = 0; $i -lt $fixtureLines.Count; $i++) {
+    if ($fixtureLines[$i] -match '^\s*export\s+function\s+([A-Za-z0-9_]+)\(') {
+      $name = $Matches[1]
+      if ($forbiddenLegacyDtsFunctions -contains $name) {
+        $fixtureViolations.Add("tests/architecture/negative-fixtures/$Name.d.ts`:$($i + 1): forbidden legacy raw-seed WASM function '$name'")
+      }
+    }
+  }
+  if (-not ($fixtureViolations | Where-Object { $_ -match [regex]::Escape($ExpectedSymbol) })) {
+    throw "d.ts negative fixture '$Name' did not catch expected symbol '$ExpectedSymbol'. Violations: $($fixtureViolations -join '; ')"
+  }
+}
+
+function Invoke-NegativeFixtures {
+  Assert-NegativeFixtureCaught 'cousin-verb-export-account-seed' 'pub fn export_account_seed() -> BytesResult { unimplemented!() }' 'export_account_seed'
+  Assert-NegativeFixtureCaught 'exotic-return-box-u8' 'pub fn get_epoch_key() -> Box<[u8]> { unimplemented!() }' 'get_epoch_key'
+  Assert-NegativeFixtureCaught 'exotic-return-cow-u8' "pub fn get_identity_key() -> Cow<'static, [u8]> { unimplemented!() }" 'get_identity_key'
+  Assert-NegativeFixtureCaught 'exotic-return-uint8array' 'pub fn get_link_key() -> js_sys::Uint8Array { unimplemented!() }' 'get_link_key'
+  Assert-NegativeFixtureCaught 'exotic-return-arraybuffer' 'pub fn get_account_key() -> js_sys::ArrayBuffer { unimplemented!() }' 'get_account_key'
+  Assert-NegativeFixtureCaught 'exotic-return-jsvalue' 'pub fn get_identity_key() -> JsValue { unimplemented!() }' 'get_identity_key'
+  Assert-NegativeFixtureCaught 'wasm-bare-name-cow-u8' "pub fn leak() -> Cow<'static, [u8]> { unimplemented!() }" 'leak' 'crates/mosaic-wasm/src/lib.rs'
+  Assert-NegativeFixtureCaught 'legacy-raw-epoch-decrypt-export' 'pub fn decrypt_shard_with_epoch() -> BytesResult { unimplemented!() }' 'decrypt_shard_with_epoch'
+  Assert-DtsNegativeFixtureCaught 'legacy-raw-epoch-decrypt-dts' 'export function decryptShardWithEpoch(handle: bigint, envelope: Uint8Array): Uint8Array;' 'decryptShardWithEpoch'
+  Assert-RationaleQualityFixtureCaught 'rationale-reviewed-existing-api' 'reviewed existing api' 'banned phrase check'
+  Assert-RationaleQualityFixtureCaught 'rationale-internal-use' 'internal use' 'banned phrase check'
+  Assert-RationaleQualityFixtureCaught 'rationale-not-a-secret' 'not a secret' 'banned phrase check'
+  Assert-RationaleQualityFixtureCaught 'rationale-todo' 'todo' 'banned phrase check'
+  Assert-RationaleQualityFixtureCaught 'rationale-trust-me' 'trust me' 'banned phrase check'
+  Assert-RationaleQualityFixtureCaught 'rationale-fixme' 'fixme' 'banned phrase check'
+  Assert-RationaleQualityFixtureCaught 'rationale-tbd' 'tbd' 'banned phrase check'
+  Assert-RationaleQualityFixtureCaught 'rationale-short' 'short' 'length check'
+  Assert-RationaleQualityFixtureCaught 'rationale-missing-classifier' 'Returns placeholder bytes with a long enough rationale for classifier validation.' 'missing classifier check'
+  Assert-RationaleQualityFixtureCaught 'rationale-unknown-classifier' 'BACKWARD-COMPAT-LEGACY: Returns placeholder bytes with a long enough rationale for classifier validation.' 'classifier check'
+}
+
+Invoke-NegativeFixtures
+Invoke-AllowlistRationaleQualityCheck @($allowlist, $structFieldAllowlist, $dtsAllowlist)
 
 $violations = New-Object System.Collections.Generic.List[string]
 foreach ($path in $ffiFiles) {
@@ -70,7 +244,7 @@ foreach ($path in $ffiFiles) {
       }
     }
 
-    if ($lines[$i] -notmatch '^\s*pub\s+fn\s+([A-Za-z0-9_]+)') { continue }
+    if ($lines[$i] -notmatch '^\s*pub\s+(?:async\s+)?fn\s+([A-Za-z0-9_]+)') { continue }
     $name = $Matches[1]
     if ($forbiddenRawBundleApis -contains $name) {
       $violations.Add("$path`:$($i + 1): forbidden raw bundle-secret FFI export '$name'")
@@ -84,8 +258,10 @@ foreach ($path in $ffiFiles) {
     }
     $isSecretShapedExport = (($name -match $secretNamePattern) -or
       ($name -match $domainHandlePattern) -or
-      (($name -match $genericBytesWrapPattern) -and ($signature -match '->\s*(BytesResult|JsBytesResult)')))
-    if ($isSecretShapedExport -and $signature -match "->\s*$secretResultTypes") {
+      (($name -match $genericBytesWrapPattern) -and ($signature -match '->\s*(BytesResult|JsBytesResult)')) -or
+      ($name -match $domainNounPattern))
+    $isNameAgnosticWasmExotic = ($path -eq 'crates/mosaic-wasm/src/lib.rs') -and ($signature -match "->\s*$exoticWasmResultTypes")
+    if (($isSecretShapedExport -and $signature -match "->\s*$secretResultTypes") -or $isNameAgnosticWasmExotic) {
       $key = "$path`::$name"
       if (-not $allowlist.ContainsKey($key)) {
         $violations.Add("$path`:$($i + 1): forbidden raw-secret-shaped FFI export '$name' -> $($signature.Trim())")
@@ -118,6 +294,12 @@ foreach ($path in $dtsFiles) {
       $name = $Matches[1]
       if (Test-SecretName $name) {
         $violations.Add("$path`:$($i + 1): forbidden secret-shaped Uint8Array WASM function return '$name'")
+      }
+    }
+    if ($lines[$i] -match '^\s*export\s+function\s+([A-Za-z0-9_]+)\(') {
+      $name = $Matches[1]
+      if ($forbiddenLegacyDtsFunctions -contains $name) {
+        $violations.Add("$path`:$($i + 1): forbidden legacy raw-seed WASM function '$name'")
       }
     }
   }

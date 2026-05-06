@@ -11,6 +11,20 @@
 # raw-input bridges. Production files in apps/web/src/ are never allowlisted;
 # src-local test files are excluded from the production scan, mirroring the
 # Kotlin guard's src/main-only semantics.
+#
+# Allowlist audit checkpoint:
+# Last full audit: R-C5.5 at 2d17c47
+# Each allowlist entry below MUST carry an explicit classifier prefix and a
+# SPECIFIC cryptographic safety argument as its rationale comment. "Reviewed existing API" / "Internal
+# use" / "Not a secret" are NOT acceptable rationales. Audits should be
+# repeated whenever an entry is added; v1 freeze checkpoint should re-run
+# this audit.
+# R-C5.5.1 mechanical enforcement: rationales missing a classifier, shorter than 40 chars, or
+# matching banned phrases ('reviewed existing api', 'internal use', etc.)
+# fail at script execution time. See R-C5.5 audit checkpoint above.
+# Classifier vocabulary is locked by SPEC-FfiSecretClassifiers.md (v1).
+# Permitted classifiers: SAFE, BEARER-TOKEN-PERMITTED, CORPUS-DRIVER-ONLY,
+# MIGRATION-PENDING. Adding a new classifier requires a SPEC amendment.
 $ErrorActionPreference = 'Stop'
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -18,6 +32,7 @@ $ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 Set-Location $ProjectRoot
 
 $ForbiddenNames = @(
+  'decryptShardWithEpoch',
   'verifyAndOpenBundle',
   'sealAndSignBundle',
   'importEpochKeyHandleFromBundle',
@@ -42,16 +57,96 @@ $ImportPattern = '(?ms)import\s+(?:type\s+)?(?<clause>.*?)\s+from\s+[''"](?<modu
 $TargetModulePattern = '^(?:@mosaic/wasm|mosaic-wasm)$|(?:^|/)generated/mosaic-wasm/mosaic_wasm(?:\.js)?$'
 $NamespaceImportPattern = '\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)\b'
 
-$AllowlistedFiles = @(
-  'apps/web/tests/cross-client-vectors.test.ts'
+$AllowlistedFiles = @{
+  # Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.
+  'apps/web/tests/cross-client-vectors.test.ts' = 'SAFE: Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.'
+}
+
+
+$BannedRationalePhrases = @(
+  'reviewed existing api',
+  'internal use',
+  'not a secret',
+  'todo',
+  'trust me',
+  'fixme',
+  'tbd'
 )
+$MinRationaleLength = 40
+$RationaleFixSuggestion = 'Replace with a sentence stating the SPECIFIC bytes returned and why an attacker gains no advantage.'
+$PermittedClassifiers = @('SAFE', 'BEARER-TOKEN-PERMITTED', 'CORPUS-DRIVER-ONLY', 'MIGRATION-PENDING')
+$ClassifierPattern = '^([A-Z][A-Z0-9-]+):'
+
+function Get-AllowlistRationaleErrors([hashtable[]]$AllowlistTables) {
+  $rationaleErrors = New-Object System.Collections.Generic.List[string]
+  foreach ($table in $AllowlistTables) {
+    foreach ($entry in $table.GetEnumerator()) {
+      $rationale = ($entry.Value ?? '').Trim()
+      if ($rationale.Length -lt $MinRationaleLength) {
+        $rationaleErrors.Add("Allowlist entry '$($entry.Key)' failed length check: `"$rationale`" ($RationaleFixSuggestion)")
+      }
+      foreach ($phrase in $BannedRationalePhrases) {
+        if ($rationale.ToLowerInvariant().Contains($phrase)) {
+          $rationaleErrors.Add("Allowlist entry '$($entry.Key)' failed banned phrase check ('$phrase'): `"$rationale`" ($RationaleFixSuggestion)")
+        }
+      }
+      if ($rationale -match $ClassifierPattern) {
+        $classifier = $Matches[1]
+        if ($PermittedClassifiers -notcontains $classifier) {
+          $rationaleErrors.Add("Allowlist entry '$($entry.Key)' failed classifier check ('$classifier'): classifier vocabulary is locked by SPEC-FfiSecretClassifiers.md")
+        }
+      } else {
+        $rationaleErrors.Add("Allowlist entry '$($entry.Key)' failed missing classifier check: rationale must start with one of $($PermittedClassifiers -join ', ') followed by ':'")
+      }
+    }
+  }
+  return $rationaleErrors
+}
+
+function Assert-RationaleQualityFixtureCaught([string]$Name, [string]$Rationale, [string]$ExpectedCheck) {
+  $fixture = @{ "tests/architecture/negative-fixtures/$Name" = $Rationale }
+  $fixtureErrors = Get-AllowlistRationaleErrors @($fixture)
+  if (-not ($fixtureErrors | Where-Object { $_ -match [regex]::Escape($ExpectedCheck) })) {
+    throw "rationale negative fixture '$Name' did not catch expected check '$ExpectedCheck'. Errors: $($fixtureErrors -join '; ')"
+  }
+}
+
+function Invoke-AllowlistRationaleQualityCheck([hashtable[]]$AllowlistTables) {
+  $rationaleErrors = Get-AllowlistRationaleErrors $AllowlistTables
+  if ($rationaleErrors.Count -gt 0) {
+    Write-Host 'Allowlist rationale quality check FAILED:' -ForegroundColor Red
+    foreach ($rationaleError in $rationaleErrors) { Write-Host "  $rationaleError" -ForegroundColor Red }
+    Write-Host ''
+    Write-Host 'Each rationale MUST state the SPECIFIC bytes returned and why an attacker gains no advantage.'
+    Write-Host 'See R-C5.5 audit checkpoint comment block for the standard.'
+    exit 1
+  }
+}
+
+function Assert-ForbiddenImportFixtureCaught([string]$Name, [string]$Source, [string]$ExpectedName) {
+  $fixtureViolations = New-Object System.Collections.Generic.List[string]
+  $matches = [regex]::Matches($Source, $ImportPattern)
+  foreach ($match in $matches) {
+    $module = $match.Groups['module'].Value
+    if ($module -notmatch $TargetModulePattern) { continue }
+    $clause = $match.Groups['clause'].Value
+    foreach ($forbiddenName in $ForbiddenNames) {
+      if ($clause -match "\b$([regex]::Escape($forbiddenName))\b") {
+        $fixtureViolations.Add("fixture:${Name}: forbidden raw-input WASM import '$forbiddenName' from '$module'")
+      }
+    }
+  }
+  if (-not ($fixtureViolations | Where-Object { $_ -match [regex]::Escape($ExpectedName) })) {
+    throw "forbidden import negative fixture '$Name' did not catch expected name '$ExpectedName'. Violations: $($fixtureViolations -join '; ')"
+  }
+}
 
 function Convert-ToRepoPath([string]$Path) {
   return [System.IO.Path]::GetRelativePath($ProjectRoot, $Path).Replace('\', '/')
 }
 
 function Test-IsAllowed([string]$RepoPath) {
-  return $AllowlistedFiles -contains $RepoPath
+  return $AllowlistedFiles.ContainsKey($RepoPath)
 }
 
 function Test-IsProductionSource([string]$RepoPath) {
@@ -70,6 +165,19 @@ function Find-WebTypeScriptFiles {
   }
 }
 
+Assert-RationaleQualityFixtureCaught 'rationale-reviewed-existing-api' 'reviewed existing api' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-internal-use' 'internal use' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-not-a-secret' 'not a secret' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-todo' 'todo' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-trust-me' 'trust me' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-fixme' 'fixme' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-tbd' 'tbd' 'banned phrase check'
+Assert-RationaleQualityFixtureCaught 'rationale-short' 'short' 'length check'
+Assert-RationaleQualityFixtureCaught 'rationale-missing-classifier' 'Returns placeholder bytes with a long enough rationale for classifier validation.' 'missing classifier check'
+Assert-RationaleQualityFixtureCaught 'rationale-unknown-classifier' 'BACKWARD-COMPAT-LEGACY: Returns placeholder bytes with a long enough rationale for classifier validation.' 'classifier check'
+Assert-ForbiddenImportFixtureCaught 'legacy-decrypt-shard-with-epoch-import' "import { decryptShardWithEpoch } from '@mosaic/wasm';" 'decryptShardWithEpoch'
+Invoke-AllowlistRationaleQualityCheck @($AllowlistedFiles)
+
 $violations = New-Object System.Collections.Generic.List[string]
 
 foreach ($fileInfo in Find-WebTypeScriptFiles) {
@@ -78,6 +186,7 @@ foreach ($fileInfo in Find-WebTypeScriptFiles) {
   if (-not (Test-IsProductionSource $repoPath) -and $repoPath -notmatch '^apps/web/tests/') { continue }
 
   $contents = Get-Content -Path $fileInfo.FullName -Raw -ErrorAction Stop
+  if ($null -eq $contents) { $contents = '' }
   $matches = [regex]::Matches($contents, $ImportPattern)
   foreach ($match in $matches) {
     $module = $match.Groups['module'].Value

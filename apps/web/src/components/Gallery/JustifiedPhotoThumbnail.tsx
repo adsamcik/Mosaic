@@ -18,7 +18,7 @@ import {
   getCachedPlaceholderDataURL,
   isValidPlaceholderHash,
 } from '../../lib/thumbhash-decoder';
-import type { PhotoMeta } from '../../workers/types';
+import type { EpochHandleId, PhotoMeta } from '../../workers/types';
 import { formatDuration } from '../../lib/video-frame-extractor';
 import { useThumbnailShard } from '../../hooks/useThumbnailShard';
 
@@ -28,8 +28,8 @@ interface JustifiedPhotoThumbnailProps {
   width: number;
   /** Display height in pixels */
   height: number;
-  /** Epoch read key for decryption (undefined if key not yet loaded) */
-  epochReadKey: Uint8Array | undefined;
+  /** Epoch handle id for decryption (undefined if key not yet loaded) */
+  epochReadKey: EpochHandleId | undefined;
   /** Callback when thumbnail is clicked */
   onClick?: () => void;
   /** Whether this photo is selected */
