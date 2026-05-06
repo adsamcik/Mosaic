@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   deriveSidecarRoomId,
   openSidecarSignalingChannel,
@@ -24,8 +24,8 @@ class FakeWebSocket {
   onerror: ((ev: Event) => void) | null = null;
 
   sent: ArrayBuffer[] = [];
-  closeCode?: number;
-  closeReason?: string;
+  closeCode: number | undefined = undefined;
+  closeReason: string | undefined = undefined;
 
   constructor(public url: string) {
     FakeWebSocket.instances.push(this);
@@ -116,25 +116,25 @@ describe('openSidecarSignalingChannel', () => {
 
   it('builds a wss:// URL from an https origin', () => {
     const ch = makeChannel();
-    const ws = FakeWebSocket.instances[0];
+    const ws = FakeWebSocket.instances[0]!;
     expect(ws.url).toBe(`wss://example.test/api/sidecar/signal/${ROOM}`);
     ch.close();
   });
 
   it('sends a binary frame after open', async () => {
     const ch = makeChannel();
-    const ws = FakeWebSocket.instances[0];
+    const ws = FakeWebSocket.instances[0]!;
     ws.fireOpen();
     const payload = new Uint8Array([1, 2, 3, 4, 5]);
     await ch.send(payload);
     expect(ws.sent).toHaveLength(1);
-    expect(new Uint8Array(ws.sent[0])).toEqual(payload);
+    expect(new Uint8Array(ws.sent[0]!)).toEqual(payload);
     ch.close();
   });
 
   it('rejects oversize outbound frames', async () => {
     const ch = makeChannel();
-    const ws = FakeWebSocket.instances[0];
+    const ws = FakeWebSocket.instances[0]!;
     ws.fireOpen();
     const huge = new Uint8Array(8 * 1024 + 1);
     await expect(ch.send(huge)).rejects.toThrow(RangeError);
@@ -143,7 +143,7 @@ describe('openSidecarSignalingChannel', () => {
 
   it('rejects empty outbound frames', async () => {
     const ch = makeChannel();
-    const ws = FakeWebSocket.instances[0];
+    const ws = FakeWebSocket.instances[0]!;
     ws.fireOpen();
     await expect(ch.send(new Uint8Array())).rejects.toThrow(RangeError);
     ch.close();
@@ -151,7 +151,7 @@ describe('openSidecarSignalingChannel', () => {
 
   it('emits inbound binary frames verbatim', () => {
     const ch = makeChannel();
-    const ws = FakeWebSocket.instances[0];
+    const ws = FakeWebSocket.instances[0]!;
     const received: Uint8Array[] = [];
     ch.onFrame((f) => received.push(f));
     ws.fireOpen();
@@ -161,13 +161,13 @@ describe('openSidecarSignalingChannel', () => {
     ws.fireMessage(buf);
 
     expect(received).toHaveLength(1);
-    expect(Array.from(received[0])).toEqual([9, 8, 7, 6]);
+    expect(Array.from(received[0]!)).toEqual([9, 8, 7, 6]);
     ch.close();
   });
 
   it('closes when an inbound frame exceeds the size cap', () => {
     const ch = makeChannel();
-    const ws = FakeWebSocket.instances[0];
+    const ws = FakeWebSocket.instances[0]!;
     ws.fireOpen();
     const errors: Error[] = [];
     ch.onError((e) => errors.push(e));
@@ -178,7 +178,7 @@ describe('openSidecarSignalingChannel', () => {
 
   it('reconnects ONCE on a transient drop and stops after the cap', async () => {
     const ch = makeChannel({ maxReconnectAttempts: 1 });
-    const ws1 = FakeWebSocket.instances[0];
+    const ws1 = FakeWebSocket.instances[0]!;
     ws1.fireOpen();
     expect(ch.state).toBe('open');
 
@@ -189,7 +189,7 @@ describe('openSidecarSignalingChannel', () => {
     // Advance past the backoff.
     await new Promise((r) => setTimeout(r, 30));
     expect(FakeWebSocket.instances.length).toBe(2);
-    const ws2 = FakeWebSocket.instances[1];
+    const ws2 = FakeWebSocket.instances[1]!;
     ws2.fireOpen();
     expect(ch.state).toBe('open');
 
@@ -202,7 +202,7 @@ describe('openSidecarSignalingChannel', () => {
 
   it('does not reconnect on policy-violation closes', async () => {
     const ch = makeChannel({ maxReconnectAttempts: 3 });
-    const ws = FakeWebSocket.instances[0];
+    const ws = FakeWebSocket.instances[0]!;
     ws.fireOpen();
     ws.fireClose(1008, 'policy', false);
     await new Promise((r) => setTimeout(r, 30));
@@ -212,13 +212,13 @@ describe('openSidecarSignalingChannel', () => {
 
   it('emits onClose exactly once', () => {
     const ch = makeChannel();
-    const ws = FakeWebSocket.instances[0];
+    const ws = FakeWebSocket.instances[0]!;
     ws.fireOpen();
     const closes: Array<{ code: number; reason: string; clean: boolean }> = [];
     ch.onClose((info) => closes.push(info));
     ch.close(1000, 'done');
     ch.close(); // idempotent
     expect(closes.length).toBe(1);
-    expect(closes[0].code).toBe(1000);
+    expect(closes[0]!.code).toBe(1000);
   });
 });

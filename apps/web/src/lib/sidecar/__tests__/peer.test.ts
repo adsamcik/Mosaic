@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createPeerConnection, HIGH_WATER_MARK_BYTES, LOW_WATER_MARK_BYTES, DATA_CHANNEL_LABEL } from '../peer';
 import type { SidecarSignalingChannel } from '../signaling';
 import type { SidecarTunnel } from '../../../workers/rust-crypto-core';

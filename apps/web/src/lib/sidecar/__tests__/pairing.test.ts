@@ -20,8 +20,8 @@ function makeRelay(): FakeRelay {
   // Two-party in-memory "relay": frames sent by A reach B's onFrame listeners and vice versa.
   const aHandlers = new Set<Listener>();
   const bHandlers = new Set<Listener>();
-  const aClose = new Set<() => void>();
-  const bClose = new Set<() => void>();
+  const aClose = new Set<(info: { code: number; reason: string; clean: boolean }) => void>();
+  const bClose = new Set<(info: { code: number; reason: string; clean: boolean }) => void>();
   let closedA = false;
   let closedB = false;
 
@@ -122,11 +122,6 @@ function makeFakePake(matchCode: Uint8Array): {
   };
 }
 
-function eqBytes(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.byteLength !== b.byteLength) return false;
-  for (let i = 0; i < a.byteLength; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
 
 const TAG_OFF = 4;
 const PREFIX_OFF = TAG_OFF + 16;

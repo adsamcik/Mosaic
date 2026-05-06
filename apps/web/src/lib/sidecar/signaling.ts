@@ -76,7 +76,7 @@ export async function deriveSidecarRoomId(msg1: Uint8Array): Promise<string> {
 function toHex(bytes: Uint8Array): string {
   let s = '';
   for (let i = 0; i < bytes.length; i++) {
-    s += bytes[i].toString(16).padStart(2, '0');
+    s += (bytes[i] as number).toString(16).padStart(2, '0');
   }
   return s;
 }

@@ -78,7 +78,7 @@ export async function* chunkPhoto(
         carry = value;
       } else {
         // Concatenate carry + value.
-        const merged = new Uint8Array(carry.byteLength + value.byteLength);
+        const merged: Uint8Array = new Uint8Array(carry.byteLength + value.byteLength);
         merged.set(carry, 0);
         merged.set(value, carry.byteLength);
         carry = merged;

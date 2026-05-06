@@ -1205,9 +1205,9 @@ describe('CoordinatorWorker', () => {
   describe('sidecar output mode', () => {
     interface StubPeer {
       sessionId: string;
-      send: ReturnType<typeof vi.fn>;
-      endPhoto: ReturnType<typeof vi.fn>;
-      close: ReturnType<typeof vi.fn>;
+      send: ReturnType<typeof vi.fn<(bytes: Uint8Array, filename: string, photoIdx: number) => Promise<void>>>;
+      endPhoto: ReturnType<typeof vi.fn<(photoIdx: number) => Promise<void>>>;
+      close: ReturnType<typeof vi.fn<(reason: 'success' | 'aborted' | 'failed') => Promise<void>>>;
       onDisconnect: (h: (reason: string) => void) => () => void;
       fireDisconnect: (reason: string) => void;
     }
@@ -1215,9 +1215,13 @@ describe('CoordinatorWorker', () => {
       const handlers = new Set<(reason: string) => void>();
       return {
         sessionId: 'stub',
-        send: vi.fn(async (): Promise<void> => undefined),
-        endPhoto: vi.fn(async (): Promise<void> => undefined),
-        close: vi.fn(async (): Promise<void> => undefined),
+        send: vi.fn<(bytes: Uint8Array, filename: string, photoIdx: number) => Promise<void>>(
+          async (): Promise<void> => undefined,
+        ),
+        endPhoto: vi.fn<(photoIdx: number) => Promise<void>>(async (): Promise<void> => undefined),
+        close: vi.fn<(reason: 'success' | 'aborted' | 'failed') => Promise<void>>(
+          async (): Promise<void> => undefined,
+        ),
         onDisconnect: (h: (reason: string) => void): (() => void) => {
           handlers.add(h);
           return () => handlers.delete(h);
@@ -1325,7 +1329,7 @@ describe('CoordinatorWorker', () => {
       // Wait briefly for the driver to invoke executePhotoTask before firing the drop.
       await vi.waitFor(() => expect(pipelineMocks.executePhotoTask).toHaveBeenCalled());
       peer.fireDisconnect('ice-failed');
-      resolvePhoto?.({ kind: 'done', bytesWritten: 4 });
+      (resolvePhoto as ((v: { kind: 'done'; bytesWritten: number }) => void) | null)?.({ kind: 'done', bytesWritten: 4 });
       await cbor.awaitScheduledDriver(worker, jobId);
       // Sidecar push must NOT have been called (mode swapped before the photo
       // outcome was observed) and the zip finalizer ran instead.
