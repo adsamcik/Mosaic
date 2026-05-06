@@ -5,6 +5,7 @@ import type { StripResult } from '../src/generated/mosaic-wasm/mosaic_wasm.js';
 import initRustWasm, {
   stripAvifMetadata,
   stripHeicMetadata,
+  stripJpegMetadata,
   stripPngMetadata,
   stripWebpMetadata,
 } from '../src/generated/mosaic-wasm/mosaic_wasm.js';
@@ -41,6 +42,11 @@ beforeAll(async () => {
 
 describe('cross-format metadata strip migration parity', () => {
   const cases: readonly CrossFormatCase[] = [
+    {
+      mimeType: 'image/jpeg',
+      input: () => loadBytes('jpeg-with-appn.jpg'),
+      strip: stripJpegMetadata,
+    },
     {
       mimeType: 'image/png',
       input: () => loadBytes('png-with-text.png'),

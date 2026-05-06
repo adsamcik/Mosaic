@@ -9,17 +9,29 @@ import {
 } from 'react';
 import { getCurrentOrFetchEpochKey } from '../lib/epoch-key-service';
 import { type EpochKeyBundle, getEpochKey } from '../lib/epoch-key-store';
+import { FeatureFlagsManager } from '../lib/feature-flags';
 import { createLogger } from '../lib/logger';
 import { createManifestForUpload } from '../lib/manifest-service';
+import { RustUploadAdapter } from '../lib/rust-core/upload-adapter';
+import {
+  type WasmUploadAdapterBindings,
+  WasmUploadAdapterPort,
+} from '../lib/rust-core/wasm-upload-adapter-port';
 import { syncEngine } from '../lib/sync-engine';
 import { UploadError, UploadErrorCode } from '../lib/upload-errors';
-import { uploadQueue, type UploadTask } from '../lib/upload-queue';
+import {
+  createUuidV7,
+  uploadQueue,
+  type UploadTask,
+} from '../lib/upload-queue';
 import { initUploadStoreBridge } from '../lib/upload-store-bridge';
 
 // Re-export for consumers
 export { UploadError, UploadErrorCode } from '../lib/upload-errors';
 
 const log = createLogger('UploadContext');
+const RUST_UPLOAD_MAX_RETRY_COUNT = 3;
+let rustWasmBindings: WasmUploadAdapterBindings | null = null;
 
 /** Upload context value */
 interface UploadContextValue {
@@ -43,6 +55,37 @@ interface UploadProviderProps {
   children: ReactNode;
 }
 
+function createRustUploadAdapter(): RustUploadAdapter {
+  return new RustUploadAdapter(new WasmUploadAdapterPort({
+    init: () => loadRustWasmBindings().then(() => undefined),
+    initUploadJob: (...args) => getRustWasmBindings().initUploadJob(...args),
+    advanceUploadJob: (...args) => getRustWasmBindings().advanceUploadJob(...args),
+    clientCoreStateMachineSnapshot: () => getRustWasmBindings().clientCoreStateMachineSnapshot(),
+  }));
+}
+
+async function loadRustWasmBindings(): Promise<WasmUploadAdapterBindings> {
+  if (rustWasmBindings === null) {
+    const module = await import('../generated/mosaic-wasm/mosaic_wasm.js');
+    const bindings: WasmUploadAdapterBindings = {
+      init: () => module.default().then(() => undefined),
+      initUploadJob: module.initUploadJob,
+      advanceUploadJob: module.advanceUploadJob,
+      clientCoreStateMachineSnapshot: module.clientCoreStateMachineSnapshot,
+    };
+    await bindings.init();
+    rustWasmBindings = bindings;
+  }
+  return rustWasmBindings;
+}
+
+function getRustWasmBindings(): WasmUploadAdapterBindings {
+  if (rustWasmBindings === null) {
+    throw new Error('Rust WASM upload bindings are not initialized');
+  }
+  return rustWasmBindings;
+}
+
 /**
  * Provider component for upload functionality.
  * Wraps components that need access to upload state and actions.
@@ -52,6 +95,13 @@ export function UploadProvider({ children }: UploadProviderProps) {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<UploadError | null>(null);
   const [, setActiveTasks] = useState<UploadTask[]>([]);
+  const getRustUploadAdapter = useMemo(() => {
+    let adapter: RustUploadAdapter | null = null;
+    return (): RustUploadAdapter => {
+      adapter ??= createRustUploadAdapter();
+      return adapter;
+    };
+  }, []);
 
   // Initialize upload-store bridge AND set up upload queue callbacks together
   // This ensures proper cleanup/re-initialization on StrictMode remounts
@@ -183,6 +233,31 @@ export function UploadProvider({ children }: UploadProviderProps) {
       // Initialize upload queue if needed
       await uploadQueue.init();
 
+      if (FeatureFlagsManager.load().rustCoreUpload) {
+        // During the staged rollout both paths intentionally coexist: Rust core
+        // owns the upload state-machine preflight while the legacy queue still
+        // executes media preparation, encryption, Tus upload, and manifest work.
+        try {
+          const adapter = getRustUploadAdapter();
+          const rustJobId = createUuidV7();
+          await adapter.start({
+            jobId: rustJobId,
+            albumId,
+            assetId: createUuidV7(),
+            idempotencyKey: createUuidV7(),
+            maxRetryCount: RUST_UPLOAD_MAX_RETRY_COUNT,
+          });
+          await adapter.submit({
+            kind: 'StartRequested',
+            effectId: createUuidV7(),
+          });
+        } catch (rustErr) {
+          log.warn('Rust upload preflight failed; falling back to legacy upload executor:', {
+            error: rustErr instanceof Error ? rustErr.message : String(rustErr),
+          });
+        }
+      }
+
       // Get the current epoch key for this album
       // This caches the key in epoch-key-store for use in onComplete callback
       let epochKey: EpochKeyBundle;
@@ -223,7 +298,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
         setIsUploading(false);
       }
     }
-  }, []);
+  }, [getRustUploadAdapter]);
 
   const clearError = useCallback(() => {
     setError(null);
