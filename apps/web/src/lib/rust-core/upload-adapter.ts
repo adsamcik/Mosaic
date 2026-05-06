@@ -85,6 +85,7 @@ export class InMemoryUploadSnapshotPersistence implements UploadSnapshotPersiste
 
 export class RustUploadAdapter {
   private snapshot: UploadJobSnapshot | null = null;
+  private pendingTransition: Promise<UploadJobSnapshot | null> = Promise.resolve(null);
 
   constructor(
     private readonly port: UploadAdapterPort,
@@ -95,16 +96,22 @@ export class RustUploadAdapter {
     const nextSnapshot = await this.port.initJob(input);
     await this.persistence.put(nextSnapshot);
     this.snapshot = nextSnapshot;
+    this.pendingTransition = Promise.resolve(nextSnapshot);
     return this.resultFor(nextSnapshot);
   }
 
   async submit(event: UploadEvent): Promise<RustUploadAdapterResult> {
-    if (this.snapshot === null) {
-      throw new Error('Adapter not started');
-    }
-    const nextSnapshot = await this.port.advanceJob(this.snapshot, event);
-    await this.persistence.put(nextSnapshot);
-    this.snapshot = nextSnapshot;
+    const transition = this.pendingTransition.then(async (currentSnapshot) => {
+      if (currentSnapshot === null) {
+        throw new Error('Adapter not started');
+      }
+      const nextSnapshot = await this.port.advanceJob(currentSnapshot, event);
+      await this.persistence.put(nextSnapshot);
+      this.snapshot = nextSnapshot;
+      return nextSnapshot;
+    });
+    this.pendingTransition = transition.catch(() => this.snapshot);
+    const nextSnapshot = await transition;
     return this.resultFor(nextSnapshot);
   }
 
@@ -114,6 +121,7 @@ export class RustUploadAdapter {
       return null;
     }
     this.snapshot = nextSnapshot;
+    this.pendingTransition = Promise.resolve(nextSnapshot);
     return this.resultFor(nextSnapshot);
   }
 

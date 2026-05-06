@@ -48,6 +48,21 @@ class FailingUploadPersistence extends InMemoryUploadSnapshotPersistence {
   }
 }
 
+class TrackingUploadPersistence extends InMemoryUploadSnapshotPersistence {
+  readonly calls: UploadJobSnapshot[] = [];
+
+  override async put(current: UploadJobSnapshot): Promise<void> {
+    this.calls.push(current);
+    await super.put(current);
+  }
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
 describe('RustUploadAdapter', () => {
   it('start() persists initial snapshot', async () => {
     const port = new FakeUploadPort();
@@ -76,6 +91,91 @@ describe('RustUploadAdapter', () => {
       { kind: 'PrepareMedia', effectId: '018f0000-0000-7000-8000-000000000205' },
     ]);
     expect(port.advanceJob).toHaveBeenCalledOnce();
+  });
+
+  it('concurrent submit() calls apply events in order', async () => {
+    const snapshotAfterA = snapshot('AwaitingPreparedMedia', '018f0000-0000-7000-8000-000000000208');
+    const snapshotAfterAB = {
+      ...snapshot('AwaitingPreparedMedia', '018f0000-0000-7000-8000-000000000209'),
+      retryCount: 1,
+      snapshotRevision: 1n,
+    };
+    const port = new FakeUploadPort();
+    port.advanceJob.mockImplementation(async (current: UploadJobSnapshot, event: UploadEvent): Promise<UploadJobSnapshot> => {
+      if (current.phase === 'Queued' && event.effectId === snapshotAfterA.lastEffectId) {
+        return snapshotAfterA;
+      }
+      if (current.lastEffectId === snapshotAfterA.lastEffectId && event.effectId === snapshotAfterAB.lastEffectId) {
+        return snapshotAfterAB;
+      }
+      return snapshot('Unexpected', event.effectId);
+    });
+    const persistence = new TrackingUploadPersistence();
+    const adapter = new RustUploadAdapter(port, persistence);
+    await adapter.start(initInput);
+    persistence.calls.length = 0;
+
+    const result1Promise = adapter.submit({
+      kind: 'StartRequested',
+      effectId: snapshotAfterA.lastEffectId,
+    });
+    const result2Promise = adapter.submit({
+      kind: 'StartRequested',
+      effectId: snapshotAfterAB.lastEffectId,
+    });
+
+    const [result1, result2] = await Promise.all([result1Promise, result2Promise]);
+
+    expect(port.advanceJob).toHaveBeenNthCalledWith(1, snapshot('Queued'), {
+      kind: 'StartRequested',
+      effectId: snapshotAfterA.lastEffectId,
+    });
+    expect(port.advanceJob).toHaveBeenNthCalledWith(2, snapshotAfterA, {
+      kind: 'StartRequested',
+      effectId: snapshotAfterAB.lastEffectId,
+    });
+    expect(persistence.calls).toEqual([snapshotAfterA, snapshotAfterAB]);
+    expect(result1.snapshot).toEqual(snapshotAfterA);
+    expect(result2.snapshot).toEqual(snapshotAfterAB);
+  });
+
+  it('concurrent submit() preserves persistence order on slow port', async () => {
+    const snapshotAfterSlowA = snapshot('AwaitingPreparedMedia', '018f0000-0000-7000-8000-000000000210');
+    const snapshotAfterSlowAB = {
+      ...snapshot('AwaitingPreparedMedia', '018f0000-0000-7000-8000-000000000211'),
+      retryCount: 1,
+      snapshotRevision: 1n,
+    };
+    const port = new FakeUploadPort();
+    port.advanceJob.mockImplementation(async (current: UploadJobSnapshot, event: UploadEvent): Promise<UploadJobSnapshot> => {
+      await delay(event.effectId === snapshotAfterSlowA.lastEffectId ? 100 : 50);
+      if (current.phase === 'Queued' && event.effectId === snapshotAfterSlowA.lastEffectId) {
+        return snapshotAfterSlowA;
+      }
+      if (current.lastEffectId === snapshotAfterSlowA.lastEffectId && event.effectId === snapshotAfterSlowAB.lastEffectId) {
+        return snapshotAfterSlowAB;
+      }
+      return snapshot('Unexpected', event.effectId);
+    });
+    const persistence = new TrackingUploadPersistence();
+    const adapter = new RustUploadAdapter(port, persistence);
+    await adapter.start(initInput);
+    persistence.calls.length = 0;
+
+    const result1Promise = adapter.submit({
+      kind: 'StartRequested',
+      effectId: snapshotAfterSlowA.lastEffectId,
+    });
+    const result2Promise = adapter.submit({
+      kind: 'StartRequested',
+      effectId: snapshotAfterSlowAB.lastEffectId,
+    });
+
+    const [result1, result2] = await Promise.all([result1Promise, result2Promise]);
+
+    expect(persistence.calls).toEqual([snapshotAfterSlowA, snapshotAfterSlowAB]);
+    expect(result1.snapshot).toEqual(snapshotAfterSlowA);
+    expect(result2.snapshot).toEqual(snapshotAfterSlowAB);
   });
 
   it('resume() loads from persistence', async () => {

@@ -83,6 +83,7 @@ export class InMemoryAlbumSyncSnapshotPersistence implements AlbumSyncSnapshotPe
 
 export class RustSyncAdapter {
   private snapshot: AlbumSyncSnapshot | null = null;
+  private pendingTransition: Promise<AlbumSyncSnapshot | null> = Promise.resolve(null);
 
   constructor(
     private readonly port: SyncAdapterPort,
@@ -93,16 +94,22 @@ export class RustSyncAdapter {
     const nextSnapshot = await this.port.initSync(input);
     await this.persistence.put(nextSnapshot);
     this.snapshot = nextSnapshot;
+    this.pendingTransition = Promise.resolve(nextSnapshot);
     return this.resultFor(nextSnapshot);
   }
 
   async submit(event: SyncEvent): Promise<RustSyncAdapterResult> {
-    if (this.snapshot === null) {
-      throw new Error('Adapter not started');
-    }
-    const nextSnapshot = await this.port.advanceSync(this.snapshot, event);
-    await this.persistence.put(nextSnapshot);
-    this.snapshot = nextSnapshot;
+    const transition = this.pendingTransition.then(async (currentSnapshot) => {
+      if (currentSnapshot === null) {
+        throw new Error('Adapter not started');
+      }
+      const nextSnapshot = await this.port.advanceSync(currentSnapshot, event);
+      await this.persistence.put(nextSnapshot);
+      this.snapshot = nextSnapshot;
+      return nextSnapshot;
+    });
+    this.pendingTransition = transition.catch(() => this.snapshot);
+    const nextSnapshot = await transition;
     return this.resultFor(nextSnapshot);
   }
 
@@ -112,6 +119,7 @@ export class RustSyncAdapter {
       return null;
     }
     this.snapshot = nextSnapshot;
+    this.pendingTransition = Promise.resolve(nextSnapshot);
     return this.resultFor(nextSnapshot);
   }
 
