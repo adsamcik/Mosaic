@@ -40,6 +40,7 @@ about the pairing code.
 | P4-B  | WebSocket signaling relay (server) + client wrapper     | ✅ landed |
 | P4-C  | WebRTC peer + framing + chunker + receive sink + pairSidecar() | ✅ landed |
 | P4-D  | DownloadOutputMode integration + UI + /pair receive page | ✅ landed |
+| P4-E  | QR pairing URL, streaming sender, tray badge | ✅ landed |
 
 ## P4-B — signaling relay
 
@@ -110,7 +111,7 @@ model).
   - `props.allowSidecar === true` (caller gates on `accessTier === FULL`)
   - `props.hideKeepOffline !== true` (visitor flow MUST NOT see this)
   - `'RTCPeerConnection' in window`
-* `apps/web/src/components/Download/SidecarPairingModal.tsx` — initiator side: generates a 6-digit code via rejection sampling (no modulo bias), runs `pairSidecar({ role: 'initiator' })`, builds a `SidecarPeerHandle` from the resolved `{peer, tunnel}`, hands it to the consumer.
+* `apps/web/src/components/Download/SidecarPairingModal.tsx` — initiator side: generates a 6-digit code via rejection sampling (no modulo bias), calls `pairSidecarInitiatorBegin()` to obtain `msg1` synchronously, renders the pairing URL `<origin>/pair#m=<base64url-msg1>&c=<6digits>` plus a QR code (via `qrcode-generator`), then awaits `prefix.resume()`, builds a `SidecarPeerHandle` from the resolved `{peer, tunnel}`, hands it to the consumer.
 * `apps/web/src/components/Pair/SidecarReceivePage.tsx` — responder side, mounted at `/pair`. Reads the pairing code AND `msg1` from the URL fragment (`#m=<base64url-msg1>&c=<6digits>`) so the server never sees either; the responder needs `msg1` to derive the same room id. **A bare `/pair` URL without the fragment shows a "must scan QR" message** because the 6-digit code alone is insufficient to derive the room id.
 * `apps/web/src/App.tsx` — `/pair` route is gated on `featureFlags.sidecar`; falls through to the standard auth UI when off (no leak via deep link).
 
@@ -141,12 +142,31 @@ ICE servers default to a single Google STUN. Operators can plug TURN via env:
 * `VITE_SIDECAR_TURN_USERNAME`
 * `VITE_SIDECAR_TURN_CREDENTIAL`
 
+
+### Two-phase initiator API (P4-E)
+
+pairSidecar() blocks until the full handshake completes — the responder must
+have already joined and PAKE / WebRTC must be done before the caller learns
+`msg1`. That is too late for a pairing modal that needs to render a QR
+*before* the responder joins.
+
+pairSidecarInitiatorBegin(opts) splits the initiator handshake:
+
+`	s
+const prefix = await pairSidecarInitiatorBegin({ code, iceServers });
+// prefix.msg1 is now available; render /pair#m=<b64url>&c=<code> + QR.
+const result = await prefix.resume(); // resolves once the responder joins.
+prefix.abort();                       // cancel before resume() if the user cancels.
+`
+
+pairSidecar({ role: 'initiator' }) is preserved as a thin wrapper
+(egin → resume) for backwards compatibility. The responder API is unchanged.
 ### Known limitations / follow-ups
 
-* **QR rendering deferred.** The pairing modal shows the `/pair` URL plain-text; a QR rendering of `<base>/pair#m=...&c=...` (containing both `msg1` and the code) requires either a tiny QR library or a sender-side API to expose `msg1` ahead of `pairSidecar()` resolving. Tracked as a follow-up.
-* **Per-photo memory peak.** `pumpSidecarPhoto` reads the full staged photo into memory before sealing. Acceptable for typical sizes; switch to the `chunker` module for large videos.
-* **Tray badge** for sidecar jobs is not yet rendered (jobs surface in the existing tray via the standard scope-key plumbing; the per-row "sidecar" affordance is a follow-up).
-* **Broadcast suppression** for sidecar jobs is documented as a TODO in `coordinator.worker.ts` rather than implemented — the broadcast logic is heavy and current behavior is not incorrect (other tabs simply see a regular job).
+* ✅ **Resolved (P4-E):** QR rendering. `pairSidecarInitiatorBegin()` exposes `msg1` synchronously so the modal can render a real `/pair#m=...&c=...` URL + QR before the responder joins. Library: `qrcode-generator` (pure-JS, no canvas dependency, ~10 KB).
+* ✅ **Resolved (P4-E):** Per-photo memory peak. `SidecarPeerHandle.sendStream` (optional method) is now preferred by the coordinator; the chunker pulls from the OPFS stream lazily, so memory peak is bounded by one upstream chunk worth of bytes (typically ≤ 64 KiB) regardless of photo size. The legacy buffered `send()` path is retained for handles that predate `sendStream` (and is verified by the existing coordinator test).
+* ✅ **Resolved (P4-E):** Tray badge. `DownloadJobRow` renders a `Sidecar` badge when `job.outputModeKind === 'sidecar'` and a `Receiving` badge when `scopeKey` starts with `sidecar:`. `JobSummary.outputModeKind` is in-memory only (matches the existing in-memory `outputMode` policy).
+* ⏳ **Open follow-up:** Broadcast suppression for sidecar jobs is documented as a TODO in `coordinator.worker.ts` rather than implemented. The broadcast logic is heavy and current behavior is not incorrect (other tabs simply see a regular job; they cannot revive the in-memory `peerHandle`, so attempts to interact with the sidecar surface degrade gracefully).
 
 ### ZK-safe logging
 
