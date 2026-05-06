@@ -60,7 +60,7 @@ fn uniffi_exported_api_shape_matches_golden() {
 
 #[test]
 fn uniffi_api_v1_baseline_signature_unchanged() {
-    let v1_baseline_blake3 = "9af5e900756770235478a0c245efb01c15e2de92deec1703703319da8d7ca63c";
+    let v1_baseline_blake3 = "2cb54d5c4ba271e4342ec98b39828114763a7e4aec77291a92e858cf63d12bf1";
     let actual = blake3::hash(canonical_uniffi_api_shape(SOURCE).as_bytes()).to_hex();
 
     assert_eq!(

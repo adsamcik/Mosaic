@@ -122,7 +122,7 @@ function createTierKeys(
   tierMap.set(tier, {
     epochId,
     tier,
-    key: new Uint8Array(32).fill(1),
+    linkTierHandleId: `link-tier-handle-${tier}` as never,
     signPubkey: new Uint8Array(32).fill(2),
   });
   return new Map([[epochId, tierMap]]);

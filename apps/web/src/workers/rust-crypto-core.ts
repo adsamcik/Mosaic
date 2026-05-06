@@ -710,6 +710,19 @@ export class RustHandleFacade {
     }));
   }
 
+  mintLinkTierHandleFromRawKey(rawKey: Uint8Array): {
+    handle: bigint;
+    linkId: Uint8Array;
+    tier: number;
+  } {
+    const result = rustWasm.mintLinkTierHandleFromRawKey(rawKey);
+    return consumeResult(result, 'mintLinkTierHandleFromRawKey', (r) => ({
+      handle: r.handle,
+      linkId: copyBytes(r.linkId),
+      tier: r.tier,
+    }));
+  }
+
   decryptShardWithLinkTierHandle(
     linkTierHandle: bigint,
     envelopeBytes: Uint8Array,
@@ -721,6 +734,13 @@ export class RustHandleFacade {
     return consumeResult(result, 'decryptShardWithLinkTierHandle', (r) =>
       copyBytes(r.plaintext),
     );
+  }
+
+  verifyShardIntegritySha256(
+    envelopeBytes: Uint8Array,
+    expectedSha256: Uint8Array,
+  ): boolean {
+    return rustWasm.verifyShardIntegritySha256(envelopeBytes, expectedSha256);
   }
 
   closeLinkShareHandle(handle: bigint): void {

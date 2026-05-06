@@ -75,7 +75,7 @@ describe('createShareLinkOriginalResolver', () => {
     const resolver = createShareLinkOriginalResolver({
       linkId: 'share-link',
       grantToken: 'grant-token',
-      getTierKey: (epochId, tier) =>
+      getTierKeyHandle: (epochId, tier) =>
         epochId === 7 && tier === 3 ? tierKey : undefined,
     });
 
@@ -140,7 +140,7 @@ describe('createShareLinkOriginalResolver', () => {
 
     const resolver = createShareLinkOriginalResolver({
       linkId: 'share-link',
-      getTierKey: (epochId, tier) =>
+      getTierKeyHandle: (epochId, tier) =>
         epochId === 7 && tier === 3 ? tierKey : undefined,
     });
 
@@ -170,7 +170,7 @@ describe('createShareLinkOriginalResolver', () => {
   it('fails before downloading explicit originals when the tier-3 key is missing', async () => {
     const resolver = createShareLinkOriginalResolver({
       linkId: 'share-link',
-      getTierKey: () => undefined,
+      getTierKeyHandle: () => undefined,
     });
 
     await expect(
@@ -189,7 +189,7 @@ describe('createShareLinkOriginalResolver', () => {
 
     const resolver = createShareLinkOriginalResolver({
       linkId: 'share-link',
-      getTierKey: () => new Uint8Array(32).fill(3),
+      getTierKeyHandle: () => 'link-tier-handle-3' as never,
     });
 
     await expect(

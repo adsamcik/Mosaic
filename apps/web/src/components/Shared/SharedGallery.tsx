@@ -173,7 +173,7 @@ export function SharedGallery({
                 // `decryptManifest` did the parse inside the worker).
                 const plaintextBytes = await crypto.decryptShardWithTierKey(
                   encryptedMeta,
-                  (tierKey.linkTierHandleId ?? tierKey.key)!,
+                  tierKey.linkTierHandleId!,
                 );
                 const meta = JSON.parse(
                   textDecoder.decode(plaintextBytes),
@@ -310,8 +310,8 @@ export function SharedGallery({
 
   // Per-share-link disclosure gate. Acknowledgement is keyed off the
   // visitor scope key, so consenting on link A does NOT leak trust onto
-  // link B. While `visitorScopeKey === null` (libsodium still warming up)
-  // the hook reports `acknowledged === false` and the gate cannot be
+  // link B. While visitorScopeKey is null (libsodium still warming up)
+  // the hook reports acknowledged as false and the gate cannot be
   // opened — clicks are no-ops.
   const disclosure = useVisitorDownloadDisclosure(visitorScopeKey);
   // Surface AccessRevoked clearly: if any job in this visitor scope has
@@ -320,11 +320,14 @@ export function SharedGallery({
   // do NOT auto-redirect; cached thumbnails remain viewable.
   const downloadManager = useDownloadManager();
   const { t: translate } = useTranslation();
-  const shareLinkRevoked = visitorScopeKey !== null && downloadManager.jobs.some(
-    (job) => job.scopeKey === visitorScopeKey
-      && job.phase === 'Errored'
-      && job.lastErrorReason === 'AccessRevoked',
-  );
+  const shareLinkRevoked =
+    visitorScopeKey !== null &&
+    downloadManager.jobs.some(
+      (job) =>
+        job.scopeKey === visitorScopeKey &&
+        job.phase === 'Errored' &&
+        job.lastErrorReason === 'AccessRevoked',
+    );
   const [showDisclosure, setShowDisclosure] = useState(false);
 
   // Run the actual download flow (mode picker -> coordinator). Split out
