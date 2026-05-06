@@ -8,6 +8,7 @@
 
 interface FeatureFlagEnv {
   readonly VITE_FEATURE_SIDECAR?: string;
+  readonly VITE_FEATURE_SIDECAR_TELEMETRY?: string;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -23,6 +24,12 @@ const initialFlags = {
    * Beta. Default OFF. Enable for dev with `VITE_FEATURE_SIDECAR=1`.
    */
   sidecar: env.VITE_FEATURE_SIDECAR === '1',
+  /**
+   * Sidecar Beacon telemetry — coarse, ZK-safe counters. Default OFF.
+   * Enable with `VITE_FEATURE_SIDECAR_TELEMETRY=1` AND `VITE_FEATURE_SIDECAR=1`.
+   * The telemetry collector self-checks BOTH flags at runtime.
+   */
+  sidecarTelemetry: env.VITE_FEATURE_SIDECAR_TELEMETRY === '1',
 };
 
 const flags: { -readonly [K in keyof typeof initialFlags]: boolean } = { ...initialFlags };
