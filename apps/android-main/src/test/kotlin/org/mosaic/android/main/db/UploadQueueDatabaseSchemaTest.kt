@@ -104,7 +104,7 @@ class UploadQueueDatabaseSchemaTest {
 
   @Test
   fun daoPrivacyValidatorRejectsPiiBeforeInsert() {
-    val bad = validUploadQueueRecord().copy(phase = "signature from alice@example.com")
+    val bad = validUploadQueueRecord().copy(phase = "signature from test@example.com")
 
     assertThrows(IllegalArgumentException::class.java) {
       db.uploadQueueDao().insert(bad)

@@ -7,6 +7,7 @@ import android.provider.OpenableColumns
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
+import java.time.Instant
 import java.util.Properties
 import java.util.UUID
 
@@ -74,7 +75,32 @@ class AppPrivateStagingManager(
           metadataFile(id).delete()
         }
       }
+    recordCleanup(clock())
     return deleted
+  }
+
+  fun listStagedFiles(): List<StagedFile> =
+    stagingDir.listFiles().orEmpty()
+      .filter { file -> file.isFile && file.extension == "blob" }
+      .map { file ->
+        val id = file.name.removeSuffix(DATA_EXTENSION)
+        val props = readRawMetadata(id)
+        StagedFile(
+          id = id,
+          uri = props.getProperty("uri")?.let(Uri::parse) ?: Uri.Builder().scheme(STAGING_SCHEME).authority(id).build(),
+          file = file,
+          displayName = props.getProperty("displayName")?.takeIf { it.isNotBlank() },
+          sizeBytes = props.getProperty("sizeBytes")?.toLongOrNull() ?: file.length(),
+          createdAtMs = props.getProperty("createdAtMs")?.toLongOrNull() ?: file.lastModified(),
+          lastAccessMs = props.getProperty("lastAccessMs")?.toLongOrNull() ?: file.lastModified(),
+        )
+      }
+      .sortedBy { staged -> staged.createdAtMs }
+
+  fun lastCleanupAt(): Instant? {
+    val value = context.getSharedPreferences(CLEANUP_PREFS_NAME, Context.MODE_PRIVATE)
+      .getLong(LAST_CLEANUP_AT_MS_KEY, Long.MIN_VALUE)
+    return if (value == Long.MIN_VALUE) null else Instant.ofEpochMilli(value)
   }
 
   fun resolveAsContentResolver(staged: StagedFile): ContentResolver {
@@ -143,6 +169,18 @@ class AppPrivateStagingManager(
   private fun dataFile(id: String): File = File(stagingDir, "$id$DATA_EXTENSION")
 
   private fun metadataFile(id: String): File = File(stagingDir, "$id$META_EXTENSION")
+
+  private fun recordCleanup(cleanupAtMs: Long) {
+    context.getSharedPreferences(CLEANUP_PREFS_NAME, Context.MODE_PRIVATE)
+      .edit()
+      .putLong(LAST_CLEANUP_AT_MS_KEY, cleanupAtMs)
+      .apply()
+  }
+
+  private companion object {
+    const val CLEANUP_PREFS_NAME: String = "mosaic_staging_privacy"
+    const val LAST_CLEANUP_AT_MS_KEY: String = "last_cleanup_at_ms"
+  }
 }
 
 data class StagedFile(

@@ -4,14 +4,7 @@ object RustSnapshotVersions {
   const val CURRENT: Int = 1
 }
 
-object MosaicPiiPatterns {
-  const val EMAIL_SQL_LIKE: String = "%@%.%"
-  val EMAIL: Regex = Regex("@.*\\.", RegexOption.IGNORE_CASE)
-}
-
 object PrivacyPatternValidator {
-  private val piiRegexes = listOf(MosaicPiiPatterns.EMAIL)
-
   private val forbiddenPlaintextMarkers = listOf(
     "signature",
     "signpublickey",
@@ -73,9 +66,45 @@ object PrivacyPatternValidator {
         else -> value.toString()
       }
       val normalized = text.lowercase()
-      if (forbiddenPlaintextMarkers.any { marker -> normalized.contains(marker) } || piiRegexes.any { it.containsMatchIn(text) }) {
+      if (findQueuePlaintextMarkers(text).isNotEmpty()) {
         throw IllegalArgumentException("Mosaic privacy validator rejected plaintext marker in $tableName")
       }
     }
   }
+
+  fun findPlaintextMarkers(text: String): List<PrivacyPatternMatch> {
+    val normalized = text.lowercase()
+    val markerMatches = forbiddenPlaintextMarkers
+      .filter { marker -> normalized.contains(marker) }
+      .map { marker -> PrivacyPatternMatch("plaintext-marker:$marker", excerpt(text, normalized.indexOf(marker), marker.length)) }
+    val piiMatches = MosaicPiiPatterns.ALL.mapNotNull { pattern ->
+      pattern.regex.find(text)?.let { match -> PrivacyPatternMatch(pattern.name, excerpt(text, match.range.first, match.value.length)) }
+    }
+    return markerMatches + piiMatches
+  }
+
+  private fun findQueuePlaintextMarkers(text: String): List<PrivacyPatternMatch> {
+    val normalized = text.lowercase()
+    val markerMatches = forbiddenPlaintextMarkers
+      .filter { marker -> normalized.contains(marker) }
+      .map { marker -> PrivacyPatternMatch("plaintext-marker:$marker", excerpt(text, normalized.indexOf(marker), marker.length)) }
+    val emailMatches = MosaicPiiPatterns.EMAIL.find(text)?.let { match ->
+      listOf(PrivacyPatternMatch("email", excerpt(text, match.range.first, match.value.length)))
+    }.orEmpty()
+    return markerMatches + emailMatches
+  }
+
+  private fun excerpt(text: String, start: Int, length: Int): String {
+    val safeStart = start.coerceAtLeast(0)
+    val from = (safeStart - EXCERPT_CONTEXT_CHARS).coerceAtLeast(0)
+    val to = (safeStart + length + EXCERPT_CONTEXT_CHARS).coerceAtMost(text.length)
+    return text.substring(from, to)
+  }
+
+  private const val EXCERPT_CONTEXT_CHARS: Int = 12
 }
+
+data class PrivacyPatternMatch(
+  val patternName: String,
+  val excerpt: String,
+)
