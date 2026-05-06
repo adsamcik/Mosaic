@@ -1968,6 +1968,13 @@ pub const fn protocol_version() -> &'static str {
     mosaic_client::protocol_version()
 }
 
+/// Returns the ADR-022 canonical manifest-finalize idempotency key.
+#[must_use]
+pub fn finalize_idempotency_key(job_id: String) -> Result<String, u16> {
+    let uuid = uuid_from_string(&job_id)?;
+    Ok(mosaic_client::finalize_idempotency_key(&uuid))
+}
+
 /// Returns the protocol byte pinned for a WASM shard tier.
 #[must_use]
 pub const fn shard_tier_byte(tier: ShardTier) -> u8 {
@@ -3821,6 +3828,12 @@ pub fn manifest_transcript_bytes_js(
         encrypted_meta,
         encoded_shards,
     ))
+}
+
+/// Returns the ADR-022 canonical manifest-finalize idempotency key through WASM.
+#[wasm_bindgen(js_name = finalizeIdempotencyKey)]
+pub fn finalize_idempotency_key_js(job_id: String) -> Result<String, JsError> {
+    finalize_idempotency_key(job_id).map_err(|_| JsError::new("invalid UUIDv7"))
 }
 
 /// Encrypts metadata sidecar bytes with an epoch handle through WASM.

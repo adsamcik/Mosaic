@@ -359,6 +359,7 @@ record MediaTierLayoutResult
   original: MediaTierDimensions
 end
 export pub fn protocol_version() -> String
+export pub fn finalize_idempotency_key(job_id: String) -> Result<String, MosaicError>
 object StreamingEncryptor
 end
 object StreamingDecryptor

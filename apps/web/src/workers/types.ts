@@ -636,6 +636,11 @@ export interface CryptoWorkerApi {
   ): Promise<Uint8Array>;
 
   /**
+   * Build the ADR-022 manifest-finalize Idempotency-Key in Rust/WASM.
+   */
+  finalizeIdempotencyKey(jobId: string): Promise<string>;
+
+  /**
    * Decrypt a manifest envelope using a Rust-owned epoch handle's
    * thumb-tier key.
    *

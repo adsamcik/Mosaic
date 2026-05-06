@@ -16,6 +16,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import org.mosaic.android.main.net.dto.ManifestFinalizeErrorBody
 import org.mosaic.android.main.net.dto.ManifestFinalizeRequest
 import org.mosaic.android.main.net.dto.ManifestFinalizeResponse
 import org.mosaic.android.main.net.dto.ManifestId
@@ -46,13 +47,28 @@ class ManifestCommitClient(
     httpClient.newCall(req).await().use { response ->
       when (response.code) {
         200, 201 -> ManifestFinalizeResult.Success(parseResponse(response))
-        409 -> ManifestFinalizeResult.IdempotencyReplay(parseResponse(response))
+        409 -> parseConflict(response)
         400 -> ManifestFinalizeResult.InvalidSignature
         422 -> ManifestFinalizeResult.TranscriptMismatch
         in 500..599 -> ManifestFinalizeResult.ServerError(response.code)
         else -> ManifestFinalizeResult.UnexpectedStatus(response.code)
       }
     }
+  }
+
+  private fun parseConflict(response: Response): ManifestFinalizeResult {
+    if (response.header("Idempotency-Replayed") == "true") {
+      return ManifestFinalizeResult.IdempotencyReplay(parseResponse(response))
+    }
+
+    val payload = response.body?.string().orEmpty()
+    val error = runCatching {
+      json.decodeFromString(ManifestFinalizeErrorBody.serializer(), payload)
+    }.getOrNull()
+    return ManifestFinalizeResult.AlreadyFinalized(
+      manifestId = ManifestId(error?.manifestId.orEmpty()),
+      detail = error?.detail ?: "manifest already finalized",
+    )
   }
 
   private fun parseResponse(response: Response): ManifestFinalizeResponse {
@@ -64,6 +80,7 @@ class ManifestCommitClient(
 sealed interface ManifestFinalizeResult {
   data class Success(val response: ManifestFinalizeResponse) : ManifestFinalizeResult
   data class IdempotencyReplay(val response: ManifestFinalizeResponse) : ManifestFinalizeResult
+  data class AlreadyFinalized(val manifestId: ManifestId, val detail: String) : ManifestFinalizeResult
   data object InvalidSignature : ManifestFinalizeResult
   data object TranscriptMismatch : ManifestFinalizeResult
   data class ServerError(val statusCode: Int) : ManifestFinalizeResult

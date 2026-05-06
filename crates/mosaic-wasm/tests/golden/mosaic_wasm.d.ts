@@ -601,7 +601,11 @@ export class StreamingShardDecryptor {
      */
     decryptFrame(_frame: Uint8Array): any;
     /**
-     * Finalizes the stream state.
+     * Returns a `BytesResult` whose `bytes` field is always empty by contract.
+     * Future callers should ignore `bytes` and check only `code`. Reason: the
+     * finalize step performs final-frame AAD verification only — there is no
+     * payload data to return. UniFFI mirror returns `Result<(), MosaicError>` honestly;
+     * WASM uses `BytesResult` for cross-API uniformity.
      */
     finalize(): any;
     /**
@@ -881,6 +885,11 @@ export function encryptShardWithTier(handle: bigint, plaintext: Uint8Array, shar
  * Returns epoch-key handle status through WASM.
  */
 export function epochKeyHandleIsOpen(handle: bigint): EpochKeyHandleStatusResult;
+
+/**
+ * Returns the ADR-022 canonical manifest-finalize idempotency key through WASM.
+ */
+export function finalizeIdempotencyKey(job_id: string): string;
 
 /**
  * Returns the LocalAuth Ed25519 public key for an account-key handle through WASM.
@@ -1165,6 +1174,7 @@ export interface InitOutput {
     readonly epochkeyhandleresult_handle: (a: number) => bigint;
     readonly epochkeyhandleresult_signPublicKey: (a: number, b: number) => void;
     readonly epochkeyhandleresult_wrappedEpochSeed: (a: number, b: number) => void;
+    readonly finalizeIdempotencyKey: (a: number, b: number, c: number) => void;
     readonly getAuthPublicKeyFromAccount: (a: bigint) => number;
     readonly getAuthPublicKeyFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly headerresult_code: (a: number) => number;

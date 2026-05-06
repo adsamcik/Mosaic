@@ -27,6 +27,13 @@ data class ManifestFinalizeResponse(
 )
 
 @Serializable
+data class ManifestFinalizeErrorBody(
+  @SerialName("error") val error: String? = null,
+  @SerialName("detail") val detail: String? = null,
+  @SerialName("manifestId") val manifestId: String? = null,
+)
+
+@Serializable
 data class TieredShardInfo(
   @SerialName("shardId") val shardId: String,
   @SerialName("tier") val tier: Int,

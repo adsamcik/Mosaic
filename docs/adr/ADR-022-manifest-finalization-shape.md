@@ -66,7 +66,7 @@ Notes:
 - `shardId` is **client-generated UUIDv7** sourced from the upload-job snapshot (R-Cl1) prior to Tus upload. The Tus PATCH provides this id; the server uses it as the storage key. Identical client retries (same `Idempotency-Key`, same upload-job) produce identical `shardId`s; cross-client retries cannot collide because UUIDv7 entropy is sufficient.
 
 Required headers:
-- `Idempotency-Key: <uuidv7>` — sourced from the upload-job snapshot (R-Cl1). Server stores `(idempotency_key, canonical_request_body, response)` for the **idempotency window** (default 30 days, per ADR-022; never less than `MAX_RETRY_COUNT_LIMIT × max_backoff_with_persistence_recovery_buffer`).
+- `Idempotency-Key: mosaic-finalize-<upload-job-uuidv7>` — sourced from the upload-job snapshot (R-Cl1) and prefixed with the operation namespace to prevent accidental collisions with non-finalize idempotency keys. The canonical string is produced by `mosaic_client::finalize_idempotency_key` and must be consumed by Web/WASM and Android/UniFFI wrappers rather than duplicated in client code. Server stores `(idempotency_key, canonical_request_body, response)` for the **idempotency window** (default 30 days, per ADR-022; never less than `MAX_RETRY_COUNT_LIMIT × max_backoff_with_persistence_recovery_buffer`).
 - `If-Match: "<metadataVersion>"` (PATCH only, not POST).
 
 ### `POST /api/manifests` response shape (frozen)

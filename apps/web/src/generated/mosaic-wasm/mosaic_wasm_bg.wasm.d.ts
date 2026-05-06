@@ -89,6 +89,7 @@ export const epochkeyhandleresult_epochId: (a: number) => number;
 export const epochkeyhandleresult_handle: (a: number) => bigint;
 export const epochkeyhandleresult_signPublicKey: (a: number, b: number) => void;
 export const epochkeyhandleresult_wrappedEpochSeed: (a: number, b: number) => void;
+export const finalizeIdempotencyKey: (a: number, b: number, c: number) => void;
 export const getAuthPublicKeyFromAccount: (a: bigint) => number;
 export const getAuthPublicKeyFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
 export const headerresult_code: (a: number) => number;

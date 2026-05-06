@@ -759,6 +759,13 @@ pub fn protocol_version() -> String {
     mosaic_client::protocol_version().to_owned()
 }
 
+/// Returns the ADR-022 canonical manifest-finalize idempotency key.
+#[uniffi::export]
+pub fn finalize_idempotency_key(job_id: String) -> Result<String, MosaicError> {
+    let uuid = uuid_from_string(&job_id).map_err(|code| MosaicError::Client { code })?;
+    Ok(mosaic_client::finalize_idempotency_key(&uuid))
+}
+
 /// Returns the historical UniFFI API changelog label for diagnostics.
 ///
 /// This string is documentation only. The authoritative API-shape lock is

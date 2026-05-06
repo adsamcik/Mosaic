@@ -372,6 +372,11 @@ export class RustHandleFacade {
     );
   }
 
+  /** Build the ADR-022 manifest-finalize Idempotency-Key in Rust/WASM. */
+  finalizeIdempotencyKey(jobId: string): string {
+    return rustWasm.finalizeIdempotencyKey(jobId);
+  }
+
   /**
    * Verify a detached Ed25519 manifest signature against a per-epoch
    * manifest signing public key. Returns true on `Ok`, false on

@@ -1322,6 +1322,11 @@ class CryptoWorker implements CryptoWorkerApi {
     );
   }
 
+  async finalizeIdempotencyKey(jobId: string): Promise<string> {
+    const facade = await getRustFacade();
+    return facade.finalizeIdempotencyKey(jobId);
+  }
+
   /**
    * Decrypt a manifest envelope using the epoch handle's thumb-tier key
    * (Slice 4 — Rust handle contract).

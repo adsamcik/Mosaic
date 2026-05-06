@@ -1755,7 +1755,11 @@ export class StreamingShardDecryptor {
         return takeObject(ret);
     }
     /**
-     * Finalizes the stream state.
+     * Returns a `BytesResult` whose `bytes` field is always empty by contract.
+     * Future callers should ignore `bytes` and check only `code`. Reason: the
+     * finalize step performs final-frame AAD verification only — there is no
+     * payload data to return. UniFFI mirror returns `Result<(), MosaicError>` honestly;
+     * WASM uses `BytesResult` for cross-API uniformity.
      * @returns {any}
      */
     finalize() {
@@ -2610,6 +2614,38 @@ export function encryptShardWithTier(handle, plaintext, shard_index, tier) {
 export function epochKeyHandleIsOpen(handle) {
     const ret = wasm.epochKeyHandleIsOpen(handle);
     return EpochKeyHandleStatusResult.__wrap(ret);
+}
+
+/**
+ * Returns the ADR-022 canonical manifest-finalize idempotency key through WASM.
+ * @param {string} job_id
+ * @returns {string}
+ */
+export function finalizeIdempotencyKey(job_id) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(job_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.finalizeIdempotencyKey(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        var ptr2 = r0;
+        var len2 = r1;
+        if (r3) {
+            ptr2 = 0; len2 = 0;
+            throw takeObject(r2);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export4(deferred3_0, deferred3_1, 1);
+    }
 }
 
 /**

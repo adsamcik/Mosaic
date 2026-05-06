@@ -29,6 +29,19 @@ export interface ManifestFinalizeResponse {
   readonly tieredShards: readonly ManifestFinalizeTieredShard[];
 }
 
+export interface ManifestFinalized {
+  readonly kind: 'ManifestFinalized';
+  readonly response: ManifestFinalizeResponse;
+}
+
+export interface ManifestAlreadyFinalized {
+  readonly kind: 'AlreadyFinalized';
+  readonly manifestId: string;
+  readonly detail: string;
+}
+
+export type ManifestFinalizationResult = ManifestFinalized | ManifestAlreadyFinalized;
+
 export interface FinalizeManifestEffect extends UploadEffect {
   readonly kind: 'FinalizeManifest' | 'FinalizeManifestEffect';
   readonly manifestId: string;
@@ -63,8 +76,9 @@ export class ManifestFinalizationError extends Error {
   }
 }
 
-export function finalizeIdempotencyKey(jobId: string): string {
-  return `mosaic-finalize-${jobId}`;
+export async function finalizeIdempotencyKey(jobId: string): Promise<string> {
+  const crypto = await getCryptoClient();
+  return crypto.finalizeIdempotencyKey(jobId);
 }
 
 export async function finalizeManifestForUpload(
@@ -73,7 +87,7 @@ export async function finalizeManifestForUpload(
   epochKey: EpochKeyBundle,
   tieredShards?: TieredShardIds,
   options: Omit<ExecuteManifestFinalizationOptions, 'jobId'> = {},
-): Promise<ManifestFinalizeResponse> {
+): Promise<ManifestFinalizationResult> {
   const crypto = await getCryptoClient();
   const now = new Date().toISOString();
   const vm = task.videoMetadata;
@@ -157,15 +171,16 @@ export async function finalizeManifestForUpload(
 
   return executeManifestFinalizationEffect(effect, {
     ...options,
-    jobId: task.id,
+    jobId: uploadJobIdForTask(task),
   });
 }
 
 export async function executeManifestFinalizationEffect(
   effect: FinalizeManifestEffect,
   options: ExecuteManifestFinalizationOptions,
-): Promise<ManifestFinalizeResponse> {
+): Promise<ManifestFinalizationResult> {
   const fetchFn = options.fetchImpl ?? fetch;
+  const idempotencyKey = await finalizeIdempotencyKey(options.jobId);
   const response = await fetchFn(
     `${API_BASE}/manifests/${encodeURIComponent(effect.manifestId)}/finalize`,
     {
@@ -173,13 +188,13 @@ export async function executeManifestFinalizationEffect(
       credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
-        'Idempotency-Key': finalizeIdempotencyKey(options.jobId),
+        'Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify(toFinalizeRequestBody(effect)),
     },
   );
 
-  if (response.ok || response.status === 409) {
+  if (response.ok) {
     const finalized = await readFinalizeResponse(response, effect);
     await options.adapter?.submit({
       kind: 'ManifestFinalized',
@@ -187,7 +202,27 @@ export async function executeManifestFinalizationEffect(
       assetId: finalized.manifestId,
       sinceMetadataVersion: BigInt(finalized.metadataVersion),
     });
-    return finalized;
+    return { kind: 'ManifestFinalized', response: finalized };
+  }
+
+  if (response.status === 409) {
+    if (response.headers.get('Idempotency-Replayed') === 'true') {
+      const finalized = await readFinalizeResponse(response, effect);
+      await options.adapter?.submit({
+        kind: 'ManifestFinalized',
+        effectId: effect.effectId,
+        assetId: finalized.manifestId,
+        sinceMetadataVersion: BigInt(finalized.metadataVersion),
+      });
+      return { kind: 'ManifestFinalized', response: finalized };
+    }
+
+    const errorBody = await response.json().catch(() => ({}));
+    return {
+      kind: 'AlreadyFinalized',
+      manifestId: manifestFinalizeErrorManifestId(errorBody),
+      detail: manifestFinalizeErrorDetail(errorBody),
+    };
   }
 
   if (response.status === 400 || response.status === 422) {
@@ -268,6 +303,13 @@ function toFinalizeTieredShards(task: UploadTask): ManifestFinalizeTieredShard[]
     .sort((a, b) => a.tier - b.tier || a.shardIndex - b.shardIndex);
 }
 
+function uploadJobIdForTask(task: UploadTask): string {
+  const taskWithJobId = task as UploadTask & { readonly uploadJobId?: unknown };
+  return typeof taskWithJobId.uploadJobId === 'string' && taskWithJobId.uploadJobId.length > 0
+    ? taskWithJobId.uploadJobId
+    : task.id;
+}
+
 async function readFinalizeResponse(
   response: Response,
   effect: FinalizeManifestEffect,
@@ -293,6 +335,18 @@ function isManifestFinalizeResponse(value: unknown): value is ManifestFinalizeRe
     && typeof candidate.metadataVersion === 'number'
     && typeof candidate.createdAt === 'string'
     && Array.isArray(candidate.tieredShards);
+}
+
+function manifestFinalizeErrorManifestId(value: unknown): string {
+  if (typeof value !== 'object' || value === null) return '';
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.manifestId === 'string' ? candidate.manifestId : '';
+}
+
+function manifestFinalizeErrorDetail(value: unknown): string {
+  if (typeof value !== 'object' || value === null) return 'manifest already finalized';
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.detail === 'string' ? candidate.detail : 'manifest already finalized';
 }
 
 function encodeTranscriptShards(shards: readonly ManifestFinalizeTieredShard[]): Uint8Array {

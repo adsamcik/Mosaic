@@ -35,6 +35,26 @@ const EFFECT_ID: &str = "018f0000-0000-7000-8000-000000000005";
 const SHARD_ID: &str = "018f0000-0000-7000-8000-000000000006";
 
 #[test]
+fn finalize_idempotency_key_parity() {
+    let job_id = mosaic_client::Uuid::from_bytes([
+        0x01, 0x95, 0x00, 0x00, 0x00, 0x00, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ]);
+    let job_id_string = "01950000-0000-7000-8000-000000000000".to_owned();
+
+    let from_wasm = mosaic_wasm::finalize_idempotency_key(job_id_string.clone()).unwrap();
+    let from_uniffi = mosaic_uniffi::finalize_idempotency_key(job_id_string).unwrap();
+    let from_client = mosaic_client::finalize_idempotency_key(&job_id);
+
+    assert_eq!(from_wasm, from_uniffi);
+    assert_eq!(from_wasm, from_client);
+    assert_eq!(
+        from_wasm,
+        "mosaic-finalize-01950000-0000-7000-8000-000000000000"
+    );
+}
+
+#[test]
 fn manifest_transcript_bytes_match_wasm_and_uniffi() {
     let encrypted_meta = vec![0xaa, 0xbb, 0xcc];
     let encoded_shards = encoded_manifest_shards();

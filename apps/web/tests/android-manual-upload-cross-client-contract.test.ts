@@ -83,6 +83,7 @@ vi.mock('../src/lib/crypto-client', () => ({
     Promise.resolve({
       encryptManifestWithEpoch: mocks.encryptManifestWithEpoch,
       signManifestWithEpoch: mocks.signManifestWithEpoch,
+      finalizeIdempotencyKey: async (jobId: string) => `mosaic-finalize-${jobId}`,
     }),
   ),
 }));
@@ -133,6 +134,7 @@ function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 function fixtureTask(fixture: ContractFixture): UploadTask {
   return {
     id: fixture.androidHandoff.assetId,
+    uploadJobId: fixture.androidHandoff.uploadJobId,
     file: new File(['opaque local bytes'], 'opaque-local-asset.bin', {
       type: 'application/octet-stream',
     }),
@@ -276,6 +278,9 @@ describe('Android manual upload cross-client contract', () => {
     expect(mocks.signManifestWithEpoch.mock.calls[0][1]).not.toEqual(encryptedMeta);
     expect(finalizeFetch).toHaveBeenCalledTimes(1);
     const finalizeCalls = finalizeFetch.mock.calls as unknown as Array<[string, RequestInit]>;
+    expect(finalizeCalls[0]![1].headers).toEqual(expect.objectContaining({
+      'Idempotency-Key': `mosaic-finalize-${fixture.androidHandoff.uploadJobId}`,
+    }));
     const backendRequest = JSON.parse(String(finalizeCalls[0]![1].body));
     expect(backendRequest).toMatchObject({
       protocolVersion: 1,

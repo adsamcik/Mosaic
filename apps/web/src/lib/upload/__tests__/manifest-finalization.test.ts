@@ -67,10 +67,10 @@ const SIGNER_PUBKEY = new Uint8Array(32).fill(8);
 const SHA256_HEX = '00'.repeat(32);
 const SHA256_B64URL = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
-function jsonResponse(body: unknown, status = 200): Response {
+function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
   });
 }
 
@@ -162,6 +162,7 @@ describe('manifest finalization cutover', () => {
         sha256: SHA256_B64URL,
       })),
       signManifestWithEpoch: vi.fn(async () => SIGNATURE),
+      finalizeIdempotencyKey: vi.fn(async (jobId: string) => `mosaic-finalize-${jobId}`),
       encryptShardWithEpochHandle: vi.fn(
         async (_handle: EpochHandleId, _plaintext: Uint8Array, tier: number, shardIndex: number) =>
           new Uint8Array([tier, shardIndex, 99]),
@@ -187,14 +188,17 @@ describe('manifest finalization cutover', () => {
       fetchImpl,
     });
 
-    expect(result.manifestId).toBe(JOB_ID);
+    expect(result).toMatchObject({
+      kind: 'ManifestFinalized',
+      response: { manifestId: JOB_ID },
+    });
     expect(fetchImpl).toHaveBeenCalledWith(
       `/api/manifests/${JOB_ID}/finalize`,
       expect.objectContaining({
         method: 'POST',
         credentials: 'same-origin',
         headers: expect.objectContaining({
-          'Idempotency-Key': finalizeIdempotencyKey(JOB_ID),
+          'Idempotency-Key': await finalizeIdempotencyKey(JOB_ID),
         }),
       }),
     );
@@ -207,19 +211,47 @@ describe('manifest finalization cutover', () => {
   });
 
   it('treats 409 idempotency replay as the same finalized adapter state', async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse(finalizeResponse(), 409));
+    const fetchImpl = vi.fn(async () => jsonResponse(
+      finalizeResponse(),
+      409,
+      { 'Idempotency-Replayed': 'true' },
+    ));
     const rustAdapter = adapter();
 
     await expect(executeManifestFinalizationEffect(effect(), {
       jobId: JOB_ID,
       adapter: rustAdapter,
       fetchImpl,
-    })).resolves.toMatchObject({ manifestId: JOB_ID, metadataVersion: 12 });
+    })).resolves.toMatchObject({
+      kind: 'ManifestFinalized',
+      response: { manifestId: JOB_ID, metadataVersion: 12 },
+    });
 
     expect(rustAdapter.submit).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'ManifestFinalized',
       assetId: JOB_ID,
     }));
+  });
+
+  it('treats 409 without idempotency replay header as already finalized error body', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({
+      error: 'manifest_already_finalized',
+      detail: 'manifest is already finalized',
+      manifestId: JOB_ID,
+    }, 409));
+    const rustAdapter = adapter();
+
+    await expect(executeManifestFinalizationEffect(effect(), {
+      jobId: JOB_ID,
+      adapter: rustAdapter,
+      fetchImpl,
+    })).resolves.toEqual({
+      kind: 'AlreadyFinalized',
+      manifestId: JOB_ID,
+      detail: 'manifest is already finalized',
+    });
+
+    expect(rustAdapter.submit).not.toHaveBeenCalled();
   });
 
   it('maps 400 invalid signature to a non-retryable manifest failure event', async () => {

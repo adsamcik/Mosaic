@@ -1181,6 +1181,34 @@ pub const fn protocol_version() -> &'static str {
     mosaic_crypto::protocol_version()
 }
 
+/// Returns the canonical manifest-finalize idempotency key for an upload job.
+///
+/// ADR-022 prefixes finalize keys with an operation namespace so they cannot
+/// collide with idempotency keys used by other upload operations.
+#[must_use]
+pub fn finalize_idempotency_key(job_id: &Uuid) -> String {
+    let bytes = job_id.as_bytes();
+    format!(
+        "mosaic-finalize-{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4],
+        bytes[5],
+        bytes[6],
+        bytes[7],
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15]
+    )
+}
+
 /// Returns deterministic public crypto/domain vectors for wrapper parity tests.
 #[must_use]
 pub fn crypto_domain_golden_vector_snapshot() -> CryptoDomainGoldenVectorSnapshot {
@@ -3490,6 +3518,19 @@ mod tests {
     #[test]
     fn uses_crypto_protocol_version() {
         assert_eq!(super::protocol_version(), "mosaic-v1");
+    }
+
+    #[test]
+    fn finalize_idempotency_key_format_is_stable() {
+        let job_id = super::Uuid::from_bytes([
+            0x01, 0x95, 0x00, 0x00, 0x00, 0x00, 0x70, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ]);
+
+        assert_eq!(
+            super::finalize_idempotency_key(&job_id),
+            "mosaic-finalize-01950000-0000-7000-8000-000000000000"
+        );
     }
 
     #[test]

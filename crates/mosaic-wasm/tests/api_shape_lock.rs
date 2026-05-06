@@ -175,6 +175,7 @@ fn wasm_reducer_manifest_and_streaming_exports_are_locked() {
         "export function advanceAlbumSync(",
         "export function advanceUploadJob(",
         "export function decryptEnvelope(epoch_handle_id: bigint, envelope: Uint8Array): any;",
+        "export function finalizeIdempotencyKey(job_id: string): string;",
         "export function manifestTranscriptBytes(album_id: Uint8Array, epoch_id: number, encrypted_meta: Uint8Array, encoded_shards: Uint8Array): BytesResult;",
     ] {
         assert!(

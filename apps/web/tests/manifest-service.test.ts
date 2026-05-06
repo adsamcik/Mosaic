@@ -46,6 +46,7 @@ vi.mock('../src/lib/crypto-client', () => ({
     Promise.resolve({
       encryptManifestWithEpoch: mockEncryptManifestWithEpoch,
       signManifestWithEpoch: mockSignManifestWithEpoch,
+      finalizeIdempotencyKey: async (jobId: string) => `mosaic-finalize-${jobId}`,
     }),
   ),
 }));

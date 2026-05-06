@@ -60,7 +60,7 @@ fn uniffi_exported_api_shape_matches_golden() {
 
 #[test]
 fn uniffi_api_v1_baseline_signature_unchanged() {
-    let v1_baseline_blake3 = "48e787b90a23677a731e95c2c7ee616d0887c7c5e19c12d6e1571ba0eeca4ef2";
+    let v1_baseline_blake3 = "0f0c083d3db16b22c5fed6d95dff8e9d9e8f0c00a0552f66e62faeaa4f92dcf7";
     let actual = blake3::hash(canonical_uniffi_api_shape(SOURCE).as_bytes()).to_hex();
 
     assert_eq!(
@@ -434,6 +434,18 @@ fn manifest_transcript_uniffi_export_is_present() {
     assert!(
         actual.contains("record ClientCoreManifestTranscriptInputs"),
         "manifest transcript input record must be locked"
+    );
+}
+
+#[test]
+fn finalize_idempotency_key_uniffi_export_is_present() {
+    let actual = canonical_uniffi_api_shape(SOURCE);
+
+    assert!(
+        actual.contains(
+            "export pub fn finalize_idempotency_key(job_id: String) -> Result<String, MosaicError>"
+        ),
+        "finalize idempotency-key export must be present in UniFFI API shape"
     );
 }
 
