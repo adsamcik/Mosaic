@@ -2,11 +2,11 @@
 
 ## Status
 
-**Final v1 protocol freeze: DECLARED on 2026-05-06 at `be7c6da07fbe036beea114c785072c878bd4646d` (`origin/main`).**
+**v1 protocol freeze CANDIDATE prepared at `be7c6da07fbe036beea114c785072c878bd4646d` (`origin/main`).**
 
-Freeze approver: **orchestrator**.
+**The v1 freeze has NOT been declared.** This document captures the freeze candidate state — all engineering work required for v1 has landed, all parity/quality gates are in place, and the protocol surfaces below are READY to be frozen. Final freeze declaration is pending **explicit human approval from the project owner**. Until that approval is recorded here, v1 protocol surfaces remain CHANGEABLE (with the architecture-guard, parity, and review processes still applying).
 
-**All v1 protocol surfaces are now frozen. Any changes require a v2 break with snapshot version bump and migration plan.**
+Freeze approver: **pending (project owner)**.
 
 This reissue closes the prior pre-freeze inventory. The open/in-flight/todo list for v1 protocol surfaces is empty.
 
@@ -18,8 +18,9 @@ This reissue closes the prior pre-freeze inventory. The open/in-flight/todo list
 
 ## Freeze source of truth
 
-- Freeze commit: `be7c6da07fbe036beea114c785072c878bd4646d`.
-- Freeze date: 2026-05-06.
+- Freeze candidate commit: `be7c6da07fbe036beea114c785072c878bd4646d`.
+- Freeze candidate date: 2026-05-06.
+- **Final freeze declaration date: pending project owner approval.**
 - Irreversibility register: `docs/IMPLEMENTATION_PLAN.md` §11, “Late-v1 Irreversibility Register”.
 - Finalization ADR: `docs/adr/ADR-022-manifest-finalization-shape.md`.
 - Cross-platform parity evidence: `crates/mosaic-parity-tests/`.
@@ -48,7 +49,7 @@ The prior readiness spec tracked these contract domains while Bands 5/6 and Andr
 
 ## Frozen invariants and surfaces
 
-The following surfaces are frozen for v1. Citations point to §11 entries unless otherwise noted.
+The following surfaces are the v1 freeze CANDIDATES. After project owner approval, these are frozen for v1; until then they remain conventionally locked by tests and architecture guards but may still be amended for cause. Citations point to §11 entries unless otherwise noted.
 
 | Surface | Frozen value / rule | Citation |
 | --- | --- | --- |
@@ -94,7 +95,7 @@ A post-freeze change is a release blocker if it changes any frozen bytes, labels
 
 ## Final declaration
 
-The final v1 freeze gate is closed. The previous “explicitly open” pre-freeze list is no longer active for v1. All v1 protocol surfaces are now frozen. Any changes require a v2 break with snapshot version bump and migration plan.
+The final v1 freeze gate is **READY but not yet declared**. The previous “explicitly open” pre-freeze list is no longer active for v1. Once the project owner approves the freeze, all v1 protocol surfaces become frozen; until that approval, changes still go through the standard review/parity/architecture-guard process but do not count as a v2 break. Any post-approval change requires a v2 break with snapshot version bump and migration plan.
 
 ## Verification plan
 
