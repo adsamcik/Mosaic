@@ -6,6 +6,7 @@ import {
   type PersistedTask,
   type ProgressCallback,
 } from './upload-queue';
+import type { EpochHandleId } from '../workers/types';
 
 export const DEFAULT_WEB_CLIENT_CORE_ADAPTER_ID =
   'web-current-upload-sync' as const;
@@ -22,7 +23,7 @@ export interface WebUploadAdapter {
     file: File,
     albumId: string,
     epochId: number,
-    readKey: Uint8Array,
+    epochHandleId: EpochHandleId,
   ): Promise<string>;
   cancel(taskId: string): Promise<void>;
   getPendingTasks(): Promise<PersistedTask[]>;
@@ -31,7 +32,7 @@ export interface WebUploadAdapter {
   retryPermanentlyFailed(
     taskId: string,
     file: File,
-    readKey: Uint8Array,
+    epochHandleId: EpochHandleId,
   ): Promise<void>;
   clearPermanentlyFailedTasks(): Promise<number>;
   getProgressCallback(): ProgressCallback | undefined;
@@ -48,11 +49,11 @@ export interface WebUploadAdapter {
 export interface WebSyncAdapter {
   readonly runtime: WebClientCoreRuntime;
   readonly isSyncing: boolean;
-  sync(albumId: string, readKey?: Uint8Array): Promise<void>;
+  sync(albumId: string, epochHandleId?: EpochHandleId): Promise<void>;
   cancel(): void;
   clearCache(): void;
-  getEpochKey(albumId: string, epochId: number): Uint8Array | null;
-  setEpochKey(albumId: string, epochId: number, epochSeed: Uint8Array): void;
+  getEpochKey(albumId: string, epochId: number): EpochHandleId | null;
+  setEpochKey(albumId: string, epochId: number, epochHandleId: EpochHandleId): void;
   ensureEpochKeys(albumId: string): Promise<void>;
   addEventListener(
     type: SyncEventType,
@@ -78,14 +79,14 @@ const runtime: WebClientCoreRuntime = 'typescript-web-shell';
 const currentUploadAdapter: WebUploadAdapter = {
   runtime,
   init: () => uploadQueue.init(),
-  add: (file, albumId, epochId, readKey) =>
-    uploadQueue.add(file, albumId, epochId, readKey),
+  add: (file, albumId, epochId, epochHandleId) =>
+    uploadQueue.add(file, albumId, epochId, epochHandleId),
   cancel: (taskId) => uploadQueue.cancel(taskId),
   getPendingTasks: () => uploadQueue.getPendingTasks(),
   getFailedTasks: () => uploadQueue.getFailedTasks(),
   getPermanentlyFailedTasks: () => uploadQueue.getPermanentlyFailedTasks(),
-  retryPermanentlyFailed: (taskId, file, readKey) =>
-    uploadQueue.retryPermanentlyFailed(taskId, file, readKey),
+  retryPermanentlyFailed: (taskId, file, epochHandleId) =>
+    uploadQueue.retryPermanentlyFailed(taskId, file, epochHandleId),
   clearPermanentlyFailedTasks: () => uploadQueue.clearPermanentlyFailedTasks(),
   getProgressCallback: () => uploadQueue.onProgress,
   setProgressCallback: (callback) => {
@@ -115,12 +116,12 @@ const currentSyncAdapter: WebSyncAdapter = {
   get isSyncing() {
     return syncEngine.isSyncing;
   },
-  sync: (albumId, readKey) => syncEngine.sync(albumId, readKey),
+  sync: (albumId, epochHandleId) => syncEngine.sync(albumId, epochHandleId),
   cancel: () => syncEngine.cancel(),
   clearCache: () => syncEngine.clearCache(),
   getEpochKey: (albumId, epochId) => syncEngine.getEpochKey(albumId, epochId),
-  setEpochKey: (albumId, epochId, epochSeed) =>
-    syncEngine.setEpochKey(albumId, epochId, epochSeed),
+  setEpochKey: (albumId, epochId, epochHandleId) =>
+    syncEngine.setEpochKey(albumId, epochId, epochHandleId),
   ensureEpochKeys: (albumId) => syncEngine.ensureEpochKeys(albumId),
   addEventListener: (type, listener, options) => {
     syncEngine.addEventListener(type, listener, options);

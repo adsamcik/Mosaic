@@ -1,4 +1,5 @@
-import type { TieredShardIds } from '../../workers/types';
+import type { EpochHandleId, TieredShardIds } from '../../workers/types';
+import { SNAPSHOT_VERSION } from './legacy-drainer';
 
 /** Chunk size for splitting files (6MB) */
 export const CHUNK_SIZE = 6 * 1024 * 1024;
@@ -54,6 +55,10 @@ export interface CompletedShard {
   sha256: string; // Base64url hash for verification
   /** Shard tier: 1=thumb, 2=preview, 3=original */
   tier?: number;
+  /** Encrypted envelope byte length uploaded to TUS. */
+  contentLength?: number;
+  /** Shard envelope format version. */
+  envelopeVersion?: number;
 }
 
 /** Tiered shard result from upload (3 tiers) */
@@ -75,6 +80,14 @@ export interface VideoUploadMetadata {
   height: number;
   /** Video codec (e.g., "h264", "vp9") — best-effort detection */
   videoCodec?: string;
+  /** Trusted video container label from Rust inspection (e.g., "mp4", "mov", "webm") */
+  videoContainer?: string;
+  /** Video frame rate in frames per second, when available */
+  frameRateFps?: number;
+  /** Rotation/orientation label from the container, when available */
+  videoOrientation?: string;
+  /** Active canonical metadata sidecar tags emitted by Rust inspection */
+  metadataSidecarTags?: string[];
   /** Base64-encoded embedded thumbnail extracted from video frame */
   thumbnail?: string;
   /** Embedded thumbnail width */
@@ -91,7 +104,7 @@ export interface UploadTask {
   file: File;
   albumId: string;
   epochId: number;
-  readKey: Uint8Array;
+  epochHandleId: EpochHandleId;
   status: UploadStatus;
   currentAction: UploadAction;
   progress: number;
@@ -124,6 +137,9 @@ export interface UploadTask {
 /** Persisted task state (for resume after reload) */
 export interface PersistedTask {
   id: string;
+  schemaVersion?: typeof SNAPSHOT_VERSION;
+  snapshotVersion?: typeof SNAPSHOT_VERSION;
+  idempotencyKey?: string;
   albumId: string;
   fileName: string;
   fileSize: number;
@@ -147,6 +163,8 @@ export interface PersistedTask {
   originalHeight?: number;
   /** ThumbHash string for instant placeholder (~25 bytes base64) */
   thumbhash?: string;
+  /** Tiered shard IDs persisted after tiered/video upload completion */
+  tieredShards?: TieredShardIds;
   /** Video metadata (persisted for resume) */
   videoMetadata?: VideoUploadMetadata;
 }

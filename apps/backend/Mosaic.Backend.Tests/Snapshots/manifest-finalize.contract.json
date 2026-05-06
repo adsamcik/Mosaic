@@ -1,0 +1,16 @@
+{
+  "protocolVersion": "number",
+  "manifestId": "string",
+  "metadataVersion": "number",
+  "createdAt": "string",
+  "tieredShards": [
+    {
+      "shardId": "string",
+      "tier": "number",
+      "shardIndex": "number",
+      "sha256": "string",
+      "contentLength": "number",
+      "envelopeVersion": "number"
+    }
+  ]
+}

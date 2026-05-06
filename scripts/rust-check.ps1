@@ -39,6 +39,7 @@ try {
     Invoke-Step "Rust clippy" { cargo clippy --workspace --all-targets --all-features -- -D warnings }
     Invoke-Step "Rust tests" { cargo test --workspace --locked }
     Invoke-Step "Rust architecture boundaries" { & "$ProjectRoot/tests/architecture/rust-boundaries.ps1" }
+    Invoke-Step "Rust cutover boundary" { & "$ProjectRoot/tests/architecture/rust-cutover-boundary.ps1" }
 
     # NOTE: Web boundary guard (Band 7 / Lane D1) is intentionally NOT run
     # here because this script is the Rust check. Future Band 8 readiness

@@ -100,7 +100,7 @@ class AndroidRustAlbumSyncApi : GeneratedRustAlbumSyncApi {
     }
   }
 
-  private fun RustClientCoreAlbumSyncSnapshotUniFfi.toShellSnapshot(): RustClientCoreAlbumSyncFfiSnapshot =
+  internal fun RustClientCoreAlbumSyncSnapshotUniFfi.toShellSnapshot(): RustClientCoreAlbumSyncFfiSnapshot =
     RustClientCoreAlbumSyncFfiSnapshot(
       schemaVersion = schemaVersion.toInt(),
       albumId = albumId,
@@ -116,7 +116,7 @@ class AndroidRustAlbumSyncApi : GeneratedRustAlbumSyncApi {
       updatedAtUnixMs = updatedAtUnixMs.toLong(),
     )
 
-  private fun RustClientCoreAlbumSyncFfiSnapshot.toUniFfiSnapshot(): RustClientCoreAlbumSyncSnapshotUniFfi =
+  internal fun RustClientCoreAlbumSyncFfiSnapshot.toUniFfiSnapshot(): RustClientCoreAlbumSyncSnapshotUniFfi =
     RustClientCoreAlbumSyncSnapshotUniFfi(
       schemaVersion = schemaVersion.toUInt(),
       albumId = albumId,
@@ -132,7 +132,7 @@ class AndroidRustAlbumSyncApi : GeneratedRustAlbumSyncApi {
       updatedAtUnixMs = updatedAtUnixMs.toULong(),
     )
 
-  private fun RustClientCoreAlbumSyncFfiEvent.toUniFfiEvent(): RustClientCoreAlbumSyncEventUniFfi =
+  internal fun RustClientCoreAlbumSyncFfiEvent.toUniFfiEvent(): RustClientCoreAlbumSyncEventUniFfi =
     RustClientCoreAlbumSyncEventUniFfi(
       kind = kind,
       fetchedCursor = fetchedCursor,
@@ -142,6 +142,18 @@ class AndroidRustAlbumSyncApi : GeneratedRustAlbumSyncApi {
       retryAfterUnixMs = retryAfterUnixMs.toULong(),
       hasErrorCode = hasErrorCode,
       errorCode = errorCode.toUShort(),
+    )
+
+  internal fun RustClientCoreAlbumSyncEventUniFfi.toShellEvent(): RustClientCoreAlbumSyncFfiEvent =
+    RustClientCoreAlbumSyncFfiEvent(
+      kind = kind,
+      fetchedCursor = fetchedCursor,
+      nextCursor = nextCursor,
+      appliedCount = appliedCount.toInt(),
+      observedAssetIds = observedAssetIds,
+      retryAfterUnixMs = retryAfterUnixMs.toLong(),
+      hasErrorCode = hasErrorCode,
+      errorCode = errorCode.toInt(),
     )
 
   private fun RustClientCoreAlbumSyncEffectUniFfi.toShellEffect(): RustClientCoreAlbumSyncFfiEffect =

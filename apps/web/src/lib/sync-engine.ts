@@ -1,4 +1,9 @@
-import type { DecryptedManifest, EpochHandleId, PhotoMeta } from '../workers/types';
+import {
+  WorkerCryptoErrorCode,
+  type DecryptedManifest,
+  type EpochHandleId,
+  type PhotoMeta,
+} from '../workers/types';
 import { fromBase64, getApi } from './api';
 import { getCryptoClient } from './crypto-client';
 import { getDbClient } from './db-client';
@@ -50,6 +55,16 @@ function keysMatch(left: Uint8Array, right: Uint8Array): boolean {
 
 function hasValidSigningKey(pubkey: Uint8Array): boolean {
   return pubkey.length === 32 && pubkey.some((byte) => byte !== 0);
+}
+
+function isHandleLifecycleError(error: unknown): boolean {
+  const code = (error as { code?: unknown }).code;
+  return (
+    code === WorkerCryptoErrorCode.StaleHandle ||
+    code === WorkerCryptoErrorCode.HandleNotFound ||
+    code === WorkerCryptoErrorCode.ClosedHandle ||
+    code === WorkerCryptoErrorCode.EpochHandleNotFound
+  );
 }
 
 function createDeletedManifestTombstone(manifest: {
@@ -123,7 +138,7 @@ export interface ContentConflictEventDetail {
 
 /** Queued sync request with deferred promise */
 interface QueuedSyncRequest {
-  readKey: Uint8Array | undefined;
+  epochHandleId: EpochHandleId | undefined;
   resolvers: Array<{ resolve: () => void; reject: (err: Error) => void }>;
 }
 
@@ -148,10 +163,12 @@ class SyncEngine extends EventTarget {
    * If sync is already in progress, queues the request and returns a promise
    * that resolves when the queued sync completes.
    * @param albumId - Album ID to sync
-   * @param readKey - Epoch read key for decryption (optional if using cached keys)
+   * @param epochHandleId - Epoch handle id for decryption (optional if using cached keys)
    */
-  async sync(albumId: string, readKey?: Uint8Array): Promise<void> {
-    log.info(`Sync requested for album ${albumId}`, { hasReadKey: !!readKey });
+  async sync(albumId: string, epochHandleId?: EpochHandleId): Promise<void> {
+    log.info(`Sync requested for album ${albumId}`, {
+      hasEpochHandle: !!epochHandleId,
+    });
 
     if (this.syncing) {
       // Queue this sync request - it will run after current sync completes
@@ -162,13 +179,13 @@ class SyncEngine extends EventTarget {
         const existing = this.pendingSyncQueue.get(albumId);
         if (existing) {
           // Album already queued - add this resolver to the list
-          // Update readKey if provided (latest key takes precedence)
-          if (readKey) existing.readKey = readKey;
+          // Update epoch handle if provided (latest handle takes precedence)
+          if (epochHandleId) existing.epochHandleId = epochHandleId;
           existing.resolvers.push({ resolve, reject });
         } else {
           // New queue entry
           this.pendingSyncQueue.set(albumId, {
-            readKey,
+            epochHandleId,
             resolvers: [{ resolve, reject }],
           });
         }
@@ -303,6 +320,10 @@ class SyncEngine extends EventTarget {
               shardIds: manifest.shardIds,
             });
           } catch (decryptErr) {
+            if (isHandleLifecycleError(decryptErr)) {
+              throw decryptErr;
+            }
+
             log.warn(`Failed to process manifest ${manifest.id}`, {
               error: decryptErr instanceof Error ? decryptErr.message : String(decryptErr),
             });
@@ -363,7 +384,7 @@ class SyncEngine extends EventTarget {
     // Process each queued album (they will queue themselves if another is in progress)
     for (const [queuedAlbumId, request] of queuedSyncs) {
       try {
-        await this.sync(queuedAlbumId, request.readKey);
+        await this.sync(queuedAlbumId, request.epochHandleId);
         // Resolve all waiting promises for this album
         for (const { resolve } of request.resolvers) {
           resolve();
@@ -396,23 +417,27 @@ class SyncEngine extends EventTarget {
   }
 
   /**
-   * Get epoch read key from cache (if available)
-   * Returns null if key not cached - caller should trigger sync first
+   * Get epoch handle id from cache (if available).
+   * Returns null if handle not cached - caller should trigger sync first.
    */
-  getEpochKey(albumId: string, epochId: number): Uint8Array | null {
+  getEpochKey(albumId: string, epochId: number): EpochHandleId | null {
     const bundle = getEpochKey(albumId, epochId);
-    return bundle?.epochSeed ?? null;
+    return (bundle?.epochHandleId as EpochHandleId | undefined) ?? null;
   }
 
   /**
-   * Store an epoch seed in the cache
+   * Store an epoch handle in the cache.
    * Used when unwrapping keys after sync
    *
    * IMPORTANT: This method preserves existing signKeypair if the epoch key
    * was already cached with complete data. This prevents overwriting a
    * correctly unwrapped bundle with one that has empty signKeypair.
    */
-  setEpochKey(albumId: string, epochId: number, epochSeed: Uint8Array): void {
+  setEpochKey(
+    albumId: string,
+    epochId: number,
+    epochHandleId: EpochHandleId,
+  ): void {
     // Check if we already have a cached bundle with complete signKeypair
     const existing = getEpochKey(albumId, epochId);
     if (existing) {
@@ -432,7 +457,7 @@ class SyncEngine extends EventTarget {
     // Store minimal bundle (legacy compatibility)
     storeEpochKey(albumId, {
       epochId,
-      epochSeed,
+      epochHandleId,
       signKeypair: {
         publicKey: new Uint8Array(32),
         secretKey: new Uint8Array(64),

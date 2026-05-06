@@ -23,6 +23,7 @@ fn expected_table() -> Vec<(&'static str, u16)> {
         ("UnsupportedVersion", 102),
         ("InvalidTier", 103),
         ("NonZeroReservedByte", 104),
+        ("UnknownEnvelopeVersion", 106),
         ("EmptyContext", 200),
         ("InvalidKeyLength", 201),
         ("InvalidInputLength", 202),
@@ -123,6 +124,10 @@ fn live_table() -> Vec<(&'static str, u16)> {
         (
             "NonZeroReservedByte",
             ClientErrorCode::NonZeroReservedByte.as_u16(),
+        ),
+        (
+            "UnknownEnvelopeVersion",
+            ClientErrorCode::UnknownEnvelopeVersion.as_u16(),
         ),
         ("EmptyContext", ClientErrorCode::EmptyContext.as_u16()),
         (

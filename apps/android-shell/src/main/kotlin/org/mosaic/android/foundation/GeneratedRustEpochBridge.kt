@@ -102,7 +102,7 @@ data class RustEpochHandleFfiResult(
   val handle: Long,
   val epochId: Int,
   val wrappedEpochSeed: ByteArray,
-  val signPublicKey: ByteArray = ByteArray(0),
+  val signPublicKey: ByteArray,
 ) {
   init {
     require(code >= 0) { "epoch code must not be negative" }

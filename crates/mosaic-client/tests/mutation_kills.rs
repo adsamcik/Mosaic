@@ -155,7 +155,7 @@ fn parse_shard_header_for_ffi_maps_each_domain_error_to_distinct_code() {
     wrong_version[..4].copy_from_slice(b"SGzk");
     wrong_version[4] = 0xee;
     let result = parse_shard_header_for_ffi(&wrong_version);
-    assert_eq!(result.code, ClientErrorCode::UnsupportedVersion);
+    assert_eq!(result.code, ClientErrorCode::UnknownEnvelopeVersion);
 
     let mut bad_reserved = vec![0_u8; 64];
     bad_reserved[..4].copy_from_slice(b"SGzk");

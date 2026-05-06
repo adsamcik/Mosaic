@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Extensions;
+using Mosaic.Backend.Models.Photos;
 using Mosaic.Backend.Models.ShareLinks;
 using Mosaic.Backend.Services;
 
@@ -261,6 +262,7 @@ public class ShareLinkAccessController : ControllerBase
     /// Get photo metadata for a share link (anonymous)
     /// </summary>
     [HttpGet("api/s/{linkId}/photos")]
+    [HttpGet("api/share-links/{linkId}/photos")]
     public async Task<IActionResult> GetPhotos(string linkId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
         skip = Math.Max(0, skip);
@@ -315,29 +317,43 @@ public class ShareLinkAccessController : ControllerBase
         var totalCount = await query.CountAsync();
 
         var manifests = await query
-            .Include(m => m.ManifestShards.OrderBy(ms => ms.ChunkIndex))
+            .Include(m => m.ManifestShards)
             .OrderBy(m => m.VersionCreated)
             .Skip(skip)
             .Take(take)
-            .Select(m => new ShareLinkPhotoResponse
-            {
-                Id = m.Id,
-                VersionCreated = m.VersionCreated,
-                IsDeleted = m.IsDeleted,
-                EncryptedMeta = m.EncryptedMeta,
-                Signature = m.Signature,
-                SignerPubkey = m.SignerPubkey,
-                ExpiresAt = m.ExpiresAt,
-                ShardIds = m.ManifestShards
-                    .Where(ms => ms.Tier <= shareLink.AccessTier)
-                    .OrderBy(ms => ms.ChunkIndex)
-                    .Select(ms => ms.ShardId)
-                    .ToList()
-            })
+            .AsSplitQuery()
             .ToListAsync();
 
+        foreach (var manifest in manifests)
+        {
+            manifest.ManifestShards = manifest.ManifestShards
+                .Where(ms => ms.Tier <= shareLink.AccessTier)
+                .OrderBy(ms => ms.ChunkIndex)
+                .ToList();
+        }
+
+        var includeTieredShards = PhotoResponseFactory.WantsTieredShards(Request);
+        var photos = manifests
+            .Select(manifest =>
+            {
+                var photo = PhotoResponseFactory.FromManifest(manifest, includeTieredShards, includeAlbumId: false);
+                return new ShareLinkPhotoResponse
+                {
+                    Id = photo.Id,
+                    VersionCreated = photo.VersionCreated,
+                    IsDeleted = photo.IsDeleted,
+                    EncryptedMeta = photo.EncryptedMeta,
+                    Signature = photo.Signature,
+                    SignerPubkey = photo.SignerPubkey,
+                    ExpiresAt = photo.ExpiresAt,
+                    ShardIds = photo.ShardIds,
+                    TieredShards = photo.TieredShards
+                };
+            })
+            .ToList();
+
         Response.AddPaginationHeaders(skip, take, totalCount);
-        return Ok(manifests);
+        return Ok(photos);
     }
 
     /// <summary>

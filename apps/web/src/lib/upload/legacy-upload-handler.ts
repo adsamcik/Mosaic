@@ -1,6 +1,7 @@
 import type { getCryptoClient } from '../crypto-client';
 import type { UploadTask, UploadHandlerContext } from './types';
 import { CHUNK_SIZE } from './types';
+import { encryptUploadShardWithEpochHandle } from './encrypt-upload-shard';
 
 /**
  * Process legacy upload for non-image files.
@@ -31,10 +32,11 @@ export async function processLegacyUpload(
     task.currentAction = 'encrypting';
     ctx.onProgress?.(task);
 
-    const encrypted = await crypto.encryptShard(
+    const encrypted = await encryptUploadShardWithEpochHandle(
+      crypto,
+      task.epochHandleId,
       new Uint8Array(chunk),
-      task.readKey,
-      task.epochId,
+      3,
       i,
     );
 
@@ -43,7 +45,7 @@ export async function processLegacyUpload(
     ctx.onProgress?.(task);
     const shardId = await ctx.tusUpload(
       task.albumId,
-      encrypted.ciphertext,
+      encrypted.envelopeBytes,
       encrypted.sha256,
       i,
     );

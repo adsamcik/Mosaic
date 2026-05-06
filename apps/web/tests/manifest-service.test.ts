@@ -31,12 +31,22 @@ const mockSignManifestWithEpoch = vi.fn(
   },
 );
 const mockCreateManifest = vi.fn(async () => {});
+const mockFetch = vi.fn(async () =>
+  new Response(JSON.stringify({
+    protocolVersion: 1,
+    manifestId: 'task-1',
+    metadataVersion: 1,
+    createdAt: '2026-05-06T00:00:00.000Z',
+    tieredShards: [],
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+);
 
 vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() =>
     Promise.resolve({
       encryptManifestWithEpoch: mockEncryptManifestWithEpoch,
       signManifestWithEpoch: mockSignManifestWithEpoch,
+      finalizeIdempotencyKey: async (jobId: string) => `mosaic-finalize-${jobId}`,
     }),
   ),
 }));
@@ -49,6 +59,11 @@ vi.mock('../src/lib/api', () => ({
 }));
 
 import { createManifestForUpload } from '../src/lib/manifest-service';
+
+function lastFinalizeBody(): Record<string, unknown> {
+  const calls = mockFetch.mock.calls as unknown as Array<[string, RequestInit]>;
+  return JSON.parse(String(calls.at(-1)?.[1].body)) as Record<string, unknown>;
+}
 
 function makeBaseTask(overrides: Partial<UploadTask> = {}): UploadTask {
   return {
@@ -96,6 +111,7 @@ describe('manifest-service', () => {
     capturedSignHandleId = null;
     capturedSignedBytes = null;
     vi.clearAllMocks();
+    vi.stubGlobal('fetch', mockFetch);
   });
 
   describe('Slice 4 handle-based contract', () => {
@@ -108,22 +124,23 @@ describe('manifest-service', () => {
       expect(capturedSignHandleId).toBe('epoch-handle-test-1');
     });
 
-    it('signs the encrypted envelope bytes (not the plaintext)', async () => {
+    it('signs manifest transcript bytes (not plaintext metadata)', async () => {
       const task = makeBaseTask();
       await createManifestForUpload(task, ['shard-0'], epochKey);
 
       expect(mockSignManifestWithEpoch).toHaveBeenCalledTimes(1);
-      expect(capturedSignedBytes).toEqual(ENVELOPE_BYTES);
+      expect(capturedSignedBytes).not.toEqual(
+        new TextEncoder().encode(JSON.stringify(capturedPhotoMeta)),
+      );
+      expect(capturedSignedBytes).not.toEqual(ENVELOPE_BYTES);
     });
 
     it('publishes the per-epoch sign public key (not a placeholder secret)', async () => {
       const task = makeBaseTask();
       await createManifestForUpload(task, ['shard-0'], epochKey);
 
-      expect(mockCreateManifest).toHaveBeenCalledTimes(1);
-      const request = mockCreateManifest.mock.calls[0]?.[0] as {
-        signerPubkey: string;
-      };
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const request = lastFinalizeBody() as { signerPubkey: string };
       expect(Buffer.from(request.signerPubkey, 'base64')).toEqual(
         Buffer.from(SIGN_PUBLIC_KEY),
       );

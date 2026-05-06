@@ -2,15 +2,15 @@
  * Thumbnail Generator Service
  *
  * Generates three-tier images from photos using the Canvas API:
- * - Thumbnail: 600px max dimension, AVIF output (for shard, HiDPI quality)
- * - Preview: 1200px max dimension, AVIF output
+ * - Thumbnail: canonical WASM max dimension, AVIF output
+ * - Preview: canonical WASM max dimension, AVIF output
  * - Original: AVIF (default) or preserved original format (configurable)
  *
  * Additionally generates a smaller embedded thumbnail (300px) for manifest
  * to provide crisp display at gallery row heights (~200-220px).
  * ThumbHash (~25 bytes) provides instant blur placeholder before thumbnail loads.
  *
- * Progressive loading: ThumbHash → Embedded 300px → Shard 600px (on demand)
+ * Progressive loading: ThumbHash → Embedded 300px → canonical thumbnail shard (on demand)
  *
  * Each tier is encrypted with its corresponding key (thumbKey, previewKey, fullKey).
  * Handles EXIF orientation, maintains aspect ratio, and outputs AVIF for
@@ -24,12 +24,7 @@
  */
 
 import { rgbaToThumbHash } from 'thumbhash';
-import {
-  encryptShard,
-  ShardTier,
-  type EncryptedShard,
-  type EpochKey,
-} from '@mosaic/crypto';
+import { ShardTier } from '@mosaic/crypto';
 import {
   prepareForBitmap,
   safeCreateImageBitmap,
@@ -39,6 +34,7 @@ import {
 } from './image-decoder';
 import { getMimeType } from './mime-type-detection';
 import { shouldStoreOriginalsAsAvif } from './settings-service';
+import { getCanonicalTierLayout, getCanonicalTierMaxSizes } from './exif-stripper';
 import { createLogger } from './logger';
 
 const log = createLogger('ThumbnailGenerator');
@@ -51,14 +47,7 @@ const log = createLogger('ThumbnailGenerator');
  */
 const EMBEDDED_MAX_SIZE = 300;
 
-/**
- * Default max dimension for thumbnail shards (600px) - HiDPI quality
- * At 2x device pixel ratio with ~300px display size, 600px is pixel-perfect.
- */
-const THUMB_MAX_SIZE = 600;
-
-/** Default max dimension for previews (1200px) */
-const PREVIEW_MAX_SIZE = 1200;
+export { getCanonicalTierLayout };
 
 /** Default JPEG quality for thumbnails (0-1) */
 const THUMB_QUALITY = 0.8;
@@ -75,7 +64,7 @@ const MAX_EMBEDDED_BYTES = 25 * 1024;
 
 /**
  * Maximum thumbnail shard size in bytes (120KB) - for HiDPI shards
- * Larger than before (was 80KB) to accommodate 600px thumbnails.
+ * Sized for canonical thumbnail shards.
  */
 const MAX_THUMBNAIL_BYTES = 120 * 1024;
 
@@ -190,7 +179,7 @@ export function getPreferredImageFormat():
 /**
  * Options for thumbnail generation
  * Default settings are optimized for embedded manifest thumbnails (300px, 25KB max).
- * For larger thumbnail shards, use maxSize: 600 and maxBytes: 120*1024.
+ * For thumbnail shards, use the WASM canonical thumbnail max size and maxBytes: 120*1024.
  */
 export interface ThumbnailOptions {
   /** Maximum dimension (width or height) in pixels. Default: 300 (for manifest) */
@@ -234,45 +223,15 @@ export interface TierImageData {
 }
 
 /**
- * Encrypted shard with metadata for a single tier
- */
-export interface TierShard {
-  /** Encrypted shard data (envelope format) */
-  encrypted: EncryptedShard;
-  /** Width in pixels */
-  width: number;
-  /** Height in pixels */
-  height: number;
-  /** Shard tier (THUMB, PREVIEW, ORIGINAL) */
-  tier: ShardTier;
-}
-
-/**
  * Result of three-tier image generation
  */
 export interface TieredImageResult {
-  /** Thumbnail: 300px max dimension, ~80% quality JPEG */
+  /** Thumbnail: WASM canonical max dimension, ~80% quality JPEG */
   thumbnail: TierImageData;
-  /** Preview: 1200px max dimension, ~85% quality JPEG */
+  /** Preview: WASM canonical max dimension, ~85% quality JPEG */
   preview: TierImageData;
   /** Original: unchanged source file */
   original: TierImageData;
-  /** Original image width (before any resizing) */
-  originalWidth: number;
-  /** Original image height (before any resizing) */
-  originalHeight: number;
-}
-
-/**
- * Result of three-tier encrypted shard generation
- */
-export interface TieredShardResult {
-  /** Encrypted thumbnail shard */
-  thumbnail: TierShard;
-  /** Encrypted preview shard */
-  preview: TierShard;
-  /** Encrypted original shard */
-  original: TierShard;
   /** Original image width (before any resizing) */
   originalWidth: number;
   /** Original image height (before any resizing) */
@@ -463,7 +422,7 @@ function orientationSwapsDimensions(orientation: number): boolean {
  * for resizing. Handles EXIF orientation for rotated photos.
  *
  * Default settings are optimized for embedded manifest thumbnails (300px, 25KB).
- * For larger thumbnail shards, the tiered generation uses THUMB_MAX_SIZE (600px).
+ * For thumbnail shards, tiered generation uses the WASM canonical tier layout.
  *
  * HEIC/HEIF files are automatically decoded to JPEG before processing.
  *
@@ -774,7 +733,7 @@ async function resizeImage(
 /**
  * Generate three-tier images from a photo file.
  *
- * Creates thumbnail (300px), preview (1200px), and keeps original.
+ * Creates thumbnail and preview using the WASM canonical tier layout, and keeps original.
  * Each tier is prepared for encryption with its corresponding key.
  *
  * HEIC/HEIF files are automatically decoded to JPEG before processing.
@@ -827,19 +786,21 @@ export async function generateTieredImages(
     const logicalWidth = swapDims ? bitmap.height : bitmap.width;
     const logicalHeight = swapDims ? bitmap.width : bitmap.height;
 
-    // Generate thumbnail (300px max)
+    const tierMaxSizes = await getCanonicalTierMaxSizes();
+
+    // Generate thumbnail (WASM canonical max)
     const thumbData = await resizeImage(
       bitmap,
-      THUMB_MAX_SIZE,
+      tierMaxSizes.thumbnail,
       THUMB_QUALITY,
       MAX_THUMBNAIL_BYTES,
       orientation,
     );
 
-    // Generate preview (1200px max)
+    // Generate preview (WASM canonical max)
     const previewData = await resizeImage(
       bitmap,
-      PREVIEW_MAX_SIZE,
+      tierMaxSizes.preview,
       PREVIEW_QUALITY,
       MAX_PREVIEW_BYTES,
       orientation,
@@ -856,7 +817,7 @@ export async function generateTieredImages(
 
       const originalAvifData = await resizeImage(
         bitmap,
-        Math.max(logicalWidth, logicalHeight), // Keep full resolution
+        Math.min(Math.max(logicalWidth, logicalHeight), tierMaxSizes.original),
         ORIGINAL_QUALITY,
         MAX_ORIGINAL_BYTES,
         orientation,
@@ -914,156 +875,5 @@ export async function generateTieredImages(
       throw error;
     }
     throw new ThumbnailError('Tiered image generation failed', error);
-  }
-}
-
-/**
- * Encrypt already-converted tiered images.
- *
- * Takes the output of generateTieredImages and encrypts each tier
- * with its corresponding key from the EpochKey.
- *
- * @param tieredImages - Pre-converted tiered images
- * @param epochKey - Epoch key with thumbKey, previewKey, fullKey
- * @param shardIndex - Shard index within photo (typically 0 for single-shard photos)
- * @returns Three-tier encrypted shards with metadata
- * @throws ThumbnailError if encryption fails
- */
-export async function encryptTieredImages(
-  tieredImages: TieredImageResult,
-  epochKey: EpochKey,
-  shardIndex: number = 0,
-): Promise<TieredShardResult> {
-  try {
-    // Encrypt each tier with its corresponding key
-    const [thumbEncrypted, previewEncrypted, originalEncrypted] =
-      await Promise.all([
-        encryptShard(
-          tieredImages.thumbnail.data,
-          epochKey.thumbKey,
-          epochKey.epochId,
-          shardIndex,
-          ShardTier.THUMB,
-        ),
-        encryptShard(
-          tieredImages.preview.data,
-          epochKey.previewKey,
-          epochKey.epochId,
-          shardIndex,
-          ShardTier.PREVIEW,
-        ),
-        encryptShard(
-          tieredImages.original.data,
-          epochKey.fullKey,
-          epochKey.epochId,
-          shardIndex,
-          ShardTier.ORIGINAL,
-        ),
-      ]);
-
-    return {
-      thumbnail: {
-        encrypted: thumbEncrypted,
-        width: tieredImages.thumbnail.width,
-        height: tieredImages.thumbnail.height,
-        tier: ShardTier.THUMB,
-      },
-      preview: {
-        encrypted: previewEncrypted,
-        width: tieredImages.preview.width,
-        height: tieredImages.preview.height,
-        tier: ShardTier.PREVIEW,
-      },
-      original: {
-        encrypted: originalEncrypted,
-        width: tieredImages.original.width,
-        height: tieredImages.original.height,
-        tier: ShardTier.ORIGINAL,
-      },
-      originalWidth: tieredImages.originalWidth,
-      originalHeight: tieredImages.originalHeight,
-    };
-  } catch (error) {
-    if (error instanceof ThumbnailError) {
-      throw error;
-    }
-    throw new ThumbnailError('Failed to encrypt tiered shards', error);
-  }
-}
-
-/**
- * Generate three-tier encrypted shards from a photo file.
- *
- * Creates and encrypts thumbnail (300px), preview (1200px), and original.
- * Each tier is encrypted with its corresponding key from the EpochKey.
- *
- * @param file - Image file to process
- * @param epochKey - Epoch key with thumbKey, previewKey, fullKey
- * @param shardIndex - Shard index within photo (typically 0 for single-shard photos)
- * @returns Three-tier encrypted shards with metadata
- * @throws ThumbnailError if generation or encryption fails
- */
-export async function generateTieredShards(
-  file: File,
-  epochKey: EpochKey,
-  shardIndex: number = 0,
-): Promise<TieredShardResult> {
-  // Generate the three tiers
-  const tieredImages = await generateTieredImages(file);
-
-  try {
-    // Encrypt each tier with its corresponding key
-    const [thumbEncrypted, previewEncrypted, originalEncrypted] =
-      await Promise.all([
-        encryptShard(
-          tieredImages.thumbnail.data,
-          epochKey.thumbKey,
-          epochKey.epochId,
-          shardIndex,
-          ShardTier.THUMB,
-        ),
-        encryptShard(
-          tieredImages.preview.data,
-          epochKey.previewKey,
-          epochKey.epochId,
-          shardIndex,
-          ShardTier.PREVIEW,
-        ),
-        encryptShard(
-          tieredImages.original.data,
-          epochKey.fullKey,
-          epochKey.epochId,
-          shardIndex,
-          ShardTier.ORIGINAL,
-        ),
-      ]);
-
-    return {
-      thumbnail: {
-        encrypted: thumbEncrypted,
-        width: tieredImages.thumbnail.width,
-        height: tieredImages.thumbnail.height,
-        tier: ShardTier.THUMB,
-      },
-      preview: {
-        encrypted: previewEncrypted,
-        width: tieredImages.preview.width,
-        height: tieredImages.preview.height,
-        tier: ShardTier.PREVIEW,
-      },
-      original: {
-        encrypted: originalEncrypted,
-        width: tieredImages.original.width,
-        height: tieredImages.original.height,
-        tier: ShardTier.ORIGINAL,
-      },
-      originalWidth: tieredImages.originalWidth,
-      originalHeight: tieredImages.originalHeight,
-    };
-  } catch (error) {
-    if (error instanceof ThumbnailError) {
-      throw error;
-    }
-    throw new ThumbnailError('Failed to encrypt tiered shards', error);
   }
 }

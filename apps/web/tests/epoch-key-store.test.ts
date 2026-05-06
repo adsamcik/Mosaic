@@ -70,9 +70,8 @@ describe('Epoch Key Store (handle-based)', () => {
       expect(retrieved).not.toBeNull();
       expect(retrieved?.epochId).toBe(1);
       expect(retrieved?.epochHandleId).toBe('epch_one');
-      // The deprecated `epochSeed` placeholder must remain empty — the seed
-      // never crosses the worker boundary in the Slice 3+ contract.
-      expect(retrieved?.epochSeed.length).toBe(0);
+      expect(() => (retrieved as unknown as { epochSeed: Uint8Array }).epochSeed)
+        .toThrow('epochSeed is removed; use epochHandleId');
       expect(retrieved?.signKeypair.secretKey.length).toBe(0);
     });
 

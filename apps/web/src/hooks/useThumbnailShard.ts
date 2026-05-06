@@ -5,6 +5,7 @@ import {
   type PhotoLoadResult,
 } from '../lib/photo-service';
 import { createLogger } from '../lib/logger';
+import type { EpochHandleId } from '../workers/types';
 
 const log = createLogger('useThumbnailShard');
 
@@ -24,8 +25,8 @@ export interface UseThumbnailShardOptions {
   mimeType: string;
   /** Whether an embedded thumbnail exists */
   hasThumbnail: boolean;
-  /** Epoch read key for decryption */
-  epochReadKey: Uint8Array | undefined;
+  /** Epoch handle id for decryption */
+  epochReadKey: EpochHandleId | undefined;
   /** Whether to load full resolution shards */
   loadFullResolution?: boolean;
 }

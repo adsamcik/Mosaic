@@ -30,7 +30,7 @@ try {
     }
 
     $allowed = @{
-        "mosaic-domain" = @()
+        "mosaic-domain" = @("mosaic-media")
         "mosaic-crypto" = @("mosaic-domain")
         "mosaic-client" = @("mosaic-domain", "mosaic-crypto")
         "mosaic-media" = @("mosaic-domain")

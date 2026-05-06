@@ -1499,15 +1499,17 @@ These elements from the original design remain unchanged:
 
 | Surface | Frozen bytes / values | Lock citation | Status |
 |---------|-----------------------|---------------|--------|
-| AEAD domain-separation labels | `mosaic:l3-epoch-seed:v1`, `mosaic:l3-identity-seed:v1`, `mosaic:account-wrapped-data:v1`; bound into XChaCha20-Poly1305 AAD so cross-domain unwrap MUST fail | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::epoch_seed_aad_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::identity_seed_aad_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::account_data_aad_label_is_frozen`; `crates/mosaic-crypto/tests/envelope_crypto.rs::aad_secret_wrap_round_trips_only_with_matching_domain`; `crates/mosaic-client/tests/adr006_compositional_attack_blocked.rs::{adr006_unwrap_with_account_cannot_recover_epoch_seed,adr006_unwrap_with_account_cannot_recover_identity_seed,account_data_wrap_unwrap_round_trip}` | Frozen by R-C6 |
+| AEAD domain-separation labels | `mosaic:l3-epoch-seed:v1`, `mosaic:l3-identity-seed:v1`, `mosaic:account-wrapped-data:v1`, `mosaic:l2-account-key:v1`, `mosaic:l3-link-tier-key:v1`; bound into XChaCha20-Poly1305 AAD so cross-domain unwrap MUST fail | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::epoch_seed_aad_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::identity_seed_aad_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::account_data_aad_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::account_key_wrap_aad_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::link_tier_key_aad_label_is_frozen`; `crates/mosaic-crypto/tests/envelope_crypto.rs::aad_secret_wrap_round_trips_only_with_matching_domain`; `crates/mosaic-client/tests/adr006_compositional_attack_blocked.rs::{adr006_unwrap_with_account_cannot_recover_epoch_seed,adr006_unwrap_with_account_cannot_recover_identity_seed,account_data_wrap_unwrap_round_trip}` | Frozen by R-C6 (3 labels) + R-C6.3 (2 labels for v2 migration foundation) |
 | Shard envelope wire format | Magic `SGzk`; version `0x03`; 64-byte header layout; reserved bytes zero | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_envelope_magic_is_frozen_at_sgzk_four_bytes`; `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_envelope_version_is_frozen_at_0x03`; `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_envelope_header_total_length_is_frozen_at_64_bytes`; `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_envelope_reserved_bytes_are_zero_on_encode`; `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_envelope_reserved_bytes_are_zero_checked_on_decode`; `crates/mosaic-domain/tests/envelope_header.rs::shard_header_serializes_to_protocol_bytes`; `crates/mosaic-domain/tests/envelope_header.rs::shard_header_rejects_every_reserved_byte_offset` | Frozen by R-C5.x or earlier |
 | `ShardTier` discriminants | `thumb=1`, `preview=2`, `full=3` (`u8` values; Rust names `Thumbnail`, `Preview`, `Original`) | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::shard_tier_byte_discriminants_locked`; `crates/mosaic-domain/tests/envelope_header.rs::shard_tier_accepts_only_defined_protocol_values` | Frozen by R-C5.2 |
 | Manifest transcript context | `Mosaic_Manifest_v1` | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::manifest_transcript_context_is_frozen_at_mosaic_manifest_v1`; `crates/mosaic-domain/tests/manifest_transcript.rs::manifest_transcript_serializes_to_fixed_binary_vector` | Frozen by R-C5.2 / earlier |
 | Metadata sidecar context | `Mosaic_Metadata_v1` | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::metadata_sidecar_context_is_frozen_at_mosaic_metadata_v1`; `crates/mosaic-domain/tests/metadata_sidecar.rs::metadata_sidecar_serializes_to_fixed_canonical_golden_bytes` | Frozen by R-C5.2 / earlier |
 | KDF labels | `mosaic:root-key:v1`, `mosaic:auth-signing:v1`, `mosaic:tier:thumb:v1`, `mosaic:tier:preview:v1`, `mosaic:tier:full:v1`, `mosaic:tier:content:v1`, `mosaic:db-session-key:v1` | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::root_key_info_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::auth_signing_key_info_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::thumb_key_info_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::preview_key_info_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::full_key_info_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::content_key_info_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::db_session_key_info_label_is_frozen` | Frozen by G0.6, restored by G0.7 |
 | Auth & bundle contexts | `Mosaic_Auth_Challenge_v1`, `Mosaic_EpochBundle_v1` | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::auth_challenge_context_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::bundle_sign_context_label_is_frozen` | Frozen by G0.6, restored by G0.7 |
-| Metadata sidecar total byte cap | `MAX_SIDECAR_TOTAL_BYTES = 1_500_000` for complete canonical sidecar buffers | `crates/mosaic-domain/tests/sidecar_tag_table.rs::max_sidecar_total_bytes_is_frozen` | Frozen by R-M5.2.1 |
+| Metadata sidecar total byte cap | `MAX_SIDECAR_TOTAL_BYTES = 65_536` (64 KiB) for complete canonical sidecar buffers; tightened from R-M5.2.1's initial 1.5 MB before v1 freeze | `crates/mosaic-domain/tests/sidecar_tag_table.rs::max_sidecar_total_bytes_is_frozen`; `crates/mosaic-domain/tests/sidecar_tag_table.rs::worst_case_active_tag_sidecar_fits_within_cap` | Frozen by R-M5.2.2 |
 | Forbidden sidecar tag error contract | `SidecarTagStatus::Forbidden` dispatches to `MetadataSidecarError::ForbiddenTag`, not `ReservedTagNotPromoted` | `crates/mosaic-domain/tests/sidecar_tag_table.rs::lock_test_for_every_forbidden_tag` | Frozen by R-M5.2.1 |
+| Streaming shard envelope wire format | Magic `SGzk`; version `0x04`; 64-byte header layout: 4-byte magic + 1-byte version + 1-byte tier + 16-byte stream_salt + 4-byte frame_count u32 LE + 4-byte final_frame_size u32 LE + 34 reserved-zero bytes (no epoch/shard fields — those are bound separately via the streaming AAD); per-frame layout: nonce(24) ‖ ciphertext ‖ tag(16); 64 KiB frame size; deterministic per-frame nonce from `(stream_salt, frame_index)`; final-frame AAD binds frame_count + final_frame_size; v0x03 backward-compat via `decrypt_envelope` dispatcher routing on byte 4 | `crates/mosaic-domain/tests/late_v1_protocol_freeze_lock.rs::streaming_shard_envelope_v04_layout_is_frozen`; `::streaming_shard_envelope_version_is_frozen_at_0x04`; `::streaming_shard_stream_salt_is_frozen_at_16_bytes`; `::streaming_shard_frame_size_is_frozen_at_64_kib`; `::streaming_shard_reserved_bytes_are_zero_checked_on_decode`; `::streaming_shard_final_frame_size_zero_is_rejected`; `crates/mosaic-crypto/tests/envelope_crypto.rs` v0x04 replay tests | Frozen by R-C4 (commit `563e7d6`) |
+| Streaming AEAD frame labels | `mosaic:stream-frame-key:v1` (HKDF info for per-frame key derivation), `mosaic:stream-frame:v1` (AEAD AAD prefix for each frame); bound into XChaCha20-Poly1305 AAD so cross-context replay MUST fail | `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::stream_frame_key_aad_label_is_frozen`; `crates/mosaic-crypto/tests/kdf_and_auth_label_lock.rs::stream_frame_aad_label_is_frozen` | Frozen by R-C4 (commit `563e7d6`) |
 
 ---
 
@@ -1546,16 +1548,96 @@ than enforceable runtime invariants.
 | R-M5.2.1 | Sidecar amendment (tag 6 Forbidden + ForbiddenTag variant + cap lock) | Done | `3361039` |
 | G0.7 | Restore §11 register + un-consolidate lock tests + #[deprecated] | Done | `b66801b` |
 | G0.7.1 | G0.7 v2 review amendment | Done | `76f7a41` |
-| R-Cl1.2 follow-up phase-list drift | Phase array → discriminant-exhaustive iteration | Pending | — |
-| R-Cl1.2 follow-up legacy snapshot migration | Migrate stuck RetryWaiting+ManifestCommitUnknown | Pending | — |
 | R-C5.3 | Lock-test infra hardening | Done | `4804b20` |
-| R-C5.4 | UniFFI async fn + WASM skip_typescript + negative-test protocol | Pending | — |
+| R-C5.4 | UniFFI async fn + WASM skip_typescript + cousin-verb regex + negative-test protocol (combined with R-C6.2) | Done | `23fd6ef` |
 | R-C7 | Android bridge + CI repair | Done | `7cd144b` |
-| R-C6.1 | epoch-key-store epochSeed → epochHandleId migration | Pending | — |
-| R-C6.2 | Architecture guard cousin-verb regex coverage | Pending | — |
-| R-C6.3 | link_sharing + wrap_account_key empty-AAD migration | Pending | — |
+| R-C6.1 | epoch-key-store epochSeed → epochHandleId migration | Done | `ae6c778` |
+| R-C6.1.1 | R-C6.1 amendment (test helper tier=1, dead exports deleted, sync handle test expansion) | Done | `2200185` |
+| R-C6.2 | Architecture guard cousin-verb regex coverage (folded into R-C5.4) | Done | `23fd6ef` |
+| R-C6.3 | link_sharing + wrap_account_key AAD foundation (constants + lock tests; migration deferred to v2) | Done partial | `e3cd3e8` |
+| R-M5.2.2 | Tighten MAX_SIDECAR_TOTAL_BYTES 1.5 MB → 64 KiB before v1 freeze | Done | `ee63ed2` |
+| R-M5.2.2 collateral | uniffi/wasm sidecar boundary tests update for new cap | Done | `2319a71` |
 | M0 | Web/Android metadata stripping parity | Done | `101fe12` |
+| R-C5.5 | Architecture-guard allowlist audit (36 entries: 31 SAFE, 5 MIGRATE, 0 RENAME) | Done | `2d17c47` |
+| R-C5.5 hash record | Audit checkpoint hash recorded | Done | `b81a0ea` |
+| R-C5.5.1 | Mechanical rationale-quality CI guard (40-char floor, 7 banned phrases) | Done | `4ce5b22` |
+| R-C5.5 design memo | Opus-authored migration design SPEC for 3 design-dependent migrations | Done | `5356d20` |
+| R-C5.5 migrate-bundle (#4 + #5) | LinkKeysFfiResult.wrapping_key + OpenedBundleFfiResult.epoch_seed → handles | Done | `cbec1a6` |
+| R-C7-3 | Generate TS WorkerCryptoErrorCode from Rust enum (CI drift detection) | Done | `b196656` |
+| R-C5.5 Android hotfix + Migration #3 | Android compile fix (cbec1a6 collateral) + verify_and_open_bundle feature-gate | Done | `20d924f` |
+| R-C5.5 Migration #2 + bonus | derive_link_keys_from_raw_secret + derive_identity_from_raw_seed feature-gate | Done | `6701059` |
+| R-C5.5 Migration #1 | link_secret_for_url → link_url_token (BEARER-TOKEN-PERMITTED reclassification) | Done | `8558261` |
+| R-C5.5 Gradle hotfix | Task-graph fail-fast invariant against mixed test+production gradle invocations | Done | `1b66b19` |
+| Wave 2 ledger sweep | §11 cap tightening + AAD label expansion; §12.1 Wave 2 entries | Done | `d7bc035` |
+| Wave 4+R-C5.5 ledger sweep | §11 + §12.1 R-C5.5 migration arc reflected | Done | `6356b1a` |
+| SPEC-FfiSecretClassifiers v1 | Lock classifier vocabulary (SAFE / BEARER-TOKEN-PERMITTED / CORPUS-DRIVER-ONLY / MIGRATION-PENDING) | Done | `a0cfe94` |
+| R-Cl2 | AlbumSync DTO finalization with discriminant pinning | Done | `253998e` |
+| R-C3.1 | Telemetry counter ring buffer (ADR-018) | Done | `1f3f1a9` |
+| R-M3 + R-M4 | EXIF GPS + camera metadata extraction (sidecar tags 3/5/7/8/9 Active) | Done | `3d992a4` |
+| W-A7 + W-pre-2 | Web Rust-core boundary docs + OPFS snapshot compat SPEC | Done | `82066c7` |
+| Q-final-2 | iOS-readiness stub adapter + SPEC-IosReadinessAdapter | Done | `12f3f2c` |
+| P-U4 | UniFFI ClientErrorCode + lock-test surfaces | Done | `564b165` |
+| R-M1 + R-M2 | AVIF + HEIC metadata stripping via shared ISO-BMFF parser | Done | `1432334` |
+| Wave 5 follow-ups | Telemetry compile_fail + privacy invariant clarification + SPEC §4 drift | Done | `0704ef5` |
+| R-M1.1 | iloc offset rewrite for AVIF/HEIC strip (real-world decode-preservation) | Done | `f558afe` |
+| R-M6 + R-M7 | Video container inspect (MP4/MOV/WebM/Matroska) + sidecar tags 10-15 | Done | `e2b455c` |
+| P-W1 | WASM shard-tier surface (ShardTier enum + tier-aware encrypt/decrypt) | Done | `ca45f7e` |
+| P-U3 | UniFFI upload+sync reducers + manifest transcript exports | Done | `9976ece` |
+| R-M6.1 | stco/co64 chunk-offset rewrite for video strip (mirrors R-M1.1) | Done | `227d76a` |
 | R-M5.3 | Sidecar decoder + fuzz + forbidden-name defense | Pending | — |
+| R-C6.3-v2 | Migrate empty-AAD wraps to AAD-bound (v2 protocol break: snapshot version bump + LinkShareRecord migration) | Pending | — |
+| R-C7 follow-up TS error-codes codegen | Generate WorkerCryptoErrorCode from Rust enum (N3) | Done | `b196656` |
+| R-C5.5 Migration #4+#5 follow-ups | derive_link_keys + derive_identity feature-gates wired with prod-bridge stub paths | Done | (folded into `6701059`) |
+| R-C5.5 Migration #6 (Slice 0C) | Cross-client cryptographic vector parity (Android) | Done | `acabf28` |
+| R-C5.5 Migration #6.1 | Slice 0C residual hardening (manifest_secret_for_canonical_round_trip) | Done | `bd60b6c` |
+| Wave 5 ledger sweep | §11 + §12.1 + R-Cl2/R-C3.1 bisect-skip note + Q-final-2/W-A7/W-pre-2 | Done | `f20d19f` |
+| R-C4 | Streaming AEAD encryptor/decryptor + envelope v0x04 wire format (IRREVERSIBLE) | Done | `563e7d6` |
+| R-C5 | Strip parity hardening (98.32% line / 100% mutation kill / 37 fuzz fixtures / hard-timeout via mpsc::recv_timeout) | Done | `23c2124` |
+| P-W2 | WASM media inspect/strip/sidecar surface (7 exports: stripAvif/stripHeic/stripVideo/inspectImage/inspectVideoContainer/canonicalVideoSidecarBytes/+migration) | Done | `7c386e4` |
+| Wave 8 follow-ups | shard-cache.ts split + duplicate sidecar export removal + R-C5 hard-timeout via thread::spawn+mpsc | Done | `1549056` |
+| P-U1+P-U2+P-U6 | UniFFI media surface (8 exports + MediaFormat enum + uniffi_api_snapshot_lock_v1 + cross-wrapper parity) | Done | `db5b58b` |
+| A-pre-1+A1+A-CanonicalDimensions | Android foundation guards: ShellStubRecordMigration / MergedManifestInvariantsTest / TierDimensionsParityTest | Done | `2ca271f` |
+| ROADMAP.md authored | Single-source human-readable programme view (10 sections, ~400 lines) | Done | `57dc984` |
+| A2a+A2b+A4 | Android Room queue/staging/snapshot schemas + OkHttp client (TLS 1.2/1.3, ADR-019 cert pinning, no-body logging) | Done | `b0951e3` |
+| P-U5 | UniFFI streaming AEAD (StreamingEncryptor/Decryptor + EncryptedFrame + decrypt_envelope dispatcher; mirrors R-C4 v0x04) | Done | `0dd8f03` |
+| P-W3+P-W4+P-W5 | WASM video inspect (P-W3 covered by P-W2) + reducer locks + manifestTranscriptBytes + StreamingShardEncryptor/Decryptor + decryptEnvelope | Done | `57520ee` |
+| W-pre-1+W-I2 | Web upload-queue legacy IDB drainer (detect/drain/strand/reset + telemetry) + PNG/WebP/AVIF/HEIC strip parity (4 fixtures, JPEG flip deferred to W-I3) | Done | `abfab8b` |
+| Wave 8+9+10 ledger sweep | §11 R-C4 wire format + 2 streaming AEAD labels + §12.1 entries for waves 8-10 | Done | `5741446` |
+| v0x04 header layout correction | Correct phantom epoch/shard fields in §11 entry (actual layout: magic+version+tier+stream_salt+frame_count+final_frame_size+34 reserved) | Done | `eec5b45` |
+| w-canonical-tier-parity-gap | canonicalTierLayout exports (mosaic-wasm + mosaic-uniffi) + Android consumer | Done | `ab63478` |
+| wave10-cert-pinner-create-guard | MosaicHttpClient.create rejects empty CertificatePinner (security guard) | Done | `39ac090` |
+| B1 race-condition fix | Idempotency advisory locks via pg_advisory_xact_lock (production blocker fix v1) | Done | `904ab20` |
+| ci-wiring | rust-cutover-boundary into tests.yml + dotnet integration test lane | Done | `1de0329` |
+| a5-tus-large-file + a5-tus-resync | Tus session: streaming SHA-256, 2 GB int truncation, PATCH retry HEAD resync, 404/410 reset | Done | `d6c5bc3` |
+| W-S3 + w-canonical-tier-parity-web-consumer | Web upload encrypt cutover to handle API + thumbnail-generator consumes canonicalTierLayout (256/1024/4096 from WASM) | Done | `198fed4` |
+| A12 + A14 | SyncConfirmationLoop (decorrelated jitter) + PhotoPickerStagingAdapter | Done | `e9318f6` |
+| W-A5 + W-I3 | Feature flags (rustCoreUpload/Sync/Finalize) + JPEG strip parity verified (already-Rust-routed) | Done | `040eb80` |
+| W-S2 | Web download cutover to handle API (photo-service, album-download/metadata, shared-album-download) | Done | `c964714` |
+| B1 + B2 | Backend Idempotency-Key middleware + tieredShards across albums/share-link endpoints | Done | `1d13ae2` |
+| w-a2-fix-concurrency | RustUploadAdapter + RustSyncAdapter serialize concurrent submits via pendingTransition chain | Done | `99fb0e5` |
+| W-V1 + W-I1 | Web image + video container inspect routed through Rust core | Done | `51982bb` |
+| W-A1 | Web upload + sync adapter ports (UploadAdapterPort, SyncAdapterPort, WASM-backed impls) | Done | `2d85de2` |
+| Wave 11 batch 1 follow-ups | peekEnvelopeHeader tier+frame validation; canonical_tier_dimensions_pin (literal 256/1024/4096); UnknownEnvelopeVersion error code 106; finalize/SNAPSHOT_VERSION docs | Done | `6b66746` |
+| W-A2 + W-A3 | RustUploadAdapter + RustSyncAdapter (stateful, IDB persistence, effect-emitting) | Done | `f287760` |
+| B3 + B4 + B5 | Backend manifest version semantics + integration test corpus + ADR-022 finalization shape | Done | `2e77202` |
+| b1-fix-nested-tx | B1 advisory lock moved to out-of-band PG connection (PG production blocker fix v2) + Testcontainers integration tests | Done | `b3f0aec` |
+| Wave 9 follow-ups | uniffi-parity-blind-spot structural rule + MosaicApplication runCatching + TierDimensionsParityTest no-skip (subsumed) + uniffi v1 baseline hash lock | Done | `aa0e4b1` |
+| W-S4 | Web boundary-guard sweep + retired libs/crypto modules deletion (11 deleted, 3 deprecated, +rust-cutover-boundary guard) | Done | `29c1c38` |
+| Q-final-1 | Cross-platform parity test harness (crates/mosaic-parity-tests, 6 categories, scripts/run-parity-tests.ps1) | Done | `24d8f46` |
+| W-A4 | Web manifest finalization cutover (manifest-finalization.ts, RustUploadAdapter integration, Tus + finalize sequence) | Done | `24d0d43` |
+| A8 | Android ShardEncryptionWorker (UniFFI handle API + streaming AEAD threshold >256KiB + idempotency cache) | Done | `f0cdde5` |
+| A10 + A11 | Android ManifestCommitClient + AlbumSyncFetcher (kotlinx.serialization DTOs, contract snapshot parity tests) | Done | `cb0dfab` |
+| Wave 5/7/10 follow-ups bundle | bisect pair note, gps error code, iloc cm tests, manifest_transcript_bytes_uniffi error variant, PII pattern alignment, aliased DTO twin parity, P-W6 surface lock, R-C5 SPEC update | Done | `ebefd73` |
+| A3 + A5a + A5b + A6 + A7 | Android foundation: AppPrivateStagingManager + Tus client + Tus session + media tier generator + video frame extractor | Done | `9733c35` |
+| Wave 13 BLOCKERS | Idempotency-Key parity (Rust core canonical) + 409 sub-type via Idempotency-Replayed header | Done | `e183bb0` |
+| A16 | Android privacy audit automation (PrivacyAuditor + 8 PII patterns + daily WorkManager) | Done | `641649a` |
+| A15 + A17 | Android foreground service + manifest invariants permission flip | Done | `d188eed` |
+| A13a + A13b + A13c | Android reducer loop + crash-replay + retry budgets + cancellation | Done | `8256740` |
+| W-A6 | Web Playwright E2E coverage (7 scenarios + 5 fixtures) | Done | `4a1729f` |
+| A18a-g | Android E2E lifecycle suite (7 instrumented tests + multi-API matrix doc) | Done | `d509dc6` |
+| Wave 13 mediums + Wave 14 fixes + deferred bundle | A8 streaming, A9 retry classification, Q-final-1 WASM lane, web finalize 401/403/5xx, A12 backoff jitter, A13 cancel race CAS, W-A6 strict assertions, R-C8 share-link URL, R-M5.3 UI, P-W2 video tier (salvaged) | Done | `be7c6da` |
+| Q-final-3 + Q-final-4 + Q-final-5 | E2E coverage matrix + performance budgets + final freeze re-declaration (v1 IS FROZEN) | Done | `d6aa485` |
+| Wave 11+12+13+14 ledger sweep | §12.1 entries for all waves 11-14 commits | Done | (this commit) |
 
 | Work item | Scope | Status |
 |-----------|-------|--------|

@@ -4,16 +4,18 @@ import type { PhotoMeta } from '../../workers/types';
 const mocks = vi.hoisted(() => ({
   downloadShardViaShareLink: vi.fn(),
   decryptShardWithTierKey: vi.fn(),
-  peekHeader: vi.fn(),
-  verifyShard: vi.fn(),
+  decryptShardWithLinkTierHandle: vi.fn(),
+  peekEnvelopeHeader: vi.fn(),
+  verifyShardIntegrity: vi.fn(),
 }));
 
 vi.mock('../crypto-client', () => ({
   getCryptoClient: vi.fn(() =>
     Promise.resolve({
       decryptShardWithTierKey: mocks.decryptShardWithTierKey,
-      peekHeader: mocks.peekHeader,
-      verifyShard: mocks.verifyShard,
+      decryptShardWithLinkTierHandle: mocks.decryptShardWithLinkTierHandle,
+      peekEnvelopeHeader: mocks.peekEnvelopeHeader,
+      verifyShardIntegrity: mocks.verifyShardIntegrity,
     }),
   ),
 }));
@@ -54,11 +56,11 @@ function createPhoto(overrides: Partial<PhotoMeta> = {}): PhotoMeta {
 describe('createShareLinkOriginalResolver', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.verifyShard.mockResolvedValue(true);
+    mocks.verifyShardIntegrity.mockResolvedValue(true);
   });
 
   it('downloads, verifies, decrypts, and concatenates explicit original shards', async () => {
-    const tierKey = new Uint8Array(32).fill(3);
+    const tierKey = 'link-tier-handle-3' as never;
     const encryptedA = new Uint8Array([10]);
     const encryptedB = new Uint8Array([20]);
     const chunkA = new Uint8Array([1, 2]);
@@ -66,7 +68,7 @@ describe('createShareLinkOriginalResolver', () => {
     mocks.downloadShardViaShareLink
       .mockResolvedValueOnce(encryptedA)
       .mockResolvedValueOnce(encryptedB);
-    mocks.decryptShardWithTierKey
+    mocks.decryptShardWithLinkTierHandle
       .mockResolvedValueOnce(chunkA)
       .mockResolvedValueOnce(chunkB);
 
@@ -80,7 +82,7 @@ describe('createShareLinkOriginalResolver', () => {
     const result = await resolver(
       createPhoto({
         originalShardIds: ['original-a', 'original-b'],
-        originalShardHashes: ['hash-a', 'hash-b'],
+        originalShardHashes: ['A'.repeat(43), 'A'.repeat(43)],
       }),
     );
 
@@ -96,31 +98,31 @@ describe('createShareLinkOriginalResolver', () => {
       'original-b',
       'grant-token',
     );
-    expect(mocks.verifyShard).toHaveBeenNthCalledWith(
+    expect(mocks.verifyShardIntegrity).toHaveBeenNthCalledWith(
       1,
       encryptedA,
-      'hash-a',
+      new Uint8Array(32),
     );
-    expect(mocks.verifyShard).toHaveBeenNthCalledWith(
+    expect(mocks.verifyShardIntegrity).toHaveBeenNthCalledWith(
       2,
       encryptedB,
-      'hash-b',
+      new Uint8Array(32),
     );
-    expect(mocks.decryptShardWithTierKey).toHaveBeenNthCalledWith(
+    expect(mocks.decryptShardWithLinkTierHandle).toHaveBeenNthCalledWith(
       1,
+      tierKey,
       encryptedA,
-      tierKey,
     );
-    expect(mocks.decryptShardWithTierKey).toHaveBeenNthCalledWith(
+    expect(mocks.decryptShardWithLinkTierHandle).toHaveBeenNthCalledWith(
       2,
-      encryptedB,
       tierKey,
+      encryptedB,
     );
     expect(result).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
   });
 
   it('falls back to legacy shardIds by selecting only tier-3 shards', async () => {
-    const tierKey = new Uint8Array(32).fill(3);
+    const tierKey = 'link-tier-handle-3' as never;
     const encryptedThumb = new Uint8Array([1]);
     const encryptedOriginalA = new Uint8Array([2]);
     const encryptedOriginalB = new Uint8Array([3]);
@@ -128,11 +130,11 @@ describe('createShareLinkOriginalResolver', () => {
       .mockResolvedValueOnce(encryptedThumb)
       .mockResolvedValueOnce(encryptedOriginalA)
       .mockResolvedValueOnce(encryptedOriginalB);
-    mocks.peekHeader
-      .mockResolvedValueOnce({ epochId: 7, shardId: 1, tier: 1 })
-      .mockResolvedValueOnce({ epochId: 7, shardId: 2, tier: 3 })
-      .mockResolvedValueOnce({ epochId: 7, shardId: 3, tier: 3 });
-    mocks.decryptShardWithTierKey
+    mocks.peekEnvelopeHeader
+      .mockResolvedValueOnce({ version: 0x03, magic: 'SGzk', epoch: 7, shard: 1, tier: 1, nonce: new Uint8Array(24) })
+      .mockResolvedValueOnce({ version: 0x03, magic: 'SGzk', epoch: 7, shard: 2, tier: 3, nonce: new Uint8Array(24) })
+      .mockResolvedValueOnce({ version: 0x03, magic: 'SGzk', epoch: 7, shard: 3, tier: 3, nonce: new Uint8Array(24) });
+    mocks.decryptShardWithLinkTierHandle
       .mockResolvedValueOnce(new Uint8Array([8]))
       .mockResolvedValueOnce(new Uint8Array([9]));
 
@@ -146,21 +148,21 @@ describe('createShareLinkOriginalResolver', () => {
       createPhoto({
         originalShardIds: [],
         shardIds: ['thumb', 'original-a', 'original-b'],
-        shardHashes: ['hash-thumb', 'hash-a', 'hash-b'],
+        shardHashes: ['A'.repeat(43), 'A'.repeat(43), 'A'.repeat(43)],
       }),
     );
 
     expect(mocks.downloadShardViaShareLink).toHaveBeenCalledTimes(3);
-    expect(mocks.verifyShard).toHaveBeenCalledTimes(3);
-    expect(mocks.decryptShardWithTierKey).toHaveBeenNthCalledWith(
+    expect(mocks.verifyShardIntegrity).toHaveBeenCalledTimes(3);
+    expect(mocks.decryptShardWithLinkTierHandle).toHaveBeenNthCalledWith(
       1,
+      tierKey,
       encryptedOriginalA,
-      tierKey,
     );
-    expect(mocks.decryptShardWithTierKey).toHaveBeenNthCalledWith(
+    expect(mocks.decryptShardWithLinkTierHandle).toHaveBeenNthCalledWith(
       2,
-      encryptedOriginalB,
       tierKey,
+      encryptedOriginalB,
     );
     expect(result).toEqual(new Uint8Array([8, 9]));
   });
@@ -183,7 +185,7 @@ describe('createShareLinkOriginalResolver', () => {
 
   it('fails legacy downloads when no tier-3 shards are available', async () => {
     mocks.downloadShardViaShareLink.mockResolvedValueOnce(new Uint8Array([1]));
-    mocks.peekHeader.mockResolvedValueOnce({ epochId: 7, shardId: 1, tier: 2 });
+    mocks.peekEnvelopeHeader.mockResolvedValueOnce({ version: 0x03, magic: 'SGzk', epoch: 7, shard: 1, tier: 2, nonce: new Uint8Array(24) });
 
     const resolver = createShareLinkOriginalResolver({
       linkId: 'share-link',

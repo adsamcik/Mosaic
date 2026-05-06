@@ -17,9 +17,11 @@ import {
   it,
   vi,
   beforeEach,
+  beforeAll,
   afterEach,
   type Mock,
 } from 'vitest';
+import { initializeRustWasmForTests } from '../wasm-test-init';
 
 // Mock all dependencies before importing session
 vi.mock('../../src/lib/api', async () => {
@@ -163,6 +165,8 @@ async function getSessionModule() {
   }));
 
   // Import fresh versions after reset
+  const { initializeRustWasmForTests } = await import('../wasm-test-init');
+  await initializeRustWasmForTests();
   const sessionModule = await import('../../src/lib/session');
   const cryptoClient = await import('../../src/lib/crypto-client');
   const dbClient = await import('../../src/lib/db-client');
@@ -194,6 +198,10 @@ async function getSessionModule() {
 }
 
 describe('session', () => {
+  beforeAll(async () => {
+    await initializeRustWasmForTests();
+  });
+
   const mockUser: User = {
     id: 'user-123',
     authSub: 'testuser@example.com',

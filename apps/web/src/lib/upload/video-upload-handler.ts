@@ -2,6 +2,7 @@ import { createLogger } from '../logger';
 import { getCryptoClient } from '../crypto-client';
 import { extractVideoFrame } from '../video-frame-extractor';
 import { taskIdentity } from '../upload-errors';
+import { encryptUploadShardWithEpochHandle } from './encrypt-upload-shard';
 import type { TieredShardIds } from '../../workers/types';
 import type {
   UploadTask,
@@ -84,6 +85,18 @@ export async function processVideoUpload(
   if (frameResult.metadata.codec) {
     videoMeta.videoCodec = frameResult.metadata.codec;
   }
+  if (frameResult.metadata.container) {
+    videoMeta.videoContainer = frameResult.metadata.container;
+  }
+  if (frameResult.metadata.frameRateFps !== undefined) {
+    videoMeta.frameRateFps = frameResult.metadata.frameRateFps;
+  }
+  if (frameResult.metadata.orientation) {
+    videoMeta.videoOrientation = frameResult.metadata.orientation;
+  }
+  if (frameResult.metadata.sidecarTags) {
+    videoMeta.metadataSidecarTags = frameResult.metadata.sidecarTags;
+  }
   task.videoMetadata = videoMeta;
 
   // Also set top-level fields used by manifest-service
@@ -95,11 +108,7 @@ export async function processVideoUpload(
   task.thumbhash = frameResult.thumbhash;
 
   try {
-    // Import crypto library for direct shard encryption with tier keys
-    const { deriveTierKeys, encryptShard, ShardTier } = await import('@mosaic/crypto');
-
-    // Derive tier keys from epochSeed (stored as readKey)
-    const tierKeys = deriveTierKeys(task.readKey);
+    const crypto = await getCryptoClient();
 
     // Step 2: Encrypt and upload thumbnail shard (10-20% progress)
     task.currentAction = 'encrypting';
@@ -114,12 +123,12 @@ export async function processVideoUpload(
       ...taskIdentity(task),
       thumbBytes: thumbData.byteLength,
     });
-    const thumbEncrypted = await encryptShard(
+    const thumbEncrypted = await encryptUploadShardWithEpochHandle(
+      crypto,
+      task.epochHandleId,
       thumbData,
-      tierKeys.thumbKey,
-      task.epochId,
+      1,
       0,
-      ShardTier.THUMB,
     );
 
     task.currentAction = 'uploading';
@@ -128,7 +137,7 @@ export async function processVideoUpload(
 
     const thumbShardId = await ctx.tusUpload(
       task.albumId,
-      thumbEncrypted.ciphertext,
+      thumbEncrypted.envelopeBytes,
       thumbEncrypted.sha256,
       0,
     );
@@ -142,6 +151,8 @@ export async function processVideoUpload(
       shardId: thumbShardId,
       sha256: thumbEncrypted.sha256,
       tier: 1,
+      contentLength: thumbEncrypted.envelopeBytes.byteLength,
+      envelopeVersion: 3,
     });
     task.progress = 0.2;
     ctx.onProgress?.(task);
@@ -160,12 +171,12 @@ export async function processVideoUpload(
       task.currentAction = 'encrypting';
       ctx.onProgress?.(task);
 
-      const chunkEncrypted = await encryptShard(
+      const chunkEncrypted = await encryptUploadShardWithEpochHandle(
+        crypto,
+        task.epochHandleId,
         new Uint8Array(chunk),
-        tierKeys.fullKey,
-        task.epochId,
+        3,
         i,
-        ShardTier.ORIGINAL,
       );
 
       // Upload via Tus
@@ -174,7 +185,7 @@ export async function processVideoUpload(
 
       const chunkShardId = await ctx.tusUpload(
         task.albumId,
-        chunkEncrypted.ciphertext,
+        chunkEncrypted.envelopeBytes,
         chunkEncrypted.sha256,
         i,
       );
@@ -184,6 +195,8 @@ export async function processVideoUpload(
         shardId: chunkShardId,
         sha256: chunkEncrypted.sha256,
         tier: 3,
+        contentLength: chunkEncrypted.envelopeBytes.byteLength,
+        envelopeVersion: 3,
       };
       task.completedShards.push(completedShard);
       originalShards.push(completedShard);
@@ -236,6 +249,7 @@ export async function processVideoUpload(
       thumbHeight: task.thumbHeight,
       originalWidth: task.originalWidth,
       originalHeight: task.originalHeight,
+      tieredShards,
       ...(task.videoMetadata ? { videoMetadata: task.videoMetadata } : {}),
     };
     if (task.thumbnailBase64) persistedUpdate.thumbnailBase64 = task.thumbnailBase64;

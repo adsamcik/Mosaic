@@ -83,6 +83,7 @@ vi.mock('../src/lib/crypto-client', () => ({
     Promise.resolve({
       encryptManifestWithEpoch: mocks.encryptManifestWithEpoch,
       signManifestWithEpoch: mocks.signManifestWithEpoch,
+      finalizeIdempotencyKey: async (jobId: string) => `mosaic-finalize-${jobId}`,
     }),
   ),
 }));
@@ -133,6 +134,7 @@ function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 function fixtureTask(fixture: ContractFixture): UploadTask {
   return {
     id: fixture.androidHandoff.assetId,
+    uploadJobId: fixture.androidHandoff.uploadJobId,
     file: new File(['opaque local bytes'], 'opaque-local-asset.bin', {
       type: 'application/octet-stream',
     }),
@@ -147,6 +149,8 @@ function fixtureTask(fixture: ContractFixture): UploadTask {
       shardId: shard.shardId,
       sha256: shard.sha256,
       tier: shard.tier,
+      contentLength: 1,
+      envelopeVersion: 3,
     })),
     retryCount: 0,
     lastAttemptAt: 0,
@@ -213,16 +217,29 @@ describe('Android manual upload cross-client contract', () => {
       sha256: 'encrypted-manifest-digest-is-client-local',
     });
     mocks.signManifestWithEpoch.mockResolvedValue(signature);
-    mocks.createManifest.mockResolvedValue({
-      id: fixture.clientCore.manifestReceipt.manifestId,
-      version: fixture.clientCore.manifestReceipt.version,
-    });
+    const finalizeFetch = vi.fn(async () =>
+      new Response(JSON.stringify({
+        protocolVersion: 1,
+        manifestId: fixture.clientCore.manifestReceipt.manifestId,
+        metadataVersion: fixture.clientCore.manifestReceipt.version,
+        createdAt: '2026-05-06T00:00:00.000Z',
+        tieredShards: fixture.clientCore.completedShards.map((shard) => ({
+          shardId: shard.shardId,
+          tier: shard.tier,
+          shardIndex: shard.index,
+          sha256: shard.sha256,
+          contentLength: 1,
+          envelopeVersion: 3,
+        })),
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    );
 
     await createManifestForUpload(
       fixtureTask(fixture),
       fixture.backendManifestRequest.shardIds,
       fixtureEpochKey(fixture),
       fixtureTieredShards(fixture),
+      { fetchImpl: finalizeFetch },
     );
 
     // Slice 4 — manifest sign/verify routes through the Rust epoch handle.
@@ -256,21 +273,38 @@ describe('Android manual upload cross-client contract', () => {
 
     expect(mocks.signManifestWithEpoch).toHaveBeenCalledWith(
       `test-epoch-handle-${fixture.clientCore.epochId}`,
-      encryptedMeta,
+      expect.any(Uint8Array),
     );
-    expect(mocks.createManifest).toHaveBeenCalledWith({
+    expect(mocks.signManifestWithEpoch.mock.calls[0][1]).not.toEqual(encryptedMeta);
+    expect(finalizeFetch).toHaveBeenCalledTimes(1);
+    const finalizeCalls = finalizeFetch.mock.calls as unknown as Array<[string, RequestInit]>;
+    expect(finalizeCalls[0]![1].headers).toEqual(expect.objectContaining({
+      'Idempotency-Key': `mosaic-finalize-${fixture.androidHandoff.uploadJobId}`,
+    }));
+    const backendRequest = JSON.parse(String(finalizeCalls[0]![1].body));
+    expect(backendRequest).toMatchObject({
+      protocolVersion: 1,
       albumId: fixture.backendManifestRequest.albumId,
       encryptedMeta: fixture.backendManifestRequest.encryptedMetaBase64,
       signature: fixture.backendManifestRequest.signature,
       signerPubkey: fixture.backendManifestRequest.signerPubkey,
-      shardIds: fixture.backendManifestRequest.shardIds,
-      tieredShards: fixture.backendManifestRequest.tieredShards,
+      shardIds: [],
+      tieredShards: fixture.clientCore.completedShards.map((shard) => ({
+        shardId: shard.shardId,
+        tier: shard.tier,
+        shardIndex: shard.index,
+        sha256: shard.sha256,
+        contentLength: 1,
+        envelopeVersion: 3,
+      })),
     });
 
-    const backendRequest = mocks.createManifest.mock.calls[0][0];
     expect(Object.keys(backendRequest).sort()).toEqual([
       'albumId',
+      'assetType',
       'encryptedMeta',
+      'encryptedMetaSidecar',
+      'protocolVersion',
       'shardIds',
       'signature',
       'signerPubkey',
