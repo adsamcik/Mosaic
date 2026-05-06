@@ -8,6 +8,10 @@
  * ZK-safe: reasons returned are short, generic strings ("waiting for Wi-Fi",
  * "battery API unavailable, falling back"). They never contain job IDs,
  * album IDs, scope keys, or any other secret-adjacent value. Safe to log.
+ *
+ * Defense-in-depth: structurally invalid `window` schedules are released
+ * instead of refused. Refusing an invalid, content-stable window without a
+ * max-delay would brick the job across every future evaluation.
  */
 
 export type ScheduleKind =
@@ -145,13 +149,13 @@ function evaluateWindow(schedule: DownloadSchedule, ctx: ScheduleContext): Sched
   const start = schedule.windowStartHour;
   const end = schedule.windowEndHour;
   if (start === undefined || end === undefined) {
-    return wait('window misconfigured', null);
+    return go('schedule invalid; releasing');
   }
   if (!isWindowHourValid(start) || !isWindowHourValid(end)) {
-    return wait('window misconfigured', null);
+    return go('schedule invalid; releasing');
   }
   if (start === end) {
-    return wait('window empty', null);
+    return go('schedule invalid; releasing');
   }
   const hour = ctx.localHour;
   // Same-day window [start, end). Wraps midnight when start > end.
