@@ -764,7 +764,7 @@ pub fn protocol_version() -> String {
 /// UniFFI records and `#[uniffi::export]` functions in this crate.
 #[must_use]
 pub const fn uniffi_api_snapshot() -> &'static str {
-    "mosaic-uniffi ffi-spike:v10 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt)->EpochKeyHandleResult{code,handle,epoch_id,wrapped_epoch_seed,sign_public_key} metadata(canonical/encrypt,media-canonical/media-encrypt,manifest-transcript) media(inspect/plan) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance/upload-advance-uniffi,sync-init/sync-advance/sync-advance-uniffi) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)"
+    "mosaic-uniffi ffi-spike:v10 protocol_version()->String parse_envelope_header(bytes)->HeaderResult progress(total,cancel_after)->ProgressResult account(unlock/status/close) identity(create/open/close/pubkeys/sign,from-raw-seed) epoch(create/open/status/close/encrypt/decrypt/legacy-raw-key-decrypt)->EpochKeyHandleResult{code,handle,epoch_id,wrapped_epoch_seed,sign_public_key} metadata(canonical/encrypt,media-canonical/media-encrypt,manifest-transcript) media(inspect/plan/canonical-tier) vectors(crypto-domain)->CryptoDomainGoldenVectorSnapshot client-core(state-machine-snapshot,upload-init/upload-advance/upload-advance-uniffi,sync-init/sync-advance/sync-advance-uniffi) cross-client-vectors(derive-link-keys,derive-identity-from-raw-seed,build-auth-challenge-transcript,sign-auth-challenge-raw-seed,verify-auth-challenge-signature,verify-and-open-bundle-recipient-seed,decrypt-content-raw-key)"
 }
 
 const CLIENT_CORE_STATE_MACHINE_SURFACE: &str = "client-core-state-machines:v1 \
@@ -1201,6 +1201,23 @@ pub fn plan_media_tier_layout(width: u32, height: u32) -> MediaTierLayoutResult 
             preview: empty_media_tier_dimensions(),
             original: empty_media_tier_dimensions(),
         },
+    }
+}
+
+/// Returns the canonical media tier dimensions shared by web and native clients.
+#[uniffi::export]
+#[must_use]
+pub fn canonical_tier_layout() -> MediaTierLayoutResult {
+    let layout = mosaic_media::plan_tier_layout(
+        mosaic_media::ORIGINAL_MAX_DIMENSION,
+        mosaic_media::ORIGINAL_MAX_DIMENSION,
+    )
+    .expect("canonical original dimensions must be valid");
+    MediaTierLayoutResult {
+        code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+        thumbnail: media_tier_dimensions(layout.thumbnail),
+        preview: media_tier_dimensions(layout.preview),
+        original: media_tier_dimensions(layout.original),
     }
 }
 

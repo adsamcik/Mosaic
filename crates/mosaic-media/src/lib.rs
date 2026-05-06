@@ -30,6 +30,8 @@ pub const MAX_IMAGE_PIXELS: u32 = 32 * 1024 * 1024;
 pub const THUMBNAIL_MAX_DIMENSION: u32 = 256;
 /// Maximum canonical preview tier edge length in pixels.
 pub const PREVIEW_MAX_DIMENSION: u32 = 1024;
+/// Maximum canonical original tier edge length in pixels for cross-platform parity locks.
+pub const ORIGINAL_MAX_DIMENSION: u32 = 4096;
 /// Defense-in-depth cap on the number of TIFF IFD entries scanned while
 /// looking for the EXIF orientation tag. Real-world cameras rarely exceed
 /// a few dozen IFD entries; the TIFF on-wire ceiling is `u16::MAX` (65 535)

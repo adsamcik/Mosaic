@@ -393,6 +393,7 @@ export pub fn inspect_media_image(bytes: Vec<u8>) -> MediaMetadataResult
 export pub fn inspect_image(input_bytes: Vec<u8>) -> ImageInspectResult
 export pub fn inspect_video_container(input_bytes: Vec<u8>) -> VideoInspectResult
 export pub fn plan_media_tier_layout(width: u32, height: u32) -> MediaTierLayoutResult
+export pub fn canonical_tier_layout() -> MediaTierLayoutResult
 export pub fn canonical_media_metadata_sidecar_bytes( album_id: Vec<u8>, photo_id: Vec<u8>, epoch_id: u32, media_bytes: Vec<u8>, ) -> BytesResult
 export pub fn canonical_video_sidecar_bytes( album_id: Vec<u8>, photo_id: Vec<u8>, epoch_id: u32, input_bytes: Vec<u8>, ) -> BytesResult
 export pub fn encrypt_media_metadata_sidecar_with_epoch_handle( handle: u64, album_id: Vec<u8>, photo_id: Vec<u8>, epoch_id: u32, media_bytes: Vec<u8>, shard_index: u32, ) -> EncryptedShardResult

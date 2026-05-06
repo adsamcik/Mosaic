@@ -151,6 +151,23 @@ pub struct VideoInspectResult {
     pub orientation: String,
 }
 
+/// Rust-side WASM facade record for one canonical media tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MediaTierDimensions {
+    pub tier: u8,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Rust-side WASM facade record for canonical media tier dimensions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MediaTierLayoutResult {
+    pub code: u16,
+    pub thumbnail: MediaTierDimensions,
+    pub preview: MediaTierDimensions,
+    pub original: MediaTierDimensions,
+}
+
 impl fmt::Debug for StripResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StripResult")
@@ -965,6 +982,78 @@ impl JsStripResult {
     #[must_use]
     pub fn removed_metadata_count(&self) -> u32 {
         self.removed_metadata_count
+    }
+}
+
+/// WASM-bindgen class for one canonical media tier.
+#[wasm_bindgen(js_name = MediaTierDimensions)]
+pub struct JsMediaTierDimensions {
+    tier: u8,
+    width: u32,
+    height: u32,
+}
+
+#[wasm_bindgen(js_class = MediaTierDimensions)]
+impl JsMediaTierDimensions {
+    /// Shard tier protocol byte.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn tier(&self) -> u8 {
+        self.tier
+    }
+
+    /// Canonical max width for this tier.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Canonical max height for this tier.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
+/// WASM-bindgen class for canonical media tier dimensions.
+#[wasm_bindgen(js_name = MediaTierLayoutResult)]
+pub struct JsMediaTierLayoutResult {
+    code: u16,
+    thumbnail: MediaTierDimensions,
+    preview: MediaTierDimensions,
+    original: MediaTierDimensions,
+}
+
+#[wasm_bindgen(js_class = MediaTierLayoutResult)]
+impl JsMediaTierLayoutResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Canonical thumbnail tier dimensions.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn thumbnail(&self) -> JsMediaTierDimensions {
+        js_media_tier_dimensions_from_rust(self.thumbnail)
+    }
+
+    /// Canonical preview tier dimensions.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn preview(&self) -> JsMediaTierDimensions {
+        js_media_tier_dimensions_from_rust(self.preview)
+    }
+
+    /// Canonical original tier dimensions.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn original(&self) -> JsMediaTierDimensions {
+        js_media_tier_dimensions_from_rust(self.original)
     }
 }
 
@@ -3379,6 +3468,45 @@ fn video_inspect_result_from_media(result: mosaic_media::VideoInspectResult) -> 
     }
 }
 
+const fn media_tier_dimensions(dimensions: mosaic_media::TierDimensions) -> MediaTierDimensions {
+    MediaTierDimensions {
+        tier: dimensions.tier.to_byte(),
+        width: dimensions.width,
+        height: dimensions.height,
+    }
+}
+
+fn canonical_tier_layout_result() -> MediaTierLayoutResult {
+    let layout = mosaic_media::plan_tier_layout(
+        mosaic_media::ORIGINAL_MAX_DIMENSION,
+        mosaic_media::ORIGINAL_MAX_DIMENSION,
+    )
+    .expect("canonical original dimensions must be valid");
+    MediaTierLayoutResult {
+        code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+        thumbnail: media_tier_dimensions(layout.thumbnail),
+        preview: media_tier_dimensions(layout.preview),
+        original: media_tier_dimensions(layout.original),
+    }
+}
+
+fn js_media_tier_dimensions_from_rust(dimensions: MediaTierDimensions) -> JsMediaTierDimensions {
+    JsMediaTierDimensions {
+        tier: dimensions.tier,
+        width: dimensions.width,
+        height: dimensions.height,
+    }
+}
+
+fn js_media_tier_layout_from_rust(result: MediaTierLayoutResult) -> JsMediaTierLayoutResult {
+    JsMediaTierLayoutResult {
+        code: result.code,
+        thumbnail: result.thumbnail,
+        preview: result.preview,
+        original: result.original,
+    }
+}
+
 fn js_strip_result_from_rust(result: StripResult) -> JsStripResult {
     JsStripResult {
         code: result.code,
@@ -3421,6 +3549,19 @@ fn js_video_inspect_result_from_rust(result: VideoInspectResult) -> JsVideoInspe
         frame_rate_fps: result.frame_rate_fps,
         orientation: result.orientation,
     }
+}
+
+/// Returns the canonical media tier dimensions shared by web and native clients.
+#[must_use]
+pub fn canonical_tier_layout() -> MediaTierLayoutResult {
+    canonical_tier_layout_result()
+}
+
+/// Returns the canonical media tier dimensions through WASM.
+#[wasm_bindgen(js_name = canonicalTierLayout)]
+#[must_use]
+pub fn canonical_tier_layout_js() -> JsMediaTierLayoutResult {
+    js_media_tier_layout_from_rust(canonical_tier_layout_result())
 }
 
 /// Strips JPEG metadata through the shared Rust media parser.

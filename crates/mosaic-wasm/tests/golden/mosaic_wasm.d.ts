@@ -427,6 +427,52 @@ export class LinkTierHandleResult {
 }
 
 /**
+ * WASM-bindgen class for one canonical media tier.
+ */
+export class MediaTierDimensions {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Canonical max height for this tier.
+     */
+    readonly height: number;
+    /**
+     * Shard tier protocol byte.
+     */
+    readonly tier: number;
+    /**
+     * Canonical max width for this tier.
+     */
+    readonly width: number;
+}
+
+/**
+ * WASM-bindgen class for canonical media tier dimensions.
+ */
+export class MediaTierLayoutResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * Canonical original tier dimensions.
+     */
+    readonly original: MediaTierDimensions;
+    /**
+     * Canonical preview tier dimensions.
+     */
+    readonly preview: MediaTierDimensions;
+    /**
+     * Canonical thumbnail tier dimensions.
+     */
+    readonly thumbnail: MediaTierDimensions;
+}
+
+/**
  * WASM-bindgen class for progress events.
  */
 export class ProgressEvent {
@@ -697,6 +743,11 @@ export function buildAuthChallengeTranscript(username: string, timestamp_ms: big
  * Builds canonical metadata sidecar bytes through WASM.
  */
 export function canonicalMetadataSidecarBytes(album_id: Uint8Array, photo_id: Uint8Array, epoch_id: number, encoded_fields: Uint8Array): BytesResult;
+
+/**
+ * Returns the canonical media tier dimensions through WASM.
+ */
+export function canonicalTierLayout(): MediaTierLayoutResult;
 
 /**
  * Builds canonical video metadata sidecar bytes through WASM.
@@ -1037,6 +1088,8 @@ export interface InitOutput {
     readonly __wbg_headerresult_free: (a: number, b: number) => void;
     readonly __wbg_identityhandleresult_free: (a: number, b: number) => void;
     readonly __wbg_imageinspectresult_free: (a: number, b: number) => void;
+    readonly __wbg_mediatierdimensions_free: (a: number, b: number) => void;
+    readonly __wbg_mediatierlayoutresult_free: (a: number, b: number) => void;
     readonly __wbg_progressevent_free: (a: number, b: number) => void;
     readonly __wbg_progressresult_free: (a: number, b: number) => void;
     readonly __wbg_sealedbundleresult_free: (a: number, b: number) => void;
@@ -1056,6 +1109,7 @@ export interface InitOutput {
     readonly authkeypairresult_code: (a: number) => number;
     readonly buildAuthChallengeTranscript: (a: number, b: number, c: bigint, d: number, e: number, f: number) => number;
     readonly canonicalMetadataSidecarBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly canonicalTierLayout: () => number;
     readonly canonicalVideoSidecarBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly clientCoreStateMachineSnapshot: (a: number) => void;
     readonly closeAccountKeyHandle: (a: bigint) => number;
@@ -1152,6 +1206,13 @@ export interface InitOutput {
     readonly linktierhandleresult_tier: (a: number) => number;
     readonly listShardTiers: (a: number) => void;
     readonly manifestTranscriptBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly mediatierdimensions_height: (a: number) => number;
+    readonly mediatierdimensions_tier: (a: number) => number;
+    readonly mediatierdimensions_width: (a: number) => number;
+    readonly mediatierlayoutresult_code: (a: number) => number;
+    readonly mediatierlayoutresult_original: (a: number) => number;
+    readonly mediatierlayoutresult_preview: (a: number) => number;
+    readonly mediatierlayoutresult_thumbnail: (a: number) => number;
     readonly openEpochKeyHandle: (a: number, b: number, c: bigint, d: number) => number;
     readonly openIdentityHandle: (a: number, b: number, c: bigint) => number;
     readonly parseEnvelopeHeader: (a: number, b: number) => number;
@@ -1215,24 +1276,24 @@ export interface InitOutput {
     readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
     readonly __wbg_stripresult_free: (a: number, b: number) => void;
     readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
-    readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
     readonly encryptedshardresult_code: (a: number) => number;
+    readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
     readonly epochkeyhandlestatusresult_code: (a: number) => number;
     readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
-    readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
-    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
     readonly wrappedtierkeyresult_code: (a: number) => number;
-    readonly decryptedcontentresult_code: (a: number) => number;
+    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
+    readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
     readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
+    readonly decryptedcontentresult_code: (a: number) => number;
     readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
     readonly bytesresult_code: (a: number) => number;
     readonly decryptedshardresult_code: (a: number) => number;
     readonly bytesresult_bytes: (a: number, b: number) => void;
-    readonly stripresult_strippedBytes: (a: number, b: number) => void;
     readonly stripresult_removedMetadataCount: (a: number) => number;
     readonly stripresult_code: (a: number) => number;
-    readonly linktierhandleresult_linkId: (a: number, b: number) => void;
+    readonly stripresult_strippedBytes: (a: number, b: number) => void;
     readonly linktierhandleresult_code: (a: number) => number;
+    readonly linktierhandleresult_linkId: (a: number, b: number) => void;
     readonly linktierhandleresult_handle: (a: number) => bigint;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;

@@ -11,8 +11,8 @@ use mosaic_wasm::{
     ClientCoreUploadJobSnapshot, ClientCoreUploadJobTransition,
     ClientCoreUploadJobTransitionResult, ClientCoreUploadShardRef, account_key_handle_is_open,
     advance_album_sync, advance_upload_job, canonical_metadata_sidecar_bytes,
-    client_core_state_machine_snapshot, close_account_key_handle, close_epoch_key_handle,
-    close_identity_handle, create_epoch_key_handle, create_identity_handle,
+    canonical_tier_layout, client_core_state_machine_snapshot, close_account_key_handle,
+    close_epoch_key_handle, close_identity_handle, create_epoch_key_handle, create_identity_handle,
     crypto_domain_golden_vector_snapshot, decrypt_shard_with_epoch_handle,
     encrypt_metadata_sidecar_with_epoch_handle, encrypt_shard_with_epoch_handle,
     epoch_key_handle_is_open, identity_encryption_pubkey, identity_signing_pubkey, init_album_sync,
@@ -68,6 +68,28 @@ fn wasm_api_snapshot_version_label_is_frozen_at_v6() {
          API surface change requires bumping the version label, adding a migration \
          vector, and updating SPEC-LateV1ProtocolFreeze §Frozen now. Got: {snapshot}"
     );
+}
+
+#[test]
+fn canonical_tier_layout_matches_rust_media_constants() {
+    let layout = canonical_tier_layout();
+
+    assert_eq!(layout.code, ClientErrorCode::Ok.as_u16());
+    assert_eq!(layout.thumbnail.tier, ShardTier::Thumbnail.to_byte());
+    assert_eq!(
+        layout.thumbnail.width,
+        mosaic_media::THUMBNAIL_MAX_DIMENSION
+    );
+    assert_eq!(
+        layout.thumbnail.height,
+        mosaic_media::THUMBNAIL_MAX_DIMENSION
+    );
+    assert_eq!(layout.preview.tier, ShardTier::Preview.to_byte());
+    assert_eq!(layout.preview.width, mosaic_media::PREVIEW_MAX_DIMENSION);
+    assert_eq!(layout.preview.height, mosaic_media::PREVIEW_MAX_DIMENSION);
+    assert_eq!(layout.original.tier, ShardTier::Original.to_byte());
+    assert_eq!(layout.original.width, mosaic_media::ORIGINAL_MAX_DIMENSION);
+    assert_eq!(layout.original.height, mosaic_media::ORIGINAL_MAX_DIMENSION);
 }
 
 #[test]

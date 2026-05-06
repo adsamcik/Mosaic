@@ -1312,6 +1312,110 @@ export class LinkTierHandleResult {
 if (Symbol.dispose) LinkTierHandleResult.prototype[Symbol.dispose] = LinkTierHandleResult.prototype.free;
 
 /**
+ * WASM-bindgen class for one canonical media tier.
+ */
+export class MediaTierDimensions {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(MediaTierDimensions.prototype);
+        obj.__wbg_ptr = ptr;
+        MediaTierDimensionsFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        MediaTierDimensionsFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_mediatierdimensions_free(ptr, 0);
+    }
+    /**
+     * Canonical max height for this tier.
+     * @returns {number}
+     */
+    get height() {
+        const ret = wasm.mediatierdimensions_height(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Shard tier protocol byte.
+     * @returns {number}
+     */
+    get tier() {
+        const ret = wasm.mediatierdimensions_tier(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Canonical max width for this tier.
+     * @returns {number}
+     */
+    get width() {
+        const ret = wasm.mediatierdimensions_width(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) MediaTierDimensions.prototype[Symbol.dispose] = MediaTierDimensions.prototype.free;
+
+/**
+ * WASM-bindgen class for canonical media tier dimensions.
+ */
+export class MediaTierLayoutResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(MediaTierLayoutResult.prototype);
+        obj.__wbg_ptr = ptr;
+        MediaTierLayoutResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        MediaTierLayoutResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_mediatierlayoutresult_free(ptr, 0);
+    }
+    /**
+     * Stable error code. Zero means success.
+     * @returns {number}
+     */
+    get code() {
+        const ret = wasm.mediatierlayoutresult_code(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Canonical original tier dimensions.
+     * @returns {MediaTierDimensions}
+     */
+    get original() {
+        const ret = wasm.mediatierlayoutresult_original(this.__wbg_ptr);
+        return MediaTierDimensions.__wrap(ret);
+    }
+    /**
+     * Canonical preview tier dimensions.
+     * @returns {MediaTierDimensions}
+     */
+    get preview() {
+        const ret = wasm.mediatierlayoutresult_preview(this.__wbg_ptr);
+        return MediaTierDimensions.__wrap(ret);
+    }
+    /**
+     * Canonical thumbnail tier dimensions.
+     * @returns {MediaTierDimensions}
+     */
+    get thumbnail() {
+        const ret = wasm.mediatierlayoutresult_thumbnail(this.__wbg_ptr);
+        return MediaTierDimensions.__wrap(ret);
+    }
+}
+if (Symbol.dispose) MediaTierLayoutResult.prototype[Symbol.dispose] = MediaTierLayoutResult.prototype.free;
+
+/**
  * WASM-bindgen class for progress events.
  */
 export class ProgressEvent {
@@ -2151,6 +2255,15 @@ export function canonicalMetadataSidecarBytes(album_id, photo_id, epoch_id, enco
     const len2 = WASM_VECTOR_LEN;
     const ret = wasm.canonicalMetadataSidecarBytes(ptr0, len0, ptr1, len1, epoch_id, ptr2, len2);
     return BytesResult.__wrap(ret);
+}
+
+/**
+ * Returns the canonical media tier dimensions through WASM.
+ * @returns {MediaTierLayoutResult}
+ */
+export function canonicalTierLayout() {
+    const ret = wasm.canonicalTierLayout();
+    return MediaTierLayoutResult.__wrap(ret);
 }
 
 /**
@@ -3165,6 +3278,12 @@ const ImageInspectResultFinalization = (typeof FinalizationRegistry === 'undefin
 const LinkTierHandleResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_linktierhandleresult_free(ptr >>> 0, 1));
+const MediaTierDimensionsFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_mediatierdimensions_free(ptr >>> 0, 1));
+const MediaTierLayoutResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_mediatierlayoutresult_free(ptr >>> 0, 1));
 const ProgressEventFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_progressevent_free(ptr >>> 0, 1));
