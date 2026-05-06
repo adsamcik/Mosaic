@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import { pairSidecar, PairingError } from '../../lib/sidecar/pairing';
+import { encodeFrame } from '../../lib/sidecar/framing';
 import type { SidecarFallbackKind, SidecarPeerHandle } from '../../workers/types';
 import { createLogger } from '../../lib/logger';
 
@@ -118,20 +119,37 @@ function buildPeerHandle(deps: PeerHandleAdapterDeps): SidecarPeerHandle {
 
   return {
     sessionId,
-    async send(bytes, _filename, _photoIdx): Promise<void> {
-      // The tunnel encrypts; the framing layer chunks. For Phase 4D we send
-      // the photo as a single AEAD-sealed message; the receive sink (Phase
-      // 4C) reassembles by photoIdx ordering. A future iteration plugs the
-      // chunker module here for streaming sends.
-      const sealed = await deps.tunnel.send.seal(bytes);
+    async send(bytes, filename, photoIdx): Promise<void> {
+      // Emit fileStart, fileChunk, in framed-then-AEAD form. The receive
+      // sink reassembles in fileEnd order. Single-chunk send is fine for
+      // typical photo sizes (< few MiB); the chunker can be plugged in
+      // later for streaming.
+      const startFrame = encodeFrame({ kind: 'fileStart', photoIdx, filename, size: BigInt(bytes.byteLength) });
+      const sealedStart = await deps.tunnel.send.seal(startFrame);
+      await deps.peer.sendFrame(sealedStart);
+      const chunkFrame = encodeFrame({ kind: 'fileChunk', photoIdx, payload: bytes });
+      const sealedChunk = await deps.tunnel.send.seal(chunkFrame);
+      await deps.peer.sendFrame(sealedChunk);
+    },
+    async endPhoto(photoIdx): Promise<void> {
+      const endFrame = encodeFrame({ kind: 'fileEnd', photoIdx });
+      const sealed = await deps.tunnel.send.seal(endFrame);
       await deps.peer.sendFrame(sealed);
     },
-    async endPhoto(_photoIdx): Promise<void> {
-      // No-op for the single-shot send. With chunked sends, this would
-      // flush the trailing frame.
-    },
-    async close(_reason): Promise<void> {
+    async close(reason): Promise<void> {
       try { unsubState?.(); } catch { /* swallow */ }
+      // Best-effort cooperative close: tell the receiver we're done so it
+      // can finalize the save target. Failures here are swallowed — the
+      // RTC close below tears down the channel regardless.
+      if (reason === 'success') {
+        try {
+          const endFrame = encodeFrame({ kind: 'sessionEnd' });
+          const sealed = await deps.tunnel.send.seal(endFrame);
+          await deps.peer.sendFrame(sealed);
+        } catch (err) {
+          log.warn('sessionEnd send failed', { errorName: err instanceof Error ? err.name : 'Unknown' });
+        }
+      }
       try { await deps.close(); } catch (err) {
         log.warn('peer close failed', { errorName: err instanceof Error ? err.name : 'Unknown' });
       }

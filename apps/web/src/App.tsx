@@ -5,6 +5,8 @@ import { LoginForm } from './components/Auth/LoginForm';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SectionErrorFallback } from './components/SectionErrorFallback';
 import { SharedAlbumViewer } from './components/Shared/SharedAlbumViewer';
+import { SidecarReceivePage } from './components/Pair/SidecarReceivePage';
+import { getFeatureFlag } from './lib/feature-flags';
 import { ToastContainer } from './components/Toast';
 import { ToastProvider } from './contexts/ToastContext';
 import { useTheme } from './hooks';
@@ -49,6 +51,16 @@ function isShareLinkRoute(): boolean {
 function getShareLinkId(): string | null {
   const match = window.location.pathname.match(/^\/s\/([A-Za-z0-9_-]+)$/);
   return match?.[1] ?? null;
+}
+
+/**
+ * `/pair` is the responder-side receive page for the Sidecar Beacon. Gated
+ * by the same beta flag as the sender entry — if the flag is off, the
+ * route falls through to the standard authenticated UI (which is the
+ * lowest-leak surface for an unrecognized URL).
+ */
+function isPairRoute(): boolean {
+  return getFeatureFlag('sidecar') && window.location.pathname === '/pair';
 }
 
 /**
@@ -202,6 +214,24 @@ export function App() {
         </div>
         <ToastContainer />
       </div>
+      </ToastProvider>
+    );
+  }
+
+  // Sidecar receive route — no authentication required (the pairing PAKE
+  // proves the sender knows the 6-digit code; we never tie sidecar to user
+  // identity per the threat model).
+  if (isPairRoute()) {
+    return (
+      <ToastProvider>
+        <ErrorBoundary
+          fallback={(error, reset) => (
+            <SectionErrorFallback error={error} section="Pair" onReset={reset} />
+          )}
+        >
+          <SidecarReceivePage />
+        </ErrorBoundary>
+        <ToastContainer />
       </ToastProvider>
     );
   }
