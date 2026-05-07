@@ -1,12 +1,11 @@
-// TODO(R-C6.3): migrate legacy empty-AAD wrap/unwrap_key test coverage.
-#![allow(deprecated)]
 #![allow(clippy::expect_used)]
 
 use mosaic_crypto::{
-    ACCOUNT_DATA_AAD, AuthSigningSecretKey, EPOCH_SEED_AAD, IdentitySigningSecretKey,
-    ManifestSigningSecretKey, MosaicCryptoError, SecretKey, decrypt_envelope, decrypt_shard,
-    derive_epoch_key_material, encrypt_shard, get_tier_key, sha256_bytes, streaming_decrypt_init,
-    streaming_encrypt_init, unwrap_key, unwrap_secret_with_aad, wrap_key, wrap_secret_with_aad,
+    ACCOUNT_DATA_AAD, ACCOUNT_KEY_WRAP_AAD, AuthSigningSecretKey, EPOCH_SEED_AAD,
+    IdentitySigningSecretKey, LINK_TIER_KEY_AAD, ManifestSigningSecretKey, MosaicCryptoError,
+    SecretKey, decrypt_envelope, decrypt_shard, derive_epoch_key_material, encrypt_shard,
+    get_tier_key, sha256_bytes, streaming_decrypt_init, streaming_encrypt_init,
+    unwrap_secret_with_aad, wrap_secret_with_aad,
 };
 use mosaic_domain::{
     SHARD_ENVELOPE_HEADER_LEN, SHARD_ENVELOPE_VERSION_V04, STREAMING_SHARD_FRAME_SIZE,
@@ -153,7 +152,7 @@ fn shard_encryption_generates_fresh_nonce_inside_crypto() {
 }
 
 #[test]
-fn shard_encryption_and_key_wrap_accept_multi_megabyte_payloads_below_policy_cap() {
+fn shard_encryption_and_aad_secret_wrap_accept_multi_megabyte_payloads_below_policy_cap() {
     let key = secret_key_from(KEY_BYTES);
     let payload = vec![0x5a_u8; 2 * 1024 * 1024];
 
@@ -169,11 +168,11 @@ fn shard_encryption_and_key_wrap_accept_multi_megabyte_payloads_below_policy_cap
     assert_eq!(decrypted.first(), Some(&0x5a));
     assert_eq!(decrypted.last(), Some(&0x5a));
 
-    let wrapped = match wrap_key(&payload, &key) {
+    let wrapped = match wrap_secret_with_aad(&payload, &key, ACCOUNT_DATA_AAD) {
         Ok(value) => value,
         Err(error) => panic!("2 MiB wrapped payload should be below policy cap: {error:?}"),
     };
-    let unwrapped = match unwrap_key(&wrapped, &key) {
+    let unwrapped = match unwrap_secret_with_aad(&wrapped, &key, ACCOUNT_DATA_AAD) {
         Ok(value) => value,
         Err(error) => panic!("2 MiB wrapped payload should unwrap: {error:?}"),
     };
@@ -300,11 +299,11 @@ fn sha256_bytes_matches_base64url_no_padding_vectors() {
 }
 
 #[test]
-fn key_wrap_round_trips_and_rejects_tampering() {
+fn account_key_wrap_round_trips_and_rejects_tampering() {
     let key = secret_key_from(KEY_BYTES);
     let wrapper = secret_key_from(WRONG_KEY_BYTES);
 
-    let wrapped = match wrap_key(key.as_bytes(), &wrapper) {
+    let wrapped = match wrap_secret_with_aad(key.as_bytes(), &wrapper, ACCOUNT_KEY_WRAP_AAD) {
         Ok(value) => value,
         Err(error) => panic!("key should wrap: {error:?}"),
     };
@@ -312,7 +311,7 @@ fn key_wrap_round_trips_and_rejects_tampering() {
     assert_eq!(wrapped.len(), 24 + KEY_BYTES.len() + 16);
     assert_ne!(&wrapped[0..24], &[0_u8; 24]);
 
-    let unwrapped = match unwrap_key(&wrapped, &wrapper) {
+    let unwrapped = match unwrap_secret_with_aad(&wrapped, &wrapper, ACCOUNT_KEY_WRAP_AAD) {
         Ok(value) => value,
         Err(error) => panic!("key should unwrap: {error:?}"),
     };
@@ -320,7 +319,7 @@ fn key_wrap_round_trips_and_rejects_tampering() {
 
     let mut tampered = wrapped;
     tampered[30] ^= 0x80;
-    let error = match unwrap_key(&tampered, &wrapper) {
+    let error = match unwrap_secret_with_aad(&tampered, &wrapper, ACCOUNT_KEY_WRAP_AAD) {
         Ok(_) => panic!("tampered key should fail"),
         Err(error) => error,
     };
@@ -348,16 +347,66 @@ fn aad_secret_wrap_round_trips_only_with_matching_domain() {
         Err(MosaicCryptoError::AuthenticationFailed)
     );
     assert_eq!(
-        unwrap_key(&wrapped, &wrapper),
+        unwrap_secret_with_aad(&wrapped, &wrapper, &[]),
         Err(MosaicCryptoError::AuthenticationFailed)
     );
 }
 
 #[test]
-fn key_wrap_rejects_short_wrapped_input() {
+fn account_key_wrap_rejects_empty_and_link_tier_aad_domains() {
+    let payload = [0x24_u8; 32];
     let wrapper = secret_key_from(WRONG_KEY_BYTES);
 
-    let error = match unwrap_key(&[0_u8; 40], &wrapper) {
+    let wrapped = match wrap_secret_with_aad(&payload, &wrapper, ACCOUNT_KEY_WRAP_AAD) {
+        Ok(value) => value,
+        Err(error) => panic!("account key should wrap: {error:?}"),
+    };
+
+    assert_eq!(
+        unwrap_secret_with_aad(&wrapped, &wrapper, ACCOUNT_KEY_WRAP_AAD)
+            .map(|unwrapped| unwrapped.to_vec()),
+        Ok(payload.to_vec())
+    );
+    assert_eq!(
+        unwrap_secret_with_aad(&wrapped, &wrapper, &[]),
+        Err(MosaicCryptoError::AuthenticationFailed)
+    );
+    assert_eq!(
+        unwrap_secret_with_aad(&wrapped, &wrapper, LINK_TIER_KEY_AAD),
+        Err(MosaicCryptoError::AuthenticationFailed)
+    );
+}
+
+#[test]
+fn link_tier_key_wrap_rejects_empty_and_account_key_aad_domains() {
+    let payload = [0x42_u8; 32];
+    let wrapper = secret_key_from(WRONG_KEY_BYTES);
+
+    let wrapped = match wrap_secret_with_aad(&payload, &wrapper, LINK_TIER_KEY_AAD) {
+        Ok(value) => value,
+        Err(error) => panic!("link tier key should wrap: {error:?}"),
+    };
+
+    assert_eq!(
+        unwrap_secret_with_aad(&wrapped, &wrapper, LINK_TIER_KEY_AAD)
+            .map(|unwrapped| unwrapped.to_vec()),
+        Ok(payload.to_vec())
+    );
+    assert_eq!(
+        unwrap_secret_with_aad(&wrapped, &wrapper, &[]),
+        Err(MosaicCryptoError::AuthenticationFailed)
+    );
+    assert_eq!(
+        unwrap_secret_with_aad(&wrapped, &wrapper, ACCOUNT_KEY_WRAP_AAD),
+        Err(MosaicCryptoError::AuthenticationFailed)
+    );
+}
+
+#[test]
+fn aad_secret_wrap_rejects_short_wrapped_input() {
+    let wrapper = secret_key_from(WRONG_KEY_BYTES);
+
+    let error = match unwrap_secret_with_aad(&[0_u8; 40], &wrapper, ACCOUNT_KEY_WRAP_AAD) {
         Ok(_) => panic!("short wrapped input should fail"),
         Err(error) => error,
     };
@@ -366,31 +415,33 @@ fn key_wrap_rejects_short_wrapped_input() {
 }
 
 #[test]
-fn key_wrap_rejects_empty_payload_and_detects_nonce_or_tag_tampering() {
+fn aad_secret_wrap_rejects_empty_payload_and_detects_nonce_or_tag_tampering() {
     let wrapper = secret_key_from(WRONG_KEY_BYTES);
 
     assert_eq!(
-        wrap_key(&[], &wrapper),
+        wrap_secret_with_aad(&[], &wrapper, ACCOUNT_KEY_WRAP_AAD),
         Err(MosaicCryptoError::InvalidInputLength { actual: 0 })
     );
 
     let minimum_plaintext = [0x7a_u8];
-    let minimum_wrapped = match wrap_key(&minimum_plaintext, &wrapper) {
-        Ok(value) => value,
-        Err(error) => panic!("minimum one-byte payload should wrap: {error:?}"),
-    };
+    let minimum_wrapped =
+        match wrap_secret_with_aad(&minimum_plaintext, &wrapper, ACCOUNT_KEY_WRAP_AAD) {
+            Ok(value) => value,
+            Err(error) => panic!("minimum one-byte payload should wrap: {error:?}"),
+        };
     assert_eq!(minimum_wrapped.len(), 24 + minimum_plaintext.len() + 16);
 
-    let minimum_unwrapped = match unwrap_key(&minimum_wrapped, &wrapper) {
-        Ok(value) => value,
-        Err(error) => panic!("minimum one-byte payload should unwrap: {error:?}"),
-    };
+    let minimum_unwrapped =
+        match unwrap_secret_with_aad(&minimum_wrapped, &wrapper, ACCOUNT_KEY_WRAP_AAD) {
+            Ok(value) => value,
+            Err(error) => panic!("minimum one-byte payload should unwrap: {error:?}"),
+        };
     assert_eq!(minimum_unwrapped.as_slice(), minimum_plaintext.as_slice());
 
     let mut tampered_nonce = minimum_wrapped.clone();
     tampered_nonce[0] ^= 0x01;
     assert_eq!(
-        unwrap_key(&tampered_nonce, &wrapper),
+        unwrap_secret_with_aad(&tampered_nonce, &wrapper, ACCOUNT_KEY_WRAP_AAD),
         Err(MosaicCryptoError::AuthenticationFailed)
     );
 
@@ -398,7 +449,7 @@ fn key_wrap_rejects_empty_payload_and_detects_nonce_or_tag_tampering() {
     let tag_index = tampered_tag.len() - 1;
     tampered_tag[tag_index] ^= 0x01;
     assert_eq!(
-        unwrap_key(&tampered_tag, &wrapper),
+        unwrap_secret_with_aad(&tampered_tag, &wrapper, ACCOUNT_KEY_WRAP_AAD),
         Err(MosaicCryptoError::AuthenticationFailed)
     );
 }

@@ -1,10 +1,7 @@
-// TODO(R-C6.3): migrate legacy empty-AAD wrap_key test coverage.
-#![allow(deprecated)]
-
 use mosaic_crypto::{
-    KdfProfile, MAX_KDF_ITERATIONS, MAX_KDF_MEMORY_KIB, MAX_KDF_PARALLELISM, MIN_KDF_ITERATIONS,
-    MIN_KDF_MEMORY_KIB, MosaicCryptoError, derive_account_key, derive_root_key, unwrap_account_key,
-    wrap_key,
+    ACCOUNT_KEY_WRAP_AAD, KdfProfile, MAX_KDF_ITERATIONS, MAX_KDF_MEMORY_KIB, MAX_KDF_PARALLELISM,
+    MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, MosaicCryptoError, derive_account_key, derive_root_key,
+    unwrap_account_key, wrap_secret_with_aad,
 };
 use zeroize::Zeroizing;
 
@@ -219,7 +216,7 @@ fn account_key_unwrap_rejects_authenticated_payloads_with_wrong_account_key_leng
 
     for payload_len in [31_usize, 33] {
         let payload = vec![0x5a_u8; payload_len];
-        let wrapped = match wrap_key(&payload, &root_key) {
+        let wrapped = match wrap_secret_with_aad(&payload, &root_key, ACCOUNT_KEY_WRAP_AAD) {
             Ok(value) => value,
             Err(error) => panic!("payload should wrap: {error:?}"),
         };

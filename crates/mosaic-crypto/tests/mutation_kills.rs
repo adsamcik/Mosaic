@@ -5,16 +5,13 @@
 //! properties so a single-character source mutation observably changes the
 //! result.
 
-// TODO(R-C6.3): migrate legacy empty-AAD wrap_key mutation tests.
-#![allow(deprecated)]
-
 use mosaic_crypto::{
-    AUTH_CHALLENGE_CONTEXT, BundleValidationContext, EpochKeyBundle, IdentityKeypair, KdfProfile,
-    MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, ManifestSigningPublicKey, ManifestSigningSecretKey,
-    MosaicCryptoError, SecretKey, build_auth_challenge_transcript, crate_name,
-    derive_auth_signing_keypair, derive_identity_keypair, encrypt_content, encrypt_shard,
-    generate_identity_seed, seal_and_sign_bundle, sha256_bytes, sign_auth_challenge,
-    verify_and_open_bundle, verify_auth_challenge, wrap_key,
+    ACCOUNT_DATA_AAD, AUTH_CHALLENGE_CONTEXT, BundleValidationContext, EpochKeyBundle,
+    IdentityKeypair, KdfProfile, MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, ManifestSigningPublicKey,
+    ManifestSigningSecretKey, MosaicCryptoError, SecretKey, build_auth_challenge_transcript,
+    crate_name, derive_auth_signing_keypair, derive_identity_keypair, encrypt_content,
+    encrypt_shard, generate_identity_seed, seal_and_sign_bundle, sha256_bytes, sign_auth_challenge,
+    verify_and_open_bundle, verify_auth_challenge, wrap_secret_with_aad,
 };
 use mosaic_domain::ShardTier;
 use zeroize::Zeroizing;
@@ -241,7 +238,7 @@ fn verify_auth_challenge_returns_true_for_freshly_signed_transcript() {
 //
 // Survivors:
 //   * `lib.rs:1362:19` `>` -> `==` / `>=` in `encrypt_shard`.
-//   * `lib.rs:1452:48` `>` -> `==` / `>=` in `wrap_key`.
+//   * `lib.rs` max-length guard `>` -> `==` / `>=` in `wrap_secret_with_aad`.
 //   * `content.rs:68:24` `>` -> `>=` in `encrypt_content`.
 // All three guard a `> MAX_SHARD_BYTES` boundary at exactly 100 MiB.
 // Asserting that the function accepts a payload of length MAX_SHARD_BYTES
@@ -300,37 +297,41 @@ fn encrypt_shard_rejects_one_byte_over_max_shard_bytes() {
 }
 
 #[test]
-fn wrap_key_accepts_exactly_max_shard_bytes() {
+fn aad_secret_wrap_accepts_exactly_max_shard_bytes() {
     let buffer = vec![0_u8; MAX_SHARD_BYTES_LOCAL];
     let wrapper = boundary_secret_key(0x21);
 
-    let result = wrap_key(&buffer, &wrapper);
+    let result = wrap_secret_with_aad(&buffer, &wrapper, ACCOUNT_DATA_AAD);
 
     assert!(
         result.is_ok(),
-        "wrap_key at MAX_SHARD_BYTES must succeed; got {:?}",
+        "wrap_secret_with_aad at MAX_SHARD_BYTES must succeed; got {:?}",
         result.err(),
     );
 }
 
 #[test]
-fn wrap_key_rejects_one_byte_over_max_shard_bytes() {
+fn aad_secret_wrap_rejects_one_byte_over_max_shard_bytes() {
     let buffer = vec![0_u8; MAX_SHARD_BYTES_LOCAL + 1];
     let wrapper = boundary_secret_key(0x22);
 
-    let result = wrap_key(&buffer, &wrapper);
+    let result = wrap_secret_with_aad(&buffer, &wrapper, ACCOUNT_DATA_AAD);
 
-    // wrap_key returns Vec<u8>, which already implements Debug, but be
+    // wrap_secret_with_aad returns Vec<u8>, which already implements Debug, but be
     // explicit for symmetry with the encrypt_shard/encrypt_content
     // boundary tests above.
     match result {
         Ok(_) => {
-            panic!("wrap_key at MAX_SHARD_BYTES + 1 must return InvalidInputLength; got Ok(_)")
+            panic!(
+                "wrap_secret_with_aad at MAX_SHARD_BYTES + 1 must return InvalidInputLength; got Ok(_)"
+            )
         }
         Err(MosaicCryptoError::InvalidInputLength { actual })
             if actual == MAX_SHARD_BYTES_LOCAL + 1 => {}
         Err(error) => {
-            panic!("wrap_key at MAX_SHARD_BYTES + 1 must return InvalidInputLength; got {error:?}")
+            panic!(
+                "wrap_secret_with_aad at MAX_SHARD_BYTES + 1 must return InvalidInputLength; got {error:?}"
+            )
         }
     }
 }

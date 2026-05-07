@@ -1120,9 +1120,8 @@ pub fn derive_account_key(
     let mut account_key_bytes = Zeroizing::new(vec![0_u8; KEY_BYTES]);
     getrandom::fill(account_key_bytes.as_mut_slice()).map_err(|_| MosaicCryptoError::RngFailure)?;
     let account_key = SecretKey::from_bytes(account_key_bytes.as_mut_slice())?;
-    // TODO(R-C6.3): migrate to wrap_secret_with_aad with ACCOUNT_KEY_WRAP_AAD constant.
-    #[allow(deprecated)]
-    let wrapped_account_key = wrap_key(account_key.as_bytes(), &root_key)?;
+    let wrapped_account_key =
+        wrap_secret_with_aad(account_key.as_bytes(), &root_key, ACCOUNT_KEY_WRAP_AAD)?;
 
     Ok(AccountKeyMaterial {
         account_key,
@@ -1142,9 +1141,8 @@ pub fn unwrap_account_key(
     profile: KdfProfile,
 ) -> Result<SecretKey, MosaicCryptoError> {
     let root_key = derive_root_key(password, user_salt, account_salt, profile)?;
-    // TODO(R-C6.3): migrate to unwrap_secret_with_aad with ACCOUNT_KEY_WRAP_AAD constant.
-    #[allow(deprecated)]
-    let mut account_key_bytes = unwrap_key(wrapped_account_key, &root_key)?;
+    let mut account_key_bytes =
+        unwrap_secret_with_aad(wrapped_account_key, &root_key, ACCOUNT_KEY_WRAP_AAD)?;
 
     if account_key_bytes.len() != KEY_BYTES {
         return Err(MosaicCryptoError::InvalidKeyLength {
@@ -1579,9 +1577,7 @@ pub fn wrap_account_key(
     profile: KdfProfile,
 ) -> Result<Vec<u8>, MosaicCryptoError> {
     let root_key = derive_root_key(password, user_salt, account_salt, profile)?;
-    // TODO(R-C6.3): migrate to wrap_secret_with_aad with ACCOUNT_KEY_WRAP_AAD constant.
-    #[allow(deprecated)]
-    wrap_key(account_key.as_bytes(), &root_key)
+    wrap_secret_with_aad(account_key.as_bytes(), &root_key, ACCOUNT_KEY_WRAP_AAD)
 }
 
 /// Returns the key for the requested shard tier.
@@ -2211,27 +2207,6 @@ pub fn decrypt_shard_with_legacy_raw_key(
         .map_err(|_| MosaicCryptoError::AuthenticationFailed)
 }
 
-/// Wraps `key_bytes` with the `wrapper` key using XChaCha20-Poly1305.
-///
-/// Output format: `nonce(24) || ciphertext || tag(16)`.
-///
-/// # Errors
-/// - `InvalidInputLength` if `key_bytes` is empty or exceeds 100 MiB.
-/// - `RngFailure` if the OS CSPRNG is unavailable.
-/// - `AuthenticationFailed` if the AEAD cipher reports an unexpected error.
-#[allow(clippy::deprecated_semver)]
-#[deprecated(
-    since = "R-C6",
-    note = "Use wrap_secret_with_aad / unwrap_secret_with_aad with an explicit \
-            domain AAD label. Empty-AAD wraps are a compositional hazard \
-            (see ADR-006 F-1 attack chain). The shim exists only for \
-            backward-compatible reads of pre-v4 OPFS snapshots and the \
-            internal callers tracked under R-C6.3."
-)]
-pub fn wrap_key(key_bytes: &[u8], wrapper: &SecretKey) -> Result<Vec<u8>, MosaicCryptoError> {
-    wrap_secret_with_aad(key_bytes, wrapper, &[])
-}
-
 /// Wraps key material with explicit domain separation.
 ///
 /// Output format: `nonce(24) || ciphertext || tag(16)`. The `aad` bytes are
@@ -2277,27 +2252,6 @@ pub fn wrap_secret_with_aad(
     output.extend_from_slice(&nonce_bytes);
     output.extend_from_slice(&ciphertext_and_tag);
     Ok(output)
-}
-
-/// Unwraps a key previously wrapped with [`wrap_key`].
-///
-/// # Errors
-/// - `WrappedKeyTooShort` if `wrapped` is shorter than 41 bytes (24 nonce + 16 tag + 1 payload).
-/// - `AuthenticationFailed` if AEAD verification fails.
-#[allow(clippy::deprecated_semver)]
-#[deprecated(
-    since = "R-C6",
-    note = "Use wrap_secret_with_aad / unwrap_secret_with_aad with an explicit \
-            domain AAD label. Empty-AAD wraps are a compositional hazard \
-            (see ADR-006 F-1 attack chain). The shim exists only for \
-            backward-compatible reads of pre-v4 OPFS snapshots and the \
-            internal callers tracked under R-C6.3."
-)]
-pub fn unwrap_key(
-    wrapped: &[u8],
-    wrapper: &SecretKey,
-) -> Result<Zeroizing<Vec<u8>>, MosaicCryptoError> {
-    unwrap_secret_with_aad(wrapped, wrapper, &[])
 }
 
 /// Unwraps key material previously produced by [`wrap_secret_with_aad`].

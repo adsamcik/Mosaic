@@ -18,10 +18,10 @@
 //!   wrapping_key = BLAKE2b-256(key = link_secret, msg = "mosaic:link:wrap:v1")
 //! ```
 //!
-//! Tier-key wrapping reuses the workspace [`crate::wrap_key`] /
-//! [`crate::unwrap_key`] helpers (XChaCha20-Poly1305 with a fresh 24-byte
-//! nonce per call). The wrapped output is split into `(nonce, encrypted_key)`
-//! for clean serialisation alongside the `tier` byte.
+//! Tier-key wrapping uses [`crate::wrap_secret_with_aad`] /
+//! [`crate::unwrap_secret_with_aad`] with the frozen link-tier AAD label and a
+//! fresh 24-byte nonce per call. The wrapped output is split into
+//! `(nonce, encrypted_key)` for clean serialisation alongside the `tier` byte.
 
 use blake2::Blake2bMac;
 use blake2::digest::{KeyInit, Mac, consts::U16, consts::U32};
@@ -29,9 +29,9 @@ use mosaic_domain::ShardTier;
 use std::fmt;
 use zeroize::Zeroizing;
 
-#[allow(deprecated)]
 use crate::{
-    KEY_BYTES, LINK_ID_BYTES, LINK_SECRET_BYTES, MosaicCryptoError, SecretKey, unwrap_key, wrap_key,
+    KEY_BYTES, LINK_ID_BYTES, LINK_SECRET_BYTES, LINK_TIER_KEY_AAD, MosaicCryptoError, SecretKey,
+    unwrap_secret_with_aad, wrap_secret_with_aad,
 };
 
 /// Length of the XChaCha20-Poly1305 nonce embedded in every wrapped tier key.
@@ -64,13 +64,13 @@ pub struct LinkKeys {
 ///
 /// The pair `(nonce, encrypted_key)` is the same shape that
 /// `wrapTierKeyForLink` produces in TypeScript; concatenated as
-/// `nonce || encrypted_key` it is exactly what [`crate::unwrap_key`]
-/// expects.
+/// `nonce || encrypted_key` it is exactly what [`crate::unwrap_secret_with_aad`]
+/// expects when authenticated with [`crate::LINK_TIER_KEY_AAD`].
 #[derive(Clone, PartialEq, Eq)]
 pub struct WrappedTierKey {
     /// The tier this wrapped key grants access to.
     pub tier: ShardTier,
-    /// 24-byte XChaCha20 nonce used by `wrap_key`.
+    /// 24-byte XChaCha20 nonce used by `wrap_secret_with_aad`.
     pub nonce: [u8; LINK_WRAP_NONCE_BYTES],
     /// Ciphertext including the trailing 16-byte Poly1305 tag.
     pub encrypted_key: Vec<u8>,
@@ -143,7 +143,7 @@ pub fn derive_link_keys(link_secret: &[u8]) -> Result<LinkKeys, MosaicCryptoErro
 ///
 /// # Errors
 /// * [`MosaicCryptoError::InvalidKeyLength`] if `tier_key` is not 32 bytes.
-/// * Any error propagated from [`crate::wrap_key`] (RNG / AEAD failures).
+/// * Any error propagated from [`crate::wrap_secret_with_aad`] (RNG / AEAD failures).
 pub fn wrap_tier_key_for_link(
     tier_key: &[u8],
     tier: ShardTier,
@@ -155,11 +155,9 @@ pub fn wrap_tier_key_for_link(
         });
     }
 
-    // TODO(R-C6.3): migrate to wrap_secret_with_aad with LINK_TIER_KEY_AAD on top of the per-link BLAKE2b wrapping key.
-    #[allow(deprecated)]
-    let wrapped = wrap_key(tier_key, wrapping_key)?;
+    let wrapped = wrap_secret_with_aad(tier_key, wrapping_key, LINK_TIER_KEY_AAD)?;
 
-    // wrap_key always returns nonce(24) || ciphertext_with_tag(>=17). The
+    // wrap_secret_with_aad always returns nonce(24) || ciphertext_with_tag(>=17). The
     // explicit length check is defensive — if it ever shortens, fail loudly
     // rather than panicking on slice indexing.
     if wrapped.len() < LINK_WRAP_NONCE_BYTES {
@@ -182,11 +180,11 @@ pub fn wrap_tier_key_for_link(
 /// Unwraps a tier key previously produced by [`wrap_tier_key_for_link`].
 ///
 /// Verifies that the stored `tier` matches `expected_tier`, reconstructs the
-/// `nonce || encrypted_key` blob, and delegates to [`crate::unwrap_key`].
+/// `nonce || encrypted_key` blob, and delegates to [`crate::unwrap_secret_with_aad`].
 ///
 /// # Errors
 /// * [`MosaicCryptoError::LinkTierMismatch`] if `wrapped.tier != expected_tier`.
-/// * Any error propagated from [`crate::unwrap_key`] (most commonly
+/// * Any error propagated from [`crate::unwrap_secret_with_aad`] (most commonly
 ///   [`MosaicCryptoError::AuthenticationFailed`] on tampering or a wrong
 ///   wrapping key).
 pub fn unwrap_tier_key_from_link(
@@ -205,9 +203,7 @@ pub fn unwrap_tier_key_from_link(
     full_wrapped.extend_from_slice(&wrapped.nonce);
     full_wrapped.extend_from_slice(&wrapped.encrypted_key);
 
-    // TODO(R-C6.3): migrate to unwrap_secret_with_aad with LINK_TIER_KEY_AAD on top of the per-link BLAKE2b wrapping key.
-    #[allow(deprecated)]
-    unwrap_key(&full_wrapped, wrapping_key)
+    unwrap_secret_with_aad(&full_wrapped, wrapping_key, LINK_TIER_KEY_AAD)
 }
 
 /// Computes `BLAKE2b(out_len = OutSize, key, msg)` matching libsodium's
