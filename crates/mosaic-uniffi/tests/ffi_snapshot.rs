@@ -1291,7 +1291,9 @@ mod download_round_trip {
         assert_eq!(plan.code, ClientErrorCode::Ok.as_u16());
         // Decode the plan CBOR and confirm filename was disambiguated.
         let value: ciborium::value::Value =
-            match ciborium::de::from_reader::<ciborium::value::Value, _>(std::io::Cursor::new(&plan.plan_cbor)) {
+            match ciborium::de::from_reader::<ciborium::value::Value, _>(std::io::Cursor::new(
+                &plan.plan_cbor,
+            )) {
                 Ok(value) => value,
                 Err(_) => panic!("plan_cbor must be valid CBOR"),
             };
@@ -1317,7 +1319,10 @@ mod download_round_trip {
                 }
             })
             .unwrap_or_else(|| panic!("plan entry must have a filename field"));
-        assert_ne!(filename, "CON.JPG", "Windows-reserved name must be disambiguated");
+        assert_ne!(
+            filename, "CON.JPG",
+            "Windows-reserved name must be disambiguated"
+        );
         assert!(filename.to_uppercase().starts_with("CON_"));
     }
 
@@ -1341,10 +1346,7 @@ mod download_round_trip {
             plan_cbor: vec![0xff_u8, 0x00, 0x42],
             now_ms: 0,
         });
-        assert_eq!(
-            init.code,
-            ClientErrorCode::DownloadSnapshotCorrupt.as_u16()
-        );
+        assert_eq!(init.code, ClientErrorCode::DownloadSnapshotCorrupt.as_u16());
         assert!(init.body.is_empty());
         assert!(init.checksum.is_empty());
     }
@@ -1388,11 +1390,12 @@ mod download_round_trip {
         assert!(!result.new_state_cbor.is_empty());
 
         // Decode the result and confirm the state code is PREPARING (=1).
-        let decoded: Value =
-            match ciborium::de::from_reader::<Value, _>(std::io::Cursor::new(&result.new_state_cbor)) {
-                Ok(value) => value,
-                Err(_) => panic!("new_state_cbor must be valid CBOR"),
-            };
+        let decoded: Value = match ciborium::de::from_reader::<Value, _>(std::io::Cursor::new(
+            &result.new_state_cbor,
+        )) {
+            Ok(value) => value,
+            Err(_) => panic!("new_state_cbor must be valid CBOR"),
+        };
         let entries = match decoded {
             Value::Map(entries) => entries,
             _ => panic!("state must be a CBOR map"),
@@ -1407,7 +1410,10 @@ mod download_round_trip {
                     .and_then(|i| u8::try_from(i).ok())
             })
             .unwrap_or_else(|| panic!("state map must have key 0"));
-        assert_eq!(code, 1, "Idle + StartRequested must transition to Preparing (=1)");
+        assert_eq!(
+            code, 1,
+            "Idle + StartRequested must transition to Preparing (=1)"
+        );
     }
 
     #[test]

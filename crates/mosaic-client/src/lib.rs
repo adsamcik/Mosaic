@@ -2512,7 +2512,6 @@ fn insert_link_tier_handle(
     Ok(handle)
 }
 
-
 fn decrypt_shard_with_link_tier_handle_result(
     link_tier_handle: u64,
     envelope_bytes: &[u8],
