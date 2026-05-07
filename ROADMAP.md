@@ -17,11 +17,11 @@ The Rust core migration is substantively complete for the **crypto, state-machin
 | **Web client cutover** | W-* | 14 | W-S1 → W-S2/S3 → W-S4 → W-A series → W-A6 E2E |
 | **Android client implementation** | A-* | 30 | A1 (INTERNET) → A2-A4 (foundation) → A6/A7 (media) → A8/A9 (workers) → A13 (reducer) → A15-A17 (service+permission flip) → A18 (E2E) |
 | **Backend** | B-* | 5 | B1+B2 → B3 → B4 → B5 |
-| **Quality / freeze** | Q-final-* | 4 | Q-final-1 (parity) + Q-final-3 (E2E matrix) + Q-final-4 (perf budgets) → Q-final-5 (re-freeze) |
+| **Quality / freeze** | Q-final-* | 4 | Q-final-1 (parity) + Q-final-3 (E2E matrix) + Q-final-4 (perf budgets) → Q-final-5 (project-owner `v1.0.0` tag) |
 | **v2 / deferred** | r-c6-3-v2, r-c8 | 2 | Out of v1 scope |
 | **Review follow-ups** | wave5-*, wave6-*, wave7-* | 5 | Small docs/tests; bundle into ledger sweeps |
 
-**Already locked / frozen for v1:**
+**Locked candidates for the v1 tag:**
 - Cryptographic invariants (XChaCha20-Poly1305 envelopes, Argon2id KDF, HKDF labels, Ed25519/X25519 contexts, manifest transcript, AAD domain separation) — see `IMPLEMENTATION_PLAN.md` §11 Late-v1 Irreversibility Register.
 - ADR-006 FFI handle architecture; raw-secret guards in producer + consumer.
 - Sidecar tag registry (1-15) with R-M5.2.2's 64 KiB cap.
@@ -62,7 +62,7 @@ The Rust core migration is substantively complete for the **crypto, state-machin
 │                                                              │
 │  B-* (Backend) — language/runtime to be confirmed            │
 │                                                              │
-│  Q-final-*  Cross-platform parity, perf, re-freeze           │
+│  Q-final-*  Cross-platform parity, perf, project-owner tag           │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -183,7 +183,7 @@ A1 (INTERNET) ─┬─ A4 (OkHttp) ─┬─ A5a (Tus spike) ─ A5b (Tus adapt
                   │
                   ├─ A18a … A18f (E2E scenarios) ─ A18g (real-device matrix)
                   │
-                  └─ Q-final-3 → Q-final-4 → Q-final-5 (final freeze)
+                  └─ Q-final-3 → Q-final-4 → Q-final-5 (project-owner `v1.0.0` tag)
 
 A2a (Room queue) ─┬─ A3 (StagingManager) ─ A14 (Photo Picker)
                   ├─ A8 (encrypt worker; needs A2b, A6, A7, P-U3 ✅)
@@ -203,14 +203,14 @@ A13a (reducer; needs A2b, P-U3 ✅) ─ A13b (effect persist) ─ A13c (retry sc
 A9 (upload worker; needs A2b, A5b, A8)
 ```
 
-### 4.5 Wave Final (Quality gates + freeze re-declaration)
+### 4.5 Wave Final (Quality gates + release tag)
 
 ```text
 A18g + W-A6 ──┬─ Q-final-1 (cross-platform parity harness)
               ├─ Q-final-3 (E2E coverage matrix)
               └─ Q-final-4 (performance budgets)
                   │
-                  └─ Q-final-5 (final freeze re-declaration; reissue SPEC-LateV1ProtocolFreeze with empty open list)
+                  └─ Q-final-5 (project owner runs `git tag v1.0.0 && git push --tags` when candidate surfaces are right)
 ```
 
 ---
@@ -303,7 +303,7 @@ See §4.4 for the dependency graph. Highlights:
 | **Q-final-1** | Cross-platform parity harness (envelope, manifest, sidecar, thumbhash, tier-dim) | A18g, W-A6 |
 | **Q-final-3** | E2E coverage matrix (Playwright + instrumented + UI Automator + 3 device classes) | A18g, W-A6 |
 | **Q-final-4** | Performance budgets (encrypt throughput, cold-start, 4 GB heap, web tab memory, Tus resume) | A18g, W-A5 |
-| **Q-final-5** | Final freeze re-declaration (reissue SPEC-LateV1ProtocolFreeze with empty open list) | Q-final-1, Q-final-3, Q-final-4 |
+| **Q-final-5** | Project owner cuts `v1.0.0` release tag after candidate surfaces are right | Q-final-1, Q-final-3, Q-final-4 |
 
 ### 5.7 Deferred to v2
 
@@ -325,11 +325,11 @@ See §4.4 for the dependency graph. Highlights:
 
 ---
 
-## 6. Frozen-for-v1 Surfaces (Late-v1 Irreversibility Register)
+## 6. v1 Candidate Protocol Surfaces (Release-tag freeze)
 
 Recorded at `docs/IMPLEMENTATION_PLAN.md` §11. Summary:
 
-| Surface | Frozen value(s) | Lock test |
+| Surface | Candidate value(s) | Lock test |
 |---------|-----------------|-----------|
 | AEAD AAD labels | `mosaic:l3-epoch-seed:v1`, `mosaic:l3-identity-seed:v1`, `mosaic:account-wrapped-data:v1`, `mosaic:l2-account-key:v1`, `mosaic:l3-link-tier-key:v1` | `kdf_and_auth_label_lock.rs` per-label tests |
 | Shard envelope wire format | Magic `SGzk`; version `0x03`; 64-byte header; reserved zero | `late_v1_protocol_freeze_lock.rs::shard_envelope_*` |
@@ -341,7 +341,7 @@ Recorded at `docs/IMPLEMENTATION_PLAN.md` §11. Summary:
 | Sidecar total byte cap | `MAX_SIDECAR_TOTAL_BYTES = 65_536` (64 KiB) | `max_sidecar_total_bytes_is_frozen` + `worst_case_active_tag_sidecar_fits_within_cap` |
 | Forbidden tag dispatch | Tag 6 → `MetadataSidecarError::ForbiddenTag` (not `ReservedTagNotPromoted`) | `lock_test_for_every_forbidden_tag` |
 
-After Q-final-5, this register is the v1 contract.
+When the project owner cuts `v1.0.0`, the tagged tree becomes the v1 contract. Until then, this register records candidate ship bytes.
 
 ---
 
@@ -392,7 +392,8 @@ Out of v1 (per ADR-015, ADR-016, design memo):
 - `docs/specs/SPEC-RustEncryptedMetadataSidecar.md` — metadata sidecar wire format
 - `docs/specs/SPEC-ClientCoreStateMachines.md` — upload + sync reducers
 - `docs/specs/SPEC-MetadataStripParity.md` — strip parity contract (web ↔ Rust; Android per `m0-1-android-parity` follow-up)
-- `docs/specs/SPEC-LateV1ProtocolFreeze.md` — v1 freeze surfaces
+- `docs/specs/SPEC-LateV1ProtocolFreeze.md` — v1 protocol candidate inventory
+- `docs/specs/SPEC-ReleaseTagFreezePolicy.md` — canonical release-tag freeze policy
 - `docs/specs/SPEC-OpfsSnapshotCompat.md` — OPFS snapshot version compat (R-C6 v3→v4 cutover)
 - `docs/specs/SPEC-IosReadinessAdapter.md` — iOS readiness contract (Q-final-2)
 - `docs/specs/SPEC-R-C5.5-MigrationDesign.md` — design memo for the 3 design-dependent R-C5.5 migrations
