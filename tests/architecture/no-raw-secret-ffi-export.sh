@@ -32,23 +32,28 @@ import re
 from pathlib import Path
 
 ffi_files = [Path("crates/mosaic-wasm/src/lib.rs"), Path("crates/mosaic-uniffi/src/lib.rs")]
-dts_files = [Path("apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts")]
+dts_files = sorted(Path("apps/web/src/generated/mosaic-wasm").glob("*.d.ts"))
 # JsValue is intentionally treated as secret-shaped for wasm exports. It is fuzzy
 # because serde_wasm_bindgen can smuggle byte arrays through JsValue; reviewers can
 # use the explicit allowlist when a non-secret JsValue API is justified.
-secret_result_types = re.compile(r"->\s*(Vec\s*<\s*u8\s*>|Box\s*<\s*\[\s*u8\s*\]\s*>|Cow\s*<[^>]*\[\s*u8\s*\][^>]*>|(?:js_sys\s*::\s*)?Uint8Array|(?:js_sys\s*::\s*)?ArrayBuffer|JsValue|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)")
+secret_result_types = re.compile(r"->\s*(?:Result\s*<\s*)?(Vec\s*<\s*u8\s*>|Box\s*<\s*\[\s*u8\s*\]\s*>|Cow\s*<[^>]*\[\s*u8\s*\][^>]*>|(?:js_sys\s*::\s*)?Uint8Array|(?:js_sys\s*::\s*)?ArrayBuffer|JsValue|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)")
 exotic_wasm_result_types = re.compile(r"->\s*(Box\s*<\s*\[\s*u8\s*\]\s*>|Cow\s*<[^>]*\[\s*u8\s*\][^>]*>|(?:js_sys\s*::\s*)?Uint8Array|(?:js_sys\s*::\s*)?ArrayBuffer)")
-secret_name_pattern = re.compile(r"(derive.*(key|keys|secret)|generate.*secret|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)", re.IGNORECASE)
+secret_name_pattern = re.compile(r"(derive.*(key|keys|secret)|generate.*secret|get.*key|consume_.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)", re.IGNORECASE)
 domain_handle_pattern = re.compile(r"(^(wrap|unwrap)_.*(account|epoch|identity|link).*(handle|seed|key|secret)|^(seal|unseal)_.*(account|epoch|identity|link).*handle)", re.IGNORECASE)
 generic_bytes_wrap_pattern = re.compile(r"^(wrap|unwrap)(_|$)", re.IGNORECASE)
-domain_noun_pattern = re.compile(r"(account|epoch|identity|link)", re.IGNORECASE)
+domain_noun_pattern = re.compile(r"(account|epoch|identity|link|master)", re.IGNORECASE)
 secret_shaped_name = re.compile(r"(seed|secret|key)$", re.IGNORECASE)
 public_key_name = re.compile(r"(public_?key|pub_?key|PublicKey|PubKey|pubkey)", re.IGNORECASE)
 forbidden_raw_bundle_apis = {
     "seal_and_sign_bundle",
     "seal_and_sign_bundle_js",
+    "decrypt_shard_with_epoch",
+    "decrypt_shard_with_epoch_js",
     "import_epoch_key_handle_from_bundle",
     "import_epoch_key_handle_from_bundle_js",
+}
+forbidden_legacy_dts_functions = {
+    "decryptShardWithEpoch",
 }
 allowlist = {
     # Returns L2 account key encrypted under password-derived L1; unwrap requires password and account salt.
@@ -83,6 +88,10 @@ allowlist = {
     "crates/mosaic-wasm/src/lib.rs::sign_manifest_with_epoch_handle_js": "SAFE: Returns JS-visible Ed25519 manifest signature bytes; epoch signing seed remains inside Rust handle.",
     # Returns JS-visible Ed25519 auth signature bytes; account-derived signing secret is not exported.
     "crates/mosaic-wasm/src/lib.rs::sign_auth_challenge_with_account_js": "SAFE: Returns JS-visible Ed25519 auth signature bytes; account-derived signing secret is not exported.",
+    # Returns the raw L0 master key bytes for one-shot WebCrypto AES-GCM import; handle is consumed and zeroized.
+    "crates/mosaic-wasm/src/lib.rs::consume_master_key_handle_for_aes_gcm": "SAFE: Returns the raw L0 master key bytes for one-shot WebCrypto AES-GCM import. The Rust handle is consumed, removed from the registry, and the registry copy is zeroized in the same call before the slice is returned; no second extraction is possible. ADR-006/ADR-021 explicitly permit this single-shot bridging path.",
+    # Returns the raw L0 master key bytes for one-shot WebCrypto AES-GCM import; handle is consumed and zeroized.
+    "crates/mosaic-uniffi/src/lib.rs::consume_master_key_handle_for_aes_gcm": "SAFE: Returns the raw L0 master key bytes for one-shot WebCrypto AES-GCM import. The Rust handle is consumed, removed from the registry, and the registry copy is zeroized in the same call before the slice is returned; no second extraction is possible. ADR-006/ADR-021 explicitly permit this single-shot bridging path.",
     # Returns deterministic 16-byte LocalAuth account-salt KDF parameter derived from user salt; output contains no key material or bearer authority.
     "crates/mosaic-wasm/src/lib.rs::derive_account_salt": "SAFE: Returns deterministic 16-byte LocalAuth account-salt KDF parameter derived from user salt; output contains no key material or bearer authority.",
     # CORPUS-DRIVER-ONLY: gated by feature='cross-client-vectors'; production builds do not expose this symbol. Gradle invariant in apps/android-main/build.gradle.kts forbids scheduling test and production tasks in same invocation. Verified by crates/mosaic-uniffi/tests/api_shape_lock.rs::production_uniffi_bindings_do_not_expose_corpus_drivers. The raw-secret input is consumed by the cross-client link_keys.json corpus parity test.
@@ -237,6 +246,20 @@ def assert_negative_fixture_caught(
             f"Violations: {fixture_violations!r}"
         )
 
+def assert_dts_negative_fixture_caught(name: str, source: str, expected_symbol: str) -> None:
+    fixture_violations = []
+    for index, line in enumerate(source.splitlines()):
+        match = re.match(r"\s*export\s+function\s+([A-Za-z0-9_]+)\(", line)
+        if match and match.group(1) in forbidden_legacy_dts_functions:
+            fixture_violations.append(
+                f"tests/architecture/negative-fixtures/{name}.d.ts:{index + 1}: forbidden legacy raw-seed WASM function '{match.group(1)}'"
+            )
+    if not any(expected_symbol in violation for violation in fixture_violations):
+        raise AssertionError(
+            f"d.ts negative fixture {name!r} did not catch expected symbol {expected_symbol!r}. "
+            f"Violations: {fixture_violations!r}"
+        )
+
 def invoke_negative_fixtures() -> None:
     assert_negative_fixture_caught(
         "cousin-verb-export-account-seed",
@@ -273,6 +296,21 @@ def invoke_negative_fixtures() -> None:
         "pub fn leak() -> Cow<'static, [u8]> { unimplemented!() }",
         "leak",
         "crates/mosaic-wasm/src/lib.rs",
+    )
+    assert_negative_fixture_caught(
+        "legacy-raw-epoch-decrypt-export",
+        "pub fn decrypt_shard_with_epoch() -> BytesResult { unimplemented!() }",
+        "decrypt_shard_with_epoch",
+    )
+    assert_negative_fixture_caught(
+        "consume-master-key-handle-export",
+        "pub fn consume_master_key_handle_for_aes_gcm() -> Result<Vec<u8>, MosaicError> { unimplemented!() }",
+        "consume_master_key_handle_for_aes_gcm",
+    )
+    assert_dts_negative_fixture_caught(
+        "legacy-raw-epoch-decrypt-dts",
+        "export function decryptShardWithEpoch(handle: bigint, envelope: Uint8Array): Uint8Array;",
+        "decryptShardWithEpoch",
     )
     assert_rationale_quality_fixture_caught("rationale-reviewed-existing-api", "reviewed existing api", "banned phrase check")
     assert_rationale_quality_fixture_caught("rationale-internal-use", "internal use", "banned phrase check")
@@ -370,6 +408,9 @@ for path in dts_files:
             fn = fn_match.group(1)
             if is_secret_name(fn):
                 violations.append(f"{path.as_posix()}:{index + 1}: forbidden secret-shaped Uint8Array WASM function return '{fn}'")
+        legacy_fn_match = re.match(r"\s*export\s+function\s+([A-Za-z0-9_]+)\(", line)
+        if legacy_fn_match and legacy_fn_match.group(1) in forbidden_legacy_dts_functions:
+            violations.append(f"{path.as_posix()}:{index + 1}: forbidden legacy raw-seed WASM function '{legacy_fn_match.group(1)}'")
 
 if violations:
     print("\nno-raw-secret-ffi-export guard FAILED:")

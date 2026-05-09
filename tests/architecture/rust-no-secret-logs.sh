@@ -46,9 +46,9 @@ CRATE_ROOTS=(
   crates/mosaic-media/src
 )
 
-# Bash regex run via grep -P. We use a non-capturing word-boundary prefix
-# `(^|[^A-Za-z0-9_:])` so we don't match e.g. `my_println!` or
-# `crate::tracing` paths that aren't logging calls.
+# Bash regex run via grep -P. The negative prefix intentionally excludes only
+# identifier characters, not `:`, so qualified calls such as `std::println!`,
+# `crate::println!`, and `::println!` are still caught.
 PATTERNS=(
   'println'
   'eprintln'
@@ -58,22 +58,53 @@ PATTERNS=(
   'log_path'
   'tracing_path'
   'bare_log'
+  'std_io_write'
+  'slog'
+  'defmt'
+  'env_logger'
+  'tracing_subscriber'
 )
 
 regex_for() {
   case "$1" in
-    println)      printf '%s' '(^|[^A-Za-z0-9_:])println!\s*\(' ;;
-    eprintln)     printf '%s' '(^|[^A-Za-z0-9_:])eprintln!\s*\(' ;;
-    dbg)          printf '%s' '(^|[^A-Za-z0-9_:])dbg!\s*\(' ;;
-    print)        printf '%s' '(^|[^A-Za-z0-9_:])print!\s*\(' ;;
-    eprint)       printf '%s' '(^|[^A-Za-z0-9_:])eprint!\s*\(' ;;
-    log_path)     printf '%s' '(^|[^A-Za-z0-9_:])log::(trace|debug|info|warn|error|log)!\s*\(' ;;
-    tracing_path) printf '%s' '(^|[^A-Za-z0-9_:])tracing::(trace|debug|info|warn|error|event|span|instrument)!\s*\(' ;;
-    bare_log)     printf '%s' '(^|[^A-Za-z0-9_:])(trace|debug|info|warn|error)!\s*\(' ;;
+    println)           printf '%s' '(^|[^A-Za-z0-9_])println!\s*\(' ;;
+    eprintln)          printf '%s' '(^|[^A-Za-z0-9_])eprintln!\s*\(' ;;
+    dbg)               printf '%s' '(^|[^A-Za-z0-9_])dbg!\s*\(' ;;
+    print)             printf '%s' '(^|[^A-Za-z0-9_])print!\s*\(' ;;
+    eprint)            printf '%s' '(^|[^A-Za-z0-9_])eprint!\s*\(' ;;
+    log_path)          printf '%s' '(^|[^A-Za-z0-9_])log::(trace|debug|info|warn|error|log)!\s*\(' ;;
+    tracing_path)      printf '%s' '(^|[^A-Za-z0-9_])tracing::(trace|debug|info|warn|error|event|span|instrument)!\s*\(' ;;
+    bare_log)          printf '%s' '(^|[^A-Za-z0-9_])(trace|debug|info|warn|error)!\s*\(' ;;
+    std_io_write)      printf '%s' '\bstd::io::(stderr|stdout)\(\)\.\s*write(_all)?\b' ;;
+    slog)              printf '%s' '\bslog::\w+!\s*\(' ;;
+    defmt)             printf '%s' '\bdefmt::\w+!\s*\(' ;;
+    env_logger)        printf '%s' '\benv_logger::\w+\b' ;;
+    tracing_subscriber) printf '%s' '\btracing_subscriber::\w+\b' ;;
   esac
 }
 
 violations=()
+
+assert_pattern_fixture_caught() {
+  local name="$1"
+  local source="$2"
+  local expected="$3"
+  local regex
+  regex="$(regex_for "$expected")"
+  if ! printf '%s' "$source" | grep -Pq "$regex"; then
+    echo "rust-no-secret-logs negative fixture '$name' did not catch expected pattern '$expected'" >&2
+    exit 1
+  fi
+}
+
+assert_pattern_fixture_caught 'qualified-std-println' 'fn f() { std::println!("secret"); }' 'println'
+assert_pattern_fixture_caught 'qualified-crate-println' 'fn f() { crate::println!("secret"); }' 'println'
+assert_pattern_fixture_caught 'qualified-root-println' 'fn f() { ::println!("secret"); }' 'println'
+assert_pattern_fixture_caught 'std-stderr-write' 'fn f() { std::io::stderr().write_all(b"secret"); }' 'std_io_write'
+assert_pattern_fixture_caught 'slog-info' 'fn f() { slog::info!(log, "secret"); }' 'slog'
+assert_pattern_fixture_caught 'defmt-info' 'fn f() { defmt::info!("secret"); }' 'defmt'
+assert_pattern_fixture_caught 'env-logger-init' 'fn f() { env_logger::init(); }' 'env_logger'
+assert_pattern_fixture_caught 'tracing-subscriber-fmt' 'fn f() { tracing_subscriber::fmt(); }' 'tracing_subscriber'
 
 # is_allowed_by_safety_comment <file> <line_number_1based>
 # Returns 0 if the call site is whitelisted by a `// SAFETY:` comment on

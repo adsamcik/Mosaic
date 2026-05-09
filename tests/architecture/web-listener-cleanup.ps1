@@ -3,12 +3,22 @@ $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $src = Join-Path $root 'apps\web\src'
 $violations = New-Object System.Collections.Generic.List[string]
 
+$AllowList = @{
+  # App-lifetime global diagnostics handlers are registered once at startup and intentionally live until page unload.
+  'apps/web/src/main.tsx' = 'App-lifetime global error/unhandledrejection diagnostics handlers live until page unload.'
+  # SessionManager owns a singleton BroadcastChannel; logout closes the channel, and activity listeners already remove themselves.
+  'apps/web/src/lib/session.ts' = 'Singleton session lifecycle owns BroadcastChannel; logout closes it and activity listeners have explicit cleanup.'
+}
+
+function ConvertTo-RepoPath([string]$Path) {
+  return [System.IO.Path]::GetRelativePath($root, $Path).Replace('\', '/')
+}
+
 Get-ChildItem -Path $src -Recurse -Include *.ts,*.tsx |
   Where-Object {
     $_.FullName -notmatch '\\__tests__\\' -and
     $_.FullName -notmatch '\\service-worker\\' -and
-    $_.Name -ne 'main.tsx' -and
-    $_.Name -ne 'session.ts'
+    -not $AllowList.ContainsKey((ConvertTo-RepoPath $_.FullName))
   } |
   ForEach-Object {
     $text = Get-Content -Raw -Path $_.FullName
@@ -36,7 +46,8 @@ Get-ChildItem -Path $src -Recurse -Include *.ts,*.tsx |
   }
 
 if ($violations.Count -gt 0) {
-  Write-Error ("Listener cleanup guard failed:`n" + ($violations -join "`n"))
+  Write-Host ("Listener cleanup guard failed:`n" + ($violations -join "`n")) -ForegroundColor Red
+  exit 1
 }
 
 Write-Host "Listener cleanup guard passed."

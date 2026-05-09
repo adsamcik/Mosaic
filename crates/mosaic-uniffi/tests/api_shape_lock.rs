@@ -60,7 +60,7 @@ fn uniffi_exported_api_shape_matches_golden() {
 
 #[test]
 fn uniffi_api_v1_baseline_signature_unchanged() {
-    let v1_baseline_blake3 = "f9773e50762e3a274aaf881930498e28286679f53b4448838773ac3195bc3766";
+    let v1_baseline_blake3 = "bb132a31b9348babb0887f48654f2804c13477aee31dcc10eecca48af618b11b";
     let actual = blake3::hash(canonical_uniffi_api_shape(SOURCE).as_bytes()).to_hex();
 
     assert_eq!(
@@ -739,19 +739,23 @@ fn manifest_transcript_bytes_uniffi_rejects_malformed_inputs_without_panic() {
 fn default_api_shape_excludes_cross_client_vector_seed_verifier() {
     let actual = canonical_uniffi_api_shape_for_features(SOURCE, false);
 
-    assert!(
-        !actual.contains("verify_and_open_bundle_with_recipient_seed"),
-        "default UniFFI API shape must not expose the raw recipient-seed corpus driver"
-    );
-    assert!(
-        !actual.contains("derive_link_keys_from_raw_secret"),
-        "default UniFFI API shape must not expose the raw link-secret corpus driver"
-    );
-    assert!(
-        !actual.contains("derive_identity_from_raw_seed"),
-        "default UniFFI API shape must not expose the raw identity-seed corpus driver"
-    );
+    for symbol in CROSS_CLIENT_VECTOR_EXPORTS {
+        assert!(
+            !actual.contains(symbol),
+            "default UniFFI API shape must not expose cross-client-vectors corpus driver {symbol}"
+        );
+    }
 }
+
+const CROSS_CLIENT_VECTOR_EXPORTS: &[&str] = &[
+    "derive_link_keys_from_raw_secret",
+    "derive_identity_from_raw_seed",
+    "build_auth_challenge_transcript_bytes",
+    "sign_auth_challenge_with_raw_seed",
+    "verify_auth_challenge_signature",
+    "verify_and_open_bundle_with_recipient_seed",
+    "decrypt_content_with_raw_key",
+];
 
 /// Verifies that the production UniFFI build (default features) does NOT export
 /// the cross-client-vectors gated symbols. This is the counterpart to the
@@ -769,9 +773,12 @@ fn production_uniffi_bindings_do_not_expose_corpus_drivers() {
     #[cfg(not(feature = "cross-client-vectors"))]
     {
         let actual = canonical_uniffi_api_shape_for_features(SOURCE, false);
-        assert!(!actual.contains("verify_and_open_bundle_with_recipient_seed"));
-        assert!(!actual.contains("derive_link_keys_from_raw_secret"));
-        assert!(!actual.contains("derive_identity_from_raw_seed"));
+        for symbol in CROSS_CLIENT_VECTOR_EXPORTS {
+            assert!(
+                !actual.contains(symbol),
+                "production UniFFI API shape must not expose cross-client-vectors corpus driver {symbol}"
+            );
+        }
     }
 
     #[cfg(feature = "cross-client-vectors")]
@@ -786,18 +793,12 @@ fn production_uniffi_bindings_do_not_expose_corpus_drivers() {
 fn feature_enabled_api_shape_includes_cross_client_vector_seed_verifier() {
     let actual = canonical_uniffi_api_shape_for_features(SOURCE, true);
 
-    assert!(
-        actual.contains("export pub fn verify_and_open_bundle_with_recipient_seed("),
-        "cross-client-vectors shape must retain the sealed_bundle.json corpus driver"
-    );
-    assert!(
-        actual.contains("export pub fn derive_link_keys_from_raw_secret("),
-        "cross-client-vectors shape must retain the link_keys.json corpus driver"
-    );
-    assert!(
-        actual.contains("export pub fn derive_identity_from_raw_seed("),
-        "cross-client-vectors shape must retain the identity.json corpus driver"
-    );
+    for symbol in CROSS_CLIENT_VECTOR_EXPORTS {
+        assert!(
+            actual.contains(&format!("export pub fn {symbol}(")),
+            "cross-client-vectors shape must retain corpus driver {symbol}"
+        );
+    }
 }
 
 #[test]

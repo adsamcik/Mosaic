@@ -73,6 +73,89 @@ for type in "${SHELL_API_TYPES[@]}"; do
   fi
 done
 
+ALLOWED_FIXTURE_EMAILS=(
+  'test@example.com'
+)
+PII_EMAIL_ROOTS=(
+  'apps/android-main/src/main'
+  'apps/android-shell/src/main'
+  'apps/android-main/src/test'
+)
+PII_PRODUCTION_ROOTS=(
+  'apps/android-main/src/main'
+  'apps/android-shell/src/main'
+)
+PII_EMAIL_REGEX='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+PII_PHONE_REGEX='(?<![\w+])\+[1-9]\d{7,14}(?!\w)'
+PII_CAMERA_FILE_REGEX='IMG_\d{8}_[A-Za-z0-9_-]+\.jpe?g'
+PII_PATTERN_SOURCE_ALLOW_LIST=(
+  'MosaicPiiPatterns.kt'
+  'PrivacyAuditorTest.kt'
+)
+
+is_allowed_fixture_email() {
+  local email="$1"
+  for allowed in "${ALLOWED_FIXTURE_EMAILS[@]}"; do
+    if [[ "$email" == "$allowed" ]]; then return 0; fi
+  done
+  return 1
+}
+
+is_pii_pattern_source() {
+  local file="$1"
+  for suffix in "${PII_PATTERN_SOURCE_ALLOW_LIST[@]}"; do
+    if [[ "$file" == *"$suffix" ]]; then return 0; fi
+  done
+  return 1
+}
+
+assert_pii_regex_fixtures() {
+  if ! printf '%s' 'owner@example.org' | grep -Pq "$PII_EMAIL_REGEX"; then
+    echo "kotlin-raw-input-ffi PII fixture failed to catch email regex" >&2
+    exit 1
+  fi
+  if ! printf '%s' '+420123456789' | grep -Pq "$PII_PHONE_REGEX"; then
+    echo "kotlin-raw-input-ffi PII fixture failed to catch E.164 phone regex" >&2
+    exit 1
+  fi
+  if ! printf '%s' 'IMG_20260509_secret.jpg' | grep -Pq "$PII_CAMERA_FILE_REGEX"; then
+    echo "kotlin-raw-input-ffi PII fixture failed to catch camera filename regex" >&2
+    exit 1
+  fi
+}
+
+assert_pii_regex_fixtures
+
+for root in "${PII_EMAIL_ROOTS[@]}"; do
+  [[ -d "$root" ]] || continue
+  while IFS= read -r -d '' kt_file; do
+    if is_pii_pattern_source "$kt_file"; then continue; fi
+    matches="$(grep -Po "$PII_EMAIL_REGEX" "$kt_file" 2>/dev/null || true)"
+    [[ -n "$matches" ]] || continue
+    while IFS= read -r email; do
+      [[ -n "$email" ]] || continue
+      if is_allowed_fixture_email "$email"; then continue; fi
+      echo "VIOLATION: hard-coded email-like PII '$email' in $kt_file. Use test@example.com for fixtures." >&2
+      violations=$((violations + 1))
+    done <<< "$matches"
+  done < <(find "$root" -type f -name '*.kt' -print0 2>/dev/null)
+done
+
+for root in "${PII_PRODUCTION_ROOTS[@]}"; do
+  [[ -d "$root" ]] || continue
+  while IFS= read -r -d '' kt_file; do
+    if is_pii_pattern_source "$kt_file"; then continue; fi
+    if grep -Pq "$PII_PHONE_REGEX" "$kt_file" 2>/dev/null; then
+      echo "VIOLATION: hard-coded E.164 phone-like PII in $kt_file." >&2
+      violations=$((violations + 1))
+    fi
+    if grep -Pq "$PII_CAMERA_FILE_REGEX" "$kt_file" 2>/dev/null; then
+      echo "VIOLATION: hard-coded Android camera filename-like PII in $kt_file." >&2
+      violations=$((violations + 1))
+    fi
+  done < <(find "$root" -type f -name '*.kt' -print0 2>/dev/null)
+done
+
 if [[ $violations -gt 0 ]]; then
   echo "" >&2
   echo "kotlin-raw-input-ffi guard found $violations violation(s)." >&2

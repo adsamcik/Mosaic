@@ -28,16 +28,20 @@ $ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 Set-Location $ProjectRoot
 
 $ffiFiles = @('crates/mosaic-wasm/src/lib.rs', 'crates/mosaic-uniffi/src/lib.rs')
-$dtsFiles = @('apps/web/src/generated/mosaic-wasm/mosaic_wasm.d.ts')
+$dtsFiles = @()
+if (Test-Path 'apps/web/src/generated/mosaic-wasm') {
+  $dtsFiles = Get-ChildItem -Path 'apps/web/src/generated/mosaic-wasm' -Filter '*.d.ts' -File -ErrorAction SilentlyContinue |
+    ForEach-Object { [System.IO.Path]::GetRelativePath($ProjectRoot, $_.FullName).Replace('\', '/') }
+}
 # JsValue is intentionally treated as secret-shaped for wasm exports. It is fuzzy
 # because serde_wasm_bindgen can smuggle byte arrays through JsValue; reviewers can
 # use the explicit allowlist when a non-secret JsValue API is justified.
-$secretResultTypes = '(Vec\s*<\s*u8\s*>|Box\s*<\s*\[\s*u8\s*\]\s*>|Cow\s*<[^>]*\[\s*u8\s*\][^>]*>|(?:js_sys\s*::\s*)?Uint8Array|(?:js_sys\s*::\s*)?ArrayBuffer|JsValue|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)'
+$secretResultTypes = '(?:Result\s*<\s*)?(Vec\s*<\s*u8\s*>|Box\s*<\s*\[\s*u8\s*\]\s*>|Cow\s*<[^>]*\[\s*u8\s*\][^>]*>|(?:js_sys\s*::\s*)?Uint8Array|(?:js_sys\s*::\s*)?ArrayBuffer|JsValue|BytesResult|JsBytesResult|LinkKeysResult|JsLinkKeysResult|OpenedBundleResult|JsOpenedBundleResult|LinkKeysFfiResult|OpenedBundleFfiResult)'
 $exoticWasmResultTypes = '(Box\s*<\s*\[\s*u8\s*\]\s*>|Cow\s*<[^>]*\[\s*u8\s*\][^>]*>|(?:js_sys\s*::\s*)?Uint8Array|(?:js_sys\s*::\s*)?ArrayBuffer)'
-$secretNamePattern = '(derive.*(key|keys|secret)|generate.*secret|get.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)'
+$secretNamePattern = '(derive.*(key|keys|secret)|generate.*secret|get.*key|consume_.*key|wrap.*key|unwrap.*key|unwrap.*tier.*key|verify_and_open_bundle)'
 $domainHandlePattern = '(?i)(^(wrap|unwrap)_.*(account|epoch|identity|link).*(handle|seed|key|secret)|^(seal|unseal)_.*(account|epoch|identity|link).*handle)'
 $genericBytesWrapPattern = '(?i)^(wrap|unwrap)(_|$)'
-$domainNounPattern = '(?i)(account|epoch|identity|link)'
+$domainNounPattern = '(?i)(account|epoch|identity|link|master)'
 $secretShapedName = '(?i)(seed|secret|key)$'
 $publicKeyName = '(public_?key|pub_?key|PublicKey|PubKey|pubkey)'
 $forbiddenRawBundleApis = @(
@@ -69,6 +73,8 @@ $allowlist = @{
   'crates/mosaic-wasm/src/lib.rs::sign_manifest_with_identity_js' = 'SAFE: Returns JS-visible Ed25519 manifest signature bytes; identity signing key remains inside Rust handle.'
   'crates/mosaic-wasm/src/lib.rs::sign_manifest_with_epoch_handle_js' = 'SAFE: Returns JS-visible Ed25519 manifest signature bytes; epoch signing seed remains inside Rust handle.'
   'crates/mosaic-wasm/src/lib.rs::sign_auth_challenge_with_account_js' = 'SAFE: Returns JS-visible Ed25519 auth signature bytes; account-derived signing secret is not exported.'
+  'crates/mosaic-wasm/src/lib.rs::consume_master_key_handle_for_aes_gcm' = 'SAFE: Returns the raw L0 master key bytes for one-shot WebCrypto AES-GCM import. The Rust handle is consumed, removed from the registry, and the registry copy is zeroized in the same call before the slice is returned; no second extraction is possible. ADR-006/ADR-021 explicitly permit this single-shot bridging path.'
+  'crates/mosaic-uniffi/src/lib.rs::consume_master_key_handle_for_aes_gcm' = 'SAFE: Returns the raw L0 master key bytes for one-shot WebCrypto AES-GCM import. The Rust handle is consumed, removed from the registry, and the registry copy is zeroized in the same call before the slice is returned; no second extraction is possible. ADR-006/ADR-021 explicitly permit this single-shot bridging path.'
   'crates/mosaic-uniffi/src/lib.rs::derive_link_keys_from_raw_secret' = "CORPUS-DRIVER-ONLY: gated by feature='cross-client-vectors'; production builds do not expose this symbol. Gradle invariant in apps/android-main/build.gradle.kts forbids scheduling test and production tasks in same invocation. Verified by crates/mosaic-uniffi/tests/api_shape_lock.rs::production_uniffi_bindings_do_not_expose_corpus_drivers. The raw-secret input is consumed by the cross-client link_keys.json corpus parity test."
   'crates/mosaic-uniffi/src/lib.rs::derive_identity_from_raw_seed' = "CORPUS-DRIVER-ONLY: gated by feature='cross-client-vectors'; production builds do not expose this symbol. Gradle invariant in apps/android-main/build.gradle.kts forbids scheduling test and production tasks in same invocation. Verified by crates/mosaic-uniffi/tests/api_shape_lock.rs::production_uniffi_bindings_do_not_expose_corpus_drivers. The raw-seed input is consumed by the cross-client identity.json corpus parity test."
   'crates/mosaic-uniffi/src/lib.rs::verify_and_open_bundle_with_recipient_seed' = "CORPUS-DRIVER-ONLY: gated by feature='cross-client-vectors'; production builds do not expose this symbol. Gradle invariant in apps/android-main/build.gradle.kts forbids scheduling test and production tasks in same invocation. Verified by crates/mosaic-uniffi/tests/api_shape_lock.rs::production_uniffi_bindings_do_not_expose_corpus_drivers. The raw-seed input is consumed by the cross-client sealed_bundle.json corpus parity test."
@@ -213,6 +219,7 @@ function Invoke-NegativeFixtures {
   Assert-NegativeFixtureCaught 'exotic-return-jsvalue' 'pub fn get_identity_key() -> JsValue { unimplemented!() }' 'get_identity_key'
   Assert-NegativeFixtureCaught 'wasm-bare-name-cow-u8' "pub fn leak() -> Cow<'static, [u8]> { unimplemented!() }" 'leak' 'crates/mosaic-wasm/src/lib.rs'
   Assert-NegativeFixtureCaught 'legacy-raw-epoch-decrypt-export' 'pub fn decrypt_shard_with_epoch() -> BytesResult { unimplemented!() }' 'decrypt_shard_with_epoch'
+  Assert-NegativeFixtureCaught 'consume-master-key-handle-export' 'pub fn consume_master_key_handle_for_aes_gcm() -> Result<Vec<u8>, MosaicError> { unimplemented!() }' 'consume_master_key_handle_for_aes_gcm'
   Assert-DtsNegativeFixtureCaught 'legacy-raw-epoch-decrypt-dts' 'export function decryptShardWithEpoch(handle: bigint, envelope: Uint8Array): Uint8Array;' 'decryptShardWithEpoch'
   Assert-RationaleQualityFixtureCaught 'rationale-reviewed-existing-api' 'reviewed existing api' 'banned phrase check'
   Assert-RationaleQualityFixtureCaught 'rationale-internal-use' 'internal use' 'banned phrase check'

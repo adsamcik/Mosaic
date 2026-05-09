@@ -8,9 +8,8 @@
 #    calls in high-risk crypto/storage/upload boundaries."
 #
 # This script walks the high-risk web boundary directories listed below
-# and FAILS if any production source file uses `console.log`,
-# `console.warn`, `console.error`, `console.info`, `console.debug`, or
-# `console.trace`. The single allowed callsite is
+# and FAILS if any production source file uses direct console APIs. The
+# single allowed callsite is
 # `apps/web/src/lib/logger.ts` itself (the centralized logger).
 #
 # Exit code 0 if clean, 1 if any violation. Mirrors
@@ -56,7 +55,26 @@ ALLOWED_PATTERNS=(
   "apps/web/src/lib/logger.ts"
 )
 
-CONSOLE_REGEX='\bconsole\.(log|warn|error|info|debug|trace)[[:space:]]*\('
+CONSOLE_METHODS=(
+  log
+  warn
+  error
+  info
+  debug
+  trace
+  dir
+  table
+  assert
+  group
+  groupCollapsed
+  groupEnd
+  count
+  time
+  timeEnd
+  profile
+)
+CONSOLE_METHOD_PATTERN="$(IFS='|'; echo "${CONSOLE_METHODS[*]}")"
+CONSOLE_REGEX="\\bconsole[[:space:]]*(\\.[[:space:]]*(${CONSOLE_METHOD_PATTERN})[[:space:]]*\\(|\\[[[:space:]]*['\"](${CONSOLE_METHOD_PATTERN})['\"][[:space:]]*\\])"
 
 is_allowed() {
   local rel="$1"

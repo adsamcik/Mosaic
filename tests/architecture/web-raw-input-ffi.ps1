@@ -56,6 +56,9 @@ $FutureRawBridgeNamePattern = '\b[A-Za-z_$][A-Za-z0-9_$]*(RawSecret|ForVectors)[
 $ImportPattern = '(?ms)import\s+(?:type\s+)?(?<clause>.*?)\s+from\s+[''"](?<module>[^''"]+)[''"]'
 $TargetModulePattern = '^(?:@mosaic/wasm|mosaic-wasm)$|(?:^|/)generated/mosaic-wasm/mosaic_wasm(?:\.js)?$'
 $NamespaceImportPattern = '\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)\b'
+$DynamicImportPropertyPattern = '\(\s*await\s+import\s*\(\s*[''"](?<module>@mosaic/wasm|libsodium-wrappers-sumo)[''"]\s*\)\s*\)\s*\.\s*(?<name>[A-Za-z_$][\w$]*)'
+$DynamicImportAliasPattern = '(?ms)(?:const|let|var)\s+(?<alias>[A-Za-z_$][\w$]*)\s*=\s*await\s+import\s*\(\s*[''"](?<module>@mosaic/wasm|libsodium-wrappers-sumo)[''"]\s*\)'
+$ReExportPattern = '(?ms)export\s*\{\s*(?<clause>[^}]*)\}\s*from\s*[''"](?<module>@mosaic/wasm|libsodium-wrappers-sumo)[''"]'
 
 $AllowlistedFiles = @{
   # Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.
@@ -136,8 +139,50 @@ function Assert-ForbiddenImportFixtureCaught([string]$Name, [string]$Source, [st
       }
     }
   }
+  foreach ($match in [regex]::Matches($Source, $DynamicImportPropertyPattern)) {
+    $dynamicName = $match.Groups['name'].Value
+    if ($ForbiddenNames -contains $dynamicName) {
+      $fixtureViolations.Add("fixture:${Name}: forbidden raw-input dynamic import property '$dynamicName' from '$($match.Groups['module'].Value)'")
+    }
+  }
+  foreach ($match in [regex]::Matches($Source, $DynamicImportAliasPattern)) {
+    $alias = [regex]::Escape($match.Groups['alias'].Value)
+    $module = $match.Groups['module'].Value
+    foreach ($forbiddenName in $ForbiddenNames) {
+      if ($Source -match "\b$alias\s*\.\s*$([regex]::Escape($forbiddenName))\b") {
+        $fixtureViolations.Add("fixture:${Name}: forbidden raw-input dynamic import namespace usage '$($match.Groups['alias'].Value).$forbiddenName' from '$module'")
+      }
+    }
+  }
+  foreach ($match in [regex]::Matches($Source, $ReExportPattern)) {
+    $module = $match.Groups['module'].Value
+    $clause = $match.Groups['clause'].Value
+    foreach ($forbiddenName in $ForbiddenNames) {
+      if ($clause -match "\b$([regex]::Escape($forbiddenName))\b") {
+        $fixtureViolations.Add("fixture:${Name}: forbidden raw-input WASM re-export '$forbiddenName' from '$module'")
+      }
+    }
+  }
   if (-not ($fixtureViolations | Where-Object { $_ -match [regex]::Escape($ExpectedName) })) {
     throw "forbidden import negative fixture '$Name' did not catch expected name '$ExpectedName'. Violations: $($fixtureViolations -join '; ')"
+  }
+}
+
+function Add-RawInputClauseViolations(
+  [string]$RepoPath,
+  [string]$Module,
+  [string]$Clause,
+  [string]$Context,
+  [System.Collections.Generic.List[string]]$Violations
+) {
+  foreach ($name in $ForbiddenNames) {
+    if ($Clause -match "\b$([regex]::Escape($name))\b") {
+      $Violations.Add("${RepoPath}: forbidden raw-input WASM $Context '$name' from '$Module'")
+    }
+  }
+  $futureNames = [regex]::Matches($Clause, $FutureRawBridgeNamePattern) | ForEach-Object { $_.Value } | Sort-Object -Unique
+  foreach ($name in $futureNames) {
+    $Violations.Add("${RepoPath}: forbidden future raw-input WASM $Context '$name' from '$Module'")
   }
 }
 
@@ -176,6 +221,9 @@ Assert-RationaleQualityFixtureCaught 'rationale-short' 'short' 'length check'
 Assert-RationaleQualityFixtureCaught 'rationale-missing-classifier' 'Returns placeholder bytes with a long enough rationale for classifier validation.' 'missing classifier check'
 Assert-RationaleQualityFixtureCaught 'rationale-unknown-classifier' 'BACKWARD-COMPAT-LEGACY: Returns placeholder bytes with a long enough rationale for classifier validation.' 'classifier check'
 Assert-ForbiddenImportFixtureCaught 'legacy-decrypt-shard-with-epoch-import' "import { decryptShardWithEpoch } from '@mosaic/wasm';" 'decryptShardWithEpoch'
+Assert-ForbiddenImportFixtureCaught 'legacy-dynamic-import-property' "const decryptor = (await import('@mosaic/wasm')).decryptShardWithEpoch;" 'decryptShardWithEpoch'
+Assert-ForbiddenImportFixtureCaught 'legacy-dynamic-import-alias-property' "const wasm = await import('@mosaic/wasm'); const decryptor = wasm.decryptShardWithEpoch;" 'decryptShardWithEpoch'
+Assert-ForbiddenImportFixtureCaught 'legacy-re-export-passthrough' "export { decryptShardWithEpoch } from '@mosaic/wasm';" 'decryptShardWithEpoch'
 Invoke-AllowlistRationaleQualityCheck @($AllowlistedFiles)
 
 $violations = New-Object System.Collections.Generic.List[string]
@@ -193,15 +241,7 @@ foreach ($fileInfo in Find-WebTypeScriptFiles) {
     if ($module -notmatch $TargetModulePattern) { continue }
 
     $clause = $match.Groups['clause'].Value
-    foreach ($name in $ForbiddenNames) {
-      if ($clause -match "\b$([regex]::Escape($name))\b") {
-        $violations.Add("${repoPath}: forbidden raw-input WASM import '$name' from '$module'")
-      }
-    }
-    $futureNames = [regex]::Matches($clause, $FutureRawBridgeNamePattern) | ForEach-Object { $_.Value } | Sort-Object -Unique
-    foreach ($name in $futureNames) {
-      $violations.Add("${repoPath}: forbidden future raw-input WASM import '$name' from '$module'")
-    }
+    Add-RawInputClauseViolations $repoPath $module $clause 'import' $violations
 
     if ($clause -match $NamespaceImportPattern) {
       $namespaceAlias = $Matches[1]
@@ -217,6 +257,25 @@ foreach ($fileInfo in Find-WebTypeScriptFiles) {
         $violations.Add("${repoPath}: forbidden future raw-input WASM namespace usage '$namespaceAlias.$name' from '$module'")
       }
     }
+  }
+  foreach ($match in [regex]::Matches($contents, $DynamicImportPropertyPattern)) {
+    $name = $match.Groups['name'].Value
+    if ($ForbiddenNames -contains $name) {
+      $violations.Add("${repoPath}: forbidden raw-input WASM dynamic import property '$name' from '$($match.Groups['module'].Value)'")
+    }
+  }
+  foreach ($match in [regex]::Matches($contents, $DynamicImportAliasPattern)) {
+    $aliasRaw = $match.Groups['alias'].Value
+    $alias = [regex]::Escape($aliasRaw)
+    $module = $match.Groups['module'].Value
+    foreach ($name in $ForbiddenNames) {
+      if ($contents -match "\b$alias\s*\.\s*$([regex]::Escape($name))\b") {
+        $violations.Add("${repoPath}: forbidden raw-input WASM dynamic import namespace usage '$aliasRaw.$name' from '$module'")
+      }
+    }
+  }
+  foreach ($match in [regex]::Matches($contents, $ReExportPattern)) {
+    Add-RawInputClauseViolations $repoPath $match.Groups['module'].Value $match.Groups['clause'].Value 're-export' $violations
   }
 }
 

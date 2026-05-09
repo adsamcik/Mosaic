@@ -80,7 +80,7 @@ $RetiredRootSymbols = @(
 )
 
 $LegacyCallPattern = '\bdecryptShardWithEpoch\s*\('
-$EpochSeedParameterPattern = '\bepochSeed\s*:\s*Uint8Array\b'
+$EpochSeedParameterPattern = '\bepochSeed\b[?!]?\s*:\s*(?:Readonly<\s*)?(?:Uint8Array|ArrayBuffer|Buffer)\b'
 $MosaicCryptoImportPattern = '(?ms)import\s+(?:type\s+)?(?<clause>.*?)\s+from\s+[''"](?<module>[^''"]+)[''"]'
 $DynamicImportPattern = '(?ms)(?:const|let|var)\s*\{(?<clause>[^}]+)\}\s*=\s*await\s+import\(\s*[''"](?<module>[^''"]+)[''"]\s*\)'
 
@@ -157,6 +157,9 @@ function Assert-NegativeFixtureCaught([string]$Name, [string]$Source, [string]$E
 
 Assert-NegativeFixtureCaught 'legacy-decrypt-shard-with-epoch-call' 'await crypto.decryptShardWithEpoch(epochHandle, envelope);' 'decryptShardWithEpoch'
 Assert-NegativeFixtureCaught 'raw-epoch-seed-param' 'function decrypt(envelope: Uint8Array, epochSeed: Uint8Array) { return envelope; }' 'epochSeed: Uint8Array'
+Assert-NegativeFixtureCaught 'raw-epoch-seed-optional-param' 'function decrypt(envelope: Uint8Array, epochSeed?: Uint8Array) { return envelope; }' 'epochSeed'
+Assert-NegativeFixtureCaught 'raw-epoch-seed-buffer-param' 'function decrypt(envelope: Uint8Array, epochSeed: Buffer) { return envelope; }' 'epochSeed'
+Assert-NegativeFixtureCaught 'raw-epoch-seed-readonly-param' 'function decrypt(envelope: Uint8Array, epochSeed: Readonly<Uint8Array>) { return envelope; }' 'epochSeed'
 Assert-NegativeFixtureCaught 'retired-subpath-import' "import { wrapKey } from '@mosaic/crypto/keybox';" 'retired TypeScript crypto module'
 Assert-NegativeFixtureCaught 'retired-root-import' "import { signManifest } from '@mosaic/crypto';" 'signManifest'
 Assert-NegativeFixtureCaught 'retired-dynamic-import' "const { deriveKeys } = await import('@mosaic/crypto');" 'deriveKeys'

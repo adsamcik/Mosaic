@@ -3620,6 +3620,7 @@ pub fn derive_identity_from_raw_seed(
 /// the JS API where the timestamp argument is optional). The resulting
 /// bytes are suitable for direct Ed25519 detached signing via
 /// [`sign_auth_challenge_with_raw_seed`].
+#[cfg(feature = "cross-client-vectors")]
 #[uniffi::export]
 #[must_use]
 pub fn build_auth_challenge_transcript_bytes(
@@ -3651,6 +3652,7 @@ pub fn build_auth_challenge_transcript_bytes(
 ///
 /// SECURITY: The caller-provided seed is wiped on the Rust side before
 /// this function returns.
+#[cfg(feature = "cross-client-vectors")]
 #[uniffi::export]
 #[must_use]
 pub fn sign_auth_challenge_with_raw_seed(
@@ -3685,6 +3687,7 @@ pub fn sign_auth_challenge_with_raw_seed(
 /// `code = 205` (`AuthenticationFailed`) and `valid = false`. Malformed
 /// inputs return their length/shape error codes (211/212/201) with
 /// `valid = false`.
+#[cfg(feature = "cross-client-vectors")]
 #[uniffi::export]
 #[must_use]
 pub fn verify_auth_challenge_signature(
@@ -3848,6 +3851,7 @@ pub fn verify_and_open_bundle_with_recipient_seed(
 /// SECURITY: The caller-provided content key is wiped on the Rust side
 /// before this function returns. `plaintext` in the result is
 /// secret-equivalent — Kotlin callers MUST wipe the byte array after use.
+#[cfg(feature = "cross-client-vectors")]
 #[uniffi::export]
 #[must_use]
 pub fn decrypt_content_with_raw_key(

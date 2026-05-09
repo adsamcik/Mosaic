@@ -51,6 +51,9 @@ PATTERN_NAMES=(
   "Log.e("
   "Log.wtf("
   "Timber."
+  "System.out/err.println"
+  "LoggerFactory.getLogger"
+  "java.util.logging.Logger"
   "kotlin.io.println("
   "kotlin.io.print("
   "top-level println("
@@ -66,6 +69,9 @@ PATTERN_REGEXES=(
   '(?<![A-Za-z0-9_.])Log\.e\s*\('
   '(?<![A-Za-z0-9_.])Log\.wtf\s*\('
   '(?<![A-Za-z0-9_.])Timber\.'
+  '\bSystem\s*\.\s*(out|err)\s*\.\s*println\b'
+  '\bLoggerFactory\s*\.\s*getLogger\b'
+  '\bjava\s*\.\s*util\s*\.\s*logging\s*\.\s*Logger\b'
   '\bkotlin\.io\.println\s*\('
   '\bkotlin\.io\.print\s*\('
   '(?<![A-Za-z0-9_.])println\s*\('

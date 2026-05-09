@@ -88,7 +88,8 @@ foreach ($type in $ShellApiTypes) {
 }
 
 $AllowedFixtureEmails = @('test@example.com')
-$PiiRoots = @('apps/android-main/src/main', 'apps/android-main/src/test')
+$PiiEmailRoots = @('apps/android-main/src/main', 'apps/android-shell/src/main', 'apps/android-main/src/test')
+$PiiProductionRoots = @('apps/android-main/src/main', 'apps/android-shell/src/main')
 $PiiEmailRegex = '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
 $PiiPhoneRegex = '(?<![\w+])\+[1-9]\d{7,14}(?!\w)'
 $PiiCameraFileRegex = 'IMG_\d{8}_[A-Za-z0-9_-]+\.jpe?g'
@@ -97,7 +98,7 @@ $PiiPatternSourceAllowList = @(
   'PrivacyAuditorTest.kt'
 )
 
-foreach ($root in $PiiRoots) {
+foreach ($root in $PiiEmailRoots) {
   if (-not (Test-Path $root)) { continue }
   Get-ChildItem -Path $root -Recurse -Filter '*.kt' -ErrorAction SilentlyContinue | ForEach-Object {
     $file = $_.FullName
@@ -114,6 +115,20 @@ foreach ($root in $PiiRoots) {
         $violations++
       }
     }
+  }
+}
+
+foreach ($root in $PiiProductionRoots) {
+  if (-not (Test-Path $root)) { continue }
+  Get-ChildItem -Path $root -Recurse -Filter '*.kt' -ErrorAction SilentlyContinue | ForEach-Object {
+    $file = $_.FullName
+    $isPatternSource = $false
+    foreach ($suffix in $PiiPatternSourceAllowList) {
+      if ($file -like "*$suffix") { $isPatternSource = $true; break }
+    }
+    $contents = Get-Content -Path $file -Raw -ErrorAction SilentlyContinue
+    if ($null -eq $contents) { return }
+
     if (-not $isPatternSource -and $contents -match $PiiPhoneRegex) {
       Write-Error "VIOLATION: hard-coded E.164 phone-like PII in $file."
       $violations++

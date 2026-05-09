@@ -36,6 +36,7 @@ import re
 from pathlib import Path
 
 forbidden_names = [
+    "decryptShardWithEpoch",
     "verifyAndOpenBundle",
     "sealAndSignBundle",
     "importEpochKeyHandleFromBundle",
@@ -59,6 +60,9 @@ future_raw_bridge_name_pattern = re.compile(r"\b[A-Za-z_$][A-Za-z0-9_$]*(RawSecr
 import_pattern = re.compile(r"import\s+(?:type\s+)?(?P<clause>.*?)\s+from\s+['\"](?P<module>[^'\"]+)['\"]", re.DOTALL)
 target_module_pattern = re.compile(r"^(?:@mosaic/wasm|mosaic-wasm)$|(?:^|/)generated/mosaic-wasm/mosaic_wasm(?:\.js)?$")
 namespace_import_pattern = re.compile(r"\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)\b")
+dynamic_import_property_pattern = re.compile(r"\(\s*await\s+import\s*\(\s*['\"](?P<module>@mosaic/wasm|libsodium-wrappers-sumo)['\"]\s*\)\s*\)\s*\.\s*(?P<name>[A-Za-z_$][\w$]*)")
+dynamic_import_alias_pattern = re.compile(r"(?:const|let|var)\s+(?P<alias>[A-Za-z_$][\w$]*)\s*=\s*await\s+import\s*\(\s*['\"](?P<module>@mosaic/wasm|libsodium-wrappers-sumo)['\"]\s*\)", re.DOTALL)
+re_export_pattern = re.compile(r"export\s*\{\s*(?P<clause>[^}]*)\}\s*from\s*['\"](?P<module>@mosaic/wasm|libsodium-wrappers-sumo)['\"]", re.DOTALL)
 
 allowlisted_files = {
     # Test-only cross-client vector driver is excluded from production src; it exercises raw-input bridges against public corpora.
@@ -123,6 +127,53 @@ def invoke_allowlist_rationale_quality_check(*allowlist_tables):
         print("See R-C5.5 audit checkpoint comment block for the standard.")
         raise SystemExit(1)
 
+def add_raw_input_clause_violations(repo_path: str, module: str, clause: str, context: str, violations: list[str]) -> None:
+    for name in forbidden_names:
+        if re.search(rf"\b{re.escape(name)}\b", clause):
+            violations.append(f"{repo_path}: forbidden raw-input WASM {context} '{name}' from '{module}'")
+
+    for future_name in sorted({m.group(0) for m in future_raw_bridge_name_pattern.finditer(clause)}):
+        violations.append(f"{repo_path}: forbidden future raw-input WASM {context} '{future_name}' from '{module}'")
+
+def assert_forbidden_import_fixture_caught(name: str, source: str, expected_name: str) -> None:
+    fixture_violations = []
+    for match in import_pattern.finditer(source):
+        module = match.group("module")
+        if not target_module_pattern.search(module):
+            continue
+        add_raw_input_clause_violations(f"fixture:{name}", module, match.group("clause"), "import", fixture_violations)
+
+    for match in dynamic_import_property_pattern.finditer(source):
+        dynamic_name = match.group("name")
+        if dynamic_name in forbidden_names:
+            fixture_violations.append(
+                f"fixture:{name}: forbidden raw-input dynamic import property '{dynamic_name}' from '{match.group('module')}'"
+            )
+
+    for match in dynamic_import_alias_pattern.finditer(source):
+        alias = match.group("alias")
+        module = match.group("module")
+        for forbidden_name in forbidden_names:
+            if re.search(rf"\b{re.escape(alias)}\s*\.\s*{re.escape(forbidden_name)}\b", source):
+                fixture_violations.append(
+                    f"fixture:{name}: forbidden raw-input dynamic import namespace usage '{alias}.{forbidden_name}' from '{module}'"
+                )
+
+    for match in re_export_pattern.finditer(source):
+        add_raw_input_clause_violations(
+            f"fixture:{name}",
+            match.group("module"),
+            match.group("clause"),
+            "re-export",
+            fixture_violations,
+        )
+
+    if not any(expected_name in violation for violation in fixture_violations):
+        raise AssertionError(
+            f"forbidden import negative fixture {name!r} did not catch expected name {expected_name!r}. "
+            f"Violations: {fixture_violations!r}"
+        )
+
 def is_production_source(repo_path: str) -> bool:
     if not repo_path.startswith("apps/web/src/"):
         return False
@@ -160,6 +211,10 @@ assert_rationale_quality_fixture_caught(
     "classifier check",
 )
 invoke_allowlist_rationale_quality_check(allowlisted_files)
+assert_forbidden_import_fixture_caught("legacy-decrypt-shard-with-epoch-import", "import { decryptShardWithEpoch } from '@mosaic/wasm';", "decryptShardWithEpoch")
+assert_forbidden_import_fixture_caught("legacy-dynamic-import-property", "const decryptor = (await import('@mosaic/wasm')).decryptShardWithEpoch;", "decryptShardWithEpoch")
+assert_forbidden_import_fixture_caught("legacy-dynamic-import-alias-property", "const wasm = await import('@mosaic/wasm'); const decryptor = wasm.decryptShardWithEpoch;", "decryptShardWithEpoch")
+assert_forbidden_import_fixture_caught("legacy-re-export-passthrough", "export { decryptShardWithEpoch } from '@mosaic/wasm';", "decryptShardWithEpoch")
 
 violations = []
 for path in iter_web_typescript_files():
@@ -176,12 +231,7 @@ for path in iter_web_typescript_files():
             continue
 
         clause = match.group("clause")
-        for name in forbidden_names:
-            if re.search(rf"\b{re.escape(name)}\b", clause):
-                violations.append(f"{repo_path}: forbidden raw-input WASM import '{name}' from '{module}'")
-
-        for future_name in sorted({m.group(0) for m in future_raw_bridge_name_pattern.finditer(clause)}):
-            violations.append(f"{repo_path}: forbidden future raw-input WASM import '{future_name}' from '{module}'")
+        add_raw_input_clause_violations(repo_path, module, clause, "import", violations)
 
         namespace_match = namespace_import_pattern.search(clause)
         if namespace_match:
@@ -192,6 +242,21 @@ for path in iter_web_typescript_files():
             future_namespace_pattern = re.compile(rf"\b{re.escape(alias)}\.({future_raw_bridge_name_pattern.pattern})")
             for future_name in sorted({m.group(1) for m in future_namespace_pattern.finditer(contents)}):
                 violations.append(f"{repo_path}: forbidden future raw-input WASM namespace usage '{alias}.{future_name}' from '{module}'")
+
+    for match in dynamic_import_property_pattern.finditer(contents):
+        name = match.group("name")
+        if name in forbidden_names:
+            violations.append(f"{repo_path}: forbidden raw-input WASM dynamic import property '{name}' from '{match.group('module')}'")
+
+    for match in dynamic_import_alias_pattern.finditer(contents):
+        alias = match.group("alias")
+        module = match.group("module")
+        for name in forbidden_names:
+            if re.search(rf"\b{re.escape(alias)}\s*\.\s*{re.escape(name)}\b", contents):
+                violations.append(f"{repo_path}: forbidden raw-input WASM dynamic import namespace usage '{alias}.{name}' from '{module}'")
+
+    for match in re_export_pattern.finditer(contents):
+        add_raw_input_clause_violations(repo_path, match.group("module"), match.group("clause"), "re-export", violations)
 
 if violations:
     print("\nweb-raw-input-ffi guard FAILED:")

@@ -8,9 +8,8 @@
 #    calls in high-risk crypto/storage/upload boundaries."
 #
 # This script walks the high-risk web boundary directories listed below
-# and FAILS if any production source file uses `console.log`,
-# `console.warn`, `console.error`, `console.info`, `console.debug`, or
-# `console.trace`. The single allowed callsite is
+# and FAILS if any production source file uses direct console APIs. The
+# single allowed callsite is
 # `apps/web/src/lib/logger.ts` itself (the centralized logger).
 #
 # Exit code 0 if clean, 1 if any violation. Mirrors
@@ -58,7 +57,26 @@ $AllowedPatterns = @(
     'apps/web/src/lib/logger.ts'
 )
 
-$ConsolePattern = '\bconsole\.(log|warn|error|info|debug|trace)\s*\('
+$ConsoleMethods = @(
+    'log',
+    'warn',
+    'error',
+    'info',
+    'debug',
+    'trace',
+    'dir',
+    'table',
+    'assert',
+    'group',
+    'groupCollapsed',
+    'groupEnd',
+    'count',
+    'time',
+    'timeEnd',
+    'profile'
+)
+$ConsoleMethodPattern = $ConsoleMethods -join '|'
+$ConsolePattern = "\bconsole\s*(?:\.\s*(?:$ConsoleMethodPattern)\s*\(|\[\s*['""](?:$ConsoleMethodPattern)['""]\s*\])"
 
 function Test-Allowed {
     param([string]$RelativePath)

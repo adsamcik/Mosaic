@@ -47,24 +47,56 @@ $CrateRoots = @(
     'crates/mosaic-media/src'
 )
 
-# Each pattern matches a logging macro call. We use word boundaries via
-# look-behind on `[^A-Za-z0-9_:]` (or start-of-line) so we don't match e.g.
-# `my_println!` or `mod println` or `crate::tracing` paths that aren't a
-# logging call. The `!` suffix is required for macro invocations.
+# Each pattern matches a logging macro call or logger initialization/write
+# sink. The negative prefix intentionally excludes only identifier
+# characters, not `:`, so qualified calls such as `std::println!`,
+# `crate::println!`, and `::println!` are still caught.
 $Patterns = @(
-    @{ Name = 'println!';   Regex = '(^|[^A-Za-z0-9_:])println!\s*\(' }
-    @{ Name = 'eprintln!';  Regex = '(^|[^A-Za-z0-9_:])eprintln!\s*\(' }
-    @{ Name = 'dbg!';       Regex = '(^|[^A-Za-z0-9_:])dbg!\s*\(' }
-    @{ Name = 'print!';     Regex = '(^|[^A-Za-z0-9_:])print!\s*\(' }
-    @{ Name = 'eprint!';    Regex = '(^|[^A-Za-z0-9_:])eprint!\s*\(' }
-    @{ Name = 'log::';      Regex = '(^|[^A-Za-z0-9_:])log::(trace|debug|info|warn|error|log)!\s*\(' }
-    @{ Name = 'tracing::';  Regex = '(^|[^A-Za-z0-9_:])tracing::(trace|debug|info|warn|error|event|span|instrument)!\s*\(' }
+    @{ Name = 'println!';   Regex = '(^|[^A-Za-z0-9_])println!\s*\(' }
+    @{ Name = 'eprintln!';  Regex = '(^|[^A-Za-z0-9_])eprintln!\s*\(' }
+    @{ Name = 'dbg!';       Regex = '(^|[^A-Za-z0-9_])dbg!\s*\(' }
+    @{ Name = 'print!';     Regex = '(^|[^A-Za-z0-9_])print!\s*\(' }
+    @{ Name = 'eprint!';    Regex = '(^|[^A-Za-z0-9_])eprint!\s*\(' }
+    @{ Name = 'log::';      Regex = '(^|[^A-Za-z0-9_])log::(trace|debug|info|warn|error|log)!\s*\(' }
+    @{ Name = 'tracing::';  Regex = '(^|[^A-Za-z0-9_])tracing::(trace|debug|info|warn|error|event|span|instrument)!\s*\(' }
     # Bare `info!`, `warn!`, etc. macros (typical when `use log::*` or
     # `use tracing::*` is in scope). Conservative match.
-    @{ Name = 'log_macro';  Regex = '(^|[^A-Za-z0-9_:])(trace|debug|info|warn|error)!\s*\(' }
+    @{ Name = 'log_macro';  Regex = '(^|[^A-Za-z0-9_])(trace|debug|info|warn|error)!\s*\(' }
+    @{ Name = 'std_io_write'; Regex = '\bstd::io::(stderr|stdout)\(\)\.\s*write(_all)?\b' }
+    @{ Name = 'slog';       Regex = '\bslog::\w+!\s*\(' }
+    @{ Name = 'defmt';      Regex = '\bdefmt::\w+!\s*\(' }
+    @{ Name = 'env_logger'; Regex = '\benv_logger::\w+\b' }
+    @{ Name = 'tracing_subscriber'; Regex = '\btracing_subscriber::\w+\b' }
 )
 
 $violations = New-Object System.Collections.Generic.List[string]
+
+function Assert-PatternFixtureCaught {
+    param(
+        [string]$Name,
+        [string]$Source,
+        [string]$ExpectedPatternName
+    )
+    $matched = $false
+    foreach ($pattern in $Patterns) {
+        if ($Source -match $pattern.Regex -and $pattern.Name -eq $ExpectedPatternName) {
+            $matched = $true
+            break
+        }
+    }
+    if (-not $matched) {
+        throw "rust-no-secret-logs negative fixture '$Name' did not catch expected pattern '$ExpectedPatternName'"
+    }
+}
+
+Assert-PatternFixtureCaught 'qualified-std-println' 'fn f() { std::println!("secret"); }' 'println!'
+Assert-PatternFixtureCaught 'qualified-crate-println' 'fn f() { crate::println!("secret"); }' 'println!'
+Assert-PatternFixtureCaught 'qualified-root-println' 'fn f() { ::println!("secret"); }' 'println!'
+Assert-PatternFixtureCaught 'std-stderr-write' 'fn f() { std::io::stderr().write_all(b"secret"); }' 'std_io_write'
+Assert-PatternFixtureCaught 'slog-info' 'fn f() { slog::info!(log, "secret"); }' 'slog'
+Assert-PatternFixtureCaught 'defmt-info' 'fn f() { defmt::info!("secret"); }' 'defmt'
+Assert-PatternFixtureCaught 'env-logger-init' 'fn f() { env_logger::init(); }' 'env_logger'
+Assert-PatternFixtureCaught 'tracing-subscriber-fmt' 'fn f() { tracing_subscriber::fmt(); }' 'tracing_subscriber'
 
 function Test-IsAllowedBySafetyComment {
     param(
