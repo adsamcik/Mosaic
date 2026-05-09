@@ -676,4 +676,43 @@ describe('session', () => {
       );
     });
   });
+
+  describe('idle timeout during uploads', () => {
+    it('keeps the session active while UploadContext reports active uploads', async () => {
+      vi.useFakeTimers();
+      const { session, getApi, getCryptoClient, getDbClient } =
+        await getSessionModule();
+
+      try {
+        const salt = new Uint8Array(16).fill(7);
+        localStorage.setItem(
+          'mosaic:userSalt',
+          btoa(String.fromCharCode(...salt)),
+        );
+        (getApi as Mock).mockReturnValue(mockApi);
+        (getCryptoClient as Mock).mockResolvedValue(mockCryptoClient);
+        (getDbClient as Mock).mockResolvedValue(mockDbClient);
+        mockApi.getCurrentUser.mockResolvedValue({
+          ...mockUser,
+          wrappedAccountKey: 'AA==',
+        });
+
+        await session.login('test-password');
+        vi.clearAllMocks();
+
+        window.dispatchEvent(
+          new CustomEvent('mosaic:upload-active', {
+            detail: { active: true, activeUploadCount: 1 },
+          }),
+        );
+
+        await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+
+        expect(session.isLoggedIn).toBe(true);
+        expect(global.fetch).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });

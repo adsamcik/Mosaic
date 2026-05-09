@@ -665,3 +665,93 @@ describe('L3: idle-timeout activity event coverage', () => {
     expect(events).not.toContain('mousemove');
   });
 });
+
+// ===========================================================================
+// L4: active upload idle-timeout suspension
+// ---------------------------------------------------------------------------
+// Uploads can run for longer than the configured idle timeout without user
+// input. The session manager must treat the UploadContext's active-upload
+// signal as a reason to suspend automatic logout until uploads finish.
+// ===========================================================================
+
+describe('L4: active upload idle-timeout suspension', () => {
+  const idleTimeoutMs = 30 * 60 * 1000;
+
+  async function loginWithFakeTimers() {
+    vi.useFakeTimers();
+    const { session, getApi, getCryptoClient, getDbClient } =
+      await getSessionModule();
+
+    const cryptoMock = makeCryptoClientMock();
+    const dbMock = makeDbClientMock();
+    const apiMock = {
+      getCurrentUser: vi.fn().mockResolvedValue({
+        ...baseUser,
+        wrappedAccountKey: 'AA==',
+      }),
+      updateCurrentUser: vi.fn(),
+      updateCurrentUserWrappedKey: vi.fn().mockResolvedValue(undefined),
+    };
+
+    (getApi as Mock).mockReturnValue(apiMock);
+    (getCryptoClient as Mock).mockResolvedValue(cryptoMock);
+    (getDbClient as Mock).mockResolvedValue(dbMock);
+    localStorage.setItem('mosaic:userSalt', 'AAAAAAAAAAAAAAAAAAAAAA==');
+
+    await session.login('p1');
+    vi.clearAllMocks();
+    return session;
+  }
+
+  it('does not log out when the idle timeout elapses during an active upload', async () => {
+    const session = await loginWithFakeTimers();
+
+    try {
+      window.dispatchEvent(
+        new CustomEvent('mosaic:upload-active', {
+          detail: { active: true, activeUploadCount: 1 },
+        }),
+      );
+
+      await vi.advanceTimersByTimeAsync(idleTimeoutMs * 2);
+
+      expect(session.isLoggedIn).toBe(true);
+      expect(global.fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('resumes the idle timeout after the active upload finishes', async () => {
+    const session = await loginWithFakeTimers();
+
+    try {
+      window.dispatchEvent(
+        new CustomEvent('mosaic:upload-active', {
+          detail: { active: true, activeUploadCount: 1 },
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(idleTimeoutMs * 2);
+      expect(session.isLoggedIn).toBe(true);
+
+      window.dispatchEvent(
+        new CustomEvent('mosaic:upload-active', {
+          detail: { active: false, activeUploadCount: 0 },
+        }),
+      );
+      await vi.advanceTimersByTimeAsync(idleTimeoutMs - 1);
+      expect(session.isLoggedIn).toBe(true);
+      expect(global.fetch).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(global.fetch).toHaveBeenCalledWith('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+      expect(session.isLoggedIn).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

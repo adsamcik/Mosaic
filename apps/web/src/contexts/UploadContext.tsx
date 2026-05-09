@@ -31,6 +31,7 @@ export { UploadError, UploadErrorCode } from '../lib/upload-errors';
 
 const log = createLogger('UploadContext');
 const RUST_UPLOAD_MAX_RETRY_COUNT = 3;
+const UPLOAD_ACTIVE_EVENT = 'mosaic:upload-active';
 let rustWasmBindings: WasmUploadAdapterBindings | null = null;
 
 /** Upload context value */
@@ -91,15 +92,46 @@ function getRustWasmBindings(): WasmUploadAdapterBindings {
  * Wraps components that need access to upload state and actions.
  */
 export function UploadProvider({ children }: UploadProviderProps) {
-  const [isUploading, setIsUploading] = useState(false);
+  const [activeUploadCount, setActiveUploadCount] = useState(0);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<UploadError | null>(null);
   const [, setActiveTasks] = useState<UploadTask[]>([]);
+  const isUploading = activeUploadCount > 0;
   const getRustUploadAdapter = useMemo(() => {
     let adapter: RustUploadAdapter | null = null;
     return (): RustUploadAdapter => {
       adapter ??= createRustUploadAdapter();
       return adapter;
+    };
+  }, []);
+  const incrementActiveUploadCount = useCallback(() => {
+    setActiveUploadCount((count) => count + 1);
+  }, []);
+  const decrementActiveUploadCount = useCallback(() => {
+    setActiveUploadCount((count) => Math.max(0, count - 1));
+  }, []);
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent(UPLOAD_ACTIVE_EVENT, {
+        detail: {
+          active: isUploading,
+          activeUploadCount,
+        },
+      }),
+    );
+  }, [activeUploadCount, isUploading]);
+
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent(UPLOAD_ACTIVE_EVENT, {
+          detail: {
+            active: false,
+            activeUploadCount: 0,
+          },
+        }),
+      );
     };
   }, []);
 
@@ -131,67 +163,72 @@ export function UploadProvider({ children }: UploadProviderProps) {
 
     // 4. Set up complete callback
     uploadQueue.onComplete = async (task, shardIds, tieredShards) => {
-      // Call bridge handler first (transitions to syncing in PhotoStore)
-      await bridgeOnComplete?.(task, shardIds, tieredShards);
-      // Remove from active tasks
-      setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
-
       try {
-        // Look up the full epoch key from the store using task's albumId and epochId
-        // The epoch key was cached when upload() fetched it via getCurrentOrFetchEpochKey
-        const epochKey = getEpochKey(task.albumId, task.epochId);
-        if (!epochKey) {
-          throw new Error(
-            `Epoch key not found for album ${task.albumId}, epoch ${task.epochId}`,
+        // Call bridge handler first (transitions to syncing in PhotoStore)
+        await bridgeOnComplete?.(task, shardIds, tieredShards);
+        // Remove from active tasks
+        setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
+
+        try {
+          // Look up the full epoch key from the store using task's albumId and epochId
+          // The epoch key was cached when upload() fetched it via getCurrentOrFetchEpochKey
+          const epochKey = getEpochKey(task.albumId, task.epochId);
+          if (!epochKey) {
+            throw new Error(
+              `Epoch key not found for album ${task.albumId}, epoch ${task.epochId}`,
+            );
+          }
+
+          await createManifestForUpload(task, shardIds, epochKey, tieredShards);
+
+          // Sync to pull the newly created manifest into local DB
+          log.info(`Upload complete, syncing album ${task.albumId}`);
+          try {
+            await syncEngine.sync(task.albumId, epochKey.epochHandleId);
+            log.info(`Post-upload sync complete for album ${task.albumId}`);
+          } catch (syncErr) {
+            // Non-fatal: photo was uploaded, sync will happen later
+            log.warn('Post-upload sync failed (photo still uploaded):', {
+              error: syncErr instanceof Error ? syncErr.message : String(syncErr),
+            });
+          }
+
+          setProgress(100);
+        } catch (manifestErr) {
+          log.error('Failed to create manifest:', manifestErr);
+          setError(
+            new UploadError(
+              `Upload succeeded but manifest creation failed: ${manifestErr instanceof Error ? manifestErr.message : String(manifestErr)}`,
+              UploadErrorCode.MANIFEST_FAILED,
+              manifestErr instanceof Error ? manifestErr : undefined,
+            ),
           );
         }
-
-        await createManifestForUpload(task, shardIds, epochKey, tieredShards);
-
-        // Sync to pull the newly created manifest into local DB
-        log.info(`Upload complete, syncing album ${task.albumId}`);
-        try {
-          await syncEngine.sync(task.albumId, epochKey.epochHandleId);
-          log.info(`Post-upload sync complete for album ${task.albumId}`);
-        } catch (syncErr) {
-          // Non-fatal: photo was uploaded, sync will happen later
-          log.warn('Post-upload sync failed (photo still uploaded):', {
-            error: syncErr instanceof Error ? syncErr.message : String(syncErr),
-          });
-        }
-
-        setIsUploading(false);
-        setProgress(100);
-      } catch (manifestErr) {
-        log.error('Failed to create manifest:', manifestErr);
-        setError(
-          new UploadError(
-            `Upload succeeded but manifest creation failed: ${manifestErr instanceof Error ? manifestErr.message : String(manifestErr)}`,
-            UploadErrorCode.MANIFEST_FAILED,
-            manifestErr instanceof Error ? manifestErr : undefined,
-          ),
-        );
-        setIsUploading(false);
+      } finally {
+        decrementActiveUploadCount();
       }
     };
 
     // 5. Set up error callback
     uploadQueue.onError = (task, uploadErr) => {
-      // Call bridge handler first (marks as failed in PhotoStore)
-      bridgeOnError?.(task, uploadErr);
+      try {
+        // Call bridge handler first (marks as failed in PhotoStore)
+        bridgeOnError?.(task, uploadErr);
 
-      // Remove from active tasks
-      setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
+        // Remove from active tasks
+        setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
 
-      log.error('Upload failed:', uploadErr);
-      setError(
-        new UploadError(
-          uploadErr.message,
-          UploadErrorCode.UPLOAD_FAILED,
-          uploadErr,
-        ),
-      );
-      setIsUploading(false);
+        log.error('Upload failed:', uploadErr);
+        setError(
+          new UploadError(
+            uploadErr.message,
+            UploadErrorCode.UPLOAD_FAILED,
+            uploadErr,
+          ),
+        );
+      } finally {
+        decrementActiveUploadCount();
+      }
     };
 
     let cancelled = false;
@@ -207,7 +244,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
       cancelled = true;
       bridgeCleanup();
     };
-  }, []);
+  }, [decrementActiveUploadCount]);
 
   // Warn user before leaving page during upload
   useEffect(() => {
@@ -225,7 +262,8 @@ export function UploadProvider({ children }: UploadProviderProps) {
   }, [isUploading]);
 
   const upload = useCallback(async (file: File, albumId: string) => {
-    setIsUploading(true);
+    let enqueued = false;
+    incrementActiveUploadCount();
     setProgress(0);
     setError(null);
 
@@ -270,7 +308,6 @@ export function UploadProvider({ children }: UploadProviderProps) {
           err instanceof Error ? err : undefined,
         );
         setError(uploadError);
-        setIsUploading(false);
         throw uploadError;
       }
 
@@ -284,8 +321,12 @@ export function UploadProvider({ children }: UploadProviderProps) {
         epochKey.epochId,
         epochKey.epochHandleId,
       );
+      enqueued = true;
       log.info(`File added to upload queue: ${file.name}`);
     } catch (err) {
+      if (!enqueued) {
+        decrementActiveUploadCount();
+      }
       // Only handle errors not already handled above
       if (!(err instanceof UploadError)) {
         log.error('Upload error:', err);
@@ -295,10 +336,13 @@ export function UploadProvider({ children }: UploadProviderProps) {
           err instanceof Error ? err : undefined,
         );
         setError(uploadError);
-        setIsUploading(false);
       }
     }
-  }, [getRustUploadAdapter]);
+  }, [
+    decrementActiveUploadCount,
+    getRustUploadAdapter,
+    incrementActiveUploadCount,
+  ]);
 
   const clearError = useCallback(() => {
     setError(null);

@@ -12,6 +12,15 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import org.mosaic.android.main.R
 
+/**
+ * Foreground-service anchor for long-running uploads.
+ *
+ * Android currently has no app-level idle/session-timeout manager to suspend:
+ * repository-wide auth/session searches only find request/session naming in the
+ * upload worker and sync polling timeouts. If such a manager is introduced,
+ * TODO: mark this service's RUNNING state as "upload active" so session expiry
+ * is deferred until FINALIZED or CANCELLED.
+ */
 class UploadForegroundService : LifecycleService() {
   private var completedShards: Int = 0
   private var totalShards: Int = 0

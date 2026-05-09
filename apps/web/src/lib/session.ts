@@ -83,6 +83,8 @@ const ACTIVITY_EVENTS = [
   'visibilitychange',
 ] as const;
 
+const UPLOAD_ACTIVE_EVENT = 'mosaic:upload-active';
+
 /** BroadcastChannel name used to propagate logout across browser tabs. */
 const SESSION_BROADCAST_CHANNEL = 'mosaic-session';
 
@@ -407,7 +409,9 @@ class SessionManager {
   private _currentUser: User | null = null;
   private listeners = new Set<SessionListener>();
   private boundResetIdleTimer: () => void;
+  private boundUploadActiveListener: (event: Event) => void;
   private settingsUnsubscribe: (() => void) | null = null;
+  private uploadInProgress = false;
 
   /**
    * Concurrency guard for login-style entry points (M3).
@@ -438,6 +442,7 @@ class SessionManager {
 
   constructor() {
     this.boundResetIdleTimer = this.resetIdleTimer.bind(this);
+    this.boundUploadActiveListener = this.handleUploadActiveEvent.bind(this);
     this.initBroadcastChannel();
   }
 
@@ -548,8 +553,7 @@ class SessionManager {
 
     // Clear idle timer
     if (this.idleTimer !== null) {
-      clearTimeout(this.idleTimer);
-      this.idleTimer = null;
+      this.clearIdleTimer();
     }
 
     // Unsubscribe from settings changes and activity listeners
@@ -558,6 +562,8 @@ class SessionManager {
       this.settingsUnsubscribe = null;
     }
     this.detachIdleListeners();
+    this.detachUploadActiveListener();
+    this.uploadInProgress = false;
 
     // Clear cached data from memory before tearing down workers
     clearAllCachedMetadata();
@@ -788,6 +794,7 @@ class SessionManager {
       // Start idle timeout tracking
       this.resetIdleTimer();
       this.attachIdleListeners();
+      this.attachUploadActiveListener();
     });
   }
 
@@ -932,6 +939,7 @@ class SessionManager {
       // Start idle timeout tracking
       this.resetIdleTimer();
       this.attachIdleListeners();
+      this.attachUploadActiveListener();
     });
   }
 
@@ -1009,6 +1017,7 @@ class SessionManager {
       // Start idle timeout tracking
       this.resetIdleTimer();
       this.attachIdleListeners();
+      this.attachUploadActiveListener();
 
       log.info(
         `LocalAuth login successful: ${username} (${userId})${isNewUser ? ' [new user]' : ''}`,
@@ -1083,6 +1092,7 @@ class SessionManager {
       // Start idle timeout tracking
       this.resetIdleTimer();
       this.attachIdleListeners();
+      this.attachUploadActiveListener();
 
       log.info(`LocalAuth registration successful: ${username} (${userId})`);
     });
@@ -1135,8 +1145,7 @@ class SessionManager {
 
     // Clear idle timer
     if (this.idleTimer !== null) {
-      clearTimeout(this.idleTimer);
-      this.idleTimer = null;
+      this.clearIdleTimer();
     }
 
     // Unsubscribe from settings changes
@@ -1147,6 +1156,8 @@ class SessionManager {
 
     // Remove activity listeners
     this.detachIdleListeners();
+    this.detachUploadActiveListener();
+    this.uploadInProgress = false;
 
     // Clear cached metadata from memory
     clearAllCachedMetadata();
@@ -1207,13 +1218,41 @@ class SessionManager {
 
   private resetIdleTimer(): void {
     if (this.idleTimer !== null) {
-      clearTimeout(this.idleTimer);
+      this.clearIdleTimer();
     }
 
     this.idleTimer = window.setTimeout(() => {
+      if (this.uploadInProgress) {
+        log.info('Session idle timeout deferred while upload is active');
+        this.resetIdleTimer();
+        return;
+      }
       log.info('Session idle timeout - logging out');
       void this.logout();
     }, getIdleTimeoutMs());
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer !== null) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
+  private handleUploadActiveEvent(event: Event): void {
+    const detail = (event as CustomEvent<{ active?: unknown }>).detail;
+    this.uploadInProgress = detail?.active === true;
+
+    if (!this._isLoggedIn) {
+      return;
+    }
+
+    if (this.uploadInProgress) {
+      this.clearIdleTimer();
+      return;
+    }
+
+    this.resetIdleTimer();
   }
 
   private attachIdleListeners(): void {
@@ -1228,6 +1267,14 @@ class SessionManager {
     ACTIVITY_EVENTS.forEach((event) => {
       document.removeEventListener(event, this.boundResetIdleTimer);
     });
+  }
+
+  private attachUploadActiveListener(): void {
+    window.addEventListener(UPLOAD_ACTIVE_EVENT, this.boundUploadActiveListener);
+  }
+
+  private detachUploadActiveListener(): void {
+    window.removeEventListener(UPLOAD_ACTIVE_EVENT, this.boundUploadActiveListener);
   }
 }
 
