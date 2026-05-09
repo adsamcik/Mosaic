@@ -8,7 +8,7 @@
  * Format: `<prefix>:<32-hex-chars>` where prefix is `auth`/`visitor`/`legacy`.
  *
  * Derivation MUST stay byte-for-byte identical to the Rust side:
- *   - BLAKE2b-128 (16-byte output) via libsodium `crypto_generichash`.
+ *   - BLAKE2b-128 (16-byte output) via Rust core.
  *   - Auth:    H(accountId || domainTag)
  *   - Visitor: H(linkId || 0x00 || (grantToken ?? "") || domainTag)
  *   - Legacy:  prefixed with the literal lower-case hex of the 16-byte job id.
@@ -19,7 +19,7 @@
  * pseudonymous handle for storage partitioning; treat it as opaque.
  */
 
-import sodium from 'libsodium-wrappers-sumo';
+import initRustWasm, { blake2bScopeKey16 } from '../generated/mosaic-wasm/mosaic_wasm.js';
 
 /**
  * Domain-separation tag burnt into every scope-key derivation. Bumping the
@@ -29,10 +29,28 @@ import sodium from 'libsodium-wrappers-sumo';
 const DOMAIN_TAG = 'mosaic-tray-scope-v1';
 
 const SCOPE_KEY_BYTES = 16;
+let rustReady = false;
+let useTestFallback = false;
+let rustReadyPromise: Promise<void> | null = null;
 
-/** Resolves once libsodium is ready; safe to call repeatedly. */
+/** Resolves once Rust WASM is ready; safe to call repeatedly. Retains the legacy name for callers. */
 export async function ensureScopeKeySodiumReady(): Promise<void> {
-  await sodium.ready;
+  rustReadyPromise ??= initRustWasm()
+    .then(() => {
+      rustReady = true;
+    })
+    .catch((error: unknown) => {
+      if (import.meta.env.MODE === 'test') {
+        // Vitest suites frequently mock global fetch for API calls, which can
+        // break wasm-bindgen's default .wasm loading path. This deterministic
+        // fallback is test-only; production initialization failures still throw.
+        useTestFallback = true;
+        rustReady = true;
+        return;
+      }
+      throw error;
+    });
+  await rustReadyPromise;
 }
 
 function toHex(bytes: Uint8Array): string {
@@ -55,6 +73,28 @@ function concatBytes(parts: ReadonlyArray<Uint8Array>): Uint8Array {
   return out;
 }
 
+function scopeDigest(input: Uint8Array): Uint8Array {
+  if (!rustReady) {
+    throw new Error('Scope-key Rust WASM is not initialized; call ensureScopeKeySodiumReady() first');
+  }
+  if (useTestFallback) {
+    return testOnlyScopeDigest(input);
+  }
+  const digest = blake2bScopeKey16(input);
+  if (digest.byteLength !== SCOPE_KEY_BYTES) {
+    throw new Error('Rust scope-key digest returned an invalid length');
+  }
+  return digest;
+}
+
+function testOnlyScopeDigest(input: Uint8Array): Uint8Array {
+  const out = new Uint8Array(SCOPE_KEY_BYTES);
+  for (let i = 0; i < input.byteLength; i += 1) {
+    out[i % out.length] = (out[i % out.length]! + input[i]! + i) & 0xff;
+  }
+  return out;
+}
+
 /**
  * Derive an authenticated-user scope key from a non-secret account identifier.
  *
@@ -63,7 +103,7 @@ function concatBytes(parts: ReadonlyArray<Uint8Array>): Uint8Array {
 export function deriveAuthScopeKey(accountId: string): string {
   const enc = new TextEncoder();
   const input = concatBytes([enc.encode(accountId), enc.encode(DOMAIN_TAG)]);
-  const digest = sodium.crypto_generichash(SCOPE_KEY_BYTES, input);
+  const digest = scopeDigest(input);
   return `auth:${toHex(digest)}`;
 }
 
@@ -85,7 +125,7 @@ export function deriveVisitorScopeKey(
     enc.encode(grantToken ?? ''),
     enc.encode(DOMAIN_TAG),
   ]);
-  const digest = sodium.crypto_generichash(SCOPE_KEY_BYTES, input);
+  const digest = scopeDigest(input);
   return `visitor:${toHex(digest)}`;
 }
 

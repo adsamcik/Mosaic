@@ -127,24 +127,8 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
 
 const directSodiumPrimitiveAllowlist = new Map<string, string>([
   [
-    'lib/opfs-staging.ts',
-    'download staging checksum verification compatibility pending Rust download coordinator cutover',
-  ],
-  [
-    'lib/scope-key.ts',
-    'tray scope key derivation (BLAKE2b-128) needs sync access on the main thread + workers; non-secret inputs only',
-  ],
-  [
     'lib/session.ts',
     'Argon2id salt-encryption KDF runs on main thread before crypto worker is initialized (security fix H1/H2)',
-  ],
-  [
-    'workers/coordinator/decrypt-cache.ts',
-    'sodium.memzero used to wipe cached epoch keys on eviction / clear (memory hygiene only; no protocol primitives)',
-  ],
-  [
-    'workers/coordinator/shard-mirror.ts',
-    'sodium.crypto_hash_sha256 fallback for content-hash verification when SubtleCrypto is unavailable; encrypted bytes only',
   ],
   ['workers/crypto.worker.ts', 'central TypeScript crypto compatibility facade'],
 ]);
@@ -294,7 +278,16 @@ describe('web Rust crypto cutover boundaries', () => {
       importersMatching(
         /from\s+['"][^'"]*generated\/mosaic-wasm\/mosaic_wasm\.js['"]/,
       ),
-    ).toEqual(['lib/exif-stripper.ts', 'lib/session.ts', 'workers/rust-crypto-core.ts']);
+    ).toEqual([
+      'lib/content-hash.ts',
+      'lib/exif-stripper.ts',
+      'lib/opfs-staging.ts',
+      'lib/scope-key.ts',
+      'lib/session.ts',
+      'lib/upload/encrypt-upload-shard.ts',
+      'workers/coordinator/shard-mirror.ts',
+      'workers/rust-crypto-core.ts',
+    ]);
   });
 
   it('keeps the Rust crypto facade behind Comlink workers', () => {
@@ -653,6 +646,5 @@ describe('Rust cutover slice retirement guards', () => {
     });
   }
 });
-
 
 

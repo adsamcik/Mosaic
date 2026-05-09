@@ -1,5 +1,22 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IDBPDatabase } from 'idb';
+
+const wasmMocks = vi.hoisted(() => ({
+  initRustWasm: vi.fn().mockResolvedValue(undefined),
+  computePlaintextContentHash: vi.fn((bytes: Uint8Array) => {
+    const text = new TextDecoder().decode(bytes);
+    if (text === 'mosaic-content-hash') {
+      return '866ee6120613df79e6daf58a445398339d9da6a7a07f4d5a1902fc35ed3dc877';
+    }
+    return bytes.byteLength === 6 ? 'a'.repeat(64) : 'b'.repeat(64);
+  }),
+}));
+
+vi.mock('../../generated/mosaic-wasm/mosaic_wasm.js', () => ({
+  default: wasmMocks.initRustWasm,
+  computePlaintextContentHash: wasmMocks.computePlaintextContentHash,
+}));
+
 import {
   computeContentHash,
   ContentHashDedup,
@@ -15,6 +32,8 @@ describe('computeContentHash', () => {
 
     expect(first).toBe(second);
     expect(first).toBe('866ee6120613df79e6daf58a445398339d9da6a7a07f4d5a1902fc35ed3dc877');
+    expect(wasmMocks.initRustWasm).toHaveBeenCalledTimes(1);
+    expect(wasmMocks.computePlaintextContentHash).toHaveBeenCalledWith(bytes);
   });
 
   it('returns a 64-character lowercase hex string', async () => {
@@ -41,6 +60,7 @@ describe('ContentHashDedup', () => {
   let records: AlbumContentHashRecord[];
 
   beforeEach(async () => {
+    vi.clearAllMocks();
     records = [];
   });
 

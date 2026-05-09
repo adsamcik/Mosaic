@@ -1,5 +1,24 @@
-import sodium from 'libsodium-wrappers-sumo';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const wasmMocks = vi.hoisted(() => {
+  const fakeChecksum32 = (bytes: Uint8Array): Uint8Array => {
+    const out = new Uint8Array(32);
+    for (let i = 0; i < out.length; i += 1) {
+      const source = bytes.byteLength === 0 ? i : bytes[i % bytes.byteLength]!;
+      out[i] = (source + bytes.byteLength + i * 31) & 0xff;
+    }
+    return out;
+  };
+  return {
+    initRustWasm: vi.fn().mockResolvedValue(undefined),
+    blake2bSnapshotChecksum32: vi.fn(fakeChecksum32),
+  };
+});
+
+vi.mock('../../generated/mosaic-wasm/mosaic_wasm.js', () => ({
+  default: wasmMocks.initRustWasm,
+  blake2bSnapshotChecksum32: wasmMocks.blake2bSnapshotChecksum32,
+}));
 
 import {
   OpfsStagingError,
@@ -355,8 +374,7 @@ function concatBytes(chunks: readonly Uint8Array[]): Uint8Array {
 }
 
 async function checksum(body: Uint8Array): Promise<Uint8Array> {
-  await sodium.ready;
-  return sodium.crypto_generichash(32, body);
+  return wasmMocks.blake2bSnapshotChecksum32(body);
 }
 
 async function snapshot(lastUpdatedAtMs: number): Promise<{
@@ -400,6 +418,7 @@ async function committedSnapshotHandle(jobId: JobId): Promise<MemoryFileHandle> 
 
 describe('opfs-staging', () => {
   beforeEach(async () => {
+    vi.clearAllMocks();
     if (typeof navigator.storage?.getDirectory === 'function') {
       for (const jobId of [JOB_A, JOB_B, JOB_C]) {
         try {
@@ -489,6 +508,8 @@ describe('opfs-staging', () => {
     await writable.close();
 
     await expect(readSnapshot(JOB_A)).resolves.toEqual({ body: second.body, checksum: second.digest });
+    expect(wasmMocks.initRustWasm).toHaveBeenCalledTimes(1);
+    expect(wasmMocks.blake2bSnapshotChecksum32).toHaveBeenCalledWith(second.body);
   });
 
   it('throws a typed checksum error when the committed snapshot is corrupt', async () => {

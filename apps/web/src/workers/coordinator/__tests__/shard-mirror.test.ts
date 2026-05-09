@@ -1,5 +1,22 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import sodium from 'libsodium-wrappers-sumo';
+
+const wasmMocks = vi.hoisted(() => {
+  const fakeSha256Hex = (bytes: Uint8Array): string => {
+    let sum = 0;
+    for (const byte of bytes) sum = (sum + byte) & 0xff;
+    return Array.from({ length: 32 }, (_, index) => ((sum + index) & 0xff).toString(16).padStart(2, '0')).join('');
+  };
+  return {
+    initRustWasm: vi.fn().mockResolvedValue(undefined),
+    sha256HexOfBytes: vi.fn(fakeSha256Hex),
+  };
+});
+
+vi.mock('../../../generated/mosaic-wasm/mosaic_wasm.js', () => ({
+  default: wasmMocks.initRustWasm,
+  sha256HexOfBytes: wasmMocks.sha256HexOfBytes,
+}));
+
 import { createShardMirror, shardMirrorKey } from '../shard-mirror';
 
 // ── Minimal in-memory OPFS shim ─────────────────────────────────────────────
@@ -86,12 +103,11 @@ function installOpfs(): void {
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new Uint8Array(bytes));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return wasmMocks.sha256HexOfBytes(bytes);
 }
 
-beforeEach(async () => {
-  await sodium.ready;
+beforeEach(() => {
+  vi.clearAllMocks();
   installOpfs();
 });
 
@@ -104,6 +120,7 @@ describe('ShardMirror', () => {
     const m = createShardMirror({ directory: 'd1' });
     const bytes = new Uint8Array([1, 2, 3, 4, 5]);
     const hash = await sha256Hex(bytes);
+    wasmMocks.sha256HexOfBytes.mockClear();
     await m.put(hash, bytes);
     const got = await m.get(hash);
     expect(got).not.toBeNull();
@@ -113,6 +130,8 @@ describe('ShardMirror', () => {
     expect(stats.bytesUsed).toBe(5);
     expect(stats.hits).toBe(1);
     expect(stats.puts).toBe(1);
+    expect(wasmMocks.initRustWasm).toHaveBeenCalledTimes(1);
+    expect(wasmMocks.sha256HexOfBytes).toHaveBeenCalledWith(bytes);
   });
 
   it('returns null on miss', async () => {

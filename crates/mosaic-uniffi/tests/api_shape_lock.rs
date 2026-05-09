@@ -60,7 +60,7 @@ fn uniffi_exported_api_shape_matches_golden() {
 
 #[test]
 fn uniffi_api_v1_baseline_signature_unchanged() {
-    let v1_baseline_blake3 = "085910f3586754a514ecdcbe3de23c617e002e6296ec8d9ba00226157d374d3b";
+    let v1_baseline_blake3 = "37b3e148df370d6078b27d005434559b9238cf5bfefd614cfaef72db7102e50c";
     let actual = blake3::hash(canonical_uniffi_api_shape(SOURCE).as_bytes()).to_hex();
 
     assert_eq!(
@@ -77,6 +77,10 @@ fn link_handle_mint_and_sha256_exports_are_locked() {
     for declaration in [
         "export pub fn mint_link_tier_handle_from_raw_key(raw_key: Vec<u8>) -> LinkTierHandleFfiResult",
         "export pub fn verify_shard_integrity_sha256( envelope: Vec<u8>, expected_sha256: Vec<u8>, ) -> Result<bool, MosaicError>",
+        "export pub fn sha256_of_bytes(bytes: Vec<u8>) -> Vec<u8>",
+        "export pub fn sha256_hex_of_bytes(bytes: Vec<u8>) -> String",
+        "export pub fn blake2b_scope_key_16(input: Vec<u8>) -> Vec<u8>",
+        "export pub fn blake2b_snapshot_checksum_32(bytes: Vec<u8>) -> Vec<u8>",
         "export pub fn compute_plaintext_content_hash(bytes: Vec<u8>) -> String",
         "record LinkTierHandleFfiResult",
     ] {

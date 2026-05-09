@@ -2,14 +2,13 @@
  * In-memory LRU cache of derived epoch keys (decryption contexts).
  *
  * Caches the parsed epoch key bytes per `epochId` so multiple photos in the
- * same album sharing an epoch don't re-derive the key. Keys are zeroed via
- * `sodium.memzero` on eviction and on `clear()` so spent material does not
- * linger in the heap longer than necessary.
+ * same album sharing an epoch don't re-derive the key. Keys are overwritten
+ * with `Uint8Array.fill(0)` on eviction and on `clear()` so spent material does
+ * not linger in the JS-visible heap longer than necessary.
  *
  * Concurrency: the underlying Map is touched only from a single worker
  * thread (the coordinator). No locking is required.
  */
-import sodium from 'libsodium-wrappers-sumo';
 
 export interface DecryptContext {
   readonly epochId: string;
@@ -35,11 +34,9 @@ export function createDecryptCache(maxEntries: number = DEFAULT_MAX_ENTRIES): De
   const entries = new Map<string, DecryptContext>();
 
   function zeroize(ctx: DecryptContext): void {
-    try {
-      sodium.memzero(ctx.epochKey);
-    } catch {
-      ctx.epochKey.fill(0);
-    }
+    // Rust memzero would only wipe a copy crossing the WASM ABI boundary.
+    // Filling this exact Uint8Array overwrites the JS-owned bytes held here.
+    ctx.epochKey.fill(0);
   }
 
   return {

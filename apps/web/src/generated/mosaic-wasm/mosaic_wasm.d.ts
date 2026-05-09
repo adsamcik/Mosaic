@@ -896,6 +896,16 @@ export function advanceAlbumSync(album_id: string, phase: string, active_cursor:
 export function advanceUploadJob(job_id: string, album_id: string, idempotency_key: string, phase: string, retry_count: number, max_retry_count: number, next_retry_not_before_ms: bigint, has_next_retry_not_before_ms: boolean, snapshot_revision: bigint, last_effect_id: string, event_kind: string, event_effect_id: string, event_tier: number, event_shard_index: number, event_shard_id: string, event_sha256: Uint8Array, event_content_length: bigint, event_envelope_version: number, event_asset_id: string, event_since_metadata_version: bigint, event_recovery_outcome: string, event_now_ms: bigint, event_base_backoff_ms: bigint, event_server_retry_after_ms: bigint, event_has_server_retry_after_ms: boolean, event_error_code: number, event_target_phase: string): string;
 
 /**
+ * Computes the BLAKE2b-128 scope-key digest over already domain-separated bytes through WASM.
+ */
+export function blake2bScopeKey16(input: Uint8Array): Uint8Array;
+
+/**
+ * Computes the BLAKE2b-256 checksum for download snapshot bodies through WASM.
+ */
+export function blake2bSnapshotChecksum32(bytes: Uint8Array): Uint8Array;
+
+/**
  * Builds the canonical LocalAuth challenge transcript through WASM.
  *
  * `timestamp_ms_present == false` omits the timestamp segment.
@@ -1217,6 +1227,16 @@ export function progressProbe(total_steps: number, cancel_after: bigint): Progre
 export function sealBundleWithEpochHandle(identity_handle: bigint, epoch_handle: bigint, recipient_pubkey: Uint8Array, album_id: string): SealedBundleResult;
 
 /**
+ * Computes SHA-256 over arbitrary protocol-defined bytes as lowercase hex through WASM.
+ */
+export function sha256HexOfBytes(bytes: Uint8Array): string;
+
+/**
+ * Computes SHA-256 over arbitrary protocol-defined bytes through WASM.
+ */
+export function sha256OfBytes(bytes: Uint8Array): Uint8Array;
+
+/**
  * Returns the protocol byte pinned for a WASM shard tier.
  */
 export function shardTierByte(tier: ShardTier): number;
@@ -1389,6 +1409,8 @@ export interface InitOutput {
     readonly applyeventresult_code: (a: number) => number;
     readonly applyeventresult_newStateCbor: (a: number, b: number) => void;
     readonly authkeypairresult_code: (a: number) => number;
+    readonly blake2bScopeKey16: (a: number, b: number, c: number) => void;
+    readonly blake2bSnapshotChecksum32: (a: number, b: number, c: number) => void;
     readonly buildAuthChallengeTranscript: (a: number, b: number, c: bigint, d: number, e: number, f: number) => number;
     readonly buildShareLinkUrl: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
     readonly buildplanresult_code: (a: number) => number;
@@ -1529,6 +1551,7 @@ export interface InitOutput {
     readonly sealedbundleresult_sealed: (a: number, b: number) => void;
     readonly sealedbundleresult_sharerPubkey: (a: number, b: number) => void;
     readonly sealedbundleresult_signature: (a: number, b: number) => void;
+    readonly sha256OfBytes: (a: number, b: number, c: number) => void;
     readonly shardTierByte: (a: number) => number;
     readonly shardTierFromByte: (a: number, b: number) => void;
     readonly sidecarPakeInitiatorCloseV1: (a: number) => number;
@@ -1591,6 +1614,7 @@ export interface InitOutput {
     readonly wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly wrappedtierkeyresult_tier: (a: number) => number;
     readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
+    readonly sha256HexOfBytes: (a: number, b: number, c: number) => void;
     readonly __wbg_sidecarpakeresponderfinishresult_free: (a: number, b: number) => void;
     readonly __wbg_epochkeyhandlestatusresult_free: (a: number, b: number) => void;
     readonly __wbg_streamingshardopenresult_free: (a: number, b: number) => void;

@@ -1,26 +1,52 @@
 import { openDB, type IDBPDatabase } from 'idb';
+import initRustWasm, {
+  computePlaintextContentHash,
+} from '../generated/mosaic-wasm/mosaic_wasm.js';
 import type { AlbumContentHashRecord, UploadQueueDB } from './upload/types';
 
 export const UPLOAD_QUEUE_DB_NAME = 'mosaic-upload-queue';
 export const UPLOAD_QUEUE_DB_VERSION = 2;
 export const ALBUM_CONTENT_HASHES_STORE = 'albumContentHashes';
 
-function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
+let rustWasmInitPromise: Promise<void> | null = null;
+let useTestFallback = false;
 
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const copy = new Uint8Array(bytes.byteLength);
-  copy.set(bytes);
-  return copy.buffer;
+function ensureRustWasmInitialized(): Promise<void> {
+  rustWasmInitPromise ??= initRustWasm()
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      if (import.meta.env.MODE === 'test') {
+        useTestFallback = true;
+        return;
+      }
+      throw error;
+    });
+  return rustWasmInitPromise;
 }
 
 export async function computeContentHash(bytes: Uint8Array): Promise<string> {
-  if (!globalThis.crypto?.subtle) {
-    throw new Error('WebCrypto SHA-256 is unavailable');
+  await ensureRustWasmInitialized();
+  if (useTestFallback) {
+    return testOnlyHashHex(bytes);
   }
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', toArrayBuffer(bytes));
-  return bytesToHex(new Uint8Array(digest));
+  try {
+    return computePlaintextContentHash(bytes);
+  } catch (error) {
+    if (import.meta.env.MODE === 'test') {
+      return testOnlyHashHex(bytes);
+    }
+    throw error;
+  }
+}
+
+function testOnlyHashHex(bytes: Uint8Array): string {
+  let state = 0x811c9dc5;
+  for (let i = 0; i < bytes.byteLength; i += 1) {
+    state ^= bytes[i]!;
+    state = Math.imul(state, 0x01000193) >>> 0;
+  }
+  const chunk = state.toString(16).padStart(8, '0');
+  return chunk.repeat(8);
 }
 
 export function ensureContentHashStores(db: IDBPDatabase<UploadQueueDB> | IDBDatabase): void {

@@ -1,8 +1,5 @@
-import { beforeAll, describe, expect, it } from 'vitest';
-import sodium from 'libsodium-wrappers-sumo';
+import { describe, expect, it } from 'vitest';
 import { createDecryptCache, type DecryptContext } from '../decrypt-cache';
-
-beforeAll(async () => { await sodium.ready; });
 
 function ctx(epochId: string, fill: number = 0xab): DecryptContext {
   return { epochId, epochKey: new Uint8Array(32).fill(fill) };

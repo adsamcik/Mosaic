@@ -33,11 +33,25 @@ type CryptoStreamingDecryptor<'a> = mosaic_crypto::StreamingDecryptor<'a>;
 type CryptoStreamingShardDecryptor = mosaic_crypto::StreamingShardDecryptor;
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest
+    sha256_digest_bytes(bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>()
+}
+
+fn sha256_digest_bytes(bytes: &[u8]) -> Vec<u8> {
+    Sha256::digest(bytes).to_vec()
+}
+
+fn blake2b_var(bytes: &[u8], out_len: usize) -> Vec<u8> {
+    let mut hasher = Blake2bVar::new(out_len)
+        .expect("protocol BLAKE2b output lengths are compile-time constants");
+    hasher.update(bytes);
+    let mut out = vec![0_u8; out_len];
+    hasher
+        .finalize_variable(&mut out)
+        .expect("BLAKE2b finalize cannot fail for allocated output");
+    out
 }
 
 struct CryptoStreamingEncryptorState<'a>(Option<CryptoStreamingEncryptor<'a>>);
@@ -3673,6 +3687,30 @@ pub fn verify_shard_integrity_sha256(
         .map_err(|error| JsError::new(&error.message))
 }
 
+/// Computes SHA-256 over arbitrary protocol-defined bytes.
+#[must_use]
+pub fn sha256_of_bytes(bytes: Vec<u8>) -> Vec<u8> {
+    sha256_digest_bytes(&bytes)
+}
+
+/// Computes SHA-256 over arbitrary protocol-defined bytes as lowercase hex.
+#[must_use]
+pub fn sha256_hex_of_bytes(bytes: Vec<u8>) -> String {
+    sha256_hex(&bytes)
+}
+
+/// Computes the BLAKE2b-128 scope-key digest over already domain-separated bytes.
+#[must_use]
+pub fn blake2b_scope_key_16(input: Vec<u8>) -> Vec<u8> {
+    blake2b_var(&input, 16)
+}
+
+/// Computes the BLAKE2b-256 checksum for download snapshot bodies.
+#[must_use]
+pub fn blake2b_snapshot_checksum_32(bytes: Vec<u8>) -> Vec<u8> {
+    blake2b_var(&bytes, 32)
+}
+
 /// Computes client-local SHA-256 of original plaintext media bytes as lowercase hex.
 #[must_use]
 pub fn compute_plaintext_content_hash(bytes: Vec<u8>) -> String {
@@ -5040,6 +5078,34 @@ pub fn verify_shard_integrity_sha256_js(
     expected_sha256: Vec<u8>,
 ) -> Result<bool, JsError> {
     verify_shard_integrity_sha256(envelope_bytes, expected_sha256)
+}
+
+/// Computes SHA-256 over arbitrary protocol-defined bytes through WASM.
+#[wasm_bindgen(js_name = sha256OfBytes)]
+#[must_use]
+pub fn sha256_of_bytes_js(bytes: Vec<u8>) -> Vec<u8> {
+    sha256_of_bytes(bytes)
+}
+
+/// Computes SHA-256 over arbitrary protocol-defined bytes as lowercase hex through WASM.
+#[wasm_bindgen(js_name = sha256HexOfBytes)]
+#[must_use]
+pub fn sha256_hex_of_bytes_js(bytes: Vec<u8>) -> String {
+    sha256_hex_of_bytes(bytes)
+}
+
+/// Computes the BLAKE2b-128 scope-key digest over already domain-separated bytes through WASM.
+#[wasm_bindgen(js_name = blake2bScopeKey16)]
+#[must_use]
+pub fn blake2b_scope_key_16_js(input: Vec<u8>) -> Vec<u8> {
+    blake2b_scope_key_16(input)
+}
+
+/// Computes the BLAKE2b-256 checksum for download snapshot bodies through WASM.
+#[wasm_bindgen(js_name = blake2bSnapshotChecksum32)]
+#[must_use]
+pub fn blake2b_snapshot_checksum_32_js(bytes: Vec<u8>) -> Vec<u8> {
+    blake2b_snapshot_checksum_32(bytes)
 }
 
 /// Computes client-local SHA-256 of original plaintext media bytes as lowercase hex.

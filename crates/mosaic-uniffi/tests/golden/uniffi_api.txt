@@ -436,6 +436,10 @@ export pub fn advance_album_sync_uniffi( snapshot: ClientCoreAlbumSyncSnapshot, 
 export pub fn manifest_transcript_bytes_uniffi( inputs: ClientCoreManifestTranscriptInputs, ) -> Result<Vec<u8>, MosaicError>
 export pub fn mint_link_tier_handle_from_raw_key(raw_key: Vec<u8>) -> LinkTierHandleFfiResult
 export pub fn verify_shard_integrity_sha256( envelope: Vec<u8>, expected_sha256: Vec<u8>, ) -> Result<bool, MosaicError>
+export pub fn sha256_of_bytes(bytes: Vec<u8>) -> Vec<u8>
+export pub fn sha256_hex_of_bytes(bytes: Vec<u8>) -> String
+export pub fn blake2b_scope_key_16(input: Vec<u8>) -> Vec<u8>
+export pub fn blake2b_snapshot_checksum_32(bytes: Vec<u8>) -> Vec<u8>
 export pub fn compute_plaintext_content_hash(bytes: Vec<u8>) -> String
 export pub fn client_error_code_enum_from_u16(value: u16) -> Option<ClientErrorCode>
 export pub fn client_error_code_to_u16(code: ClientErrorCode) -> u16

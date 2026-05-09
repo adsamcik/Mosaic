@@ -25,7 +25,7 @@
  * short enough that abandoned shards eventually free their slot in the
  * presence of a stable budget.
  */
-import sodium from 'libsodium-wrappers-sumo';
+import initRustWasm, { sha256HexOfBytes } from '../../generated/mosaic-wasm/mosaic_wasm.js';
 
 export interface ShardMirror {
   get(contentHash: string): Promise<Uint8Array | null>;
@@ -57,6 +57,7 @@ const DEFAULT_DIRECTORY = 'mosaic-shard-mirror';
 const TRIM_HEADROOM_RATIO = 0.9;
 const INDEX_FILE = 'index.json';
 const HASH_PATTERN = /^[0-9a-f]{64}$/u;
+let rustWasmInitPromise: Promise<void> | null = null;
 
 interface IndexEntry {
   bytes: number;
@@ -90,6 +91,11 @@ class Mutex {
       release();
     }
   }
+}
+
+function ensureRustWasmInitialized(): Promise<void> {
+  rustWasmInitPromise ??= initRustWasm().then(() => undefined);
+  return rustWasmInitPromise;
 }
 
 export function createShardMirror(opts?: Partial<ShardMirrorOptions>): ShardMirror {
@@ -230,15 +236,11 @@ export function createShardMirror(opts?: Partial<ShardMirrorOptions>): ShardMirr
   }
 
   async function computeSha256Hex(bytes: Uint8Array): Promise<string> {
-    // Copy into a fresh ArrayBuffer-backed view so SubtleCrypto's BufferSource
-    // signature is satisfied even when the input is SharedArrayBuffer-backed.
+    // Copy into a fresh ArrayBuffer-backed view so Rust receives an owned view
+    // even when the caller supplied a SharedArrayBuffer-backed Uint8Array.
     const owned = new Uint8Array(bytes);
-    if (typeof crypto !== 'undefined' && crypto.subtle && typeof crypto.subtle.digest === 'function') {
-      const buf = await crypto.subtle.digest('SHA-256', owned);
-      return toHex(new Uint8Array(buf));
-    }
-    await sodium.ready;
-    return toHex(sodium.crypto_hash_sha256(owned));
+    await ensureRustWasmInitialized();
+    return sha256HexOfBytes(owned);
   }
 
   return {

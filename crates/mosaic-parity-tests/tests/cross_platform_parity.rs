@@ -299,6 +299,75 @@ fn encrypted_envelopes_round_trip_between_wasm_and_uniffi() {
 }
 
 #[test]
+fn protocol_sha256_helpers_match_known_vector_across_wasm_uniffi_and_sha2() {
+    let input = b"abc".to_vec();
+    let expected = vec![
+        0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22,
+        0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00,
+        0x15, 0xad,
+    ];
+    let expected_hex = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+    let direct = Sha256::digest(&input).to_vec();
+    let wasm = mosaic_wasm::sha256_of_bytes(input.clone());
+    let uniffi = mosaic_uniffi::sha256_of_bytes(input.clone());
+
+    assert_eq!(direct, expected);
+    assert_eq!(wasm, expected);
+    assert_eq!(uniffi, expected);
+    assert_eq!(
+        mosaic_wasm::sha256_hex_of_bytes(input.clone()),
+        expected_hex
+    );
+    assert_eq!(mosaic_uniffi::sha256_hex_of_bytes(input), expected_hex);
+}
+
+#[test]
+fn protocol_blake2b_scope_key_16_matches_known_vector_across_wasm_and_uniffi() {
+    let input = b"account-idmosaic-tray-scope-v1".to_vec();
+    let expected = vec![
+        0x60, 0xe4, 0x4b, 0x7a, 0x59, 0xf5, 0xef, 0x45, 0xb8, 0x1b, 0x22, 0x74, 0x25, 0x1d, 0x7e,
+        0x58,
+    ];
+
+    let wasm = mosaic_wasm::blake2b_scope_key_16(input.clone());
+    let uniffi = mosaic_uniffi::blake2b_scope_key_16(input);
+
+    assert_eq!(wasm, expected);
+    assert_eq!(uniffi, expected);
+}
+
+#[test]
+fn protocol_blake2b_snapshot_checksum_32_matches_known_vector_across_wasm_and_uniffi() {
+    let input = b"mosaic snapshot body".to_vec();
+    let expected = vec![
+        0x08, 0x1c, 0x64, 0x76, 0x86, 0x59, 0xb8, 0x18, 0xd9, 0x95, 0xc2, 0x96, 0x7d, 0x91, 0xd5,
+        0x3b, 0xf9, 0x4b, 0x6b, 0x7b, 0xf9, 0xf7, 0x19, 0x65, 0x6a, 0xe6, 0x70, 0xc5, 0x91, 0x92,
+        0x72, 0x70,
+    ];
+
+    let wasm = mosaic_wasm::blake2b_snapshot_checksum_32(input.clone());
+    let uniffi = mosaic_uniffi::blake2b_snapshot_checksum_32(input);
+
+    assert_eq!(wasm, expected);
+    assert_eq!(uniffi, expected);
+}
+
+#[test]
+fn plaintext_content_hash_matches_sha256_across_wasm_and_uniffi() {
+    let input = b"mosaic plaintext content".to_vec();
+    let expected = "caab5e9856837cefa6f597cd56ff0bba59c1bdcc659fe038fd324fe7fbc2dcee";
+
+    let direct = hex_lower(&Sha256::digest(&input));
+    let wasm = mosaic_wasm::compute_plaintext_content_hash(input.clone());
+    let uniffi = mosaic_uniffi::compute_plaintext_content_hash(input);
+
+    assert_eq!(direct, expected);
+    assert_eq!(wasm, expected);
+    assert_eq!(uniffi, expected);
+}
+
+#[test]
 fn canonical_upload_snapshot_cbor_matches_wasm_and_uniffi_facades() {
     let wasm = wasm_upload_snapshot();
     let uniffi = uniffi_upload_snapshot();
@@ -1112,6 +1181,13 @@ fn bytes_to_uuid(bytes: &[u8; 16]) -> String {
         bytes[14],
         bytes[15]
     )
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
 }
 
 fn uuid_to_bytes(uuid: &str) -> Vec<u8> {

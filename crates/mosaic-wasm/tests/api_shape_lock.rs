@@ -192,6 +192,11 @@ fn link_handle_mint_and_sha256_exports_are_locked() {
     for declaration in [
         "export function mintLinkTierHandleFromRawKey(raw_key: Uint8Array): LinkTierHandleResult;",
         "export function verifyShardIntegritySha256(envelope_bytes: Uint8Array, expected_sha256: Uint8Array): boolean;",
+        "export function sha256OfBytes(bytes: Uint8Array): Uint8Array;",
+        "export function sha256HexOfBytes(bytes: Uint8Array): string;",
+        "export function blake2bScopeKey16(input: Uint8Array): Uint8Array;",
+        "export function blake2bSnapshotChecksum32(bytes: Uint8Array): Uint8Array;",
+        "export function computePlaintextContentHash(bytes: Uint8Array): string;",
     ] {
         assert!(
             golden.contains(declaration),

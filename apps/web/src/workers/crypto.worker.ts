@@ -685,11 +685,9 @@ class CryptoWorker implements CryptoWorkerApi {
   private readonly handleRegistry = new HandleRegistry(() => getRustFacade());
 
   /**
-   * Ensure libsodium is initialized before legacy crypto operations.
-   * Verifies that critical WASM functions are actually bound.
-   *
-   * Slice 2 keeps this for the stay-put `@mosaic/crypto` callers (shard /
-   * manifest / album-content / share-link). Slice 3+ will retire it.
+   * Ensure libsodium is initialized for the remaining platform-glue operations:
+   * upload session id generation and legacy pre-auth KDF parameter plumbing.
+   * Protocol-defined hashes/checksums/scope keys now route through Rust core.
    */
   private async ensureSodiumReady(): Promise<void> {
     if (!this.sodiumReady) {

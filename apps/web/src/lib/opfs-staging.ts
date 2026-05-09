@@ -1,4 +1,4 @@
-import sodium from 'libsodium-wrappers-sumo';
+import initRustWasm, { blake2bSnapshotChecksum32 } from '../generated/mosaic-wasm/mosaic_wasm.js';
 
 /** Stable job identifier. Hex-encoded 16-byte UUID matching Rust JobId. */
 export type JobId = string;
@@ -66,6 +66,7 @@ const PHOTO_ID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA
 
 let opfsSupportedCache: boolean | null = null;
 const photoAccessHandleCache = new Map<string, FileSystemSyncAccessHandle>();
+let rustWasmInitPromise: Promise<void> | null = null;
 
 interface SyncAccessFileHandle extends FileSystemFileHandle {
   createSyncAccessHandle(): Promise<FileSystemSyncAccessHandle>;
@@ -86,6 +87,11 @@ interface EnumerableDirectoryHandle extends FileSystemDirectoryHandle {
 interface CborEnvelope {
   readonly body: Uint8Array;
   readonly checksum: Uint8Array;
+}
+
+function ensureRustWasmInitialized(): Promise<void> {
+  rustWasmInitPromise ??= initRustWasm().then(() => undefined);
+  return rustWasmInitPromise;
 }
 
 /**
@@ -668,8 +674,8 @@ function isDomExceptionName(value: unknown, name: string): boolean {
 }
 
 async function verifyChecksum(body: Uint8Array, checksum: Uint8Array): Promise<void> {
-  await sodium.ready;
-  const actual = sodium.crypto_generichash(SNAPSHOT_CHECKSUM_BYTES, body);
+  await ensureRustWasmInitialized();
+  const actual = blake2bSnapshotChecksum32(body);
   if (!constantTimeEqual(actual, checksum)) {
     throw new OpfsStagingError(
       OpfsStagingErrorCode.ChecksumMismatch,

@@ -29,11 +29,25 @@ type CryptoStreamingEncryptor<'a> = mosaic_crypto::StreamingEncryptor<'a>;
 type CryptoStreamingDecryptor<'a> = mosaic_crypto::StreamingDecryptor<'a>;
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest
+    sha256_digest_bytes(bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>()
+}
+
+fn sha256_digest_bytes(bytes: &[u8]) -> Vec<u8> {
+    Sha256::digest(bytes).to_vec()
+}
+
+fn blake2b_var(bytes: &[u8], out_len: usize) -> Vec<u8> {
+    let mut hasher = Blake2bVar::new(out_len)
+        .expect("protocol BLAKE2b output lengths are compile-time constants");
+    hasher.update(bytes);
+    let mut out = vec![0_u8; out_len];
+    hasher
+        .finalize_variable(&mut out)
+        .expect("BLAKE2b finalize cannot fail for allocated output");
+    out
 }
 
 struct CryptoStreamingEncryptorState<'a>(Option<CryptoStreamingEncryptor<'a>>);
@@ -1760,6 +1774,34 @@ pub fn verify_shard_integrity_sha256(
 ) -> Result<bool, MosaicError> {
     mosaic_client::verify_shard_integrity_sha256(&envelope, &expected_sha256)
         .map_err(mosaic_error_from_client)
+}
+
+/// Computes SHA-256 over arbitrary protocol-defined bytes.
+#[uniffi::export]
+#[must_use]
+pub fn sha256_of_bytes(bytes: Vec<u8>) -> Vec<u8> {
+    sha256_digest_bytes(&bytes)
+}
+
+/// Computes SHA-256 over arbitrary protocol-defined bytes as lowercase hex.
+#[uniffi::export]
+#[must_use]
+pub fn sha256_hex_of_bytes(bytes: Vec<u8>) -> String {
+    sha256_hex(&bytes)
+}
+
+/// Computes the BLAKE2b-128 scope-key digest over already domain-separated bytes.
+#[uniffi::export]
+#[must_use]
+pub fn blake2b_scope_key_16(input: Vec<u8>) -> Vec<u8> {
+    blake2b_var(&input, 16)
+}
+
+/// Computes the BLAKE2b-256 checksum for download snapshot bodies.
+#[uniffi::export]
+#[must_use]
+pub fn blake2b_snapshot_checksum_32(bytes: Vec<u8>) -> Vec<u8> {
+    blake2b_var(&bytes, 32)
 }
 
 /// Computes client-local SHA-256 of original plaintext media bytes as lowercase hex.

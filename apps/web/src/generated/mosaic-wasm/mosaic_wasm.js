@@ -3022,6 +3022,48 @@ export function advanceUploadJob(job_id, album_id, idempotency_key, phase, retry
 }
 
 /**
+ * Computes the BLAKE2b-128 scope-key digest over already domain-separated bytes through WASM.
+ * @param {Uint8Array} input
+ * @returns {Uint8Array}
+ */
+export function blake2bScopeKey16(input) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(input, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.blake2bScopeKey16(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v2 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export4(r0, r1 * 1, 1);
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Computes the BLAKE2b-256 checksum for download snapshot bodies through WASM.
+ * @param {Uint8Array} bytes
+ * @returns {Uint8Array}
+ */
+export function blake2bSnapshotChecksum32(bytes) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.blake2bSnapshotChecksum32(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v2 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export4(r0, r1 * 1, 1);
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
  * Builds the canonical LocalAuth challenge transcript through WASM.
  *
  * `timestamp_ms_present == false` omits the timestamp segment.
@@ -3994,6 +4036,51 @@ export function sealBundleWithEpochHandle(identity_handle, epoch_handle, recipie
     const len1 = WASM_VECTOR_LEN;
     const ret = wasm.sealBundleWithEpochHandle(identity_handle, epoch_handle, ptr0, len0, ptr1, len1);
     return SealedBundleResult.__wrap(ret);
+}
+
+/**
+ * Computes SHA-256 over arbitrary protocol-defined bytes as lowercase hex through WASM.
+ * @param {Uint8Array} bytes
+ * @returns {string}
+ */
+export function sha256HexOfBytes(bytes) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.sha256HexOfBytes(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred2_0 = r0;
+        deferred2_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export4(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
+ * Computes SHA-256 over arbitrary protocol-defined bytes through WASM.
+ * @param {Uint8Array} bytes
+ * @returns {Uint8Array}
+ */
+export function sha256OfBytes(bytes) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.sha256OfBytes(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v2 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export4(r0, r1 * 1, 1);
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
 }
 
 /**
