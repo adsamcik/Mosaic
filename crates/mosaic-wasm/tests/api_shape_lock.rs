@@ -211,6 +211,8 @@ fn session_master_key_wasm_exports_are_locked() {
 
     for declaration in [
         "export function deriveSessionSaltFromUsername(domain: string, username: string): Uint8Array;",
+        "export function deriveAccountSalt(user_salt: Uint8Array): Uint8Array;",
+        "export function deriveSidecarRoomId(msg1: Uint8Array): Uint8Array;",
         "export function deriveMasterKeyFromPassword(password: Uint8Array, salt: Uint8Array, ops_limit: number, mem_limit_kib: number): bigint;",
         "export function consumeMasterKeyHandleForAesGcm(handle: bigint): Uint8Array;",
     ] {

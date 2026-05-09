@@ -60,7 +60,7 @@ fn uniffi_exported_api_shape_matches_golden() {
 
 #[test]
 fn uniffi_api_v1_baseline_signature_unchanged() {
-    let v1_baseline_blake3 = "37b3e148df370d6078b27d005434559b9238cf5bfefd614cfaef72db7102e50c";
+    let v1_baseline_blake3 = "f9773e50762e3a274aaf881930498e28286679f53b4448838773ac3195bc3766";
     let actual = blake3::hash(canonical_uniffi_api_shape(SOURCE).as_bytes()).to_hex();
 
     assert_eq!(
@@ -97,6 +97,8 @@ fn session_master_key_uniffi_exports_are_locked() {
 
     for declaration in [
         "export pub fn derive_session_salt_from_username( domain: String, username: String, ) -> Result<Vec<u8>, MosaicError>",
+        "export pub fn derive_account_salt(user_salt: Vec<u8>) -> Vec<u8>",
+        "export pub fn derive_sidecar_room_id(msg1: Vec<u8>) -> Vec<u8>",
         "export pub fn derive_master_key_from_password( password: Vec<u8>, salt: Vec<u8>, ops_limit: u32, mem_limit_kib: u32, ) -> Result<u64, MosaicError>",
         "export pub fn consume_master_key_handle_for_aes_gcm(handle: u64) -> Result<Vec<u8>, MosaicError>",
     ] {

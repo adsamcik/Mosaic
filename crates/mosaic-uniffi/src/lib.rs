@@ -1040,6 +1040,20 @@ pub fn derive_session_salt_from_username(
         .map_err(mosaic_error_from_crypto)
 }
 
+/// Derives the 16-byte deterministic LocalAuth account salt.
+#[uniffi::export]
+#[must_use]
+pub fn derive_account_salt(user_salt: Vec<u8>) -> Vec<u8> {
+    mosaic_crypto::derive_account_salt(&user_salt).to_vec()
+}
+
+/// Derives the 16-byte deterministic Sidecar signaling room ID.
+#[uniffi::export]
+#[must_use]
+pub fn derive_sidecar_room_id(msg1: Vec<u8>) -> Vec<u8> {
+    mosaic_crypto::derive_sidecar_room_id(&msg1).to_vec()
+}
+
 /// Derives the session L0 master key and stores it behind an opaque handle.
 #[uniffi::export]
 pub fn derive_master_key_from_password(

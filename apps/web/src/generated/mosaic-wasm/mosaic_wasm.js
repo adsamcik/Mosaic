@@ -3455,6 +3455,27 @@ export function decryptShardWithTier(handle, envelope_bytes) {
 }
 
 /**
+ * Derives the 16-byte deterministic LocalAuth account salt.
+ * @param {Uint8Array} user_salt
+ * @returns {Uint8Array}
+ */
+export function deriveAccountSalt(user_salt) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(user_salt, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.deriveAccountSalt(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v2 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export4(r0, r1 * 1, 1);
+        return v2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
  * Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
  * @param {bigint} account_handle
  * @returns {AuthKeypairResult}
@@ -3538,6 +3559,27 @@ export function deriveSessionSaltFromUsername(domain, username) {
         var v3 = getArrayU8FromWasm0(r0, r1).slice();
         wasm.__wbindgen_export4(r0, r1 * 1, 1);
         return v3;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Derives the 16-byte deterministic Sidecar signaling room ID.
+ * @param {Uint8Array} msg1
+ * @returns {Uint8Array}
+ */
+export function deriveSidecarRoomId(msg1) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(msg1, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.deriveSidecarRoomId(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var v2 = getArrayU8FromWasm0(r0, r1).slice();
+        wasm.__wbindgen_export4(r0, r1 * 1, 1);
+        return v2;
     } finally {
         wasm.__wbindgen_add_to_stack_pointer(16);
     }

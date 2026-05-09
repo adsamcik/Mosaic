@@ -89,10 +89,12 @@ export const decryptShardWithSeedV1: (a: number, b: number, c: number, d: number
 export const decryptShardWithTier: (a: bigint, b: number, c: number) => number;
 export const decryptshardresult_code: (a: number) => number;
 export const decryptshardresult_plaintext: (a: number, b: number) => void;
+export const deriveAccountSalt: (a: number, b: number, c: number) => void;
 export const deriveAuthKeypairFromAccount: (a: bigint) => number;
 export const deriveAuthKeypairFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
 export const deriveMasterKeyFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
 export const deriveSessionSaltFromUsername: (a: number, b: number, c: number, d: number, e: number) => void;
+export const deriveSidecarRoomId: (a: number, b: number, c: number) => void;
 export const downloadApplyEventV1: (a: number, b: number, c: number, d: number) => number;
 export const downloadBuildPlanV1: (a: number, b: number) => number;
 export const downloadCommitSnapshotV1: (a: number, b: number) => number;

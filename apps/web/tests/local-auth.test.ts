@@ -8,6 +8,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
+const wasmMocks = vi.hoisted(() => ({
+  initRustWasm: vi.fn().mockResolvedValue(undefined),
+  deriveAccountSalt: vi.fn(() => new Uint8Array(16).fill(0xa5)),
+}));
+
+vi.mock('../src/generated/mosaic-wasm/mosaic_wasm.js', () => ({
+  default: wasmMocks.initRustWasm,
+  deriveAccountSalt: wasmMocks.deriveAccountSalt,
+}));
+
 // Mock crypto-client
 vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() => ({
@@ -35,6 +45,8 @@ import {
 describe('LocalAuth', () => {
   beforeEach(() => {
     mockFetch.mockReset();
+    wasmMocks.initRustWasm.mockClear();
+    wasmMocks.deriveAccountSalt.mockClear();
   });
 
   afterEach(() => {

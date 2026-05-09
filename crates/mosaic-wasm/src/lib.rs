@@ -2596,6 +2596,20 @@ pub fn derive_session_salt_from_username(
         .map_err(js_error_from_crypto)
 }
 
+/// Derives the 16-byte deterministic LocalAuth account salt.
+#[wasm_bindgen(js_name = deriveAccountSalt)]
+#[must_use]
+pub fn derive_account_salt(user_salt: Vec<u8>) -> Vec<u8> {
+    mosaic_crypto::derive_account_salt(&user_salt).to_vec()
+}
+
+/// Derives the 16-byte deterministic Sidecar signaling room ID.
+#[wasm_bindgen(js_name = deriveSidecarRoomId)]
+#[must_use]
+pub fn derive_sidecar_room_id(msg1: Vec<u8>) -> Vec<u8> {
+    mosaic_crypto::derive_sidecar_room_id(&msg1).to_vec()
+}
+
 /// Derives the session L0 master key and stores it behind an opaque handle.
 #[wasm_bindgen(js_name = deriveMasterKeyFromPassword)]
 pub fn derive_master_key_from_password(

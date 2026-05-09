@@ -1,6 +1,5 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
-import { deriveTierKeys, memzero } from '@mosaic/crypto';
 import { getCryptoClient } from '../lib/crypto-client';
 import { DownloadError } from './crypto-pool';
 import { rustDecryptShardWithSeed, rustVerifyShardIntegrity } from './rust-crypto-core';
@@ -23,20 +22,14 @@ const memberApi: CryptoPoolMemberApi = {
     }
   },
 
-  async decryptShard(shardBytes: Uint8Array, rawKeyBytes: Uint8Array, tier: number): Promise<Uint8Array> {
-    const { fullKey, previewKey, thumbKey } = deriveTierKeys(rawKeyBytes);
+  async decryptShard(shardBytes: Uint8Array, rawKeyBytes: Uint8Array, _tier: number): Promise<Uint8Array> {
     try {
-      const tierKey = selectTierKey(tier, { fullKey, previewKey, thumbKey });
-      return await rustDecryptShardWithSeed(shardBytes, tierKey);
+      return await rustDecryptShardWithSeed(shardBytes, rawKeyBytes);
     } catch (error) {
       if (error instanceof DownloadError) {
         throw error;
       }
       throw new DownloadError('Decrypt', 'Shard AEAD decrypt failed', { cause: error });
-    } finally {
-      memzero(fullKey);
-      memzero(previewKey);
-      memzero(thumbKey);
     }
   },
 
@@ -74,22 +67,6 @@ const memberApi: CryptoPoolMemberApi = {
     }
   },
 };
-
-function selectTierKey(
-  tier: number,
-  keys: { readonly fullKey: Uint8Array; readonly previewKey: Uint8Array; readonly thumbKey: Uint8Array },
-): Uint8Array {
-  switch (tier) {
-    case 1:
-      return keys.thumbKey;
-    case 2:
-      return keys.previewKey;
-    case 3:
-      return keys.fullKey;
-    default:
-      throw new DownloadError('IllegalState', 'Unsupported shard tier for epoch-seed decrypt');
-  }
-}
 
 export const __cryptoPoolMemberTestUtils = { memberApi };
 

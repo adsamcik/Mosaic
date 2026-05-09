@@ -102,21 +102,6 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
     },
   ],
   [
-    'workers/coordinator/photo-pipeline.ts',
-    {
-      rationale:
-        'download photo pipeline derives legacy tier keys and zeroizes key material; per-shard streaming decrypt routes through Rust WASM',
-      allowedSymbols: ['deriveTierKeys', 'memzero'],
-    },
-  ],
-  [
-    'workers/crypto.worker-pool-member.ts',
-    {
-      rationale: 'pool members derive tier keys for legacy epoch-seed compatibility and zeroize derived key material; per-shard verify/decrypt routes through Rust WASM',
-      allowedSymbols: ['deriveTierKeys', 'memzero'],
-    },
-  ],
-  [
     'workers/types.ts',
     {
       rationale: 'temporary EncryptedShard worker API type (shell-class)',
@@ -281,9 +266,11 @@ describe('web Rust crypto cutover boundaries', () => {
     ).toEqual([
       'lib/content-hash.ts',
       'lib/exif-stripper.ts',
+      'lib/local-auth.ts',
       'lib/opfs-staging.ts',
       'lib/scope-key.ts',
       'lib/session.ts',
+      'lib/sidecar/signaling.ts',
       'lib/upload/encrypt-upload-shard.ts',
       'workers/coordinator/shard-mirror.ts',
       'workers/rust-crypto-core.ts',

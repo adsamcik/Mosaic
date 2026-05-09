@@ -1,4 +1,3 @@
-import { deriveTierKeys, memzero } from '@mosaic/crypto';
 import { ApiError } from '../../lib/api';
 import { ShardDownloadError } from '../../lib/shard-service';
 import type { CryptoPool, DownloadErrorCode } from '../crypto-pool';
@@ -294,12 +293,10 @@ async function streamDecryptAndWriteShard(
   deps: PhotoPipelineDeps,
 ): Promise<number> {
   const opener = deps.openStreamingShard ?? rustOpenStreamingShard;
-  const { fullKey, previewKey, thumbKey } = deriveTierKeys(rawKeyBytes);
   let decryptor: StreamingShardDecryptor | null = null;
   let written = 0;
   try {
-    const tierKey = selectTierKey(input.entry.tier, { fullKey, previewKey, thumbKey });
-    decryptor = await opener(shard.subarray(0, SHARD_ENVELOPE_HEADER_BYTES), tierKey);
+    decryptor = await opener(shard.subarray(0, SHARD_ENVELOPE_HEADER_BYTES), rawKeyBytes);
     const onWireChunkSize = decryptor.chunkSizeBytes + STREAMING_CHUNK_TAG_BYTES;
     let offset = SHARD_ENVELOPE_HEADER_BYTES;
     while (offset < shard.byteLength) {
@@ -316,27 +313,8 @@ async function streamDecryptAndWriteShard(
     if (decryptor) {
       await decryptor.close();
     }
-    memzero(fullKey);
-    memzero(previewKey);
-    memzero(thumbKey);
   }
   return written;
-}
-
-function selectTierKey(
-  tier: number,
-  keys: { readonly fullKey: Uint8Array; readonly previewKey: Uint8Array; readonly thumbKey: Uint8Array },
-): Uint8Array {
-  switch (tier) {
-    case 1:
-      return keys.thumbKey;
-    case 2:
-      return keys.previewKey;
-    case 3:
-      return keys.fullKey;
-    default:
-      throw new DownloadError('IllegalState', 'Unsupported shard tier for streaming decrypt');
-  }
 }
 
 async function reconcileResumeBytes(input: PhotoTaskInput, deps: PhotoPipelineDeps): Promise<void> {

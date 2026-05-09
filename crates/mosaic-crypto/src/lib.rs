@@ -10,6 +10,7 @@ use chacha20poly1305::{
 };
 use ed25519_dalek::{Signature as Ed25519Signature, Signer, SigningKey, VerifyingKey};
 use hkdf::Hkdf;
+use hmac::{Hmac, Mac};
 use mosaic_domain::{
     SHARD_ENVELOPE_HEADER_LEN, SHARD_ENVELOPE_MAGIC, SHARD_ENVELOPE_VERSION,
     SHARD_ENVELOPE_VERSION_V04, STREAMING_SHARD_ENVELOPE_HEADER_LEN, STREAMING_SHARD_FRAME_SIZE,
@@ -125,6 +126,12 @@ pub const KEY_BYTES: usize = 32;
 
 /// Fixed output length for libsodium-compatible Argon2id salts.
 pub const SESSION_SALT_BYTES: usize = 16;
+
+/// HMAC-SHA-256 info label for deterministic LocalAuth account-salt derivation.
+pub const ACCOUNT_SALT_HMAC_INFO: &[u8] = b"mosaic_account_salt";
+
+/// HKDF-SHA-256 info label for deterministic Sidecar signaling room IDs.
+pub const SIDECAR_ROOM_HKDF_INFO: &[u8] = b"mosaic.sidecar.v1.room";
 
 /// Length of a share-link secret in bytes (256-bit security, matches the
 /// TypeScript `LINK_SECRET_SIZE`).
@@ -958,6 +965,35 @@ pub fn derive_session_salt(
     let mut out = [0_u8; SESSION_SALT_BYTES];
     out.copy_from_slice(&bytes);
     Ok(out)
+}
+
+/// Derives the deterministic LocalAuth L1 account salt from the user salt.
+///
+/// This preserves the web v1 protocol byte-for-byte:
+/// `HMAC-SHA-256(key = user_salt, msg = "mosaic_account_salt")[0..16]`.
+#[must_use]
+pub fn derive_account_salt(user_salt: &[u8]) -> [u8; SESSION_SALT_BYTES] {
+    let mut mac =
+        <Hmac<Sha256> as Mac>::new_from_slice(user_salt).expect("HMAC accepts any key length");
+    mac.update(ACCOUNT_SALT_HMAC_INFO);
+    let result = mac.finalize().into_bytes();
+    let mut out = [0_u8; SESSION_SALT_BYTES];
+    out.copy_from_slice(&result[..SESSION_SALT_BYTES]);
+    out
+}
+
+/// Derives the deterministic Sidecar signaling room ID bytes from PAKE msg1.
+///
+/// This preserves the web v1 protocol byte-for-byte:
+/// `HKDF-SHA-256(ikm = msg1, salt = empty, info = "mosaic.sidecar.v1.room")`
+/// expanded to 16 bytes.
+#[must_use]
+pub fn derive_sidecar_room_id(msg1: &[u8]) -> [u8; SESSION_SALT_BYTES] {
+    let hk = Hkdf::<Sha256>::new(None, msg1);
+    let mut out = [0_u8; SESSION_SALT_BYTES];
+    hk.expand(SIDECAR_ROOM_HKDF_INFO, &mut out)
+        .expect("16 bytes is within HKDF cap");
+    out
 }
 
 /// Derives the session L0 master key with libsodium-compatible Argon2id13.

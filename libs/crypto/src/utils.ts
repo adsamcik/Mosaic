@@ -40,35 +40,6 @@ export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 /**
- * Compute SHA256 hash of data.
- *
- * @param data - Data to hash
- * @returns Hash as base64url string (no padding)
- */
-export async function sha256(data: Uint8Array): Promise<string> {
-  // Copy to new ArrayBuffer to satisfy crypto.subtle.digest type requirements
-  const buffer = new ArrayBuffer(data.length);
-  new Uint8Array(buffer).set(data);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-  return sodium.to_base64(
-    new Uint8Array(hashBuffer),
-    sodium.base64_variants.URLSAFE_NO_PADDING,
-  );
-}
-
-/**
- * Synchronous SHA256 using libsodium's generichash.
- * Useful when async is not convenient.
- *
- * @param data - Data to hash
- * @returns Hash as base64url string (no padding)
- */
-export function sha256Sync(data: Uint8Array): string {
-  const hash = sodium.crypto_generichash(32, data);
-  return sodium.to_base64(hash, sodium.base64_variants.URLSAFE_NO_PADDING);
-}
-
-/**
  * Securely zero memory containing sensitive data.
  *
  * @param buffer - Buffer to zero

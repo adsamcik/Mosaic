@@ -8,6 +8,9 @@
 
 import { fromBase64, toBase64 } from './api';
 import { getCryptoClient } from './crypto-client';
+import initRustWasm, {
+  deriveAccountSalt,
+} from '../generated/mosaic-wasm/mosaic_wasm.js';
 
 // =============================================================================
 // Types
@@ -137,6 +140,13 @@ export async function registerUser(params: {
 // High-Level Authentication Flow
 // =============================================================================
 
+let rustWasmInitPromise: Promise<unknown> | null = null;
+
+async function ensureLocalAuthRustWasmInitialized(): Promise<void> {
+  rustWasmInitPromise ??= initRustWasm();
+  await rustWasmInitPromise;
+}
+
 /**
  * Perform LocalAuth login with Ed25519 challenge-response.
  *
@@ -182,6 +192,7 @@ export async function localAuthLogin(
   const signatureBase64 = toBase64(signature);
 
   // Derive account salt for later use
+  await ensureLocalAuthRustWasmInitialized();
   const accountSaltBytes = await deriveAccountSalt(userSaltBytes);
 
   // Step 4: Verify with server
@@ -265,6 +276,7 @@ async function registerNewUser(
   wrappedAccountKey: Uint8Array | null;
 }> {
   // Generate account salt
+  await ensureLocalAuthRustWasmInitialized();
   const accountSalt = await deriveAccountSalt(userSalt);
 
   const cryptoClient = await getCryptoClient();
@@ -332,32 +344,6 @@ async function registerNewUser(
     isNewUser: true,
     wrappedAccountKey: null, // New user already has correct keys loaded
   };
-}
-
-/**
- * Derive account salt from user salt.
- * This provides a deterministic mapping from user salt to account salt.
- */
-async function deriveAccountSalt(userSalt: Uint8Array): Promise<Uint8Array> {
-  // Use Web Crypto to derive account salt
-  // Create a copy to avoid SharedArrayBuffer issues
-  const saltBuffer = new Uint8Array(userSalt).buffer;
-  const key = await crypto.subtle.importKey(
-    'raw',
-    saltBuffer,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-
-  const signature = await crypto.subtle.sign(
-    'HMAC',
-    key,
-    new TextEncoder().encode('mosaic_account_salt'),
-  );
-
-  // Take first 16 bytes as account salt
-  return new Uint8Array(signature).slice(0, 16);
 }
 
 // =============================================================================

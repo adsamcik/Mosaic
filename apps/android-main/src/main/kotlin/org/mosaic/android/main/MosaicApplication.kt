@@ -1,7 +1,7 @@
 package org.mosaic.android.main
 
 import android.app.Application
-import android.util.Log
+import androidx.work.Logger
 import org.mosaic.android.main.bridge.AndroidRustCoreLibraryLoader
 import org.mosaic.android.main.service.UploadForegroundService
 import org.mosaic.android.main.work.AutoImportRuntime
@@ -27,7 +27,7 @@ class MosaicApplication : Application() {
     super.onCreate()
     rustCoreWarmUp()
     runCatching { ShellStubRecordMigration.clearOnFirstLaunch(this) }
-      .onFailure { Log.w(TAG, "A-pre-1 cleanup failed", it) }
+      .onFailure { Logger.get().warning(TAG, "A-pre-1 cleanup failed", it) }
     installAutoImportRuntime(this)
     registerUploadNotificationChannel(this)
     enqueueAutoImportIfPolicyAllows(this)

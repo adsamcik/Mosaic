@@ -1045,6 +1045,11 @@ export function decryptShardWithSeedV1(envelope: Uint8Array, key: Uint8Array): D
 export function decryptShardWithTier(handle: bigint, envelope_bytes: Uint8Array): BytesResult;
 
 /**
+ * Derives the 16-byte deterministic LocalAuth account salt.
+ */
+export function deriveAccountSalt(user_salt: Uint8Array): Uint8Array;
+
+/**
  * Derives the LocalAuth Ed25519 keypair from an account-key handle through WASM.
  */
 export function deriveAuthKeypairFromAccount(account_handle: bigint): AuthKeypairResult;
@@ -1067,6 +1072,11 @@ export function deriveMasterKeyFromPassword(password: Uint8Array, salt: Uint8Arr
  * Derives the 16-byte deterministic session Argon2id salt.
  */
 export function deriveSessionSaltFromUsername(domain: string, username: string): Uint8Array;
+
+/**
+ * Derives the 16-byte deterministic Sidecar signaling room ID.
+ */
+export function deriveSidecarRoomId(msg1: Uint8Array): Uint8Array;
 
 /**
  * Applies a download state-machine event through WASM.
@@ -1462,10 +1472,12 @@ export interface InitOutput {
     readonly decryptShardWithTier: (a: bigint, b: number, c: number) => number;
     readonly decryptshardresult_code: (a: number) => number;
     readonly decryptshardresult_plaintext: (a: number, b: number) => void;
+    readonly deriveAccountSalt: (a: number, b: number, c: number) => void;
     readonly deriveAuthKeypairFromAccount: (a: bigint) => number;
     readonly deriveAuthKeypairFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly deriveMasterKeyFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly deriveSessionSaltFromUsername: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly deriveSidecarRoomId: (a: number, b: number, c: number) => void;
     readonly downloadApplyEventV1: (a: number, b: number, c: number, d: number) => number;
     readonly downloadBuildPlanV1: (a: number, b: number) => number;
     readonly downloadCommitSnapshotV1: (a: number, b: number) => number;

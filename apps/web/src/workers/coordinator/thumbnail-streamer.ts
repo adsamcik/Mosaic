@@ -34,10 +34,12 @@
  *   absence of imports in those modules — see acceptance criteria.
  */
 
+import { createLogger } from '../../lib/logger';
 import type { ResolvedKeyMaterial } from './source-strategy';
 
 const DEFAULT_PER_JOB_CONCURRENCY = 2;
 const DEFAULT_GLOBAL_CONCURRENCY = 4;
+const log = createLogger('ThumbnailStreamer');
 
 export interface ThumbnailManifestEntry {
   readonly photoId: string;
@@ -133,9 +135,8 @@ export function createThumbnailStreamer(deps: ThumbnailStreamerDeps): ThumbnailS
   const perJobConcurrency = Math.max(1, deps.perJobConcurrency ?? DEFAULT_PER_JOB_CONCURRENCY);
   const globalConcurrency = Math.max(1, deps.globalConcurrency ?? DEFAULT_GLOBAL_CONCURRENCY);
   const globalSem = new Semaphore(globalConcurrency);
-  const warn = deps.warn ?? ((m: string, ctx?: Record<string, unknown>): void => {
-    // eslint-disable-next-line no-console
-    console.warn(`[thumbnail-streamer] ${m}`, ctx ?? {});
+  const warn = deps.warn ?? ((message: string, context?: Record<string, unknown>): void => {
+    log.warn(message, context ?? {});
   });
   const createUrl = deps.createObjectURL ?? defaultCreateObjectURL;
   const revokeUrl = deps.revokeObjectURL ?? defaultRevokeObjectURL;

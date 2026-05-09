@@ -12,10 +12,20 @@
  *
  * ZK-safe logging policy: never log payload bytes, room ids, or msg1.
  */
+import initRustWasm, {
+  deriveSidecarRoomId as deriveSidecarRoomIdBytes,
+} from '../../generated/mosaic-wasm/mosaic_wasm.js';
+
 const MAX_FRAME_BYTES = 8 * 1024;
 const ROOM_ID_LENGTH = 32; // 16-byte HKDF output, hex-encoded
-const HKDF_INFO = new TextEncoder().encode('mosaic.sidecar.v1.room');
-const HKDF_SALT = new Uint8Array(0); // deliberate: msg1 is high-entropy ikm
+const ROOM_ID_BYTES = 16;
+
+let rustWasmInitPromise: Promise<unknown> | null = null;
+
+async function ensureSidecarRustWasmInitialized(): Promise<void> {
+  rustWasmInitPromise ??= initRustWasm();
+  await rustWasmInitPromise;
+}
 
 export interface SidecarSignalingOptions {
   /** Base URL (e.g., "https://example.com" or "wss://…"). When omitted, derived from window.location. */
@@ -57,20 +67,12 @@ export async function deriveSidecarRoomId(msg1: Uint8Array): Promise<string> {
   if (!(msg1 instanceof Uint8Array) || msg1.length === 0) {
     throw new TypeError('deriveSidecarRoomId: msg1 must be a non-empty Uint8Array');
   }
-  const subtle = globalThis.crypto?.subtle;
-  if (!subtle) {
-    throw new Error('deriveSidecarRoomId: SubtleCrypto unavailable');
+  await ensureSidecarRustWasmInitialized();
+  const roomId = await deriveSidecarRoomIdBytes(msg1);
+  if (roomId.byteLength !== ROOM_ID_BYTES) {
+    throw new Error('deriveSidecarRoomId: Rust room-id KDF returned invalid length');
   }
-  // Copy into a fresh ArrayBuffer to avoid SharedArrayBuffer / detached-buffer issues.
-  const ikm = new Uint8Array(msg1.length);
-  ikm.set(msg1);
-  const key = await subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
-  const bits = await subtle.deriveBits(
-    { name: 'HKDF', hash: 'SHA-256', salt: HKDF_SALT, info: HKDF_INFO },
-    key,
-    16 * 8,
-  );
-  return toHex(new Uint8Array(bits));
+  return toHex(roomId);
 }
 
 function toHex(bytes: Uint8Array): string {

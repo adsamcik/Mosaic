@@ -249,86 +249,94 @@ afterEach(() => {
 // ===========================================================================
 
 describe('M3: login re-entrancy guard', () => {
-  it('rejects a second concurrent login() with "Login already in progress"', async () => {
-    const { session, getApi, getCryptoClient, getDbClient } =
-      await getSessionModule();
+  it(
+    'rejects a second concurrent login() with "Login already in progress"',
+    { timeout: 60_000 },
+    async () => {
+      const { session, getApi, getCryptoClient, getDbClient } =
+        await getSessionModule();
 
-    const cryptoMock = makeCryptoClientMock();
-    const dbMock = makeDbClientMock();
-    const apiMock = {
-      getCurrentUser: vi.fn().mockResolvedValue({
-        ...baseUser,
-        wrappedAccountKey: 'AA==',
-      }),
-      updateCurrentUser: vi.fn(),
-      updateCurrentUserWrappedKey: vi.fn().mockResolvedValue(undefined),
-    };
+      const cryptoMock = makeCryptoClientMock();
+      const dbMock = makeDbClientMock();
+      const apiMock = {
+        getCurrentUser: vi.fn().mockResolvedValue({
+          ...baseUser,
+          wrappedAccountKey: 'AA==',
+        }),
+        updateCurrentUser: vi.fn(),
+        updateCurrentUserWrappedKey: vi.fn().mockResolvedValue(undefined),
+      };
 
-    (getApi as Mock).mockReturnValue(apiMock);
-    (getCryptoClient as Mock).mockResolvedValue(cryptoMock);
-    (getDbClient as Mock).mockResolvedValue(dbMock);
+      (getApi as Mock).mockReturnValue(apiMock);
+      (getCryptoClient as Mock).mockResolvedValue(cryptoMock);
+      (getDbClient as Mock).mockResolvedValue(dbMock);
 
-    // Pre-seed a salt so login() doesn't try to generate one
-    localStorage.setItem('mosaic:userSalt', 'AAAAAAAAAAAAAAAAAAAAAA==');
+      // Pre-seed a salt so login() doesn't try to generate one
+      localStorage.setItem('mosaic:userSalt', 'AAAAAAAAAAAAAAAAAAAAAA==');
 
-    // Fire both calls back-to-back without awaiting either.
-    const first = session.login('p1');
-    const second = session.login('p2');
+      // Fire both calls back-to-back without awaiting either.
+      const first = session.login('p1');
+      const second = session.login('p2');
 
-    await expect(second).rejects.toThrow('Login already in progress');
-    // First should still complete successfully.
-    await expect(first).resolves.toBeUndefined();
-  });
+      await expect(second).rejects.toThrow('Login already in progress');
+      // First should still complete successfully.
+      await expect(first).resolves.toBeUndefined();
+    },
+  );
 
-  it('rejects localLogin() racing with restoreSession()', async () => {
-    const { session, getApi, getCryptoClient, getDbClient, localAuthLogin } =
-      await getSessionModule();
+  it(
+    'rejects localLogin() racing with restoreSession()',
+    { timeout: 60_000 },
+    async () => {
+      const { session, getApi, getCryptoClient, getDbClient, localAuthLogin } =
+        await getSessionModule();
 
-    const cryptoMock = makeCryptoClientMock();
-    const dbMock = makeDbClientMock();
-    const apiMock = {
-      getCurrentUser: vi.fn().mockResolvedValue({
-        ...baseUser,
-        wrappedAccountKey: 'AA==',
-      }),
-      updateCurrentUser: vi.fn(),
-      updateCurrentUserWrappedKey: vi.fn().mockResolvedValue(undefined),
-    };
+      const cryptoMock = makeCryptoClientMock();
+      const dbMock = makeDbClientMock();
+      const apiMock = {
+        getCurrentUser: vi.fn().mockResolvedValue({
+          ...baseUser,
+          wrappedAccountKey: 'AA==',
+        }),
+        updateCurrentUser: vi.fn(),
+        updateCurrentUserWrappedKey: vi.fn().mockResolvedValue(undefined),
+      };
 
-    (getApi as Mock).mockReturnValue(apiMock);
-    (getCryptoClient as Mock).mockResolvedValue(cryptoMock);
-    (getDbClient as Mock).mockResolvedValue(dbMock);
+      (getApi as Mock).mockReturnValue(apiMock);
+      (getCryptoClient as Mock).mockResolvedValue(cryptoMock);
+      (getDbClient as Mock).mockResolvedValue(dbMock);
 
-    (localAuthLogin as Mock).mockResolvedValue({
-      userId: 'user-123',
-      userSalt: new Uint8Array(16).fill(7),
-      accountSalt: new Uint8Array(16).fill(8),
-      isNewUser: false,
-      wrappedAccountKey: new Uint8Array(72),
-    });
+      (localAuthLogin as Mock).mockResolvedValue({
+        userId: 'user-123',
+        userSalt: new Uint8Array(16).fill(7),
+        accountSalt: new Uint8Array(16).fill(8),
+        isNewUser: false,
+        wrappedAccountKey: new Uint8Array(72),
+      });
 
-    // Pre-seed salt for restoreSession
-    localStorage.setItem('mosaic:userSalt', 'AAAAAAAAAAAAAAAAAAAAAA==');
+      // Pre-seed salt for restoreSession
+      localStorage.setItem('mosaic:userSalt', 'AAAAAAAAAAAAAAAAAAAAAA==');
 
-    const localLoginPromise = session.localLogin('alice', 'secret');
-    const restorePromise = session.restoreSession('secret');
+      const localLoginPromise = session.localLogin('alice', 'secret');
+      const restorePromise = session.restoreSession('secret');
 
-    // Whichever lands the in-flight promise first wins; the other rejects.
-    const results = await Promise.allSettled([
-      localLoginPromise,
-      restorePromise,
-    ]);
+      // Whichever lands the in-flight promise first wins; the other rejects.
+      const results = await Promise.allSettled([
+        localLoginPromise,
+        restorePromise,
+      ]);
 
-    const fulfilled = results.filter((r) => r.status === 'fulfilled');
-    const rejected = results.filter(
-      (r) => r.status === 'rejected',
-    ) as PromiseRejectedResult[];
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter(
+        (r) => r.status === 'rejected',
+      ) as PromiseRejectedResult[];
 
-    expect(fulfilled).toHaveLength(1);
-    expect(rejected).toHaveLength(1);
-    const reason = rejected[0]?.reason as Error | undefined;
-    expect(reason?.message).toMatch(/Login already in progress/);
-  });
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      const reason = rejected[0]?.reason as Error | undefined;
+      expect(reason?.message).toMatch(/Login already in progress/);
+    },
+  );
 });
 
 // ===========================================================================

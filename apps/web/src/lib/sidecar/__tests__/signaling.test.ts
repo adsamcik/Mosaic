@@ -1,4 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const wasmMocks = vi.hoisted(() => ({
+  initRustWasm: vi.fn().mockResolvedValue(undefined),
+  deriveSidecarRoomId: vi.fn((msg1: Uint8Array) => {
+    const out = new Uint8Array(16);
+    for (let index = 0; index < msg1.byteLength; index += 1) {
+      out[index % out.length] = (out[index % out.length]! + msg1[index]! + index) & 0xff;
+    }
+    return out;
+  }),
+}));
+
+vi.mock('../../../generated/mosaic-wasm/mosaic_wasm.js', () => ({
+  default: wasmMocks.initRustWasm,
+  deriveSidecarRoomId: wasmMocks.deriveSidecarRoomId,
+}));
+
 import {
   deriveSidecarRoomId,
   openSidecarSignalingChannel,
@@ -66,6 +83,11 @@ class FakeWebSocket {
 }
 
 const ROOM = '0123456789abcdef0123456789abcdef'; // 32 hex chars
+
+beforeEach(() => {
+  wasmMocks.initRustWasm.mockClear();
+  wasmMocks.deriveSidecarRoomId.mockClear();
+});
 
 function makeChannel(opts: Partial<Parameters<typeof openSidecarSignalingChannel>[1]> = {}) {
   FakeWebSocket.instances = [];

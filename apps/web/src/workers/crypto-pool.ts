@@ -35,7 +35,7 @@ export interface CryptoPool {
   readonly size: number;
   /** Verify a shard's SHA256 hash. Throws DownloadError(Integrity) on mismatch. */
   verifyShard(shardBytes: Uint8Array, expectedHash: Uint8Array): Promise<void>;
-  /** Decrypt a shard with legacy raw seed bytes. Throws DownloadError(Decrypt) on AEAD failure. */
+  /** Decrypt a shard with legacy raw tier-key bytes. Throws DownloadError(Decrypt) on AEAD failure. */
   decryptShard(shardBytes: Uint8Array, rawKeyBytes: Uint8Array, tier: number): Promise<Uint8Array>;
   /** Decrypt a shard with a share-link tier key. Throws DownloadError(Decrypt) on AEAD failure. */
   decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: LinkDecryptionKey): Promise<Uint8Array>;

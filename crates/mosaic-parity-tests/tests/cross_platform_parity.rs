@@ -172,6 +172,49 @@ fn session_key_derivation_matches_crypto_wasm_and_uniffi() {
 }
 
 #[test]
+fn local_auth_account_salt_matches_known_vector_across_crypto_wasm_and_uniffi() {
+    let expected = vec![
+        0xf3, 0x5d, 0x00, 0xa0, 0xc4, 0x31, 0x2e, 0x17, 0xe8, 0x7d, 0x65, 0x3f, 0x64, 0xf3, 0x6a,
+        0x4e,
+    ];
+
+    assert_eq!(
+        mosaic_crypto::ACCOUNT_SALT_HMAC_INFO,
+        b"mosaic_account_salt"
+    );
+
+    let crypto = mosaic_crypto::derive_account_salt(&USER_SALT).to_vec();
+    let wasm = mosaic_wasm::derive_account_salt(USER_SALT.to_vec());
+    let uniffi = mosaic_uniffi::derive_account_salt(USER_SALT.to_vec());
+
+    assert_eq!(crypto, expected);
+    assert_eq!(wasm, expected);
+    assert_eq!(uniffi, expected);
+}
+
+#[test]
+fn sidecar_room_id_matches_known_vector_across_crypto_wasm_and_uniffi() {
+    let msg1: Vec<u8> = (0_u8..32).collect();
+    let expected = vec![
+        0xd7, 0x2d, 0x27, 0x3f, 0x50, 0x64, 0x0b, 0x66, 0x21, 0x77, 0xa9, 0xe5, 0x32, 0x67, 0xe1,
+        0x28,
+    ];
+
+    assert_eq!(
+        mosaic_crypto::SIDECAR_ROOM_HKDF_INFO,
+        b"mosaic.sidecar.v1.room"
+    );
+
+    let crypto = mosaic_crypto::derive_sidecar_room_id(&msg1).to_vec();
+    let wasm = mosaic_wasm::derive_sidecar_room_id(msg1.clone());
+    let uniffi = mosaic_uniffi::derive_sidecar_room_id(msg1);
+
+    assert_eq!(crypto, expected);
+    assert_eq!(wasm, expected);
+    assert_eq!(uniffi, expected);
+}
+
+#[test]
 fn manifest_transcript_bytes_match_wasm_and_uniffi() {
     let encrypted_meta = vec![0xaa, 0xbb, 0xcc];
     let encoded_shards = encoded_manifest_shards();

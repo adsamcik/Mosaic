@@ -13,7 +13,7 @@
  *      `LinkDecryptionKey` from the link tier-key store.
  *
  * Strategies resolve opaque worker-owned handles for production decrypt paths.
- * Raw bytes remain accepted only as a legacy/transitional escape hatch.
+ * Raw tier-key bytes remain accepted only as a legacy/transitional escape hatch.
  *
  * Future strategies (e.g. P2P sidecar) plug in here.
  */
@@ -47,7 +47,7 @@ export interface SourceStrategy {
    *
    * - Authenticated: epoch handle from the epoch-key service.
    * - Share-link: tier-3 link-tier handle from the tier-key store.
-   * - Raw bytes: legacy/transitional callers only.
+ * - Raw tier-key bytes: legacy/transitional callers only.
    *
    * Implementations MUST throw a DownloadError with an appropriate code
    * (e.g. `AccessRevoked`) when the key cannot be resolved.

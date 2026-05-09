@@ -2,8 +2,8 @@ package org.mosaic.android.main.upload
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
 import androidx.work.CoroutineWorker
+import androidx.work.Logger
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import java.io.File
@@ -38,7 +38,7 @@ class ShardUploadWorker internal constructor(
     DefaultShardTusSessionFactory(appContext),
     AppPrivateShardStagingCleaner(AppPrivateStagingManager(appContext)),
     FileShardUploadManifestStore(appContext),
-    { message -> Log.w(LOG_TAG, message) },
+    { message -> Logger.get().warning(LOG_TAG, message) },
   )
 
   override suspend fun doWork(): Result {

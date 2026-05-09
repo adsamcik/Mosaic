@@ -39,8 +39,6 @@ export {
 
 export {
   ARGON2_PRESETS,
-  benchmarkAllPresets,
-  benchmarkArgon2,
   getArgon2Params,
   isLowMemoryDevice,
   isMobileDevice,
@@ -53,16 +51,6 @@ export {
   fromBytes,
   memzero,
   randomBytes,
-  sha256,
-  sha256Sync,
   toBase64,
   toBytes,
 } from './utils';
-
-export {
-  deriveContentKey,
-  deriveTierKeys,
-  generateEpochKey,
-  getTierKey,
-  isValidEpochKey,
-} from './epochs';

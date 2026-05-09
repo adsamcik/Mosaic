@@ -3,8 +3,6 @@ import sodium from 'libsodium-wrappers-sumo';
 import {
   concat,
   constantTimeEqual,
-  sha256,
-  sha256Sync,
   memzero,
   randomBytes,
   toBase64,
@@ -51,52 +49,6 @@ describe('utils', () => {
       expect(
         constantTimeEqual(new Uint8Array([1, 2]), new Uint8Array([1, 2, 3])),
       ).toBe(false);
-    });
-  });
-
-  describe('sha256', () => {
-    it('produces consistent hashes', async () => {
-      const data = new Uint8Array([1, 2, 3, 4, 5]);
-      const hash1 = await sha256(data);
-      const hash2 = await sha256(data);
-      expect(hash1).toBe(hash2);
-    });
-
-    it('produces different hashes for different data', async () => {
-      const hash1 = await sha256(new Uint8Array([1, 2, 3]));
-      const hash2 = await sha256(new Uint8Array([1, 2, 4]));
-      expect(hash1).not.toBe(hash2);
-    });
-  });
-
-  describe('sha256Sync', () => {
-    it('produces consistent hashes', () => {
-      const data = new Uint8Array([1, 2, 3]);
-      expect(sha256Sync(data)).toBe(sha256Sync(data));
-    });
-
-    it('returns a non-empty base64url string', () => {
-      const data = new Uint8Array([1, 2, 3, 4, 5]);
-      const hash = sha256Sync(data);
-      // Must be a non-empty string
-      expect(typeof hash).toBe('string');
-      expect(hash.length).toBeGreaterThan(0);
-      // SHA256 produces 32 bytes = 43 base64url chars (no padding)
-      expect(hash.length).toBe(43);
-      // Verify it's valid base64url (no + or / or =)
-      expect(hash).toMatch(/^[A-Za-z0-9_-]+$/);
-    });
-
-    it('produces different hashes for different data', () => {
-      const hash1 = sha256Sync(new Uint8Array([1, 2, 3]));
-      const hash2 = sha256Sync(new Uint8Array([1, 2, 4]));
-      expect(hash1).not.toBe(hash2);
-    });
-
-    it('handles empty input', () => {
-      const hash = sha256Sync(new Uint8Array(0));
-      expect(typeof hash).toBe('string');
-      expect(hash.length).toBe(43);
     });
   });
 
