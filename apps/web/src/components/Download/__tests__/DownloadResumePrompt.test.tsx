@@ -11,6 +11,8 @@ const api = vi.hoisted(() => ({
   pauseJob: vi.fn(),
   resumeJob: vi.fn(),
   cancelJob: vi.fn(),
+  forceStartJob: vi.fn(),
+  updateJobSchedule: vi.fn(),
   listJobs: vi.fn(),
   listResumableJobs: vi.fn(),
   computeAlbumDiff: vi.fn(),
@@ -31,6 +33,8 @@ vi.mock('../../../hooks/useDownloadManager', () => ({
     resumeJob: api.resumeJob,
     cancelJob: api.cancelJob,
     computeAlbumDiff: api.computeAlbumDiff,
+    forceStartJob: api.forceStartJob,
+    updateJobSchedule: api.updateJobSchedule,
     subscribe: () => (): void => undefined,
   }),
 }));

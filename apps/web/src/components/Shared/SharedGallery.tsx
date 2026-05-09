@@ -26,6 +26,10 @@ import { VisitorDownloadDisclosure } from './VisitorDownloadDisclosure';
 
 const log = createLogger('SharedGallery');
 
+type LinkTierHandleMinter = {
+  mintLinkTierHandleFromRawKey(rawKey: Uint8Array): Promise<LinkDecryptionKey>;
+};
+
 interface SharedGalleryProps {
   /** Link ID for fetching photos */
   linkId: string;
@@ -171,9 +175,11 @@ export function SharedGallery({
                 // tier key directly. The worker returns plaintext bytes
                 // and we JSON-parse them here (the legacy
                 // `decryptManifest` did the parse inside the worker).
+                const linkTierHandleId = await getOrMintLinkTierHandle(tierKey, crypto);
+                if (linkTierHandleId === undefined) continue;
                 const plaintextBytes = await crypto.decryptShardWithTierKey(
                   encryptedMeta,
-                  tierKey.linkTierHandleId!,
+                  linkTierHandleId,
                 );
                 const meta = JSON.parse(
                   textDecoder.decode(plaintextBytes),
@@ -259,7 +265,7 @@ export function SharedGallery({
               fallbackEpoch: fallbackEpochId,
               tier,
             });
-            return key.linkTierHandleId ?? key.key;
+            return getLinkTierHandle(key);
           }
         }
         log.warn('No tier key found', { epochId, tier });
@@ -273,7 +279,7 @@ export function SharedGallery({
           epochId,
           tier,
         });
-        return tierKey.linkTierHandleId ?? tierKey.key;
+        return getLinkTierHandle(tierKey);
       }
 
       // Fall back to highest available
@@ -285,7 +291,7 @@ export function SharedGallery({
             requestedTier: tier,
             actualTier: t,
           });
-          return key.linkTierHandleId ?? key.key;
+          return getLinkTierHandle(key);
         }
       }
       log.warn('No tier key found after fallback', { epochId, tier });
@@ -561,4 +567,23 @@ export function SharedGallery({
     </div>
     </DownloadScopeProvider>
   );
+}
+
+function getLinkTierHandle(key: TierKey): LinkDecryptionKey | undefined {
+  return key.linkTierHandleId;
+}
+
+async function getOrMintLinkTierHandle(
+  key: TierKey,
+  crypto: LinkTierHandleMinter,
+): Promise<LinkDecryptionKey | undefined> {
+  if (key.linkTierHandleId) return key.linkTierHandleId;
+  if (!key.key) return undefined;
+
+  try {
+    key.linkTierHandleId = await crypto.mintLinkTierHandleFromRawKey(key.key);
+    return key.linkTierHandleId;
+  } finally {
+    key.key.fill(0);
+  }
 }

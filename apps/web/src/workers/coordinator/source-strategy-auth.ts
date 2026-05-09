@@ -39,7 +39,7 @@ export function createAuthenticatedSourceStrategy(accountId: string): SourceStra
     },
     async resolveKey(albumId: string, epochId: number): Promise<Uint8Array> {
       const bundle = await getOrFetchEpochKey(albumId, epochId);
-      return bundle.epochSeed;
+      return bundle.epochHandleId as unknown as Uint8Array;
     },
   };
 }

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useCallback } from 'react';
 import { useAlbumDownloadModePicker } from '../../../hooks/useAlbumDownloadModePicker';
 import type { DownloadOutputMode, PerFileStrategy, PhotoMeta } from '../../../workers/types';
+import type { DownloadSchedule } from '../../../lib/download-schedule';
 import { click, flushMicrotasks, render, requireElement } from '../../Download/__tests__/DownloadTestUtils';
 
 // Match the existing DownloadModePicker test setup so the picker is renderable.
@@ -44,7 +45,7 @@ const samplePhoto: PhotoMeta = {
 };
 
 interface AlbumDownloadStub {
-  readonly startDownload: import('vitest').Mock<(albumId: string, albumName: string, photos: ReadonlyArray<PhotoMeta>, opts: { readonly mode: DownloadOutputMode }) => Promise<void>>;
+  readonly startDownload: import('vitest').Mock<(albumId: string, albumName: string, photos: ReadonlyArray<PhotoMeta>, opts: { readonly mode: DownloadOutputMode; readonly schedule?: DownloadSchedule }) => Promise<void>>;
 }
 
 /**
@@ -93,7 +94,7 @@ afterEach(() => {
 describe('Gallery download integration (C1 wiring)', () => {
   it('Download All opens the picker, then Start triggers startDownload({...,mode})', async () => {
     const albumDownload: AlbumDownloadStub = {
-      startDownload: vi.fn<(albumId: string, albumName: string, photos: ReadonlyArray<PhotoMeta>, opts: { readonly mode: DownloadOutputMode }) => Promise<void>>(async () => undefined),
+      startDownload: vi.fn<(albumId: string, albumName: string, photos: ReadonlyArray<PhotoMeta>, opts: { readonly mode: DownloadOutputMode; readonly schedule?: DownloadSchedule }) => Promise<void>>(async () => undefined),
     };
     const r = await render(<GalleryDownloadHarness albumId="alb" albumName="My Album" photos={[samplePhoto]} albumDownload={albumDownload} />);
     await click(requireElement(r.container.querySelector('[data-testid="download-all"]')));
@@ -118,7 +119,7 @@ describe('Gallery download integration (C1 wiring)', () => {
 
   it('Cancel closes the picker WITHOUT calling startDownload', async () => {
     const albumDownload: AlbumDownloadStub = {
-      startDownload: vi.fn<(albumId: string, albumName: string, photos: ReadonlyArray<PhotoMeta>, opts: { readonly mode: DownloadOutputMode }) => Promise<void>>(async () => undefined),
+      startDownload: vi.fn<(albumId: string, albumName: string, photos: ReadonlyArray<PhotoMeta>, opts: { readonly mode: DownloadOutputMode; readonly schedule?: DownloadSchedule }) => Promise<void>>(async () => undefined),
     };
     const r = await render(<GalleryDownloadHarness albumId="alb" albumName="My Album" photos={[samplePhoto]} albumDownload={albumDownload} />);
     await click(requireElement(r.container.querySelector('[data-testid="download-all"]')));
@@ -135,7 +136,7 @@ describe('Gallery download integration (C1 wiring)', () => {
 
   it('empty photos array short-circuits without prompting', async () => {
     const albumDownload: AlbumDownloadStub = {
-      startDownload: vi.fn<(albumId: string, albumName: string, photos: ReadonlyArray<PhotoMeta>, opts: { readonly mode: DownloadOutputMode }) => Promise<void>>(async () => undefined),
+      startDownload: vi.fn<(albumId: string, albumName: string, photos: ReadonlyArray<PhotoMeta>, opts: { readonly mode: DownloadOutputMode; readonly schedule?: DownloadSchedule }) => Promise<void>>(async () => undefined),
     };
     const r = await render(<GalleryDownloadHarness albumId="alb" albumName="My Album" photos={[]} albumDownload={albumDownload} />);
     await click(requireElement(r.container.querySelector('[data-testid="download-all"]')));

@@ -80,18 +80,6 @@ function wait(reason: string, retryAfterMs: number | null = DEFAULT_RETRY_AFTER_
   return { canStart: false, reason, retryAfterMs };
 }
 
-/** Returns true when the network looks "Wi-Fi-ish" (fast + not user-restricted). */
-function isWifiLike(ctx: ScheduleContext): boolean {
-  if (!ctx.online) return false;
-  if (ctx.saveData) return false;
-  // The browser doesn't report Wi-Fi vs cellular. effectiveType is the
-  // best proxy: slow-2g/2g almost always means cellular or a captive
-  // portal we shouldn't burn data on. 'unknown' is treated as Wi-Fi-like
-  // because Firefox doesn't expose the API at all and we don't want to
-  // strand desktop users behind a permanent gate.
-  return ctx.effectiveType !== 'slow-2g' && ctx.effectiveType !== '2g';
-}
-
 /**
  * Return `null` if the max-delay override has not fired, otherwise a
  * "max-delay elapsed" evaluation that always allows start.

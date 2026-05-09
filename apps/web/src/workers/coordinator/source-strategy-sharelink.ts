@@ -24,15 +24,7 @@ export interface ShareLinkSourceStrategyOptions {
  *
  * Fetches encrypted shards via `/api/s/{linkId}/shards/{shardId}` (with an
  * optional grant token) and resolves the per-epoch decryption key from a
- * caller-supplied tier-3 lookup. The pool's `decryptShard` accepts any
- * 32-byte secret, so the tier-3 key flows through the same code path as an
- * authenticated viewer's epoch seed.
- *
- * Limitations (current):
- *   - `LinkDecryptionKey` may be a tier-handle ID (opaque string) when
- *     keys are kept inside the crypto worker. The coordinator pipeline path
- *     currently requires raw bytes; handle-based keys throw `IllegalState`.
- *     Lifting this is tracked alongside the broader tier-handle work.
+ * caller-supplied tier-3 handle lookup.
  */
 export function createShareLinkSourceStrategy(
   opts: ShareLinkSourceStrategyOptions,
@@ -116,14 +108,7 @@ export function createShareLinkSourceStrategy(
           'Share-link tier-3 key unavailable for epoch',
         );
       }
-      if (typeof key === 'string') {
-        // Tier-handle path not yet supported through the coordinator pipeline.
-        throw new DownloadError(
-          'IllegalState',
-          'Tier-handle keys not supported by coordinator source strategy',
-        );
-      }
-      return key;
+      return key as unknown as Uint8Array;
     },
   };
 }

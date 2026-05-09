@@ -7,7 +7,18 @@ const shardServiceMocks = vi.hoisted(() => ({
 }));
 
 const epochKeyMocks = vi.hoisted(() => ({
-  getOrFetchEpochKey: vi.fn<(albumId: string, epochId: number) => Promise<{ epochSeed: Uint8Array }>>(),
+  getOrFetchEpochKey: vi.fn<(albumId: string, epochId: number) => Promise<{ epochHandleId: string }>>(),
+}));
+
+const scopeKeyMocks = vi.hoisted(() => ({
+  stableHex(input: string): string {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < input.length; i += 1) {
+      hash ^= input.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash.toString(16).padStart(8, '0').repeat(4).slice(0, 32);
+  },
 }));
 
 vi.mock('../../../lib/shard-service', () => ({
@@ -18,6 +29,12 @@ vi.mock('../../../lib/shard-service', () => ({
 }));
 vi.mock('../../../lib/epoch-key-service', () => ({
   getOrFetchEpochKey: epochKeyMocks.getOrFetchEpochKey,
+}));
+vi.mock('../../../lib/scope-key', () => ({
+  ensureScopeKeySodiumReady: vi.fn(async () => undefined),
+  deriveAuthScopeKey: (accountId: string) => `auth:${scopeKeyMocks.stableHex(`auth:${accountId}`)}`,
+  deriveVisitorScopeKey: (linkId: string, grantToken: string | null) => `visitor:${scopeKeyMocks.stableHex(`visitor:${linkId}:${grantToken ?? ''}`)}`,
+  scopeKeyPrefix: (scopeKey: string) => scopeKey.split(':')[0] ?? 'unknown',
 }));
 
 import { createAuthenticatedSourceStrategy } from '../source-strategy-auth';
@@ -63,12 +80,12 @@ describe('createAuthenticatedSourceStrategy', () => {
     expect(shardServiceMocks.downloadShard).not.toHaveBeenCalled();
   });
 
-  it('resolveKey returns epochSeed from epoch-key service', async () => {
+  it('resolveKey returns epochHandleId from epoch-key service', async () => {
     const s = createAuthenticatedSourceStrategy('11111111-2222-3333-4444-555555555555');
-    const seed = new Uint8Array(32).fill(7);
-    epochKeyMocks.getOrFetchEpochKey.mockResolvedValue({ epochSeed: seed });
+    const epochHandleId = 'test-epoch-handle-1';
+    epochKeyMocks.getOrFetchEpochKey.mockResolvedValue({ epochHandleId });
     const out = await s.resolveKey('album-1', 5);
-    expect(out).toBe(seed);
+    expect(out).toBe(epochHandleId);
     expect(epochKeyMocks.getOrFetchEpochKey).toHaveBeenCalledWith('album-1', 5);
   });
 });
@@ -109,8 +126,8 @@ describe('createShareLinkSourceStrategy', () => {
     expect(shardServiceMocks.downloadShardViaShareLink).not.toHaveBeenCalled();
   });
 
-  it('resolveKey returns the 32-byte tier key bytes', async () => {
-    const tier3: LinkDecryptionKey = new Uint8Array(32).fill(11);
+  it('resolveKey returns the tier handle id', async () => {
+    const tier3 = 'test-link-tier-handle-1' as LinkDecryptionKey;
     const s = createShareLinkSourceStrategy({ linkId: 'L', getTierKey: (epoch) => (epoch === 9 ? tier3 : undefined) });
     const out = await s.resolveKey('album', 9);
     expect(out).toBe(tier3);
@@ -124,16 +141,10 @@ describe('createShareLinkSourceStrategy', () => {
     }
   });
 
-  it('resolveKey throws IllegalState when tier key is a handle (string)', async () => {
-    const handle = 'tier-handle-abc' as unknown as LinkDecryptionKey;
+  it('resolveKey treats link tier handles as opaque values', async () => {
+    const handle = 'tier-handle-abc' as LinkDecryptionKey;
     const s = createShareLinkSourceStrategy({ linkId: 'L', getTierKey: () => handle });
-    try {
-      await s.resolveKey('album', 1);
-      throw new Error('expected throw');
-    } catch (err) {
-      expect(err).toBeInstanceOf(DownloadError);
-      expect((err as DownloadError).code).toBe('IllegalState');
-    }
+    await expect(s.resolveKey('album', 1)).resolves.toBe(handle);
   });
 });
 
@@ -205,7 +216,7 @@ describe('createShareLinkSourceStrategy revocation mapping', () => {
     const s = createShareLinkSourceStrategy({
       linkId: 'link-1',
       grantToken: null,
-      getTierKey: () => new Uint8Array(32),
+      getTierKey: () => 'test-link-tier-handle-2' as LinkDecryptionKey,
     });
     const err = await s.fetchShard('shard-a', new AbortController().signal).catch((e) => e);
     expect(err).toBeInstanceOf(DownloadError);
@@ -220,11 +231,11 @@ describe('createShareLinkSourceStrategy revocation mapping', () => {
     const s = createShareLinkSourceStrategy({
       linkId: 'link-1',
       grantToken: null,
-      getTierKey: () => new Uint8Array(32),
+      getTierKey: () => 'test-link-tier-handle-3' as LinkDecryptionKey,
     });
     const err = await s.fetchShard('shard-a', new AbortController().signal).catch((e) => e);
     expect(err).not.toBeInstanceOf(DownloadError);
-    expect((err as ApiError).status).toBe(500);
+    expect((err as InstanceType<typeof ApiError>).status).toBe(500);
   });
 
   it('maps an ApiError wrapped inside ShardDownloadError', async () => {
@@ -239,7 +250,7 @@ describe('createShareLinkSourceStrategy revocation mapping', () => {
     const s = createShareLinkSourceStrategy({
       linkId: 'link-1',
       grantToken: null,
-      getTierKey: () => new Uint8Array(32),
+      getTierKey: () => 'test-link-tier-handle-4' as LinkDecryptionKey,
     });
     const err = await s.fetchShard('shard-a', new AbortController().signal).catch((e) => e);
     expect(err).toBeInstanceOf(DownloadError);

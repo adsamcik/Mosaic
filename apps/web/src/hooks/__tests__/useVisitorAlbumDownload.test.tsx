@@ -28,6 +28,11 @@ vi.mock('../../lib/shard-service', () => ({
   downloadShards: vi.fn(),
   ShardDownloadError: class extends Error {},
 }));
+vi.mock('../../lib/scope-key', () => ({
+  ensureScopeKeySodiumReady: vi.fn(async () => undefined),
+  deriveVisitorScopeKey: (linkId: string, grantToken: string | null) => `visitor:${linkId}:${grantToken ?? ''}`,
+  scopeKeyPrefix: (scopeKey: string) => scopeKey.split(':')[0] ?? 'unknown',
+}));
 
 interface ManagerStub {
   api: CoordinatorWorkerApi | null;
@@ -95,7 +100,7 @@ describe('useVisitorAlbumDownload', () => {
   it('starts a coordinator job with a share-link source strategy', async () => {
     const stub = makeApi();
     managerStub = { api: stub.api, cancelJob: vi.fn(), resumableJobs: [] };
-    const tier3: LinkDecryptionKey = new Uint8Array(32).fill(5);
+    const tier3 = 'test-link-tier-handle-1' as LinkDecryptionKey;
     let latest: ReturnType<typeof useVisitorAlbumDownload> | null = null;
 
     const r = await render(
@@ -162,7 +167,7 @@ describe('useVisitorAlbumDownload', () => {
     const r = await render(
       <Harness
         linkId="L1"
-        getTier3Key={() => new Uint8Array(32)}
+        getTier3Key={() => 'test-link-tier-handle-2' as LinkDecryptionKey}
         onResult={(x) => { latest = x; }}
       />,
     );
@@ -196,7 +201,7 @@ describe('useVisitorAlbumDownload', () => {
         { jobId: 'live', scopeKey: matchScope, pausedNoSource: false },
       ],
     };
-    const tier3: LinkDecryptionKey = new Uint8Array(32).fill(5);
+    const tier3 = 'test-link-tier-handle-3' as LinkDecryptionKey;
     const r = await render(
       <Harness
         linkId={'link-a'}

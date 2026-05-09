@@ -65,6 +65,12 @@ vi.mock('../coordinator/photo-pipeline', () => pipelineMocks);
 vi.mock('../../lib/schedule-context', () => ({
   captureScheduleContext: vi.fn(async () => scheduleContextMock.ctx),
 }));
+vi.mock('../../lib/scope-key', () => ({
+  ensureScopeKeySodiumReady: vi.fn(async () => undefined),
+  deriveAuthScopeKey: (accountId: string) => `auth:${stableScopeHex(`auth:${accountId}`)}`,
+  deriveVisitorScopeKey: (linkId: string, grantToken: string | null) => `visitor:${stableScopeHex(`visitor:${linkId}:${grantToken ?? ''}`)}`,
+  scopeKeyPrefix: (scopeKey: string) => scopeKey.split(':')[0] ?? 'unknown',
+}));
 vi.mock('../../lib/opfs-staging', () => ({
   createJobDir: vi.fn(async (jobId: string): Promise<void> => { opfsState.dirs.add(jobId); }),
   purgeJob: vi.fn(async (jobId: string): Promise<void> => { opfsState.dirs.delete(jobId); opfsState.snapshots.delete(jobId); }),
@@ -108,6 +114,15 @@ function uuidBytes(id: string): Uint8Array {
   const out = new Uint8Array(16);
   for (let i = 0; i < 16; i += 1) out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   return out;
+}
+
+function stableScopeHex(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0').repeat(4).slice(0, 32);
 }
 
 function phaseStateValue(phase: DownloadPhase): CborValue {
@@ -195,20 +210,6 @@ function transition(from: DownloadPhase, kind: number): DownloadPhase {
   throw new WorkerCryptoError(WorkerCryptoErrorCode.DownloadIllegalTransition, 'illegal');
 }
 
-function readPhase(body: Uint8Array): DownloadPhase {
-  const root = parse(body);
-  if (root.kind !== 'map') throw new Error('not map');
-  const stateEntry = root.value.find((e) => e.key.kind === 'uint' && e.key.value === 5);
-  if (!stateEntry) throw new Error('no state');
-  const stateMap = stateEntry.value;
-  if (stateMap.kind !== 'map') throw new Error('state not map');
-  const codeEntry = stateMap.value.find((e) => e.key.kind === 'uint' && e.key.value === 0);
-  if (!codeEntry || codeEntry.value.kind !== 'uint') throw new Error('no code');
-  const found = Object.entries(cbor.phaseCodeByPhase).find(([, v]) => v === codeEntry.value.value as unknown as number);
-  if (!found) throw new Error('phase not found');
-  return found[0] as DownloadPhase;
-}
-
 function validInput(schedule?: DownloadSchedule): StartJobInput {
   return {
     albumId,
@@ -255,7 +256,8 @@ beforeEach(() => {
     if (stateRoot.kind !== 'map') throw new Error('bad state');
     const codeEntry = stateRoot.value.find((e) => e.key.kind === 'uint' && e.key.value === 0);
     if (!codeEntry || codeEntry.value.kind !== 'uint') throw new Error('bad code');
-    const fromPhase = Object.entries(cbor.phaseCodeByPhase).find(([, v]) => v === codeEntry.value.value as unknown as number)?.[0] as DownloadPhase;
+    const phaseCode = codeEntry.value.value;
+    const fromPhase = Object.entries(cbor.phaseCodeByPhase).find(([, v]) => v === phaseCode)?.[0] as DownloadPhase;
     const eventRoot = parse(eventBytes);
     if (eventRoot.kind !== 'map') throw new Error('bad event');
     const kindEntry = eventRoot.value.find((e) => e.key.kind === 'uint' && e.key.value === 0);

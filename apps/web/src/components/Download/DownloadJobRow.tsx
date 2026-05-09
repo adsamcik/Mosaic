@@ -77,6 +77,7 @@ export function DownloadJobRow({
   thumbnailVisibleLimit = 8,
 }: DownloadJobRowProps): JSX.Element {
   const { t } = useTranslation();
+  const translate = (key: string): string => t(key);
   const [expanded, setExpanded] = useState(false);
   const counts = progress?.photoCounts ?? job.photoCounts;
   const phase = progress?.phase ?? job.phase;
@@ -96,7 +97,7 @@ export function DownloadJobRow({
     && job.scopeKey.startsWith('visitor:');
   const isScheduled = phase === 'Idle' && job.schedule !== null && job.schedule.kind !== 'immediate';
   const scheduledReasonLabel = isScheduled && job.scheduleEvaluation
-    ? translateScheduleReason(t, job.scheduleEvaluation.reason)
+    ? translateScheduleReason(translate, job.scheduleEvaluation.reason)
     : null;
   const statusLabel = isShareLinkRevoked
     ? t('download.tray.shareLinkRevoked')
@@ -322,7 +323,7 @@ function iconForPhase(phase: string): string {
  * label. Falls back to the raw reason when no mapping exists so future
  * Rust-side strings are surfaced verbatim rather than dropped.
  */
-function translateScheduleReason(t: (key: string, opts?: Record<string, unknown>) => string, reason: string): string {
+function translateScheduleReason(t: (key: string) => string, reason: string): string {
   const key = SCHEDULE_REASON_KEYS[reason];
   if (key === undefined) return reason;
   return t(key);
