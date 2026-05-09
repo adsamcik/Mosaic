@@ -7,6 +7,8 @@ import android.graphics.Matrix
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.Base64
+import java.util.Collections
+import java.util.IdentityHashMap
 import org.mosaic.android.main.bridge.AndroidRustCoreLibraryLoader
 import uniffi.mosaic_uniffi.canonicalTierLayout as rustCanonicalTierLayout
 
@@ -22,12 +24,16 @@ class BitmapTierEncoder(
     val previewBitmap = srgbBitmap.scaleToFit(layout.preview.width, layout.preview.height)
     val originalBitmap = srgbBitmap.scaleToFit(layout.original.width, layout.original.height)
 
-    return EncodedMediaTiers(
-      thumbnail = thumbnailBitmap.encodeJpegWithoutMetadata(),
-      preview = previewBitmap.encodeJpegWithoutMetadata(),
-      original = originalBitmap.encodeJpegWithoutMetadata(),
-      thumbhash = thumbHashCalculator.calculate(thumbnailBitmap),
-    )
+    return try {
+      EncodedMediaTiers(
+        thumbnail = thumbnailBitmap.encodeJpegWithoutMetadata(),
+        preview = previewBitmap.encodeJpegWithoutMetadata(),
+        original = originalBitmap.encodeJpegWithoutMetadata(),
+        thumbhash = thumbHashCalculator.calculate(thumbnailBitmap),
+      )
+    } finally {
+      recycleDistinct(srgbBitmap, thumbnailBitmap, previewBitmap, originalBitmap)
+    }
   }
 
   fun rotate(bitmap: Bitmap, degrees: Int): Bitmap {
@@ -79,21 +85,32 @@ object RustCanonicalTierLayoutProvider : TierLayoutProvider {
 class ThumbHashCalculator {
   fun calculate(bitmap: Bitmap): String {
     val sampled = Bitmap.createScaledBitmap(bitmap, 16, 16, true)
-    val features = ByteArrayOutputStream()
-    for (y in 0 until sampled.height) {
-      for (x in 0 until sampled.width) {
-        val pixel = sampled.getPixel(x, y)
-        val red = Color.red(pixel)
-        val green = Color.green(pixel)
-        val blue = Color.blue(pixel)
-        val luma = ((red * 77) + (green * 150) + (blue * 29)) ushr 8
-        val warm = ((red - blue) + 255) / 2
-        features.write(luma)
-        features.write(warm)
+    return try {
+      val features = ByteArrayOutputStream()
+      for (y in 0 until sampled.height) {
+        for (x in 0 until sampled.width) {
+          val pixel = sampled.getPixel(x, y)
+          val red = Color.red(pixel)
+          val green = Color.green(pixel)
+          val blue = Color.blue(pixel)
+          val luma = ((red * 77) + (green * 150) + (blue * 29)) ushr 8
+          val warm = ((red - blue) + 255) / 2
+          features.write(luma)
+          features.write(warm)
+        }
       }
+      val digest = MessageDigest.getInstance("SHA-256").digest(features.toByteArray()).copyOf(24)
+      "thv1:${Base64.getUrlEncoder().withoutPadding().encodeToString(digest)}"
+    } finally {
+      if (sampled !== bitmap && !sampled.isRecycled) sampled.recycle()
     }
-    val digest = MessageDigest.getInstance("SHA-256").digest(features.toByteArray()).copyOf(24)
-    return "thv1:${Base64.getUrlEncoder().withoutPadding().encodeToString(digest)}"
+  }
+}
+
+private fun recycleDistinct(vararg bitmaps: Bitmap) {
+  val seen = Collections.newSetFromMap(IdentityHashMap<Bitmap, Boolean>())
+  bitmaps.forEach { bitmap ->
+    if (seen.add(bitmap) && !bitmap.isRecycled) bitmap.recycle()
   }
 }
 

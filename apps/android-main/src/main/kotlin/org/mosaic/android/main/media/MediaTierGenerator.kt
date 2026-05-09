@@ -14,6 +14,10 @@ class MediaTierGenerator(
       BitmapFactory.decodeStream(input)
     }
     requireNotNull(bitmap) { "Unable to decode image" }
-    return encoder.encode(bitmap)
+    return try {
+      encoder.encode(bitmap)
+    } finally {
+      if (!bitmap.isRecycled) bitmap.recycle()
+    }
   }
 }

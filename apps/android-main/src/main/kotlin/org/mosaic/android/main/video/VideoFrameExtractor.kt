@@ -15,10 +15,15 @@ class VideoFrameExtractor(
   fun extract(sourceUri: Uri): VideoFrameExtractionResult {
     val frame = frameDecoder.decode(sourceUri)
     val rotated = encoder.rotate(frame.bitmap, frame.orientationDegrees)
-    return VideoFrameExtractionResult(
-      tiers = encoder.encode(rotated),
-      orientationDegrees = frame.orientationDegrees,
-    )
+    return try {
+      VideoFrameExtractionResult(
+        tiers = encoder.encode(rotated),
+        orientationDegrees = frame.orientationDegrees,
+      )
+    } finally {
+      if (rotated !== frame.bitmap && !rotated.isRecycled) rotated.recycle()
+      if (!frame.bitmap.isRecycled) frame.bitmap.recycle()
+    }
   }
 }
 
