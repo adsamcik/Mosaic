@@ -60,6 +60,22 @@ import { getCryptoClient } from '../src/lib/crypto-client';
 import { getDbClient } from '../src/lib/db-client';
 import type { User } from '../src/lib/api-types';
 
+class NoopBroadcastChannel {
+  readonly name: string;
+
+  constructor(name: string) {
+    this.name = name;
+  }
+
+  postMessage(): void {}
+
+  addEventListener(): void {}
+
+  removeEventListener(): void {}
+
+  close(): void {}
+}
+
 // We need to dynamically import session to get a fresh instance per test
 async function getSessionModule() {
   // Reset module registry to get fresh instance
@@ -117,6 +133,7 @@ describe('Session Restore', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal('BroadcastChannel', NoopBroadcastChannel);
 
     // Setup default mocks
     (getApi as ReturnType<typeof vi.fn>).mockReturnValue(mockApi);
@@ -139,6 +156,7 @@ describe('Session Restore', () => {
   afterEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    vi.unstubAllGlobals();
     global.fetch = originalFetch;
   });
 
@@ -387,6 +405,7 @@ describe('Session Restore', () => {
 describe('Session Restore Integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal('BroadcastChannel', NoopBroadcastChannel);
     localStorage.clear();
     sessionStorage.clear();
   });
@@ -394,6 +413,7 @@ describe('Session Restore Integration', () => {
   afterEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    vi.unstubAllGlobals();
   });
 
   it('simulates page reload scenario', async () => {

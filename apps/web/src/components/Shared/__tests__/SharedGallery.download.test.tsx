@@ -49,8 +49,10 @@ import { SharedGallery } from '../SharedGallery';
 import { useVisitorAlbumDownload } from '../../../hooks/useVisitorAlbumDownload';
 import { useAlbumDownloadModePicker } from '../../../hooks/useAlbumDownloadModePicker';
 import { AccessTier } from '../../../lib/api-types';
+import type { LinkTierHandleId } from '../../../workers/types';
 
 const fetchMock = vi.fn();
+const LINK_TIER_HANDLE = 'link-tier-handle-7-3' as LinkTierHandleId;
 beforeEach(() => {
   fetchMock.mockReset();
   (useVisitorAlbumDownload as unknown as { mockClear: () => void }).mockClear();
@@ -64,7 +66,11 @@ afterEach(() => {
 
 function makeTierKeys(tier: AccessTierType): Map<number, Map<AccessTierType, TierKey>> {
   const inner = new Map<AccessTierType, TierKey>();
-  inner.set(tier, { key: new Uint8Array(32).fill(7) } as TierKey);
+  inner.set(tier, {
+    epochId: 7,
+    tier,
+    linkTierHandleId: LINK_TIER_HANDLE,
+  } as TierKey);
   const outer = new Map<number, Map<AccessTierType, TierKey>>();
   outer.set(7, inner);
   return outer;
@@ -109,9 +115,9 @@ describe('SharedGallery tier-3 download gate', () => {
     const opts = firstCall[0]!;
     expect(opts.linkId).toBe('L-abcd');
     expect(opts.grantToken).toBe('g-tok');
-    // getTier3Key must resolve via the tier-3 key in tierKeys.
+    // getTier3Key must resolve via the tier-3 link-tier handle in tierKeys.
     const resolved = opts.getTier3Key(7);
-    expect(resolved).toBeInstanceOf(Uint8Array);
+    expect(resolved).toBe(LINK_TIER_HANDLE);
     // Mode picker is also wired in (though no element rendered yet).
     expect((useAlbumDownloadModePicker as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(0);
     await r.unmount();

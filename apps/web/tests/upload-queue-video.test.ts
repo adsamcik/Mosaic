@@ -9,34 +9,64 @@ const {
   mockGet,
   mockDelete,
   mockGetAll,
+  mockGetFromIndex,
   mockEncryptShard,
   mockExtractVideoFrame,
   mockGetMimeType,
   mockIsSupportedVideoType,
   mockDeriveTierKeys,
   mockEncryptShardCrypto,
-} = vi.hoisted(() => ({
-  mockPut: vi.fn().mockResolvedValue(undefined),
-  mockGet: vi.fn().mockResolvedValue(undefined),
-  mockDelete: vi.fn().mockResolvedValue(undefined),
-  mockGetAll: vi.fn().mockResolvedValue([]),
-  mockEncryptShard: vi.fn().mockResolvedValue({
-    envelopeBytes: new Uint8Array([1, 2, 3]),
-    sha256: 'mock-sha256-hash',
-  }),
-  mockExtractVideoFrame: vi.fn(),
-  mockGetMimeType: vi.fn(),
-  mockIsSupportedVideoType: vi.fn(),
-  mockDeriveTierKeys: vi.fn().mockReturnValue({
-    thumbKey: new Uint8Array(32).fill(1),
-    previewKey: new Uint8Array(32).fill(2),
-    fullKey: new Uint8Array(32).fill(3),
-  }),
-  mockEncryptShardCrypto: vi.fn().mockResolvedValue({
-    envelopeBytes: new Uint8Array([10, 20, 30]),
-    sha256: 'encrypted-sha256',
-  }),
-}));
+  mockRustInit,
+  mockRustInitSync,
+  mockComputePlaintextContentHash,
+  mockSha256OfBytes,
+  mockSha256HexOfBytes,
+  mockBlake2bScopeKey16,
+  mockBlake2bSnapshotChecksum32,
+  mockMintLinkTierHandleFromRawKey,
+} = vi.hoisted(() => {
+  const fakeHash = (bytes: Uint8Array): Uint8Array => {
+    const hash = new Uint8Array(32);
+    for (let i = 0; i < hash.length; i += 1) {
+      hash[i] = (bytes[i % Math.max(bytes.byteLength, 1)] ?? 0) ^ i;
+    }
+    return hash;
+  };
+  const fakeHashHex = (bytes: Uint8Array): string =>
+    Array.from(fakeHash(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
+
+  return {
+    mockPut: vi.fn().mockResolvedValue(undefined),
+    mockGet: vi.fn().mockResolvedValue(undefined),
+    mockDelete: vi.fn().mockResolvedValue(undefined),
+    mockGetAll: vi.fn().mockResolvedValue([]),
+    mockGetFromIndex: vi.fn().mockResolvedValue(undefined),
+    mockEncryptShard: vi.fn().mockResolvedValue({
+      envelopeBytes: new Uint8Array([1, 2, 3]),
+      sha256: 'mock-sha256-hash',
+    }),
+    mockExtractVideoFrame: vi.fn(),
+    mockGetMimeType: vi.fn(),
+    mockIsSupportedVideoType: vi.fn(),
+    mockDeriveTierKeys: vi.fn().mockReturnValue({
+      thumbKey: new Uint8Array(32).fill(1),
+      previewKey: new Uint8Array(32).fill(2),
+      fullKey: new Uint8Array(32).fill(3),
+    }),
+    mockEncryptShardCrypto: vi.fn().mockResolvedValue({
+      envelopeBytes: new Uint8Array([10, 20, 30]),
+      sha256: 'encrypted-sha256',
+    }),
+    mockRustInit: vi.fn().mockResolvedValue(undefined),
+    mockRustInitSync: vi.fn(),
+    mockComputePlaintextContentHash: vi.fn(fakeHashHex),
+    mockSha256OfBytes: vi.fn(fakeHash),
+    mockSha256HexOfBytes: vi.fn(fakeHashHex),
+    mockBlake2bScopeKey16: vi.fn((input: Uint8Array) => fakeHash(input).slice(0, 16)),
+    mockBlake2bSnapshotChecksum32: vi.fn(fakeHash),
+    mockMintLinkTierHandleFromRawKey: vi.fn((rawKey: Uint8Array) => `test-link-tier-handle-${rawKey.byteLength}`),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Module mocks — use the hoisted variables
@@ -57,8 +87,20 @@ vi.mock('idb', () => ({
     get: mockGet,
     delete: mockDelete,
     getAll: mockGetAll,
+    getFromIndex: mockGetFromIndex,
     createObjectStore: vi.fn(),
   }),
+}));
+
+vi.mock('../src/generated/mosaic-wasm/mosaic_wasm.js', () => ({
+  default: mockRustInit,
+  initSync: mockRustInitSync,
+  computePlaintextContentHash: mockComputePlaintextContentHash,
+  sha256OfBytes: mockSha256OfBytes,
+  sha256HexOfBytes: mockSha256HexOfBytes,
+  blake2bScopeKey16: mockBlake2bScopeKey16,
+  blake2bSnapshotChecksum32: mockBlake2bSnapshotChecksum32,
+  mintLinkTierHandleFromRawKey: mockMintLinkTierHandleFromRawKey,
 }));
 
 let tusShardCounter = 0;

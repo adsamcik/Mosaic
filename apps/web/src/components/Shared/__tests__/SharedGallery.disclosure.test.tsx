@@ -7,6 +7,7 @@ import {
   STORAGE_KEY,
   __resetVisitorDisclosureCacheForTests,
 } from '../../../hooks/useVisitorDownloadDisclosure';
+import type { LinkTierHandleId } from '../../../workers/types';
 
 // --- mocks ----------------------------------------------------------------
 vi.mock('../../../hooks/useVisitorAlbumDownload', () => ({
@@ -56,6 +57,7 @@ import { SharedGallery } from '../SharedGallery';
 import { AccessTier } from '../../../lib/api-types';
 
 const fetchMock = vi.fn();
+const LINK_TIER_HANDLE = 'link-tier-handle-7-3' as LinkTierHandleId;
 beforeEach(() => {
   fetchMock.mockReset();
   promptMock.mockReset();
@@ -71,7 +73,11 @@ afterEach(() => {
 
 function makeTierKeys(tier: AccessTierType): Map<number, Map<AccessTierType, TierKey>> {
   const inner = new Map<AccessTierType, TierKey>();
-  inner.set(tier, { key: new Uint8Array(32).fill(7) } as TierKey);
+  inner.set(tier, {
+    epochId: 7,
+    tier,
+    linkTierHandleId: LINK_TIER_HANDLE,
+  } as TierKey);
   const outer = new Map<number, Map<AccessTierType, TierKey>>();
   outer.set(7, inner);
   return outer;
@@ -101,6 +107,7 @@ async function mountWithOnePhoto(linkId: string) {
   });
   const { getCryptoClient } = await import('../../../lib/crypto-client');
   (getCryptoClient as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue({
+    mintLinkTierHandleFromRawKey: vi.fn(async () => LINK_TIER_HANDLE),
     decryptShardWithTierKey: vi.fn(async () =>
       new TextEncoder().encode(JSON.stringify({ id: 'p1' })),
     ),

@@ -183,6 +183,7 @@ describe('upload encryption handle cutover', () => {
       name: 'large.mp4',
       type: 'video/mp4',
       size,
+      arrayBuffer: vi.fn(async () => new Uint8Array([0]).buffer),
       slice(start: number, end: number) {
         slices.push([start, end]);
         return new Blob([new Uint8Array([start / (6 * 1024 * 1024)])], { type: 'video/mp4' });
