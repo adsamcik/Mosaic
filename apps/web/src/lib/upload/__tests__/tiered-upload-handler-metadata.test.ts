@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UploadHandlerContext, UploadTask } from '../types';
+import { computeContentHash } from '../../content-hash';
 
 const mocks = vi.hoisted(() => ({
   generateTieredImages: vi.fn(),
@@ -82,6 +83,28 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
     mocks.generateThumbnail.mockResolvedValue({ data: new Uint8Array([4]), thumbhash: 'thumbhash' });
   });
 
+  it('detects duplicates before image conversion, encryption, or upload', async () => {
+    const task = createTask('image/jpeg');
+    const contentHash = await computeContentHash(new Uint8Array(await task.file.arrayBuffer()));
+    const ctx = createCtx();
+    ctx.contentHashDedup = {
+      lookup: vi.fn().mockResolvedValue({
+        photoId: 'existing-photo',
+        dateAdded: 1_700_000_000_000,
+      }),
+      record: vi.fn(),
+    };
+
+    await expect(processTieredUpload(task, ctx)).rejects.toThrow(/already in this album/);
+
+    expect(ctx.contentHashDedup.lookup).toHaveBeenCalledWith(task.albumId, contentHash);
+    expect(ctx.updatePersistedTask).toHaveBeenCalledWith(task.id, { contentHash });
+    expect(mocks.generateTieredImages).not.toHaveBeenCalled();
+    expect(mocks.encryptShardWithEpochHandle).not.toHaveBeenCalled();
+    expect(ctx.tusUpload).not.toHaveBeenCalled();
+    expect(ctx.contentHashDedup.record).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['image/jpeg', 'wasm-strip-failed', /metadata stripping failed/],
     ['image/jpeg', 'malformed-jpeg', /malformed image\/jpeg/],
@@ -99,7 +122,10 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
 
     expect(mocks.encryptShardWithEpochHandle).not.toHaveBeenCalled();
     expect(ctx.tusUpload).not.toHaveBeenCalled();
-    expect(ctx.updatePersistedTask).not.toHaveBeenCalled();
+    expect(ctx.updatePersistedTask).toHaveBeenCalledOnce();
+    expect(ctx.updatePersistedTask).toHaveBeenCalledWith(task.id, {
+      contentHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
     expect(ctx.onComplete).not.toHaveBeenCalled();
   });
 

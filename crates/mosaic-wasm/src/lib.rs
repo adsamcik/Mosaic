@@ -19,6 +19,7 @@ use blake2::{
 use ciborium::value::{Integer, Value};
 
 use self_cell::self_cell;
+use sha2::{Digest as ShaDigest, Sha256};
 use wasm_bindgen::prelude::{JsError, JsValue, wasm_bindgen};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -30,6 +31,14 @@ use mosaic_domain::{
 type CryptoStreamingEncryptor<'a> = mosaic_crypto::StreamingEncryptor<'a>;
 type CryptoStreamingDecryptor<'a> = mosaic_crypto::StreamingDecryptor<'a>;
 type CryptoStreamingShardDecryptor = mosaic_crypto::StreamingShardDecryptor;
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+}
 
 struct CryptoStreamingEncryptorState<'a>(Option<CryptoStreamingEncryptor<'a>>);
 struct CryptoStreamingDecryptorState<'a>(Option<CryptoStreamingDecryptor<'a>>);
@@ -3664,6 +3673,12 @@ pub fn verify_shard_integrity_sha256(
         .map_err(|error| JsError::new(&error.message))
 }
 
+/// Computes client-local SHA-256 of original plaintext media bytes as lowercase hex.
+#[must_use]
+pub fn compute_plaintext_content_hash(bytes: Vec<u8>) -> String {
+    sha256_hex(&bytes)
+}
+
 /// Closes a Rust-owned share-link handle.
 #[must_use]
 pub fn close_link_share_handle(handle: u64) -> u16 {
@@ -5025,6 +5040,13 @@ pub fn verify_shard_integrity_sha256_js(
     expected_sha256: Vec<u8>,
 ) -> Result<bool, JsError> {
     verify_shard_integrity_sha256(envelope_bytes, expected_sha256)
+}
+
+/// Computes client-local SHA-256 of original plaintext media bytes as lowercase hex.
+#[wasm_bindgen(js_name = computePlaintextContentHash)]
+#[must_use]
+pub fn compute_plaintext_content_hash_js(bytes: Vec<u8>) -> String {
+    compute_plaintext_content_hash(bytes)
 }
 
 /// Closes a share-link handle through WASM.

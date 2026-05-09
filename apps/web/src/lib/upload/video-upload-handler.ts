@@ -1,5 +1,6 @@
 import { createLogger } from '../logger';
 import { getCryptoClient } from '../crypto-client';
+import { computeContentHash, DuplicateUploadError } from '../content-hash';
 import { extractVideoFrame } from '../video-frame-extractor';
 import { taskIdentity } from '../upload-errors';
 import { encryptUploadShardWithEpochHandle } from './encrypt-upload-shard';
@@ -31,6 +32,15 @@ export async function processVideoUpload(
   ctx: UploadHandlerContext,
 ): Promise<void> {
   log.info('processVideoUpload started', taskIdentity(task));
+  const originalBytes = new Uint8Array(await task.file.arrayBuffer());
+  const contentHash = await computeContentHash(originalBytes);
+  task.contentHash = contentHash;
+  await ctx.updatePersistedTask(task.id, { contentHash });
+  const duplicate = await ctx.contentHashDedup?.lookup(task.albumId, contentHash);
+  if (duplicate) {
+    throw new DuplicateUploadError(task.albumId, contentHash, duplicate.photoId, duplicate.dateAdded);
+  }
+
 
   // Step 1: Extract video frame + metadata (0-10% progress)
   task.currentAction = 'converting';
@@ -270,6 +280,9 @@ export async function processVideoUpload(
       originalChunks: originalShards.length,
     });
     await ctx.onComplete?.(task, allShardIds, tieredShards);
+    if (task.contentHash) {
+      await ctx.contentHashDedup?.record(task.albumId, task.contentHash, task.id);
+    }
   } catch (error) {
     log.error('processVideoUpload failed', error, taskIdentity(task));
     throw error;

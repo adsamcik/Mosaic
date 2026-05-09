@@ -436,6 +436,7 @@ export pub fn advance_album_sync_uniffi( snapshot: ClientCoreAlbumSyncSnapshot, 
 export pub fn manifest_transcript_bytes_uniffi( inputs: ClientCoreManifestTranscriptInputs, ) -> Result<Vec<u8>, MosaicError>
 export pub fn mint_link_tier_handle_from_raw_key(raw_key: Vec<u8>) -> LinkTierHandleFfiResult
 export pub fn verify_shard_integrity_sha256( envelope: Vec<u8>, expected_sha256: Vec<u8>, ) -> Result<bool, MosaicError>
+export pub fn compute_plaintext_content_hash(bytes: Vec<u8>) -> String
 export pub fn client_error_code_enum_from_u16(value: u16) -> Option<ClientErrorCode>
 export pub fn client_error_code_to_u16(code: ClientErrorCode) -> u16
 export pub fn build_share_link_url( base_url: String, album_id: String, link_id: String, link_url_token: String, ) -> String

@@ -39,6 +39,7 @@ export type UploadStatus =
   | 'queued'
   | 'uploading'
   | 'complete'
+  | 'duplicate'
   | 'error'
   | 'permanently_failed';
 export type UploadAction =
@@ -132,6 +133,12 @@ export interface UploadTask {
   detectedMimeType?: string;
   /** Video metadata (set during upload for video files) */
   videoMetadata?: VideoUploadMetadata;
+  /** Client-local SHA-256 hex digest of original plaintext file bytes. */
+  contentHash?: string;
+  /** Existing local photo/task id when this upload was skipped as a duplicate. */
+  duplicateOfPhotoId?: string;
+  /** Local timestamp for the duplicate content-hash record, when known. */
+  duplicateDateAdded?: number;
 }
 
 /** Persisted task state (for resume after reload) */
@@ -167,13 +174,34 @@ export interface PersistedTask {
   tieredShards?: TieredShardIds;
   /** Video metadata (persisted for resume) */
   videoMetadata?: VideoUploadMetadata;
+  /** Client-local SHA-256 hex digest of original plaintext file bytes. */
+  contentHash?: string;
+  /** Existing local photo/task id when this upload was skipped as a duplicate. */
+  duplicateOfPhotoId?: string;
+  /** Local timestamp for the duplicate content-hash record, when known. */
+  duplicateDateAdded?: number;
 }
 
 /** IndexedDB schema */
+export interface AlbumContentHashRecord {
+  albumId: string;
+  contentHash: string;
+  photoId: string;
+  dateAdded: number;
+}
+
 export interface UploadQueueDB {
   tasks: {
     key: string;
     value: PersistedTask;
+  };
+  albumContentHashes: {
+    key: [string, string];
+    value: AlbumContentHashRecord;
+    indexes: {
+      'album-hash': [string, string];
+      album: string;
+    };
   };
 }
 
@@ -199,4 +227,8 @@ export interface UploadHandlerContext {
   ) => Promise<void>;
   onProgress: ProgressCallback | undefined;
   onComplete: CompleteCallback | undefined;
+  contentHashDedup?: {
+    lookup: (albumId: string, contentHash: string) => Promise<{ photoId: string; dateAdded: number } | null>;
+    record: (albumId: string, contentHash: string, photoId: string) => Promise<void>;
+  };
 }

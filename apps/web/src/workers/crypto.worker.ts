@@ -279,6 +279,28 @@ class HandleRegistry {
 
   constructor(private readonly facade: () => Promise<RustHandleFacade>) {}
 
+  stats(): {
+    account: number;
+    identity: number;
+    epoch: number;
+    link: number;
+    total: number;
+    generation: number;
+  } {
+    const account = this.accountHandle && !this.accountHandle.closed ? 1 : 0;
+    const identity = this.identityHandle && !this.identityHandle.closed ? 1 : 0;
+    const epoch = Array.from(this.epochHandles.values()).filter((handle) => !handle.closed).length;
+    const link = Array.from(this.linkHandles.values()).filter((handle) => !handle.closed).length;
+    return {
+      account,
+      identity,
+      epoch,
+      link,
+      total: account + identity + epoch + link,
+      generation: this.generation,
+    };
+  }
+
   // -- account ------------------------------------------------------------
 
   registerAccount(rustHandle: bigint): WasmHandle {
@@ -485,6 +507,7 @@ class HandleRegistry {
   async clearAll(): Promise<void> {
     // 1. Close link handles first (independent Rust-owned link state).
     for (const handle of this.linkHandles.values()) {
+      if (handle.closed) continue;
       handle.closed = true;
       if (handle.leaseCount === 0) {
         await this.freeRustHandle(handle).catch((err: unknown) => {
@@ -498,6 +521,7 @@ class HandleRegistry {
 
     // 2. Close all epoch handles first (children of account).
     for (const handle of this.epochHandles.values()) {
+      if (handle.closed) continue;
       handle.closed = true;
       if (handle.leaseCount === 0) {
         await this.freeRustHandle(handle).catch((err: unknown) => {
@@ -510,7 +534,7 @@ class HandleRegistry {
     }
 
     // 3. Close identity (child of account).
-    if (this.identityHandle) {
+    if (this.identityHandle && !this.identityHandle.closed) {
       this.identityHandle.closed = true;
       if (this.identityHandle.leaseCount === 0) {
         await this.freeRustHandle(this.identityHandle).catch((err: unknown) => {
@@ -522,7 +546,7 @@ class HandleRegistry {
     }
 
     // 4. Close account last.
-    if (this.accountHandle) {
+    if (this.accountHandle && !this.accountHandle.closed) {
       this.accountHandle.closed = true;
       if (this.accountHandle.leaseCount === 0) {
         await this.freeRustHandle(this.accountHandle).catch((err: unknown) => {
@@ -558,6 +582,12 @@ class HandleRegistry {
           break;
         }
       }
+    }
+    if (handle.kind === 'identity' && this.identityHandle?.id === handle.id) {
+      this.identityHandle = null;
+    }
+    if (handle.kind === 'account' && this.accountHandle?.id === handle.id) {
+      this.accountHandle = null;
     }
     const facade = await this.facade();
     switch (handle.kind) {
@@ -828,6 +858,19 @@ class CryptoWorker implements CryptoWorkerApi {
       this.authPublicKey = null;
     }
     this.wipePreAuthState();
+  }
+
+  async getMemoryDiagnostics(): Promise<{
+    handles: {
+      account: number;
+      identity: number;
+      epoch: number;
+      link: number;
+      total: number;
+      generation: number;
+    };
+  }> {
+    return { handles: this.handleRegistry.stats() };
   }
 
   /**

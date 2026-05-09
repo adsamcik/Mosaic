@@ -1,5 +1,10 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import type { UploadQueueDB, PersistedTask } from './types';
+import {
+  ensureContentHashStores,
+  UPLOAD_QUEUE_DB_NAME,
+  UPLOAD_QUEUE_DB_VERSION,
+} from '../content-hash';
 
 export class UploadPersistence {
   private db: IDBPDatabase<UploadQueueDB> | null = null;
@@ -12,9 +17,9 @@ export class UploadPersistence {
    * Initialize IndexedDB for upload persistence (call once on app start)
    */
   async init(): Promise<void> {
-    this.db = await openDB<UploadQueueDB>('mosaic-upload-queue', 1, {
+    this.db = await openDB<UploadQueueDB>(UPLOAD_QUEUE_DB_NAME, UPLOAD_QUEUE_DB_VERSION, {
       upgrade(db) {
-        db.createObjectStore('tasks', { keyPath: 'id' });
+        ensureContentHashStores(db);
       },
     });
   }
@@ -137,5 +142,9 @@ export class UploadPersistence {
       await this.deleteTask(task.id);
     }
     return failed.length;
+  }
+
+  getContentHashDedupDb(): IDBPDatabase<UploadQueueDB> | null {
+    return this.db;
   }
 }

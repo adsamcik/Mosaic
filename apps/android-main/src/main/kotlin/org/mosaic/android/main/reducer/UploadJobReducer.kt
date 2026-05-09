@@ -224,9 +224,11 @@ class WorkManagerEffectDispatcher(
           jobId = snapshot.jobId,
           stagingUri = input.stagingUri,
           epochHandleId = input.epochHandleId,
-          tier = effect.tier,
-          shardIndex = effect.shardIndex,
-        ),
+            tier = effect.tier,
+            shardIndex = effect.shardIndex,
+            albumId = UploadJobSnapshotCodec.decode(snapshot.canonicalCborBytes).albumId,
+            photoId = snapshot.jobId,
+          ),
       )
       observer.await(effect)
     }

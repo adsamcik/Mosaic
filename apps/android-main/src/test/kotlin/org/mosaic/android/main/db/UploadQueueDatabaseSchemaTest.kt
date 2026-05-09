@@ -36,9 +36,37 @@ class UploadQueueDatabaseSchemaTest {
         "staged_picker_blobs",
         "upload_job_snapshots",
         "album_sync_snapshots",
+        "album_content_hashes",
       ),
       tables.toSet(),
     )
+  }
+
+  @Test
+  fun contentHashRowsAreScopedByAlbumAndHash() {
+    val dao = db.albumContentHashDao()
+    dao.upsert(
+      AlbumContentHashRecord(
+        albumId = "album-a",
+        contentHash = "a".repeat(64),
+        photoId = "photo-a",
+        dateAdded = 1_700_000_000_000L,
+      ),
+    )
+    dao.upsert(
+      AlbumContentHashRecord(
+        albumId = "album-b",
+        contentHash = "a".repeat(64),
+        photoId = "photo-b",
+        dateAdded = 1_700_000_000_001L,
+      ),
+    )
+
+    assertEquals("photo-a", dao.lookup("album-a", "a".repeat(64))?.photoId)
+    assertEquals("photo-b", dao.lookup("album-b", "a".repeat(64))?.photoId)
+    assertEquals(1, dao.clear("album-a"))
+    assertEquals(null, dao.lookup("album-a", "a".repeat(64)))
+    assertEquals("photo-b", dao.lookup("album-b", "a".repeat(64))?.photoId)
   }
 
   @Test
@@ -163,6 +191,7 @@ class UploadQueueDatabaseSchemaTest {
     val uploadQueueColumns = tableColumns("upload_queue_records")
     val uploadSnapshotColumns = tableColumns("upload_job_snapshots")
     val albumSnapshotColumns = tableColumns("album_sync_snapshots")
+    val albumContentHashColumns = tableColumns("album_content_hashes")
 
     assertEquals(
       setOf(
@@ -188,6 +217,7 @@ class UploadQueueDatabaseSchemaTest {
     )
     assertEquals(setOf("job_id", "schema_version", "canonical_cbor_bytes", "updated_at_ms", "snapshot_revision"), uploadSnapshotColumns)
     assertEquals(setOf("album_id", "schema_version", "canonical_cbor_bytes", "updated_at_ms", "snapshot_revision"), albumSnapshotColumns)
+    assertEquals(setOf("album_id", "content_hash", "photo_id", "date_added"), albumContentHashColumns)
   }
 
   private fun validUploadQueueRecord(): UploadQueueRecord = UploadQueueRecord(

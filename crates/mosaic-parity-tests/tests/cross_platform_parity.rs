@@ -241,7 +241,9 @@ fn encrypted_envelopes_round_trip_between_wasm_and_uniffi() {
     );
     assert_ok(uniffi_decrypted.code, "uniffi decrypt wasm envelope");
     assert_eq!(uniffi_decrypted.plaintext, plaintext);
-    let envelope_digest = Sha256::digest(&wasm_encrypted.envelope_bytes).to_vec();
+    let envelope_digest =
+        Sha256::digest(&wasm_encrypted.envelope_bytes[mosaic_domain::SHARD_ENVELOPE_HEADER_LEN..])
+            .to_vec();
     assert!(
         must(
             mosaic_wasm::verify_shard_integrity_sha256(

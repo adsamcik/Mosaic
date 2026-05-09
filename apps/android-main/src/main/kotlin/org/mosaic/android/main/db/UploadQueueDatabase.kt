@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
@@ -13,8 +14,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     StagedPickerBlob::class,
     UploadJobSnapshotRow::class,
     AlbumSyncSnapshotRow::class,
+    AlbumContentHashRecord::class,
   ],
-  version = 1,
+  version = 2,
   exportSchema = true,
 )
 abstract class UploadQueueDatabase : RoomDatabase() {
@@ -23,6 +25,7 @@ abstract class UploadQueueDatabase : RoomDatabase() {
   abstract fun stagedPickerBlobDao(): StagedPickerBlobDao
   abstract fun uploadJobSnapshotDao(): UploadJobSnapshotDao
   abstract fun albumSyncSnapshotDao(): AlbumSyncSnapshotDao
+  abstract fun albumContentHashDao(): AlbumContentHashDao
 
   companion object {
     const val DATABASE_NAME: String = "mosaic_upload_queue.db"
@@ -31,7 +34,9 @@ abstract class UploadQueueDatabase : RoomDatabase() {
       context.applicationContext,
       UploadQueueDatabase::class.java,
       DATABASE_NAME,
-    ).addCallback(PrivacyValidationRoomCallback).build()
+    ).addMigrations(MIGRATION_1_2)
+      .addCallback(PrivacyValidationRoomCallback)
+      .build()
 
     fun createInMemoryForTests(context: Context): UploadQueueDatabase = Room.inMemoryDatabaseBuilder(
       context.applicationContext,
@@ -39,6 +44,24 @@ abstract class UploadQueueDatabase : RoomDatabase() {
     ).allowMainThreadQueries()
       .addCallback(PrivacyValidationRoomCallback)
       .build()
+
+    val MIGRATION_1_2: Migration = object : Migration(1, 2) {
+      override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+          """
+            CREATE TABLE IF NOT EXISTS `album_content_hashes` (
+              `album_id` TEXT NOT NULL,
+              `content_hash` TEXT NOT NULL,
+              `photo_id` TEXT NOT NULL,
+              `date_added` INTEGER NOT NULL,
+              PRIMARY KEY(`album_id`, `content_hash`)
+            )
+          """.trimIndent(),
+        )
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_album_content_hashes_album_id_content_hash` ON `album_content_hashes` (`album_id`, `content_hash`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_content_hashes_album_id` ON `album_content_hashes` (`album_id`)")
+      }
+    }
   }
 }
 
@@ -68,6 +91,7 @@ private fun installPrivacyTriggers(db: SupportSQLiteDatabase) {
     "staged_picker_blobs" to listOf("blob_id", "job_id", "mime_type"),
     "upload_job_snapshots" to listOf("job_id", "canonical_cbor_bytes"),
     "album_sync_snapshots" to listOf("album_id", "canonical_cbor_bytes"),
+    "album_content_hashes" to listOf("album_id", "content_hash", "photo_id"),
   )
   for ((table, columns) in tables) {
     for (operation in listOf("INSERT", "UPDATE")) {

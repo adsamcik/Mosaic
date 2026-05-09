@@ -1,4 +1,5 @@
 import type { getCryptoClient } from '../crypto-client';
+import { computeContentHash, DuplicateUploadError } from '../content-hash';
 import type { UploadTask, UploadHandlerContext } from './types';
 import { CHUNK_SIZE } from './types';
 import { encryptUploadShardWithEpochHandle } from './encrypt-upload-shard';
@@ -12,6 +13,15 @@ export async function processLegacyUpload(
   crypto: Awaited<ReturnType<typeof getCryptoClient>>,
   ctx: UploadHandlerContext,
 ): Promise<void> {
+  const originalBytes = new Uint8Array(await task.file.arrayBuffer());
+  const contentHash = await computeContentHash(originalBytes);
+  task.contentHash = contentHash;
+  await ctx.updatePersistedTask(task.id, { contentHash });
+  const duplicate = await ctx.contentHashDedup?.lookup(task.albumId, contentHash);
+  if (duplicate) {
+    throw new DuplicateUploadError(task.albumId, contentHash, duplicate.photoId, duplicate.dateAdded);
+  }
+
   const totalChunks = Math.ceil(task.file.size / CHUNK_SIZE);
   const shardIds: string[] = new Array(totalChunks);
 
@@ -74,4 +84,7 @@ export async function processLegacyUpload(
 
   await ctx.updatePersistedTask(task.id, { status: 'complete' });
   await ctx.onComplete?.(task, shardIds);
+  if (task.contentHash) {
+    await ctx.contentHashDedup?.record(task.albumId, task.contentHash, task.id);
+  }
 }

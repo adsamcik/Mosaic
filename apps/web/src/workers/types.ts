@@ -427,6 +427,21 @@ export interface CryptoWorkerApi {
   clear(): Promise<void>;
 
   /**
+   * Non-sensitive lifecycle diagnostics for leak tests and health checks.
+   * Counts opaque worker/WASM handles only; no key material crosses Comlink.
+   */
+  getMemoryDiagnostics(): Promise<{
+    handles: {
+      account: number;
+      identity: number;
+      epoch: number;
+      link: number;
+      total: number;
+      generation: number;
+    };
+  }>;
+
+  /**
    * Wrap an OPFS-snapshot plaintext blob with the active account's L2 key
    * through the Rust account handle; raw key bytes never cross the Comlink
    * boundary in either direction.

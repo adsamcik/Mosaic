@@ -125,3 +125,15 @@ interface AlbumSyncSnapshotDao {
   @Query("SELECT * FROM album_sync_snapshots WHERE album_id = :albumId")
   fun get(albumId: String): AlbumSyncSnapshotRow?
 }
+
+@Dao
+interface AlbumContentHashDao {
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  fun upsert(row: AlbumContentHashRecord)
+
+  @Query("SELECT * FROM album_content_hashes WHERE album_id = :albumId AND content_hash = :contentHash")
+  fun lookup(albumId: String, contentHash: String): AlbumContentHashRecord?
+
+  @Query("DELETE FROM album_content_hashes WHERE album_id = :albumId")
+  fun clear(albumId: String): Int
+}

@@ -3194,6 +3194,30 @@ export function closeLinkTierHandle(handle) {
 }
 
 /**
+ * Computes client-local SHA-256 of original plaintext media bytes as lowercase hex.
+ * @param {Uint8Array} bytes
+ * @returns {string}
+ */
+export function computePlaintextContentHash(bytes) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.computePlaintextContentHash(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred2_0 = r0;
+        deferred2_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export4(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
  * Consumes a session L0 handle and returns one short-lived AES-GCM import buffer.
  *
  * WebCrypto cannot import a Rust-owned handle directly, so the web boundary

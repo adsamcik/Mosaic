@@ -20,6 +20,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.mosaic.android.main.upload.ContentHashDedup
+import org.mosaic.android.main.upload.DuplicateContent
+import org.mosaic.android.main.upload.NoOpContentHashDedup
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -47,8 +50,54 @@ class ShardEncryptionWorkerTest {
     val envelope = File(requireNotNull(android.net.Uri.parse(envelopeUri).path)).readBytes()
     assertArrayEquals(crypto.smallEnvelope, envelope)
     assertEquals(sha256Hex(envelope), output.getString(ShardEncryptionWorker.KEY_SHA256_HEX))
+    assertEquals(sha256Hex("small-shard".toByteArray()), output.getString(ShardEncryptionWorker.KEY_CONTENT_HASH_HEX))
     assertEquals(1, crypto.smallCalls)
     assertEquals(0, crypto.streamingCalls)
+  }
+
+  @Test
+  fun duplicateContentReturnsFailureBeforeEncryption() = runBlocking {
+    val plaintext = "duplicate-shard".toByteArray()
+    val staging = stageBytes(plaintext)
+    val crypto = RecordingCryptoEngine()
+    val dedup = RecordingContentHashDedup(
+      duplicate = DuplicateContent(photoId = "photo-existing", dateAdded = 1_700_000_000_000L),
+    )
+    val worker = workerFor(
+      staging,
+      albumId = "album-1",
+      photoId = "photo-new",
+      crypto = crypto,
+      contentHashDedup = dedup,
+    )
+
+    val result = worker.doWork()
+
+    assertTrue(result is ListenableWorker.Result.Failure)
+    val output = (result as ListenableWorker.Result.Failure).outputData
+    assertEquals(ShardEncryptionWorker.FAILURE_DUPLICATE, output.getString(ShardEncryptionWorker.KEY_FAILURE_REASON))
+    assertEquals("photo-existing", output.getString(ShardEncryptionWorker.KEY_DUPLICATE_PHOTO_ID))
+    assertEquals(sha256Hex(plaintext), output.getString(ShardEncryptionWorker.KEY_CONTENT_HASH_HEX))
+    assertEquals(0, crypto.smallCalls + crypto.streamingCalls)
+    assertEquals(0, dedup.recorded.size)
+  }
+
+  @Test
+  fun recordsContentHashAfterSuccessfulEncryptionWhenAlbumAndPhotoAreProvided() = runBlocking {
+    val plaintext = "record-me".toByteArray()
+    val staging = stageBytes(plaintext)
+    val dedup = RecordingContentHashDedup()
+    val worker = workerFor(
+      staging,
+      albumId = "album-1",
+      photoId = "photo-new",
+      contentHashDedup = dedup,
+    )
+
+    val result = worker.doWork()
+
+    assertTrue(result is ListenableWorker.Result.Success)
+    assertEquals(listOf(Triple("album-1", sha256Hex(plaintext), "photo-new")), dedup.recorded)
   }
 
   @Test
@@ -138,15 +187,20 @@ class ShardEncryptionWorkerTest {
     epochHandleId: Long = 42L,
     tier: Int = 1,
     shardIndex: Int = 7,
+    albumId: String? = null,
+    photoId: String? = null,
     runAttemptCount: Int = 0,
     crypto: ShardCryptoEngine = RecordingCryptoEngine(),
+    contentHashDedup: ContentHashDedup = NoOpContentHashDedup,
   ): ShardEncryptionWorker {
-    val input = Data.Builder()
+    val inputBuilder = Data.Builder()
       .putString(ShardEncryptionWorker.KEY_STAGING_URI, staging.toURI().toString())
       .putLong(ShardEncryptionWorker.KEY_EPOCH_HANDLE_ID, epochHandleId)
       .putInt(ShardEncryptionWorker.KEY_TIER, tier)
       .putInt(ShardEncryptionWorker.KEY_SHARD_INDEX, shardIndex)
-      .build()
+    if (albumId != null) inputBuilder.putString(ShardEncryptionWorker.KEY_ALBUM_ID, albumId)
+    if (photoId != null) inputBuilder.putString(ShardEncryptionWorker.KEY_PHOTO_ID, photoId)
+    val input = inputBuilder.build()
     return TestListenableWorkerBuilder<ShardEncryptionWorker>(context)
       .setInputData(input)
       .setRunAttemptCount(runAttemptCount)
@@ -160,6 +214,7 @@ class ShardEncryptionWorkerTest {
           workerParameters,
           crypto,
           ShardEnvelopeStore(appContext),
+          contentHashDedup,
         )
       })
       .build()
@@ -220,5 +275,19 @@ class ShardEncryptionWorkerTest {
     ): ByteArray {
       error("boom")
     }
+  }
+
+  private class RecordingContentHashDedup(
+    private val duplicate: DuplicateContent? = null,
+  ) : ContentHashDedup {
+    val recorded = mutableListOf<Triple<String, String, String>>()
+
+    override fun lookup(albumId: String, contentHash: String): DuplicateContent? = duplicate
+
+    override fun record(albumId: String, contentHash: String, photoId: String) {
+      recorded += Triple(albumId, contentHash, photoId)
+    }
+
+    override fun clear(albumId: String): Int = 0
   }
 }

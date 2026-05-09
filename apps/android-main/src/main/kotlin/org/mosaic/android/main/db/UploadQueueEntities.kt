@@ -87,3 +87,18 @@ data class AlbumSyncSnapshotRow(
   @ColumnInfo(name = "updated_at_ms") val updatedAtMs: Long,
   @ColumnInfo(name = "snapshot_revision") val snapshotRevision: Long,
 )
+
+@Entity(
+  tableName = "album_content_hashes",
+  primaryKeys = ["album_id", "content_hash"],
+  indices = [
+    Index(value = ["album_id", "content_hash"], unique = true),
+    Index(value = ["album_id"]),
+  ],
+)
+data class AlbumContentHashRecord(
+  @ColumnInfo(name = "album_id") val albumId: String,
+  @ColumnInfo(name = "content_hash") val contentHash: String,
+  @ColumnInfo(name = "photo_id") val photoId: String,
+  @ColumnInfo(name = "date_added") val dateAdded: Long,
+)

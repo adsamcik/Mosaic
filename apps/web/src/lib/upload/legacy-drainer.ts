@@ -1,4 +1,9 @@
 import { openDB, type IDBPDatabase } from 'idb';
+import {
+  ensureContentHashStores,
+  UPLOAD_QUEUE_DB_NAME,
+  UPLOAD_QUEUE_DB_VERSION,
+} from '../content-hash';
 
 // Web IDB upload-record envelope version. Independent of Rust ADR-023
 // SNAPSHOT_SCHEMA_VERSION (currently 1) and Android RustSnapshotVersions.CURRENT.
@@ -326,13 +331,11 @@ export class IndexedDbLegacyUploadQueueStore implements LegacyUploadQueueStoreAd
 
   private async db(): Promise<IDBPDatabase<unknown>> {
     if (this.dbPromise === null) {
-      // Intentionally shares UploadPersistence's v1 `tasks` store so detection
+      // Intentionally shares UploadPersistence's upload queue stores so detection
       // and reset operate on the same persisted upload records.
-      this.dbPromise = openDB('mosaic-upload-queue', 1, {
+      this.dbPromise = openDB(UPLOAD_QUEUE_DB_NAME, UPLOAD_QUEUE_DB_VERSION, {
         upgrade(db) {
-          if (!db.objectStoreNames.contains('tasks')) {
-            db.createObjectStore('tasks', { keyPath: 'id' });
-          }
+          ensureContentHashStores(db as IDBPDatabase<import('./types').UploadQueueDB>);
         },
       });
     }

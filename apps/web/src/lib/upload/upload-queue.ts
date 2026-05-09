@@ -10,6 +10,7 @@ import {
   SNAPSHOT_VERSION,
 } from './legacy-drainer';
 import { UploadPersistence } from './upload-persistence';
+import { ContentHashDedup, DuplicateUploadError } from '../content-hash';
 import { tusUpload as tusUploadFn } from './tus-upload';
 import { processTieredUpload } from './tiered-upload-handler';
 import { processVideoUpload } from './video-upload-handler';
@@ -42,6 +43,7 @@ class UploadQueue {
   private maxConcurrent = 2;
   private activeCount = 0;
   private persistence = new UploadPersistence();
+  private contentHashDedup: ContentHashDedup | null = null;
   private initPromise: Promise<void> | null = null;
   private initialized = false;
 
@@ -77,6 +79,8 @@ class UploadQueue {
 
   private async initialize(): Promise<void> {
     await this.persistence.init();
+    const dedupDb = this.persistence.getContentHashDedupDb();
+    this.contentHashDedup = dedupDb ? new ContentHashDedup(dedupDb) : new ContentHashDedup();
     const drainResult = await legacyUploadQueueDrainer.drain({
       requeue: async (record, source) => {
         const file = source instanceof File
@@ -183,6 +187,7 @@ class UploadQueue {
     }
 
     const removedPersisted = await this.persistence.deleteTasksForAlbum(albumId);
+    await this.contentHashDedup?.clear(albumId);
     return removedQueued + removedPersisted;
   }
 
@@ -252,6 +257,7 @@ class UploadQueue {
         this.persistence.updateTask(id, updates),
       onProgress: this.onProgress,
       onComplete: this.onComplete,
+      ...(this.contentHashDedup ? { contentHashDedup: this.contentHashDedup } : {}),
     };
   }
 
@@ -302,6 +308,24 @@ class UploadQueue {
         await processLegacyUpload(task, cryptoClient, ctx);
       }
     } catch (error) {
+      if (error instanceof DuplicateUploadError) {
+        task.status = 'duplicate';
+        task.currentAction = 'finalizing';
+        task.progress = 1;
+        task.error = error.message;
+        task.contentHash = error.contentHash;
+        task.duplicateOfPhotoId = error.photoId;
+        task.duplicateDateAdded = error.dateAdded;
+        await this.persistence.updateTask(task.id, {
+          status: 'duplicate',
+          contentHash: error.contentHash,
+          duplicateOfPhotoId: error.photoId,
+          duplicateDateAdded: error.dateAdded,
+        });
+        this.onProgress?.(task);
+        this.onError?.(task, error);
+        return;
+      }
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
       const now = Date.now();

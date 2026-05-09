@@ -22,10 +22,19 @@ use mosaic_domain::{
     MetadataSidecarError, MetadataSidecarField, ShardTier, ShardTier as DomainShardTier,
 };
 use self_cell::self_cell;
+use sha2::{Digest as ShaDigest, Sha256};
 use zeroize::Zeroizing;
 
 type CryptoStreamingEncryptor<'a> = mosaic_crypto::StreamingEncryptor<'a>;
 type CryptoStreamingDecryptor<'a> = mosaic_crypto::StreamingDecryptor<'a>;
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+}
 
 struct CryptoStreamingEncryptorState<'a>(Option<CryptoStreamingEncryptor<'a>>);
 struct CryptoStreamingDecryptorState<'a>(Option<CryptoStreamingDecryptor<'a>>);
@@ -1751,6 +1760,13 @@ pub fn verify_shard_integrity_sha256(
 ) -> Result<bool, MosaicError> {
     mosaic_client::verify_shard_integrity_sha256(&envelope, &expected_sha256)
         .map_err(mosaic_error_from_client)
+}
+
+/// Computes client-local SHA-256 of original plaintext media bytes as lowercase hex.
+#[uniffi::export]
+#[must_use]
+pub fn compute_plaintext_content_hash(bytes: Vec<u8>) -> String {
+    sha256_hex(&bytes)
 }
 
 fn identity_result_from_client(

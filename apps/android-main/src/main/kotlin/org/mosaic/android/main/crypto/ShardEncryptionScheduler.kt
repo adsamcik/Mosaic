@@ -2,10 +2,10 @@ package org.mosaic.android.main.crypto
 
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
+import androidx.work.Data
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.workDataOf
 import java.util.concurrent.TimeUnit
 
 object ShardEncryptionScheduler {
@@ -15,15 +15,21 @@ object ShardEncryptionScheduler {
     epochHandleId: Long,
     tier: Int,
     shardIndex: Int,
+    albumId: String? = null,
+    photoId: String? = null,
   ): OneTimeWorkRequest =
     OneTimeWorkRequestBuilder<ShardEncryptionWorker>()
       .setInputData(
-        workDataOf(
-          ShardEncryptionWorker.KEY_STAGING_URI to stagingUri,
-          ShardEncryptionWorker.KEY_EPOCH_HANDLE_ID to epochHandleId,
-          ShardEncryptionWorker.KEY_TIER to tier,
-          ShardEncryptionWorker.KEY_SHARD_INDEX to shardIndex,
-        ),
+        Data.Builder()
+          .putString(ShardEncryptionWorker.KEY_STAGING_URI, stagingUri)
+          .putLong(ShardEncryptionWorker.KEY_EPOCH_HANDLE_ID, epochHandleId)
+          .putInt(ShardEncryptionWorker.KEY_TIER, tier)
+          .putInt(ShardEncryptionWorker.KEY_SHARD_INDEX, shardIndex)
+          .apply {
+            if (albumId != null) putString(ShardEncryptionWorker.KEY_ALBUM_ID, albumId)
+            if (photoId != null) putString(ShardEncryptionWorker.KEY_PHOTO_ID, photoId)
+          }
+          .build(),
       )
       .setConstraints(
         Constraints.Builder()

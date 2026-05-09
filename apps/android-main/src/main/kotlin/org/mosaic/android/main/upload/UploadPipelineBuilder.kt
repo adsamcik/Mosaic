@@ -16,6 +16,8 @@ object UploadPipelineBuilder {
     shardId: String,
     tusEndpoint: String,
     metadataSignature: String? = null,
+    albumId: String? = null,
+    photoId: String? = null,
   ): UploadShardPlan {
     val encryptionRequest = ShardEncryptionScheduler.buildRequest(
       jobId = jobId,
@@ -23,6 +25,8 @@ object UploadPipelineBuilder {
       epochHandleId = epochHandleId,
       tier = tier,
       shardIndex = shardIndex,
+      albumId = albumId,
+      photoId = photoId,
     )
     val uploadRequest = ShardUploadScheduler.buildRequest(
       jobId = jobId,

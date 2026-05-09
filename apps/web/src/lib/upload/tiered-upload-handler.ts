@@ -6,6 +6,7 @@ import {
   shouldStripExifFromOriginals,
 } from '../settings-service';
 import { getCryptoClient } from '../crypto-client';
+import { computeContentHash, DuplicateUploadError } from '../content-hash';
 import { generateThumbnail, generateTieredImages } from '../thumbnail-generator';
 import { taskIdentity } from '../upload-errors';
 import { encryptUploadShardWithEpochHandle } from './encrypt-upload-shard';
@@ -75,6 +76,15 @@ export async function processTieredUpload(
 ): Promise<void> {
   log.info('processTieredUpload started', taskIdentity(task));
   try {
+    const originalBytes = new Uint8Array(await task.file.arrayBuffer());
+    const contentHash = await computeContentHash(originalBytes);
+    task.contentHash = contentHash;
+    await ctx.updatePersistedTask(task.id, { contentHash });
+    const duplicate = await ctx.contentHashDedup?.lookup(task.albumId, contentHash);
+    if (duplicate) {
+      throw new DuplicateUploadError(task.albumId, contentHash, duplicate.photoId, duplicate.dateAdded);
+    }
+
     const crypto = await getCryptoClient();
 
     const stripOriginalMetadata = shouldStripExifFromOriginals();
@@ -302,6 +312,9 @@ export async function processTieredUpload(
       shardIds,
     });
     await ctx.onComplete?.(task, shardIds, tieredShards);
+    if (task.contentHash) {
+      await ctx.contentHashDedup?.record(task.albumId, task.contentHash, task.id);
+    }
   } catch (error) {
     log.error('processTieredUpload failed', error, taskIdentity(task));
     throw error;
