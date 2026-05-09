@@ -1,9 +1,10 @@
 import { downloadShardViaShareLink, ShardDownloadError } from '../../lib/shard-service';
 import { ApiError } from '../../lib/api';
+import { getCryptoClient } from '../../lib/crypto-client';
 import { deriveVisitorScopeKey } from '../../lib/scope-key';
 import { DownloadError } from '../crypto-pool';
 import type { LinkDecryptionKey } from '../types';
-import type { SourceStrategy } from './source-strategy';
+import type { ResolvedKeyMaterial, SourceStrategy } from './source-strategy';
 
 const DEFAULT_MAX_CONCURRENT = 4;
 
@@ -16,7 +17,7 @@ export interface ShareLinkSourceStrategyOptions {
    * lookup pattern in `shared-album-download.ts` and `SharedPhotoLightbox`.
    * Returning `undefined` is treated as access revoked / link downgraded.
    */
-  readonly getTierKey: (epochId: number) => LinkDecryptionKey | undefined;
+  readonly getTierKey: (epochId: number) => LinkDecryptionKey | Uint8Array | undefined;
 }
 
 /**
@@ -97,7 +98,7 @@ export function createShareLinkSourceStrategy(
       }
       return out;
     },
-    async resolveKey(_albumId: string, epochId: number): Promise<Uint8Array> {
+    async resolveKey(_albumId: string, epochId: number): Promise<ResolvedKeyMaterial> {
       const key = getTierKey(epochId);
       if (key === undefined) {
         // Link revoked or tier-3 grant downgraded; surface as a stable code
@@ -108,7 +109,27 @@ export function createShareLinkSourceStrategy(
           'Share-link tier-3 key unavailable for epoch',
         );
       }
-      return key as unknown as Uint8Array;
+      if (typeof key === 'string') {
+        return { kind: 'link-tier-handle', handleId: key };
+      }
+      return { kind: 'raw-bytes', bytes: key };
+    },
+    async decryptResolvedShard(
+      keyMaterial: ResolvedKeyMaterial,
+      envelopeBytes: Uint8Array,
+    ): Promise<Uint8Array> {
+      if (keyMaterial.kind !== 'link-tier-handle') {
+        throw new DownloadError(
+          'IllegalState',
+          'Share-link source can only owner-decrypt link-tier handles',
+        );
+      }
+      const crypto = await getCryptoClient();
+      try {
+        return await crypto.decryptShardWithLinkTierHandle(keyMaterial.handleId, envelopeBytes);
+      } catch (error) {
+        throw new DownloadError('Decrypt', 'Shard AEAD decrypt failed', { cause: error });
+      }
     },
   };
 }

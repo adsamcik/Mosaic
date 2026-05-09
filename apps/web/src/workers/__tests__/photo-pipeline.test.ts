@@ -25,6 +25,8 @@ function makeDeps(): PhotoPipelineDeps {
     verifyShard: vi.fn(async (): Promise<void> => undefined),
     decryptShard: vi.fn(async (bytes: Uint8Array): Promise<Uint8Array> => bytes),
     decryptShardWithTierKey: vi.fn(async (bytes: Uint8Array): Promise<Uint8Array> => bytes),
+    decryptShardWithEpochHandle: vi.fn(async (_handle, bytes: Uint8Array): Promise<Uint8Array> => bytes),
+    decryptShardWithLinkTierHandle: vi.fn(async (_handle, bytes: Uint8Array): Promise<Uint8Array> => bytes),
     getStats: vi.fn(async () => ({ size: 2, idle: 2, busy: 0, queued: 0 })),
     shutdown: vi.fn(async (): Promise<void> => undefined),
   };

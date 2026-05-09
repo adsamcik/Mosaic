@@ -226,6 +226,9 @@ jobs:
       - name: Run web-raw-input-ffi PowerShell architecture guard
         run: pwsh ./tests/architecture/web-raw-input-ffi.ps1
 
+      - name: Run web-rust-core-protocol-completeness PowerShell architecture guard
+        run: pwsh ./tests/architecture/web-rust-core-protocol-completeness.ps1
+
       - name: Run web-raw-input-ffi Bash architecture guard
         run: bash ./tests/architecture/web-raw-input-ffi.sh
 

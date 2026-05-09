@@ -26,6 +26,7 @@ const opfsState = vi.hoisted(() => ({
 }));
 
 const pipelineMocks = vi.hoisted(() => ({
+  decryptShardWithResolvedKey: vi.fn(async (_pool: unknown, bytes: Uint8Array): Promise<Uint8Array> => bytes),
   executePhotoTask: vi.fn<(input: { readonly signal: AbortSignal }) => Promise<{ kind: 'done'; bytesWritten: number }>>(),
 }));
 
@@ -35,6 +36,8 @@ const cryptoPoolMocks = vi.hoisted(() => {
     verifyShard: vi.fn(),
     decryptShard: vi.fn(),
     decryptShardWithTierKey: vi.fn(),
+    decryptShardWithEpochHandle: vi.fn(),
+    decryptShardWithLinkTierHandle: vi.fn(),
     getStats: vi.fn(async () => ({ size: 1, idle: 1, busy: 0, queued: 0 })),
     shutdown: vi.fn(),
   };

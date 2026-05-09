@@ -34,6 +34,8 @@
  *   absence of imports in those modules — see acceptance criteria.
  */
 
+import type { ResolvedKeyMaterial } from './source-strategy';
+
 const DEFAULT_PER_JOB_CONCURRENCY = 2;
 const DEFAULT_GLOBAL_CONCURRENCY = 4;
 
@@ -44,15 +46,17 @@ export interface ThumbnailManifestEntry {
   /** Optional job-bound shard fetcher. Used to avoid cross-job source races. */
   readonly fetchShard?: (shardId: string, signal: AbortSignal) => Promise<Uint8Array>;
   /** Optional job-bound key resolver. Used to avoid cross-job album/source races. */
-  readonly resolveThumbKey?: (photoId: string, epochId: string) => Promise<Uint8Array>;
+  readonly resolveThumbKey?: (photoId: string, epochId: string) => Promise<ResolvedKeyMaterial | Uint8Array>;
+  /** Optional job-bound decryptor. Used when key handles are owned by the source context. */
+  readonly decryptShard?: (bytes: Uint8Array, key: ResolvedKeyMaterial | Uint8Array) => Promise<Uint8Array>;
 }
 
 export type ThumbnailEmit = (photoId: string, blobUrl: string) => void;
 
 export interface ThumbnailStreamerDeps {
   readonly fetchShard: (shardId: string, signal: AbortSignal) => Promise<Uint8Array>;
-  readonly resolveThumbKey: (photoId: string, epochId: string) => Promise<Uint8Array>;
-  readonly decryptShard: (bytes: Uint8Array, key: Uint8Array) => Promise<Uint8Array>;
+  readonly resolveThumbKey: (photoId: string, epochId: string) => Promise<ResolvedKeyMaterial | Uint8Array>;
+  readonly decryptShard: (bytes: Uint8Array, key: ResolvedKeyMaterial | Uint8Array) => Promise<Uint8Array>;
   readonly resolveJobThumbnails: (jobId: string) => AsyncIterable<ThumbnailManifestEntry>;
   /** Optional dev-mode warning sink (defaults to console.warn). ZK-safe strings only. */
   readonly warn?: (message: string, context?: Record<string, unknown>) => void;
@@ -177,7 +181,7 @@ export function createThumbnailStreamer(deps: ThumbnailStreamerDeps): ThumbnailS
         return;
       }
       if (state.abort.signal.aborted) return;
-      let key: Uint8Array;
+      let key: ResolvedKeyMaterial | Uint8Array;
       try {
         const resolveThumbKey = entry.resolveThumbKey ?? deps.resolveThumbKey;
         key = await resolveThumbKey(entry.photoId, entry.epochId);
@@ -189,7 +193,8 @@ export function createThumbnailStreamer(deps: ThumbnailStreamerDeps): ThumbnailS
       if (state.abort.signal.aborted) return;
       let plaintext: Uint8Array;
       try {
-        plaintext = await deps.decryptShard(encrypted, key);
+        const decryptShard = entry.decryptShard ?? deps.decryptShard;
+        plaintext = await decryptShard(encrypted, key);
       } catch (err) {
         if (state.abort.signal.aborted) return;
         warn('thumbnail decrypt failed; skipping', { photoId: shortenForLog(entry.photoId), errName: errorName(err) });

@@ -1,6 +1,12 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
-import type { LinkDecryptionKey, DownloadErrorReason } from './types';
+import { getCryptoClient } from '../lib/crypto-client';
+import type {
+  DownloadErrorReason,
+  EpochHandleId,
+  LinkDecryptionKey,
+  LinkTierHandleId,
+} from './types';
 
 /** Download pipeline error code taxonomy mirrored from Rust. */
 export type DownloadErrorCode = DownloadErrorReason;
@@ -29,10 +35,14 @@ export interface CryptoPool {
   readonly size: number;
   /** Verify a shard's SHA256 hash. Throws DownloadError(Integrity) on mismatch. */
   verifyShard(shardBytes: Uint8Array, expectedHash: Uint8Array): Promise<void>;
-  /** Decrypt a shard with an authenticated viewer epoch seed. Throws DownloadError(Decrypt) on AEAD failure. */
-  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array, tier: number): Promise<Uint8Array>;
+  /** Decrypt a shard with legacy raw seed bytes. Throws DownloadError(Decrypt) on AEAD failure. */
+  decryptShard(shardBytes: Uint8Array, rawKeyBytes: Uint8Array, tier: number): Promise<Uint8Array>;
   /** Decrypt a shard with a share-link tier key. Throws DownloadError(Decrypt) on AEAD failure. */
   decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: LinkDecryptionKey): Promise<Uint8Array>;
+  /** Decrypt a shard with an opaque epoch handle owned by the crypto worker. */
+  decryptShardWithEpochHandle(epochHandleId: EpochHandleId, envelopeBytes: Uint8Array): Promise<Uint8Array>;
+  /** Decrypt a shard with an opaque link-tier handle owned by the crypto worker. */
+  decryptShardWithLinkTierHandle(linkTierHandleId: LinkTierHandleId, envelopeBytes: Uint8Array): Promise<Uint8Array>;
   /** Pool stats for telemetry/UI. */
   getStats(): Promise<{ size: number; idle: number; busy: number; queued: number }>;
   /** Tear down all workers. Idempotent. */
@@ -47,8 +57,10 @@ export interface CryptoPoolOptions {
 
 interface CryptoPoolMemberApi {
   verifyShard(shardBytes: Uint8Array, expectedHash: Uint8Array): Promise<void>;
-  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array, tier: number): Promise<Uint8Array>;
+  decryptShard(shardBytes: Uint8Array, rawKeyBytes: Uint8Array, tier: number): Promise<Uint8Array>;
   decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: LinkDecryptionKey): Promise<Uint8Array>;
+  decryptShardWithEpochHandle(epochHandleId: EpochHandleId, envelopeBytes: Uint8Array): Promise<Uint8Array>;
+  decryptShardWithLinkTierHandle(linkTierHandleId: LinkTierHandleId, envelopeBytes: Uint8Array): Promise<Uint8Array>;
 }
 
 interface WorkerSlot {
@@ -135,12 +147,30 @@ class CryptoWorkerPool implements CryptoPool {
     await this.dispatch((api) => api.verifyShard(shardBytes, expectedHash));
   }
 
-  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array, tier: number): Promise<Uint8Array> {
-    return this.dispatch((api) => api.decryptShard(shardBytes, epochSeed, tier));
+  decryptShard(shardBytes: Uint8Array, rawKeyBytes: Uint8Array, tier: number): Promise<Uint8Array> {
+    return this.dispatch((api) => api.decryptShard(shardBytes, rawKeyBytes, tier));
   }
 
   decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: LinkDecryptionKey): Promise<Uint8Array> {
     return this.dispatch((api) => api.decryptShardWithTierKey(shardBytes, tierKey));
+  }
+
+  async decryptShardWithEpochHandle(epochHandleId: EpochHandleId, envelopeBytes: Uint8Array): Promise<Uint8Array> {
+    const crypto = await getCryptoClient();
+    try {
+      return await crypto.decryptShardWithEpochHandle(epochHandleId, envelopeBytes);
+    } catch (error) {
+      throw new DownloadError('Decrypt', 'Shard AEAD decrypt failed', { cause: error });
+    }
+  }
+
+  async decryptShardWithLinkTierHandle(linkTierHandleId: LinkTierHandleId, envelopeBytes: Uint8Array): Promise<Uint8Array> {
+    const crypto = await getCryptoClient();
+    try {
+      return await crypto.decryptShardWithLinkTierHandle(linkTierHandleId, envelopeBytes);
+    } catch (error) {
+      throw new DownloadError('Decrypt', 'Shard AEAD decrypt failed', { cause: error });
+    }
   }
 
   async getStats(): Promise<{ size: number; idle: number; busy: number; queued: number }> {
@@ -256,4 +286,3 @@ export const __cryptoPoolTestUtils = {
     workerFactory = (url, options) => new Worker(url, options);
   },
 };
-

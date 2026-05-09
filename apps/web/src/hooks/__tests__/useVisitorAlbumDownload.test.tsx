@@ -121,7 +121,7 @@ describe('useVisitorAlbumDownload', () => {
     const args = stub.startJob.mock.calls[0]?.[0] as {
       albumId: string;
       outputMode: { kind: string; fileName?: string };
-      source?: { kind: string; resolveKey: (a: string, e: number) => Promise<Uint8Array> };
+      source?: { kind: string; resolveKey: (a: string, e: number) => Promise<unknown> };
     };
     expect(args.albumId).toBe('alb');
     expect(args.outputMode).toEqual({ kind: 'zip', fileName: 'a.zip' });
@@ -129,7 +129,7 @@ describe('useVisitorAlbumDownload', () => {
     expect(args.source!.kind).toBe('share-link');
     // The strategy resolves the tier-3 key for the photo's epoch.
     const resolved = await args.source!.resolveKey('alb', 7);
-    expect(resolved).toBe(tier3);
+    expect(resolved).toEqual({ kind: 'link-tier-handle', handleId: tier3 });
 
     await act(async () => {
       const cb = stub.subscribers.get('job-v1');

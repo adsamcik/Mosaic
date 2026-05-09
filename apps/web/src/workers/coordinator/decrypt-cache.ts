@@ -1,18 +1,24 @@
 /**
- * In-memory LRU cache of derived epoch keys (decryption contexts).
+ * In-memory LRU cache of resolved decryption contexts.
  *
- * Caches the parsed epoch key bytes per `epochId` so multiple photos in the
- * same album sharing an epoch don't re-derive the key. Keys are overwritten
- * with `Uint8Array.fill(0)` on eviction and on `clear()` so spent material does
- * not linger in the JS-visible heap longer than necessary.
+ * Caches opaque worker-owned handles per `epochId` so multiple photos in the
+ * same album sharing an epoch don't re-resolve the key. Legacy raw bytes are
+ * still accepted and are overwritten with `Uint8Array.fill(0)` on eviction and
+ * on `clear()` so spent material does not linger in the JS-visible heap longer
+ * than necessary. Opaque handles are not JS-visible key material; their Rust
+ * resources are released by the owning crypto-worker handle registry.
  *
  * Concurrency: the underlying Map is touched only from a single worker
  * thread (the coordinator). No locking is required.
  */
 
+import type { ResolvedKeyMaterial } from './source-strategy';
+
+export type DecryptCacheKeyMaterial = ResolvedKeyMaterial | Uint8Array;
+
 export interface DecryptContext {
   readonly epochId: string;
-  readonly epochKey: Uint8Array;
+  readonly epochKey: DecryptCacheKeyMaterial;
 }
 
 export interface DecryptCache {
@@ -36,7 +42,13 @@ export function createDecryptCache(maxEntries: number = DEFAULT_MAX_ENTRIES): De
   function zeroize(ctx: DecryptContext): void {
     // Rust memzero would only wipe a copy crossing the WASM ABI boundary.
     // Filling this exact Uint8Array overwrites the JS-owned bytes held here.
-    ctx.epochKey.fill(0);
+    if (ctx.epochKey instanceof Uint8Array) {
+      ctx.epochKey.fill(0);
+      return;
+    }
+    if (ctx.epochKey.kind === 'raw-bytes') {
+      ctx.epochKey.bytes.fill(0);
+    }
   }
 
   return {

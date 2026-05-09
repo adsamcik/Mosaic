@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDecryptCache, type DecryptContext } from '../decrypt-cache';
 
-function ctx(epochId: string, fill: number = 0xab): DecryptContext {
+function ctx(epochId: string, fill: number = 0xab): DecryptContext & { readonly epochKey: Uint8Array } {
   return { epochId, epochKey: new Uint8Array(32).fill(fill) };
 }
 

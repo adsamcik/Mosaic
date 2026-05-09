@@ -18,6 +18,7 @@ const opfsState = vi.hoisted(() => ({
 }));
 
 const pipelineMocks = vi.hoisted(() => ({
+  decryptShardWithResolvedKey: vi.fn(async (_pool: unknown, bytes: Uint8Array): Promise<Uint8Array> => bytes),
   executePhotoTask: vi.fn<(input: { readonly signal: AbortSignal }, deps?: { readonly pool?: unknown; readonly reportBytesWritten?: (jobId: string, photoId: string, bytesWritten: number) => void }) => Promise<{ kind: 'done'; bytesWritten: number } | { kind: 'failed'; code: 'Cancelled' | 'Integrity' | 'AccessRevoked' }>>(),
 }));
 
@@ -27,6 +28,8 @@ const cryptoPoolMocks = vi.hoisted(() => {
     verifyShard: vi.fn(),
     decryptShard: vi.fn(),
     decryptShardWithTierKey: vi.fn(),
+    decryptShardWithEpochHandle: vi.fn(),
+    decryptShardWithLinkTierHandle: vi.fn(),
     getStats: vi.fn(async () => ({ size: 2, idle: 2, busy: 0, queued: 0 })),
     shutdown: vi.fn(),
   };
@@ -444,6 +447,8 @@ describe('CoordinatorWorker', () => {
       size: 1,
       decryptShard: decrypt,
       decryptShardWithTierKey: vi.fn(),
+      decryptShardWithEpochHandle: vi.fn(),
+      decryptShardWithLinkTierHandle: vi.fn(),
     } as unknown as Awaited<ReturnType<typeof cryptoPoolMocks.getCryptoPool>>));
     const fetched: string[] = [];
     const fakeSource: SourceStrategy = {
@@ -451,7 +456,7 @@ describe('CoordinatorWorker', () => {
       getScopeKey: (): string => 'auth:00000000000000000000000000000000',
       fetchShard: async (id: string): Promise<Uint8Array> => { fetched.push(id); return new Uint8Array([id.charCodeAt(0)]); },
       fetchShards: async (): Promise<Uint8Array[]> => [],
-      resolveKey: async (): Promise<Uint8Array> => new Uint8Array(32),
+      resolveKey: async () => ({ kind: 'raw-bytes' as const, bytes: new Uint8Array(32) }),
     };
     const worker = new CoordinatorWorker();
     await worker.initialize({ nowMs });
@@ -1032,10 +1037,13 @@ describe('CoordinatorWorker', () => {
   it('routes pipeline shard + key requests through the provided source strategy', async () => {
     interface FullDeps {
       readonly fetchShards: (ids: ReadonlyArray<string>, signal: AbortSignal) => Promise<Uint8Array[]>;
-      readonly getEpochSeed: (albumId: string, epochId: number) => Promise<Uint8Array>;
+      readonly getEpochSeed: (albumId: string, epochId: number) => Promise<{ kind: 'raw-bytes'; bytes: Uint8Array }>;
     }
     const fetchSpy = vi.fn(async (_ids: ReadonlyArray<string>, _signal: AbortSignal): Promise<Uint8Array[]> => [new Uint8Array([1, 2, 3])]);
-    const resolveSpy = vi.fn(async (_albumId: string, _epochId: number): Promise<Uint8Array> => new Uint8Array(32).fill(9));
+    const resolveSpy = vi.fn(async (_albumId: string, _epochId: number) => ({
+      kind: 'raw-bytes' as const,
+      bytes: new Uint8Array(32).fill(9),
+    }));
     const customSource: SourceStrategy = {
       kind: 'share-link',
       fetchShard: vi.fn(async (): Promise<Uint8Array> => new Uint8Array()),
@@ -1048,7 +1056,8 @@ describe('CoordinatorWorker', () => {
       const shards = await full.fetchShards(['shard-x'], new AbortController().signal);
       const key = await full.getEpochSeed(albumId, 7);
       expect(shards).toHaveLength(1);
-      expect(key).toHaveLength(32);
+      expect(key.kind).toBe('raw-bytes');
+      expect(key.bytes).toHaveLength(32);
       return { kind: 'done', bytesWritten: 123 };
     });
     cbor.setExecutePhotoTask(pipelineMocks.executePhotoTask);
@@ -1098,7 +1107,7 @@ describe('CoordinatorWorker', () => {
       kind: 'share-link',
       fetchShard: vi.fn(async (): Promise<Uint8Array> => new Uint8Array()),
       fetchShards: vi.fn(async (): Promise<Uint8Array[]> => []),
-      resolveKey: vi.fn(async (): Promise<Uint8Array> => new Uint8Array(32)),
+      resolveKey: vi.fn(async () => ({ kind: 'raw-bytes' as const, bytes: new Uint8Array(32) })),
       getScopeKey: () => visitorScope,
     };
     const worker = new CoordinatorWorker();
@@ -1131,7 +1140,7 @@ describe('CoordinatorWorker', () => {
         kind: 'share-link',
         fetchShard: vi.fn(async (): Promise<Uint8Array> => new Uint8Array()),
         fetchShards: vi.fn(async (): Promise<Uint8Array[]> => []),
-        resolveKey: vi.fn(async (): Promise<Uint8Array> => new Uint8Array(32)),
+        resolveKey: vi.fn(async () => ({ kind: 'raw-bytes' as const, bytes: new Uint8Array(32) })),
         getScopeKey: () => scopeKey,
       };
     }

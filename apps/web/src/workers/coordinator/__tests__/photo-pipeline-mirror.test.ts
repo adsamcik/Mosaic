@@ -57,6 +57,8 @@ function makePool(): CryptoPool {
     verifyShard: vi.fn(async (): Promise<void> => undefined),
     decryptShard: vi.fn(async (b: Uint8Array): Promise<Uint8Array> => b),
     decryptShardWithTierKey: vi.fn(async (b: Uint8Array): Promise<Uint8Array> => b),
+    decryptShardWithEpochHandle: vi.fn(async (_handle, b: Uint8Array): Promise<Uint8Array> => b),
+    decryptShardWithLinkTierHandle: vi.fn(async (_handle, b: Uint8Array): Promise<Uint8Array> => b),
     getStats: vi.fn(async () => ({ size: 1, idle: 1, busy: 0, queued: 0 })),
     shutdown: vi.fn(async (): Promise<void> => undefined),
   };

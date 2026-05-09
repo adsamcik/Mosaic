@@ -580,10 +580,9 @@ async function getOrMintLinkTierHandle(
   if (key.linkTierHandleId) return key.linkTierHandleId;
   if (!key.key) return undefined;
 
-  try {
-    key.linkTierHandleId = await crypto.mintLinkTierHandleFromRawKey(key.key);
-    return key.linkTierHandleId;
-  } finally {
-    key.key.fill(0);
-  }
+  const rawKey = key.key;
+  key.linkTierHandleId = await crypto.mintLinkTierHandleFromRawKey(rawKey);
+  rawKey.fill(0);
+  delete key.key;
+  return key.linkTierHandleId;
 }

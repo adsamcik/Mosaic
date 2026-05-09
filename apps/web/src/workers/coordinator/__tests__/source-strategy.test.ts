@@ -21,6 +21,10 @@ const scopeKeyMocks = vi.hoisted(() => ({
   },
 }));
 
+const cryptoClientMocks = vi.hoisted(() => ({
+  decryptShardWithLinkTierHandle: vi.fn<(handleId: LinkTierHandleId, envelopeBytes: Uint8Array) => Promise<Uint8Array>>(),
+}));
+
 vi.mock('../../../lib/shard-service', () => ({
   downloadShard: shardServiceMocks.downloadShard,
   downloadShards: shardServiceMocks.downloadShards,
@@ -36,11 +40,15 @@ vi.mock('../../../lib/scope-key', () => ({
   deriveVisitorScopeKey: (linkId: string, grantToken: string | null) => `visitor:${scopeKeyMocks.stableHex(`visitor:${linkId}:${grantToken ?? ''}`)}`,
   scopeKeyPrefix: (scopeKey: string) => scopeKey.split(':')[0] ?? 'unknown',
 }));
+vi.mock('../../../lib/crypto-client', () => ({
+  getCryptoClient: vi.fn(async () => cryptoClientMocks),
+}));
 
 import { createAuthenticatedSourceStrategy } from '../source-strategy-auth';
 import { createShareLinkSourceStrategy } from '../source-strategy-sharelink';
-import { DownloadError } from '../../crypto-pool';
-import type { LinkDecryptionKey } from '../../types';
+import { decryptShardWithResolvedKey } from '../photo-pipeline';
+import { DownloadError, type CryptoPool } from '../../crypto-pool';
+import type { EpochHandleId, LinkDecryptionKey, LinkTierHandleId } from '../../types';
 
 beforeEach(() => { vi.clearAllMocks(); });
 afterEach(() => { vi.restoreAllMocks(); });
@@ -80,12 +88,12 @@ describe('createAuthenticatedSourceStrategy', () => {
     expect(shardServiceMocks.downloadShard).not.toHaveBeenCalled();
   });
 
-  it('resolveKey returns epochHandleId from epoch-key service', async () => {
+  it('resolveKey returns epoch handle material from epoch-key service', async () => {
     const s = createAuthenticatedSourceStrategy('11111111-2222-3333-4444-555555555555');
-    const epochHandleId = 'test-epoch-handle-1';
+    const epochHandleId = 'test-epoch-handle-1' as EpochHandleId;
     epochKeyMocks.getOrFetchEpochKey.mockResolvedValue({ epochHandleId });
     const out = await s.resolveKey('album-1', 5);
-    expect(out).toBe(epochHandleId);
+    expect(out).toEqual({ kind: 'epoch-handle', handleId: epochHandleId });
     expect(epochKeyMocks.getOrFetchEpochKey).toHaveBeenCalledWith('album-1', 5);
   });
 });
@@ -126,25 +134,78 @@ describe('createShareLinkSourceStrategy', () => {
     expect(shardServiceMocks.downloadShardViaShareLink).not.toHaveBeenCalled();
   });
 
-  it('resolveKey returns the tier handle id', async () => {
+  it('resolveKey returns link-tier handle material for handle-backed keys', async () => {
     const tier3 = 'test-link-tier-handle-1' as LinkDecryptionKey;
     const s = createShareLinkSourceStrategy({ linkId: 'L', getTierKey: (epoch) => (epoch === 9 ? tier3 : undefined) });
     const out = await s.resolveKey('album', 9);
-    expect(out).toBe(tier3);
+    expect(out).toEqual({ kind: 'link-tier-handle', handleId: tier3 });
+  });
+
+  it('resolveKey returns raw byte material for legacy raw keys', async () => {
+    const raw = new Uint8Array(32).fill(7);
+    const s = createShareLinkSourceStrategy({ linkId: 'L', getTierKey: (epoch) => (epoch === 9 ? raw : undefined) });
+    const out = await s.resolveKey('album', 9);
+    expect(out).toEqual({ kind: 'raw-bytes', bytes: raw });
+  });
+
+  it('decryptResolvedShard uses the source-owning crypto client for link-tier handles', async () => {
+    const handleId = 'test-link-tier-handle-2' as LinkTierHandleId;
+    const envelope = new Uint8Array([1, 2, 3]);
+    const plaintext = new Uint8Array([9, 8, 7]);
+    cryptoClientMocks.decryptShardWithLinkTierHandle.mockResolvedValueOnce(plaintext);
+    const s = createShareLinkSourceStrategy({ linkId: 'L', getTierKey: () => handleId });
+    const material = await s.resolveKey('album', 9);
+    await expect(s.decryptResolvedShard!(material, envelope, 3)).resolves.toBe(plaintext);
+    expect(cryptoClientMocks.decryptShardWithLinkTierHandle).toHaveBeenCalledWith(handleId, envelope);
   });
 
   it('resolveKey throws AccessRevoked when tier key is missing', async () => {
     const s = createShareLinkSourceStrategy({ linkId: 'L', getTierKey: () => undefined });
     await expect(s.resolveKey('album', 1)).rejects.toBeInstanceOf(DownloadError);
-    try { await s.resolveKey('album', 1); } catch (err) {
-      expect((err as DownloadError).code).toBe('AccessRevoked');
-    }
+    await expect(s.resolveKey('album', 1)).rejects.toMatchObject({ code: 'AccessRevoked' });
+  });
+});
+
+describe('photo pipeline key-material routing', () => {
+  function makePool(): CryptoPool {
+    return {
+      size: 1,
+      verifyShard: vi.fn(async (): Promise<void> => undefined),
+      decryptShard: vi.fn(async (bytes: Uint8Array): Promise<Uint8Array> => bytes),
+      decryptShardWithTierKey: vi.fn(async (bytes: Uint8Array): Promise<Uint8Array> => bytes),
+      decryptShardWithEpochHandle: vi.fn(async (_handle, bytes: Uint8Array): Promise<Uint8Array> => bytes),
+      decryptShardWithLinkTierHandle: vi.fn(async (_handle, bytes: Uint8Array): Promise<Uint8Array> => bytes),
+      getStats: vi.fn(async () => ({ size: 1, idle: 1, busy: 0, queued: 0 })),
+      shutdown: vi.fn(async (): Promise<void> => undefined),
+    };
+  }
+
+  it('routes epoch handles to decryptShardWithEpochHandle', async () => {
+    const pool = makePool();
+    const handleId = 'epch_test' as EpochHandleId;
+    const shard = new Uint8Array([1, 2, 3]);
+    await decryptShardWithResolvedKey(pool, shard, { kind: 'epoch-handle', handleId }, 3);
+    expect(pool.decryptShardWithEpochHandle).toHaveBeenCalledWith(handleId, shard);
+    expect(pool.decryptShard).not.toHaveBeenCalled();
   });
 
-  it('resolveKey treats link tier handles as opaque values', async () => {
-    const handle = 'tier-handle-abc' as LinkDecryptionKey;
-    const s = createShareLinkSourceStrategy({ linkId: 'L', getTierKey: () => handle });
-    await expect(s.resolveKey('album', 1)).resolves.toBe(handle);
+  it('routes link-tier handles to decryptShardWithLinkTierHandle', async () => {
+    const pool = makePool();
+    const handleId = 'lnkt_test' as LinkTierHandleId;
+    const shard = new Uint8Array([4, 5, 6]);
+    await decryptShardWithResolvedKey(pool, shard, { kind: 'link-tier-handle', handleId }, 3);
+    expect(pool.decryptShardWithLinkTierHandle).toHaveBeenCalledWith(handleId, shard);
+    expect(pool.decryptShard).not.toHaveBeenCalled();
+  });
+
+  it('routes raw bytes to the legacy decryptShard path', async () => {
+    const pool = makePool();
+    const bytes = new Uint8Array(32).fill(9);
+    const shard = new Uint8Array([7, 8, 9]);
+    await decryptShardWithResolvedKey(pool, shard, { kind: 'raw-bytes', bytes }, 2);
+    expect(pool.decryptShard).toHaveBeenCalledWith(shard, bytes, 2);
+    expect(pool.decryptShardWithEpochHandle).not.toHaveBeenCalled();
+    expect(pool.decryptShardWithLinkTierHandle).not.toHaveBeenCalled();
   });
 });
 

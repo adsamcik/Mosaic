@@ -1,7 +1,7 @@
 import { downloadShard, downloadShards } from '../../lib/shard-service';
 import { getOrFetchEpochKey } from '../../lib/epoch-key-service';
 import { deriveAuthScopeKey } from '../../lib/scope-key';
-import type { SourceStrategy } from './source-strategy';
+import type { ResolvedKeyMaterial, SourceStrategy } from './source-strategy';
 
 const DEFAULT_MAX_CONCURRENT = 4;
 
@@ -37,9 +37,9 @@ export function createAuthenticatedSourceStrategy(accountId: string): SourceStra
       throwIfAborted(signal);
       return shards;
     },
-    async resolveKey(albumId: string, epochId: number): Promise<Uint8Array> {
+    async resolveKey(albumId: string, epochId: number): Promise<ResolvedKeyMaterial> {
       const bundle = await getOrFetchEpochKey(albumId, epochId);
-      return bundle.epochHandleId as unknown as Uint8Array;
+      return { kind: 'epoch-handle', handleId: bundle.epochHandleId };
     },
   };
 }

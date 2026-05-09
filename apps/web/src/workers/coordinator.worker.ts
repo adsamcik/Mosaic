@@ -28,7 +28,7 @@ import {
   VISITOR_RESUME_GRACE_MS,
 } from './coordinator/visitor-gc';
 import { ensureScopeKeySodiumReady, scopeKeyPrefix } from '../lib/scope-key';
-import type { SourceStrategy } from './coordinator/source-strategy';
+import type { ResolvedKeyMaterial, SourceStrategy } from './coordinator/source-strategy';
 import {
   ensureRustReady,
   rustApplyDownloadEvent,
@@ -39,7 +39,12 @@ import {
   rustVerifyDownloadSnapshot,
 } from './rust-crypto-core';
 import { getCryptoPool, type CryptoPool, type DownloadErrorCode } from './crypto-pool';
-import { executePhotoTask, type DownloadPlanEntry, type PhotoOutcome } from './coordinator/photo-pipeline';
+import {
+  decryptShardWithResolvedKey,
+  executePhotoTask,
+  type DownloadPlanEntry,
+  type PhotoOutcome,
+} from './coordinator/photo-pipeline';
 import { WorkerCryptoError, WorkerCryptoErrorCode } from './types';
 import type {
   CoordinatorWorkerApi,
@@ -743,13 +748,13 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
         // bound below to the job-local source captured when the stream starts.
         return self.getDefaultAuthSource().fetchShard(shardId, signal);
       },
-      resolveThumbKey: async (_photoId, epochId): Promise<Uint8Array> => {
+      resolveThumbKey: async (_photoId, epochId) => {
         const epoch = Number.parseInt(epochId, 10);
         return self.getDefaultAuthSource().resolveKey('', Number.isFinite(epoch) ? epoch : 0);
       },
       decryptShard: async (bytes, key): Promise<Uint8Array> => {
         const pool = await acquireCryptoPoolForCoordinator();
-        return pool.decryptShard(bytes, key, 1);
+        return decryptShardWithResolvedKey(pool, bytes, key, 1);
       },
       resolveJobThumbnails: async function* (jobId: string): AsyncIterable<ThumbnailManifestEntry> {
         const manifest = self.jobThumbnailManifests.get(jobId) ?? [];
@@ -764,6 +769,20 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
               const epoch = Number.parseInt(epochId, 10);
               return source.resolveKey(albumId, Number.isFinite(epoch) ? epoch : 0);
             },
+            ...(source.decryptResolvedShard
+              ? {
+                  decryptShard: async (
+                    bytes: Uint8Array,
+                    key: ResolvedKeyMaterial | Uint8Array,
+                  ): Promise<Uint8Array> => {
+                    if (!(key instanceof Uint8Array) && key.kind === 'link-tier-handle') {
+                      return source.decryptResolvedShard!(key, bytes, 1);
+                    }
+                    const pool = await acquireCryptoPoolForCoordinator();
+                    return decryptShardWithResolvedKey(pool, bytes, key, 1);
+                  },
+                }
+              : {}),
           };
         }
       },
@@ -1082,13 +1101,22 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     return {
       pool,
       fetchShards: (shardIds: string[], signal: AbortSignal): Promise<Uint8Array[]> => source.fetchShards(shardIds, signal),
-      getEpochSeed: (albumId: string, epochId: number): Promise<Uint8Array> => source.resolveKey(albumId, epochId),
+      getEpochSeed: (albumId: string, epochId: number) => source.resolveKey(albumId, epochId),
       writePhotoChunk: opfsStaging.writePhotoChunk,
       truncatePhoto: opfsStaging.truncatePhotoTo,
       getPhotoFileLength: opfsStaging.getPhotoFileLength,
       reportBytesWritten: (jobId: string, photoId: string, bytesWritten: number): void => {
         this.handleBytesWritten(jobId, photoId, bytesWritten);
       },
+      ...(source.decryptResolvedShard
+        ? {
+            decryptResolvedShard: (
+              keyMaterial: ResolvedKeyMaterial,
+              envelopeBytes: Uint8Array,
+              tier: number,
+            ): Promise<Uint8Array> => source.decryptResolvedShard!(keyMaterial, envelopeBytes, tier),
+          }
+        : {}),
       mirror: this.shardMirror,
       decryptCache: this.decryptCache,
     };
@@ -2496,4 +2524,3 @@ export const __coordinatorWorkerTestUtils = {
     (worker as unknown as EvalHolder).lastEvaluations.set(jobId, evaluation);
   },
 };
-

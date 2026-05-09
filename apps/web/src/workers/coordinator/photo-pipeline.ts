@@ -10,6 +10,7 @@ import {
 import type { ShardMirror } from './shard-mirror';
 import { shardMirrorKey } from './shard-mirror';
 import type { DecryptCache } from './decrypt-cache';
+import type { ResolvedKeyMaterial } from './source-strategy';
 
 /** A download plan entry in the coordinator's per-photo pipeline. */
 export interface DownloadPlanEntry {
@@ -26,7 +27,7 @@ export interface DownloadPlanEntry {
 export interface PhotoPipelineDeps {
   readonly pool: CryptoPool;
   readonly fetchShards: (shardIds: string[], signal: AbortSignal) => Promise<Uint8Array[]>;
-  readonly getEpochSeed: (albumId: string, epochId: number) => Promise<Uint8Array>;
+  readonly getEpochSeed: (albumId: string, epochId: number) => Promise<ResolvedKeyMaterial | Uint8Array>;
   readonly writePhotoChunk: (jobId: string, photoId: string, offset: number, bytes: Uint8Array) => Promise<void>;
   readonly truncatePhoto: (jobId: string, photoId: string, length: number) => Promise<void>;
   readonly getPhotoFileLength: (jobId: string, photoId: string) => Promise<number | null>;
@@ -38,6 +39,11 @@ export interface PhotoPipelineDeps {
    * fake to exercise the streaming path without WASM.
    */
   readonly openStreamingShard?: (envelopeHeader: Uint8Array, key: Uint8Array) => Promise<StreamingShardDecryptor>;
+  readonly decryptResolvedShard?: (
+    keyMaterial: ResolvedKeyMaterial,
+    envelopeBytes: Uint8Array,
+    tier: number,
+  ) => Promise<Uint8Array>;
   /**
    * Optional ambient mirror — peeked before each shard fetch and populated on
    * miss after integrity verification. Caches encrypted bytes only.
@@ -93,14 +99,14 @@ export async function executePhotoTask(input: PhotoTaskInput, deps: PhotoPipelin
       return { kind: 'done', bytesWritten: 0 };
     }
 
-    const epochSeed = await resolveEpochSeed(input, deps);
+    const keyMaterial = await resolveKeyMaterial(input, deps);
     let lastTransientRetryAfterMs = backoffMs(1);
 
     for (let attempt = 1; attempt <= MAX_NETWORK_ATTEMPTS; attempt += 1) {
       try {
         const fetched = await fetchShardsWithMirror(input, deps);
         throwIfAborted(input.signal);
-        const outcome = await verifyDecryptAndWrite(fetched.shards, fetched.fromMirror, epochSeed, input, deps);
+        const outcome = await verifyDecryptAndWrite(fetched.shards, fetched.fromMirror, keyMaterial, input, deps);
         if (outcome.kind !== 'done') {
           return outcome;
         }
@@ -153,7 +159,7 @@ export async function executePhotoTask(input: PhotoTaskInput, deps: PhotoPipelin
 async function verifyDecryptAndWrite(
   encryptedShards: readonly Uint8Array[],
   fromMirror: readonly boolean[],
-  epochSeed: Uint8Array,
+  keyMaterial: ResolvedKeyMaterial,
   input: PhotoTaskInput,
   deps: PhotoPipelineDeps,
 ): Promise<{ readonly kind: 'done'; readonly bytesWritten: number } | { readonly kind: 'failed'; readonly code: DownloadErrorCode }> {
@@ -201,8 +207,8 @@ async function verifyDecryptAndWrite(
   }
 
   // Phase 2 — decrypt each shard and stage plaintext incrementally to OPFS.
-  // Streaming shards (variant 1, > THRESHOLD) write chunk-by-chunk; smaller
-  // monolithic shards continue through the existing `pool.decryptShard` path.
+  // Streaming shards (variant 1, > THRESHOLD) write chunk-by-chunk only for
+  // legacy raw bytes. Opaque handles decrypt through the handle-aware worker API.
   let bytesWritten = 0;
   try {
     for (let index = 0; index < encryptedShards.length; index += 1) {
@@ -211,19 +217,63 @@ async function verifyDecryptAndWrite(
       if (!shard) {
         return { kind: 'failed', code: 'IllegalState' };
       }
-      if (shouldStreamShard(shard)) {
-        bytesWritten += await streamDecryptAndWriteShard(shard, epochSeed, bytesWritten, input, deps);
-      } else {
-        const plaintext = await deps.pool.decryptShard(shard, epochSeed, input.entry.tier);
-        await deps.writePhotoChunk(input.jobId, input.entry.photoId, bytesWritten, plaintext);
-        bytesWritten += plaintext.byteLength;
+      if (keyMaterial.kind === 'raw-bytes' && shouldStreamShard(shard)) {
+        bytesWritten += await streamDecryptAndWriteShard(shard, keyMaterial.bytes, bytesWritten, input, deps);
+        continue;
       }
+      const plaintext = await decryptShardWithResolvedKey(
+        deps.pool,
+        shard,
+        keyMaterial,
+        input.entry.tier,
+        deps.decryptResolvedShard,
+      );
+      await deps.writePhotoChunk(input.jobId, input.entry.photoId, bytesWritten, plaintext);
+      bytesWritten += plaintext.byteLength;
     }
   } catch (error) {
     return { kind: 'failed', code: classifyPipelineError(error) };
   }
 
   return { kind: 'done', bytesWritten };
+}
+
+export async function decryptShardWithResolvedKey(
+  pool: CryptoPool,
+  shard: Uint8Array,
+  keyMaterial: ResolvedKeyMaterial | Uint8Array,
+  tier: number,
+  ownerDecrypt?: (
+    keyMaterial: ResolvedKeyMaterial,
+    envelopeBytes: Uint8Array,
+    tier: number,
+  ) => Promise<Uint8Array>,
+): Promise<Uint8Array> {
+  const material = normalizeKeyMaterial(keyMaterial);
+  switch (material.kind) {
+    case 'epoch-handle':
+      return pool.decryptShardWithEpochHandle(material.handleId, shard);
+    case 'link-tier-handle':
+      if (ownerDecrypt) {
+        return ownerDecrypt(material, shard, tier);
+      }
+      return pool.decryptShardWithLinkTierHandle(material.handleId, shard);
+    case 'raw-bytes':
+      return pool.decryptShard(shard, material.bytes, tier);
+    default:
+      return assertNever(material);
+  }
+}
+
+function normalizeKeyMaterial(keyMaterial: ResolvedKeyMaterial | Uint8Array): ResolvedKeyMaterial {
+  if (keyMaterial instanceof Uint8Array) {
+    return { kind: 'raw-bytes', bytes: keyMaterial };
+  }
+  return keyMaterial;
+}
+
+function assertNever(value: never): never {
+  throw new DownloadError('IllegalState', `Unsupported key material: ${String(value)}`);
 }
 
 function shouldStreamShard(shard: Uint8Array): boolean {
@@ -238,13 +288,13 @@ function shouldStreamShard(shard: Uint8Array): boolean {
 
 async function streamDecryptAndWriteShard(
   shard: Uint8Array,
-  epochSeed: Uint8Array,
+  rawKeyBytes: Uint8Array,
   startOffset: number,
   input: PhotoTaskInput,
   deps: PhotoPipelineDeps,
 ): Promise<number> {
   const opener = deps.openStreamingShard ?? rustOpenStreamingShard;
-  const { fullKey, previewKey, thumbKey } = deriveTierKeys(epochSeed);
+  const { fullKey, previewKey, thumbKey } = deriveTierKeys(rawKeyBytes);
   let decryptor: StreamingShardDecryptor | null = null;
   let written = 0;
   try {
@@ -436,17 +486,17 @@ async function fetchShardsWithMirror(
   return { shards, fromMirror };
 }
 
-async function resolveEpochSeed(input: PhotoTaskInput, deps: PhotoPipelineDeps): Promise<Uint8Array> {
+async function resolveKeyMaterial(input: PhotoTaskInput, deps: PhotoPipelineDeps): Promise<ResolvedKeyMaterial> {
   const cache = deps.decryptCache;
   if (!cache) {
-    return deps.getEpochSeed(input.albumId, input.entry.epochId);
+    return normalizeKeyMaterial(await deps.getEpochSeed(input.albumId, input.entry.epochId));
   }
   const cacheKey = input.albumId + ':' + String(input.entry.epochId);
   const hit = cache.get(cacheKey);
-  if (hit) return hit.epochKey;
-  const seed = await deps.getEpochSeed(input.albumId, input.entry.epochId);
-  cache.put({ epochId: cacheKey, epochKey: seed });
-  return seed;
+  if (hit) return normalizeKeyMaterial(hit.epochKey);
+  const material = normalizeKeyMaterial(await deps.getEpochSeed(input.albumId, input.entry.epochId));
+  cache.put({ epochId: cacheKey, epochKey: material });
+  return material;
 }
 
 export const __photoPipelineTestUtils = {
