@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -15,7 +14,7 @@ class AndroidRustIdentityApiRoundTripTest {
 
   @Test
   fun createIdentityWithMissingAccountHandleReturnsErrorCode() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustIdentityApi()
     val result = api.createIdentityHandle(accountKeyHandle = 0xDEADBEEFUL)
     assertNotEquals(0, result.code)
@@ -24,7 +23,7 @@ class AndroidRustIdentityApiRoundTripTest {
 
   @Test
   fun openIdentityWithMissingHandleReturnsErrorCode() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustIdentityApi()
     val result = api.openIdentityHandle(
       wrappedSeed = ByteArray(64),
@@ -35,7 +34,7 @@ class AndroidRustIdentityApiRoundTripTest {
 
   @Test
   fun signingPubkeyForMissingHandleReturnsErrorCode() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustIdentityApi()
     val result = api.identitySigningPubkey(handle = 0xCAFEBABEUL)
     assertNotEquals(0, result.code)
@@ -43,7 +42,7 @@ class AndroidRustIdentityApiRoundTripTest {
 
   @Test
   fun encryptionPubkeyForMissingHandleReturnsErrorCode() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustIdentityApi()
     val result = api.identityEncryptionPubkey(handle = 0xCAFEBABEUL)
     assertNotEquals(0, result.code)
@@ -51,7 +50,7 @@ class AndroidRustIdentityApiRoundTripTest {
 
   @Test
   fun signManifestWithMissingHandleReturnsErrorCode() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustIdentityApi()
     val result = api.signManifestWithIdentity(handle = 0xCAFEBABEUL, transcriptBytes = ByteArray(48))
     assertNotEquals(0, result.code)
@@ -60,7 +59,7 @@ class AndroidRustIdentityApiRoundTripTest {
 
   @Test
   fun closeIdentityForMissingHandleReturnsNotFound() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustIdentityApi()
     val code = api.closeIdentityHandle(handle = 0xCAFEBABEUL)
     assertNotEquals(0, code)
@@ -72,7 +71,7 @@ class AndroidRustIdentityApiRoundTripTest {
     // shared mutable buffer between invocations). This is a basic regression
     // guard against returning a JNA-owned pointer wrapped as a non-copying
     // ByteArray.
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustIdentityApi()
     val first = api.identitySigningPubkey(0xCAFEBABEUL)
     val second = api.identitySigningPubkey(0xCAFEBABEUL)

@@ -38,6 +38,8 @@ try {
     Invoke-Step "Rust format" { cargo fmt --all --check }
     Invoke-Step "Rust clippy" { cargo clippy --workspace --all-targets --all-features -- -D warnings }
     Invoke-Step "Rust tests" { cargo test --workspace --locked }
+    Invoke-Step "Rust tests all features" { cargo test --workspace --all-features --locked }
+    Invoke-Step "Rust UniFFI cross-client vectors" { cargo test -p mosaic-uniffi --features cross-client-vectors --test cross_client_vectors --locked }
     Invoke-Step "Rust parity cross-client vectors" { cargo test -p mosaic-parity-tests --features cross-client-vectors --locked }
     Invoke-Step "Rust architecture boundaries" { & "$ProjectRoot/tests/architecture/rust-boundaries.ps1" }
     Invoke-Step "Rust cutover boundary" { & "$ProjectRoot/tests/architecture/rust-cutover-boundary.ps1" }

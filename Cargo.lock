@@ -674,6 +674,7 @@ dependencies = [
  "mosaic-crypto",
  "mosaic-domain",
  "mosaic-media",
+ "mosaic-vectors",
  "self_cell",
  "sha2",
  "strum",

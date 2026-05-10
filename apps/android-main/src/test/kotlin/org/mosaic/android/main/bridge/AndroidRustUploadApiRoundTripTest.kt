@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -112,7 +111,7 @@ class AndroidRustUploadApiRoundTripTest {
 
   @Test
   fun initUploadJobProducesValidSnapshot() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustUploadApi()
     val result = api.initUploadJob(makeUploadRequest())
     // Rust core may accept or reject (e.g. INVALID_INPUT_LENGTH = 202) the
@@ -127,7 +126,7 @@ class AndroidRustUploadApiRoundTripTest {
 
   @Test
   fun advanceUploadJobRoundTripsWithoutCrashing() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustUploadApi()
     val initResult = api.initUploadJob(makeUploadRequest())
     val transition = api.advanceUploadJob(
@@ -140,7 +139,7 @@ class AndroidRustUploadApiRoundTripTest {
 
   @Test
   fun advanceUploadJobOnInvalidEventReturnsErrorCode() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustUploadApi()
     val initResult = api.initUploadJob(makeUploadRequest())
     // Construct a "completed" snapshot manually to simulate an invalid transition.
@@ -154,7 +153,7 @@ class AndroidRustUploadApiRoundTripTest {
 
   @Test
   fun uploadJobSnapshotPreservesSchemaVersion() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustUploadApi()
     val initResult = api.initUploadJob(makeUploadRequest())
     val transition = api.advanceUploadJob(
@@ -166,7 +165,7 @@ class AndroidRustUploadApiRoundTripTest {
 
   @Test
   fun uploadSnapshotAdapterPreservesRcl1SchemaFields() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustUploadApi()
     val shardHash = byteArrayOf(1, 2, 3)
     val shardSetHash = byteArrayOf(9, 8, 7)
@@ -219,7 +218,7 @@ class AndroidRustUploadApiRoundTripTest {
 
   @Test
   fun `upload snapshot survives shell-UniFFI-shell round-trip equality`() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustUploadApi()
     val original = buildExhaustiveShellSnapshot()
 
@@ -251,7 +250,7 @@ class AndroidRustUploadApiRoundTripTest {
 
   @Test
   fun `epoch import round-trip preserves signPublicKey`() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustEpochApi()
     val original = buildEpochImport(signPublicKey = ByteArray(32) { it.toByte() })
 
@@ -262,7 +261,7 @@ class AndroidRustUploadApiRoundTripTest {
 
   @Test
   fun `album-sync event round-trip preserves hasErrorCode flag`() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAlbumSyncApi()
     val withError = buildAlbumSyncEvent(errorCode = 707, hasErrorCode = true)
     val withoutError = buildAlbumSyncEvent(errorCode = 0, hasErrorCode = false)

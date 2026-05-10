@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -21,7 +20,7 @@ class AndroidRustSealedBundleApiRoundTripTest {
 
   @Test
   fun verifyAndOpenWithVectorMatchesExpectedFields() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustSealedBundleApi()
     val vector = readVector()
     val result = api.verifyAndOpenBundleWithRecipientSeed(
@@ -46,7 +45,7 @@ class AndroidRustSealedBundleApiRoundTripTest {
   @Test
   fun wrongOwnerPubkeyReturnsBundleSignatureInvalid() {
     // negativeCases.wrong-owner-pubkey → BUNDLE_SIGNATURE_INVALID (216)
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustSealedBundleApi()
     val vector = readVector()
     val flipped = vector.expectedOwnerPubkey.copyOf()
@@ -67,7 +66,7 @@ class AndroidRustSealedBundleApiRoundTripTest {
   @Test
   fun tamperedSignatureReturnsBundleSignatureInvalid() {
     // negativeCases.tampered-signature → BUNDLE_SIGNATURE_INVALID (216)
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustSealedBundleApi()
     val vector = readVector()
     val tampered = vector.signature.copyOf()
@@ -88,7 +87,7 @@ class AndroidRustSealedBundleApiRoundTripTest {
   @Test
   fun tamperedSealedReturnsBundleSignatureInvalid() {
     // negativeCases.tampered-sealed → BUNDLE_SIGNATURE_INVALID (216)
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustSealedBundleApi()
     val vector = readVector()
     val tampered = vector.sealed.copyOf()
@@ -109,7 +108,7 @@ class AndroidRustSealedBundleApiRoundTripTest {
   @Test
   fun differentAlbumIdReturnsBundleAlbumIdMismatch() {
     // negativeCases.album-id-mismatch → BUNDLE_ALBUM_ID_MISMATCH (218)
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustSealedBundleApi()
     val vector = readVector()
     val result = api.verifyAndOpenBundleWithRecipientSeed(
@@ -134,7 +133,7 @@ class AndroidRustSealedBundleApiRoundTripTest {
     // album_id and allow=false: the embedded album_id is non-empty so we
     // should get BUNDLE_ALBUM_ID_MISMATCH (218) rather than 217. Either
     // code is a valid non-success rejection.
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustSealedBundleApi()
     val vector = readVector()
     val result = api.verifyAndOpenBundleWithRecipientSeed(
@@ -156,7 +155,7 @@ class AndroidRustSealedBundleApiRoundTripTest {
   @Test
   fun bundleEpochTooOldReturnsBundleEpochTooOld() {
     // Edge case: minEpochId > bundleEpochId → BUNDLE_EPOCH_TOO_OLD (219).
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustSealedBundleApi()
     val vector = readVector()
     val result = api.verifyAndOpenBundleWithRecipientSeed(
@@ -175,7 +174,7 @@ class AndroidRustSealedBundleApiRoundTripTest {
   @Test
   fun shortRecipientSeedReturnsInvalidKeyLength() {
     // Edge case: recipient seed length wrong → INVALID_KEY_LENGTH (201).
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustSealedBundleApi()
     val vector = readVector()
     val result = api.verifyAndOpenBundleWithRecipientSeed(
@@ -193,7 +192,7 @@ class AndroidRustSealedBundleApiRoundTripTest {
 
   @Test
   fun openedBundleToStringDoesNotLeakSeedFieldNames() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustSealedBundleApi()
     val vector = readVector()
     val result = api.verifyAndOpenBundleWithRecipientSeed(

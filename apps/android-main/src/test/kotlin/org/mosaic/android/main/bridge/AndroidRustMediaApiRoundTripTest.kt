@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -15,7 +14,7 @@ class AndroidRustMediaApiRoundTripTest {
   fun planMediaTiersReturnsDeferredForUnsurfacedComposite() {
     // The composite "URI → tier plan id" operation is not yet exposed through
     // UniFFI; the adapter explicitly returns DEFERRED.
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustMediaApi()
     val candidate = MediaImportCandidate(
       stagedSource = StagedMediaReference.of("mosaic-staged://example/abc"),
@@ -36,7 +35,7 @@ class AndroidRustMediaApiRoundTripTest {
 
   @Test
   fun inspectMediaImageRejectsGarbageBytes() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustMediaApi()
     val result = api.inspectMediaImage(ByteArray(64) { it.toByte() })
     assertNotEquals(0, result.code)
@@ -44,7 +43,7 @@ class AndroidRustMediaApiRoundTripTest {
 
   @Test
   fun planMediaTierLayoutReturnsValidDimensionsForSquareImage() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustMediaApi()
     val result = api.planMediaTierLayout(width = 4096, height = 4096)
     assertEquals(0, result.code)
@@ -58,7 +57,7 @@ class AndroidRustMediaApiRoundTripTest {
 
   @Test
   fun planMediaTierLayoutRejectsZeroDimensions() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustMediaApi()
     val result = api.planMediaTierLayout(width = 0, height = 0)
     assertNotEquals(0, result.code)

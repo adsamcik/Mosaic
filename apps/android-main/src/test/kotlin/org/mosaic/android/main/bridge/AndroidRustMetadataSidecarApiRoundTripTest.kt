@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertNotEquals
 
@@ -12,7 +11,7 @@ class AndroidRustMetadataSidecarApiRoundTripTest {
 
   @Test
   fun canonicalMetadataSidecarBytesProducesNonNullResult() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustMetadataSidecarApi()
     val result = api.canonicalMetadataSidecarBytes(
       albumId = ByteArray(16) { it.toByte() },
@@ -26,7 +25,7 @@ class AndroidRustMetadataSidecarApiRoundTripTest {
 
   @Test
   fun encryptMetadataSidecarWithMissingHandleReturnsErrorCode() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustMetadataSidecarApi()
     val result = api.encryptMetadataSidecarWithEpochHandle(
       handle = 0xDEADBEEFUL,
@@ -41,7 +40,7 @@ class AndroidRustMetadataSidecarApiRoundTripTest {
 
   @Test
   fun canonicalMediaMetadataSidecarBytesRejectsBadMediaBytes() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustMetadataSidecarApi()
     val result = api.canonicalMediaMetadataSidecarBytes(
       albumId = ByteArray(16) { it.toByte() },
@@ -54,7 +53,7 @@ class AndroidRustMetadataSidecarApiRoundTripTest {
 
   @Test
   fun encryptMediaMetadataSidecarWithMissingHandleReturnsErrorCode() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustMetadataSidecarApi()
     val result = api.encryptMediaMetadataSidecarWithEpochHandle(
       handle = 0xDEADBEEFUL,

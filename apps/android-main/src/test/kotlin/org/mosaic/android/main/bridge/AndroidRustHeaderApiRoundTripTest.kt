@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -39,7 +38,7 @@ class AndroidRustHeaderApiRoundTripTest {
 
   @Test
   fun parseEnvelopeHeaderRejectsTooShortBytes() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustHeaderApi()
     // The bridge enforces a 64-byte input pre-FFI to fail fast on obviously
     // malformed envelopes; assert the Kotlin-side rejection rather than a
@@ -50,7 +49,7 @@ class AndroidRustHeaderApiRoundTripTest {
 
   @Test
   fun parseEnvelopeHeaderRejectsBadMagic() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustHeaderApi()
     // Build a 64-byte buffer with wrong magic but otherwise plausible structure.
     val bytes = ByteArray(64)
@@ -62,7 +61,7 @@ class AndroidRustHeaderApiRoundTripTest {
 
   @Test
   fun parseEnvelopeHeaderRejectsEmptyBytes() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustHeaderApi()
     val ex = runCatching { api.parseEnvelopeHeader(ByteArray(0)) }.exceptionOrNull()
     assertNotEquals("expected pre-FFI rejection of empty header", null, ex)
@@ -73,7 +72,7 @@ class AndroidRustHeaderApiRoundTripTest {
     // Even on failures, the FFI converts `nonce: Vec<u8>` to a non-null
     // ByteArray (possibly empty). Verifies the FFI marshalling never returns
     // null where the type contract says ByteArray.
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustHeaderApi()
     val result = api.parseEnvelopeHeader(ByteArray(64))
     assertNotNull(result.nonce)

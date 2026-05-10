@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -10,7 +9,7 @@ class AndroidRustShardApiRoundTripTest {
 
   @Test
   fun encryptShardWithMissingHandleReturnsErrorCode() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustShardApi()
     val result = api.encryptShardWithEpochHandle(
       epochKeyHandle = 0xDEADBEEFUL,
@@ -24,7 +23,7 @@ class AndroidRustShardApiRoundTripTest {
 
   @Test
   fun decryptShardWithMissingHandleReturnsErrorCode() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustShardApi()
     val result = api.decryptShardWithEpochHandle(
       epochKeyHandle = 0xDEADBEEFUL,
@@ -35,7 +34,7 @@ class AndroidRustShardApiRoundTripTest {
 
   @Test
   fun decryptShardWithMalformedEnvelopeReturnsInvalidEnvelopeOrAuthFail() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustShardApi()
     val result = api.decryptShardWithEpochHandle(
       epochKeyHandle = 0xDEADBEEFUL,

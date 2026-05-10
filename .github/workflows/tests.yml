@@ -10,6 +10,7 @@ jobs:
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
+    needs: build-check
     timeout-minutes: 15
     
     steps:
@@ -210,6 +211,13 @@ jobs:
 
       - name: Build Rust WASM package
         run: bash ./scripts/build-rust-wasm.sh
+
+      - name: Verify committed Rust WASM artifacts are fresh
+        run: |
+          if ! git diff --exit-code -- apps/web/src/generated/mosaic-wasm/; then
+            echo "::error::Committed WASM artifacts are stale. Run scripts/build-rust-wasm.sh and commit apps/web/src/generated/mosaic-wasm/."
+            exit 1
+          fi
 
       - name: Run UniFFI API-shape lock
         run: cargo test -p mosaic-uniffi --test api_shape_lock --locked

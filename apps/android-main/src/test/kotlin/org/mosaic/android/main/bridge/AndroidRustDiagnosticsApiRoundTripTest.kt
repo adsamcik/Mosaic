@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -10,14 +9,14 @@ class AndroidRustDiagnosticsApiRoundTripTest {
 
   @Test
   fun protocolVersionMatchesShellExpectation() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustDiagnosticsApi()
     assertEquals("mosaic-v1", api.protocolVersion())
   }
 
   @Test
   fun goldenVectorIsDeterministic() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustDiagnosticsApi()
     val first = api.cryptoDomainGoldenVectorSnapshot()
     val second = api.cryptoDomainGoldenVectorSnapshot()
@@ -35,7 +34,7 @@ class AndroidRustDiagnosticsApiRoundTripTest {
 
   @Test
   fun goldenVectorEnvelopeHeaderIsExpectedLength() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustDiagnosticsApi()
     val snapshot = api.cryptoDomainGoldenVectorSnapshot()
     // Shard envelope header is fixed at 64 bytes per the Mosaic protocol.
@@ -50,7 +49,7 @@ class AndroidRustDiagnosticsApiRoundTripTest {
 
   @Test
   fun stateMachineSnapshotDescriptorContainsBothMachines() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustDiagnosticsApi()
     val descriptor = api.clientCoreStateMachineSnapshot()
     assertNotNull(descriptor)

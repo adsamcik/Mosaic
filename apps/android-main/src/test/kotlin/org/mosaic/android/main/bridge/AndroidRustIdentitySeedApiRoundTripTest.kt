@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -19,7 +18,7 @@ class AndroidRustIdentitySeedApiRoundTripTest {
 
   @Test
   fun deriveIdentityFromVectorSeedMatchesExpectedBytes() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustIdentitySeedApi()
     val vector = readVector()
     val result = api.deriveIdentityFromRawSeed(vector.identitySeed, vector.identityMessage)
@@ -33,7 +32,7 @@ class AndroidRustIdentitySeedApiRoundTripTest {
   @Test
   fun deriveIdentityFromShortSeedReturnsInvalidKeyLength() {
     // negativeCases.short-seed → INVALID_KEY_LENGTH (201)
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustIdentitySeedApi()
     val truncated = ByteArray(31)
     val result = api.deriveIdentityFromRawSeed(truncated, ByteArray(0))
@@ -45,7 +44,7 @@ class AndroidRustIdentitySeedApiRoundTripTest {
 
   @Test
   fun deriveIdentityToStringDoesNotLeakSeed() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustIdentitySeedApi()
     val vector = readVector()
     val result = api.deriveIdentityFromRawSeed(vector.identitySeed, vector.identityMessage)

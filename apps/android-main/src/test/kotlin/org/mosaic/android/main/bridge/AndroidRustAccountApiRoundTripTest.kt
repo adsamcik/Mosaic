@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -20,18 +19,14 @@ import org.mosaic.android.foundation.unlockAccountAndWipePassword
  * `uniffi.component.mosaic_uniffi.libraryOverride` system property, and
  * exercise one adapter end-to-end.
  *
- * If the override property is unset or the file does not exist, every test
- * is skipped via `assumeTrue` so this suite is safe to run before CI has
- * built the host library.
+ * If the override property is unset or the file does not exist, local runs
+ * skip this suite; CI fails hard so missing JNI coverage cannot be hidden.
  */
 class AndroidRustAccountApiRoundTripTest {
 
   @Test
   fun protocolVersionMatchesShellExpectation() {
-    assumeTrue(
-      "host mosaic_uniffi library not available — set uniffi.component.mosaic_uniffi.libraryOverride",
-      NativeLibraryAvailability.isAvailable,
-    )
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
 
     val api = AndroidRustAccountApi()
     assertEquals("mosaic-v1", api.protocolVersion())
@@ -39,10 +34,7 @@ class AndroidRustAccountApiRoundTripTest {
 
   @Test
   fun unlockAccountKeyRejectsWeakKdfProfile() {
-    assumeTrue(
-      "host mosaic_uniffi library not available",
-      NativeLibraryAvailability.isAvailable,
-    )
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
 
     val bridge = GeneratedRustAccountBridge(AndroidRustAccountApi())
     val password = normalizePasswordForKdf("round-trip-smoke-password")
@@ -66,10 +58,7 @@ class AndroidRustAccountApiRoundTripTest {
 
   @Test
   fun closeAccountKeyHandleRejectsNonExistentHandle() {
-    assumeTrue(
-      "host mosaic_uniffi library not available",
-      NativeLibraryAvailability.isAvailable,
-    )
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
 
     val api = AndroidRustAccountApi()
     // Handle 1 is unlikely to exist; any non-existent handle should yield
@@ -81,10 +70,7 @@ class AndroidRustAccountApiRoundTripTest {
 
   @Test
   fun isAccountKeyHandleOpenReportsClosedForInvalidHandle() {
-    assumeTrue(
-      "host mosaic_uniffi library not available",
-      NativeLibraryAvailability.isAvailable,
-    )
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
 
     val api = AndroidRustAccountApi()
     val status = api.accountKeyHandleIsOpen(0xCAFEBABEUL)

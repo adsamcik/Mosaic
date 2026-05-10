@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -21,7 +20,7 @@ class AndroidRustAuthChallengeApiRoundTripTest {
 
   @Test
   fun buildTranscriptWithoutTimestampMatchesVector() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAuthChallengeApi()
     val vector = readVector()
     val result = api.buildAuthChallengeTranscriptBytes(vector.username, -1L, vector.challenge)
@@ -31,7 +30,7 @@ class AndroidRustAuthChallengeApiRoundTripTest {
 
   @Test
   fun buildTranscriptWithTimestampMatchesVector() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAuthChallengeApi()
     val vector = readVector()
     val result = api.buildAuthChallengeTranscriptBytes(
@@ -45,7 +44,7 @@ class AndroidRustAuthChallengeApiRoundTripTest {
 
   @Test
   fun signWithoutTimestampMatchesVectorSignature() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAuthChallengeApi()
     val vector = readVector()
     val result = api.signAuthChallengeWithRawSeed(vector.expectedTranscriptNoTimestamp, vector.authSigningSeed)
@@ -55,7 +54,7 @@ class AndroidRustAuthChallengeApiRoundTripTest {
 
   @Test
   fun signWithTimestampMatchesVectorSignature() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAuthChallengeApi()
     val vector = readVector()
     val result = api.signAuthChallengeWithRawSeed(vector.expectedTranscriptWithTimestamp, vector.authSigningSeed)
@@ -65,7 +64,7 @@ class AndroidRustAuthChallengeApiRoundTripTest {
 
   @Test
   fun verifyValidSignatureSucceeds() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAuthChallengeApi()
     val vector = readVector()
     val result = api.verifyAuthChallengeSignature(
@@ -80,7 +79,7 @@ class AndroidRustAuthChallengeApiRoundTripTest {
   @Test
   fun verifyWithWrongPublicKeyReturnsAuthenticationFailed() {
     // negativeCases.wrong-public-key → AUTH_VERIFICATION_FAILED (205)
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAuthChallengeApi()
     val vector = readVector()
     val flipped = vector.authPublicKey.copyOf()
@@ -99,7 +98,7 @@ class AndroidRustAuthChallengeApiRoundTripTest {
   @Test
   fun verifyWithTamperedChallengeReturnsAuthenticationFailed() {
     // negativeCases.tampered-challenge → AUTH_VERIFICATION_FAILED (205)
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAuthChallengeApi()
     val vector = readVector()
     val tampered = vector.expectedTranscriptNoTimestamp.copyOf()
@@ -117,7 +116,7 @@ class AndroidRustAuthChallengeApiRoundTripTest {
   fun verifyWithTimestampMismatchReturnsAuthenticationFailed() {
     // negativeCases.timestamp-mismatch: verify signatureWithTimestamp
     // against transcriptNoTimestamp → AUTH_VERIFICATION_FAILED (205)
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAuthChallengeApi()
     val vector = readVector()
     val result = api.verifyAuthChallengeSignature(
@@ -131,7 +130,7 @@ class AndroidRustAuthChallengeApiRoundTripTest {
 
   @Test
   fun signResultToStringDoesNotLeakSigningSeed() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAuthChallengeApi()
     val vector = readVector()
     val result = api.signAuthChallengeWithRawSeed(

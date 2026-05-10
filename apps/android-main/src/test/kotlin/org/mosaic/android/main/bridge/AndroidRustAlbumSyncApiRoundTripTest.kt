@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -24,7 +23,7 @@ class AndroidRustAlbumSyncApiRoundTripTest {
 
   @Test
   fun initAlbumSyncProducesValidSnapshot() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAlbumSyncApi()
     val result = api.initAlbumSync(makeSyncRequest())
     // The Rust core may accept (code 0) or reject the request with a stable
@@ -38,7 +37,7 @@ class AndroidRustAlbumSyncApiRoundTripTest {
 
   @Test
   fun advanceAlbumSyncRoundTripsWithoutCrashing() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAlbumSyncApi()
     val initResult = api.initAlbumSync(makeSyncRequest())
     val transition = api.advanceAlbumSync(
@@ -51,7 +50,7 @@ class AndroidRustAlbumSyncApiRoundTripTest {
 
   @Test
   fun advanceAlbumSyncPreservesSchemaVersion() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAlbumSyncApi()
     val initResult = api.initAlbumSync(makeSyncRequest())
     val transition = api.advanceAlbumSync(
@@ -63,7 +62,7 @@ class AndroidRustAlbumSyncApiRoundTripTest {
 
   @Test
   fun advanceAlbumSyncOnInvalidPhaseReturnsErrorCode() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAlbumSyncApi()
     val initResult = api.initAlbumSync(makeSyncRequest())
     val invalidSnapshot = initResult.snapshot.copy(phase = "Completed")

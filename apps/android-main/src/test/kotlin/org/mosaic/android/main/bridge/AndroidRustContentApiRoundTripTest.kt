@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -19,7 +18,7 @@ class AndroidRustContentApiRoundTripTest {
 
   @Test
   fun decryptVectorCiphertextMatchesExpectedPlaintext() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustContentApi()
     val vector = readVector()
     val result = api.decryptContentWithRawKey(
@@ -35,7 +34,7 @@ class AndroidRustContentApiRoundTripTest {
   @Test
   fun decryptWithWrongEpochIdReturnsAuthenticationFailed() {
     // negativeCases.wrong-epoch-id → AUTHENTICATION_FAILED (205)
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustContentApi()
     val vector = readVector()
     val result = api.decryptContentWithRawKey(
@@ -51,7 +50,7 @@ class AndroidRustContentApiRoundTripTest {
   @Test
   fun decryptWithTamperedCiphertextReturnsAuthenticationFailed() {
     // negativeCases.tampered-ciphertext → AUTHENTICATION_FAILED (205)
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustContentApi()
     val vector = readVector()
     val tampered = vector.ciphertext.copyOf()
@@ -68,7 +67,7 @@ class AndroidRustContentApiRoundTripTest {
 
   @Test
   fun decryptWithShortKeyReturnsInvalidKeyLength() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustContentApi()
     val vector = readVector()
     val result = api.decryptContentWithRawKey(
@@ -82,7 +81,7 @@ class AndroidRustContentApiRoundTripTest {
 
   @Test
   fun decryptWithShortNonceReturnsInvalidInputLength() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustContentApi()
     val vector = readVector()
     val result = api.decryptContentWithRawKey(
@@ -96,7 +95,7 @@ class AndroidRustContentApiRoundTripTest {
 
   @Test
   fun decryptResultToStringDoesNotLeakPlaintextOrKey() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustContentApi()
     val vector = readVector()
     val result = api.decryptContentWithRawKey(

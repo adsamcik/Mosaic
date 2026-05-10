@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -10,7 +9,7 @@ class AndroidRustEpochApiRoundTripTest {
 
   @Test
   fun createEpochWithMissingAccountHandleReturnsErrorCode() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustEpochApi()
     val result = api.createEpochKeyHandle(accountKeyHandle = 0xDEADBEEFUL, epochId = 1)
     assertNotEquals(0, result.code)
@@ -19,7 +18,7 @@ class AndroidRustEpochApiRoundTripTest {
 
   @Test
   fun openEpochWithMissingHandleReturnsErrorCode() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustEpochApi()
     val result = api.openEpochKeyHandle(
       wrappedEpochSeed = ByteArray(48),
@@ -31,7 +30,7 @@ class AndroidRustEpochApiRoundTripTest {
 
   @Test
   fun openEpochRejectsTooShortWrappedSeed() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustEpochApi()
     // 4 bytes is well below the wrapped key minimum (32 bytes + 12 nonce + 16 tag).
     val result = api.openEpochKeyHandle(
@@ -44,7 +43,7 @@ class AndroidRustEpochApiRoundTripTest {
 
   @Test
   fun isEpochOpenForMissingHandleReportsNotOpen() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustEpochApi()
     val status = api.epochKeyHandleIsOpen(handle = 0xCAFEBABEUL)
     assertTrue(status.code != 0 || !status.isOpen)
@@ -52,7 +51,7 @@ class AndroidRustEpochApiRoundTripTest {
 
   @Test
   fun closeEpochForMissingHandleReturnsNotFound() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustEpochApi()
     val code = api.closeEpochKeyHandle(handle = 0xCAFEBABEUL)
     assertNotEquals(0, code)

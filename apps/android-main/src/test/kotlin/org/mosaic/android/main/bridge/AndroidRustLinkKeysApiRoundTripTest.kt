@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -22,7 +21,7 @@ class AndroidRustLinkKeysApiRoundTripTest {
 
   @Test
   fun deriveLinkKeysFromVectorMatchesExpectedPublicFieldsAndHandle() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustLinkKeysApi()
     val vector = readVector("link_keys.json")
     val linkSecret = vector.linkSecret
@@ -37,7 +36,7 @@ class AndroidRustLinkKeysApiRoundTripTest {
   @Test
   fun deriveLinkKeysFromShortSecretReturnsInvalidKeyLength() {
     // negativeCases.short-link-secret → INVALID_KEY_LENGTH (201)
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustLinkKeysApi()
     val truncated = ByteArray(31)
     val result = api.deriveLinkKeysFromRawSecret(truncated)
@@ -48,7 +47,7 @@ class AndroidRustLinkKeysApiRoundTripTest {
 
   @Test
   fun deriveLinkKeysToStringDoesNotLeakSecretFields() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustLinkKeysApi()
     val vector = readVector("link_keys.json")
     val result = api.deriveLinkKeysFromRawSecret(vector.linkSecret)

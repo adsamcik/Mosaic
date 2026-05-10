@@ -1,6 +1,5 @@
 package org.mosaic.android.main.bridge
 
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -10,7 +9,7 @@ class AndroidRustProgressApiRoundTripTest {
 
   @Test
   fun probeWithoutCancellationCompletesAllSteps() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustProgressApi()
     val result = api.probe(totalSteps = 4, cancelAfter = null)
     assertEquals(0, result.code)
@@ -22,7 +21,7 @@ class AndroidRustProgressApiRoundTripTest {
 
   @Test
   fun probeWithCancellationStopsEarly() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustProgressApi()
     val result = api.probe(totalSteps = 10, cancelAfter = 3)
     // 300 = OPERATION_CANCELLED; OK is also acceptable if the probe finished
@@ -36,7 +35,7 @@ class AndroidRustProgressApiRoundTripTest {
 
   @Test
   fun probeWithZeroStepsCompletesImmediately() {
-    assumeTrue(NativeLibraryAvailability.isAvailable)
+    NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustProgressApi()
     val result = api.probe(totalSteps = 0, cancelAfter = null)
     assertEquals(0, result.code)
