@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createDecryptCache, type DecryptContext } from '../decrypt-cache';
+import type { EpochHandleId } from '../../types';
 
-function ctx(epochId: string, fill: number = 0xab): DecryptContext & { readonly epochKey: Uint8Array } {
-  return { epochId, epochKey: new Uint8Array(32).fill(fill) };
+function ctx(epochId: string, handleId: string = `epch_${epochId}`): DecryptContext {
+  return { epochId, epochKey: { kind: 'epoch-handle', handleId: handleId as EpochHandleId } };
 }
 
 describe('DecryptCache', () => {
@@ -20,9 +21,9 @@ describe('DecryptCache', () => {
 
   it('evicts least-recently-used when over bound', () => {
     const c = createDecryptCache(2);
-    const a = ctx('a', 1);
-    const b = ctx('b', 2);
-    const d = ctx('d', 3);
+    const a = ctx('a', 'epch_a');
+    const b = ctx('b', 'epch_b');
+    const d = ctx('d', 'epch_d');
     c.put(a); c.put(b);
     c.get('a');           // bump a → MRU; b is LRU now
     c.put(d);             // should evict b
@@ -32,40 +33,35 @@ describe('DecryptCache', () => {
     expect(c._size()).toBe(2);
   });
 
-  it('zeroes the epoch key on LRU eviction', () => {
+  it('evicts opaque handle entries without exposing raw key bytes', () => {
     const c = createDecryptCache(1);
-    const a = ctx('a', 0xff);
-    const b = ctx('b', 0x77);
+    const a = ctx('a', 'epch_a');
+    const b = ctx('b', 'epch_b');
     c.put(a);
-    // Snapshot the buffer reference so we can inspect after eviction.
-    const aKey = a.epochKey;
-    expect(aKey.some((x) => x !== 0)).toBe(true);
     c.put(b); // evicts a
-    expect(Array.from(aKey)).toEqual(Array.from(new Uint8Array(32)));
+    expect(c.get('a')).toBeNull();
+    expect(c.get('b')).toBe(b);
+    expect(a.epochKey).toEqual({ kind: 'epoch-handle', handleId: 'epch_a' });
   });
 
-  it('clear() zeroes every key and empties the map', () => {
+  it('clear() empties the map', () => {
     const c = createDecryptCache(4);
-    const a = ctx('a', 0xa1);
-    const b = ctx('b', 0xb2);
+    const a = ctx('a', 'epch_a');
+    const b = ctx('b', 'epch_b');
     c.put(a); c.put(b);
-    const aKey = a.epochKey;
-    const bKey = b.epochKey;
     c.clear();
     expect(c._size()).toBe(0);
     expect(c.get('a')).toBeNull();
     expect(c.get('b')).toBeNull();
-    expect(Array.from(aKey).every((x) => x === 0)).toBe(true);
-    expect(Array.from(bKey).every((x) => x === 0)).toBe(true);
   });
 
-  it('zeroes prior key when a different buffer replaces an existing epoch entry', () => {
+  it('replaces an existing epoch entry', () => {
     const c = createDecryptCache(4);
-    const first = ctx('e', 0x11);
+    const first = ctx('e', 'epch_first');
     c.put(first);
-    const firstKey = first.epochKey;
-    c.put(ctx('e', 0x22));
-    expect(Array.from(firstKey).every((x) => x === 0)).toBe(true);
+    const second = ctx('e', 'epch_second');
+    c.put(second);
+    expect(c.get('e')).toBe(second);
   });
 
   it('rejects invalid maxEntries', () => {

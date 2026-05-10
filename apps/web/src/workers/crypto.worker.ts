@@ -1105,13 +1105,13 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   /**
-   * Decrypt a photo shard with a tier key directly (for share link viewing).
+   * Decrypt a photo shard with an opaque link-tier handle (for share link viewing).
    *
-   * Use this method when you have the unwrapped tier key from a share link,
-   * rather than the epochSeed.
+   * Use this method when you have a Rust-managed link-tier handle minted from
+   * the share-link tier key.
    *
    * @param envelope - Complete envelope (header + ciphertext)
-   * @param tierKey - Tier-specific decryption key (32 bytes, already derived)
+   * @param tierKeyHandle - Opaque Rust-managed link-tier handle
    * @returns Decrypted plaintext
    * @throws Error if decryption fails or envelope is invalid
    */

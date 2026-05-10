@@ -2,10 +2,6 @@ import { ApiError } from '../../lib/api';
 import { ShardDownloadError } from '../../lib/shard-service';
 import type { CryptoPool, DownloadErrorCode } from '../crypto-pool';
 import { DownloadError } from '../crypto-pool';
-import {
-  rustOpenStreamingShard,
-  type StreamingShardDecryptor,
-} from '../rust-crypto-core';
 import type { ShardMirror } from './shard-mirror';
 import { shardMirrorKey } from './shard-mirror';
 import type { DecryptCache } from './decrypt-cache';
@@ -26,18 +22,12 @@ export interface DownloadPlanEntry {
 export interface PhotoPipelineDeps {
   readonly pool: CryptoPool;
   readonly fetchShards: (shardIds: string[], signal: AbortSignal) => Promise<Uint8Array[]>;
-  readonly getEpochSeed: (albumId: string, epochId: number) => Promise<ResolvedKeyMaterial | Uint8Array>;
+  readonly getEpochSeed: (albumId: string, epochId: number) => Promise<ResolvedKeyMaterial>;
   readonly writePhotoChunk: (jobId: string, photoId: string, offset: number, bytes: Uint8Array) => Promise<void>;
   readonly truncatePhoto: (jobId: string, photoId: string, length: number) => Promise<void>;
   readonly getPhotoFileLength: (jobId: string, photoId: string) => Promise<number | null>;
   /** Report cumulative bytes written for this photo; coordinator owns persistence rate-limiting. */
   readonly reportBytesWritten?: (jobId: string, photoId: string, bytesWritten: number) => void;
-  /**
-   * Open a streaming-AEAD decryptor over a shard envelope (variant 1).
-   * Defaults to the production WASM-backed implementation. Tests inject a
-   * fake to exercise the streaming path without WASM.
-   */
-  readonly openStreamingShard?: (envelopeHeader: Uint8Array, key: Uint8Array) => Promise<StreamingShardDecryptor>;
   readonly decryptResolvedShard?: (
     keyMaterial: ResolvedKeyMaterial,
     envelopeBytes: Uint8Array,
@@ -72,19 +62,6 @@ export interface PhotoTaskInput {
 
 const MAX_NETWORK_ATTEMPTS = 3;
 const MAX_INTEGRITY_ATTEMPTS = 2;
-
-const SHARD_ENVELOPE_HEADER_BYTES = 64;
-/** Reserved[0] within the 64-byte shard envelope header. */
-const ENVELOPE_VARIANT_BYTE_OFFSET = 38;
-const STREAMING_ENVELOPE_VARIANT = 1;
-/** Per-chunk Poly1305 tag length appended to the wire-format chunk. */
-const STREAMING_CHUNK_TAG_BYTES = 16;
-/**
- * Above this on-wire shard size the photo pipeline switches to streaming
- * decrypt so peak resident plaintext stays bounded by chunkSize + a couple
- * of small fixed buffers (target peak < 4 MB).
- */
-const STREAMING_SHARD_THRESHOLD_BYTES = 16 * 1024 * 1024;
 
 /** Execute one photo's full fetch → verify → decrypt → OPFS staging pipeline. */
 export async function executePhotoTask(input: PhotoTaskInput, deps: PhotoPipelineDeps): Promise<PhotoOutcome> {
@@ -205,9 +182,9 @@ async function verifyDecryptAndWrite(
     }
   }
 
-  // Phase 2 — decrypt each shard and stage plaintext incrementally to OPFS.
-  // Streaming shards (variant 1, > THRESHOLD) write chunk-by-chunk only for
-  // legacy raw bytes. Opaque handles decrypt through the handle-aware worker API.
+  // Phase 2 — decrypt each shard through handle-aware worker APIs and stage
+  // plaintext incrementally to OPFS. Raw tier-key bytes never cross the pool
+  // Comlink boundary.
   let bytesWritten = 0;
   try {
     for (let index = 0; index < encryptedShards.length; index += 1) {
@@ -215,10 +192,6 @@ async function verifyDecryptAndWrite(
       const shard = encryptedShards[index];
       if (!shard) {
         return { kind: 'failed', code: 'IllegalState' };
-      }
-      if (keyMaterial.kind === 'raw-bytes' && shouldStreamShard(shard)) {
-        bytesWritten += await streamDecryptAndWriteShard(shard, keyMaterial.bytes, bytesWritten, input, deps);
-        continue;
       }
       const plaintext = await decryptShardWithResolvedKey(
         deps.pool,
@@ -240,7 +213,7 @@ async function verifyDecryptAndWrite(
 export async function decryptShardWithResolvedKey(
   pool: CryptoPool,
   shard: Uint8Array,
-  keyMaterial: ResolvedKeyMaterial | Uint8Array,
+  keyMaterial: ResolvedKeyMaterial,
   tier: number,
   ownerDecrypt?: (
     keyMaterial: ResolvedKeyMaterial,
@@ -248,73 +221,21 @@ export async function decryptShardWithResolvedKey(
     tier: number,
   ) => Promise<Uint8Array>,
 ): Promise<Uint8Array> {
-  const material = normalizeKeyMaterial(keyMaterial);
-  switch (material.kind) {
+  switch (keyMaterial.kind) {
     case 'epoch-handle':
-      return pool.decryptShardWithEpochHandle(material.handleId, shard);
+      return pool.decryptShardWithEpochHandle(keyMaterial.handleId, shard);
     case 'link-tier-handle':
       if (ownerDecrypt) {
-        return ownerDecrypt(material, shard, tier);
+        return ownerDecrypt(keyMaterial, shard, tier);
       }
-      return pool.decryptShardWithLinkTierHandle(material.handleId, shard);
-    case 'raw-bytes':
-      return pool.decryptShard(shard, material.bytes, tier);
+      return pool.decryptShardWithLinkTierHandle(keyMaterial.handleId, shard);
     default:
-      return assertNever(material);
+      return assertNever(keyMaterial);
   }
-}
-
-function normalizeKeyMaterial(keyMaterial: ResolvedKeyMaterial | Uint8Array): ResolvedKeyMaterial {
-  if (keyMaterial instanceof Uint8Array) {
-    return { kind: 'raw-bytes', bytes: keyMaterial };
-  }
-  return keyMaterial;
 }
 
 function assertNever(value: never): never {
   throw new DownloadError('IllegalState', `Unsupported key material: ${String(value)}`);
-}
-
-function shouldStreamShard(shard: Uint8Array): boolean {
-  if (shard.byteLength <= STREAMING_SHARD_THRESHOLD_BYTES) {
-    return false;
-  }
-  if (shard.byteLength < SHARD_ENVELOPE_HEADER_BYTES) {
-    return false;
-  }
-  return shard[ENVELOPE_VARIANT_BYTE_OFFSET] === STREAMING_ENVELOPE_VARIANT;
-}
-
-async function streamDecryptAndWriteShard(
-  shard: Uint8Array,
-  rawKeyBytes: Uint8Array,
-  startOffset: number,
-  input: PhotoTaskInput,
-  deps: PhotoPipelineDeps,
-): Promise<number> {
-  const opener = deps.openStreamingShard ?? rustOpenStreamingShard;
-  let decryptor: StreamingShardDecryptor | null = null;
-  let written = 0;
-  try {
-    decryptor = await opener(shard.subarray(0, SHARD_ENVELOPE_HEADER_BYTES), rawKeyBytes);
-    const onWireChunkSize = decryptor.chunkSizeBytes + STREAMING_CHUNK_TAG_BYTES;
-    let offset = SHARD_ENVELOPE_HEADER_BYTES;
-    while (offset < shard.byteLength) {
-      throwIfAborted(input.signal);
-      const isFinal = offset + onWireChunkSize >= shard.byteLength;
-      const end = isFinal ? shard.byteLength : offset + onWireChunkSize;
-      const plaintext = await decryptor.processChunk(shard.subarray(offset, end), isFinal);
-      await deps.writePhotoChunk(input.jobId, input.entry.photoId, startOffset + written, plaintext);
-      written += plaintext.byteLength;
-      if (isFinal) break;
-      offset = end;
-    }
-  } finally {
-    if (decryptor) {
-      await decryptor.close();
-    }
-  }
-  return written;
 }
 
 async function reconcileResumeBytes(input: PhotoTaskInput, deps: PhotoPipelineDeps): Promise<void> {
@@ -467,12 +388,12 @@ async function fetchShardsWithMirror(
 async function resolveKeyMaterial(input: PhotoTaskInput, deps: PhotoPipelineDeps): Promise<ResolvedKeyMaterial> {
   const cache = deps.decryptCache;
   if (!cache) {
-    return normalizeKeyMaterial(await deps.getEpochSeed(input.albumId, input.entry.epochId));
+    return deps.getEpochSeed(input.albumId, input.entry.epochId);
   }
   const cacheKey = input.albumId + ':' + String(input.entry.epochId);
   const hit = cache.get(cacheKey);
-  if (hit) return normalizeKeyMaterial(hit.epochKey);
-  const material = normalizeKeyMaterial(await deps.getEpochSeed(input.albumId, input.entry.epochId));
+  if (hit) return hit.epochKey;
+  const material = await deps.getEpochSeed(input.albumId, input.entry.epochId);
   cache.put({ epochId: cacheKey, epochKey: material });
   return material;
 }
@@ -480,8 +401,4 @@ async function resolveKeyMaterial(input: PhotoTaskInput, deps: PhotoPipelineDeps
 export const __photoPipelineTestUtils = {
   classifyPipelineError,
   backoffMs,
-  shouldStreamShard,
-  STREAMING_SHARD_THRESHOLD_BYTES,
-  ENVELOPE_VARIANT_BYTE_OFFSET,
-  STREAMING_ENVELOPE_VARIANT,
 };

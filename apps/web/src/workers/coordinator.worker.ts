@@ -773,9 +773,9 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
               ? {
                   decryptShard: async (
                     bytes: Uint8Array,
-                    key: ResolvedKeyMaterial | Uint8Array,
+                    key: ResolvedKeyMaterial,
                   ): Promise<Uint8Array> => {
-                    if (!(key instanceof Uint8Array) && key.kind === 'link-tier-handle') {
+                    if (key.kind === 'link-tier-handle') {
                       return source.decryptResolvedShard!(key, bytes, 1);
                     }
                     const pool = await acquireCryptoPoolForCoordinator();

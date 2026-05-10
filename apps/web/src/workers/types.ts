@@ -497,10 +497,9 @@ export interface CryptoWorkerApi {
   ): Promise<void>;
 
   /**
-   * Decrypt a photo shard with a tier key directly (for share link viewing)
-   * Use this when you have the unwrapped tier key from a share link.
+   * Decrypt a photo shard with an opaque link-tier handle (for share link viewing).
    * @param envelope - Complete envelope (header + ciphertext)
-   * @param tierKey - Tier-specific decryption key (32 bytes, already derived)
+   * @param tierKey - Opaque Rust-managed link-tier handle
    */
   decryptShardWithTierKey(
     envelope: Uint8Array,

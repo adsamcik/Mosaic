@@ -34,7 +34,6 @@ const cryptoPoolMocks = vi.hoisted(() => {
   const pool = {
     size: 1,
     verifyShard: vi.fn(),
-    decryptShard: vi.fn(),
     decryptShardWithTierKey: vi.fn(),
     decryptShardWithEpochHandle: vi.fn(),
     decryptShardWithLinkTierHandle: vi.fn(),

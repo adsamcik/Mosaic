@@ -27,8 +27,7 @@ class FakeWorker implements Worker {
 
 interface FakeApi {
   verifyShard(shardBytes: Uint8Array, expectedHash: Uint8Array): Promise<void>;
-  decryptShard(shardBytes: Uint8Array, epochSeed: Uint8Array, tier: number): Promise<Uint8Array>;
-  decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: Uint8Array): Promise<Uint8Array>;
+  decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: LinkDecryptionKey): Promise<Uint8Array>;
 }
 
 const apis: FakeApi[] = [];
@@ -38,6 +37,7 @@ vi.mock('comlink', () => ({
 }));
 
 import { __cryptoPoolTestUtils, autoSizePool, DownloadError, getCryptoPool } from '../crypto-pool';
+import type { LinkDecryptionKey } from '../types';
 
 function nav(opts: { readonly hardwareConcurrency: number; readonly mobile?: boolean; readonly userAgent?: string; readonly effectiveType?: string }): Navigator {
   return {
@@ -57,9 +57,6 @@ function makeApi(index: number, counts: number[], rejectOnce = false): FakeApi {
         shouldReject = false;
         throw new Error('worker terminated');
       }
-    },
-    async decryptShard(shardBytes: Uint8Array): Promise<Uint8Array> {
-      return shardBytes;
     },
     async decryptShardWithTierKey(shardBytes: Uint8Array): Promise<Uint8Array> {
       return shardBytes;
@@ -124,21 +121,24 @@ describe('crypto pool', () => {
     expect(workerRecords).toHaveLength(2);
   });
 
-  it('forwards shard tier to worker decrypt API', async () => {
-    const seenTiers: number[] = [];
+  it('does not expose the legacy raw-key decrypt API', async () => {
+    const pool = await getCryptoPool({ size: 1 });
+    expect('decryptShard' in pool).toBe(false);
+  });
+
+  it('forwards link-tier handles to the worker decrypt API', async () => {
+    const seenHandles: LinkDecryptionKey[] = [];
     __cryptoPoolTestUtils.setWorkerFactory(() => new FakeWorker({
       async verifyShard(): Promise<void> {},
-      async decryptShard(shardBytes: Uint8Array, _epochSeed: Uint8Array, tier: number): Promise<Uint8Array> {
-        seenTiers.push(tier);
-        return shardBytes;
-      },
-      async decryptShardWithTierKey(shardBytes: Uint8Array): Promise<Uint8Array> {
+      async decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: LinkDecryptionKey): Promise<Uint8Array> {
+        seenHandles.push(tierKey);
         return shardBytes;
       },
     }));
     const pool = await getCryptoPool({ size: 1 });
-    await expect(pool.decryptShard(new Uint8Array([9]), new Uint8Array(32).fill(7), 2)).resolves.toEqual(new Uint8Array([9]));
-    expect(seenTiers).toEqual([2]);
+    const handle = 'lnkt_test' as LinkDecryptionKey;
+    await expect(pool.decryptShardWithTierKey(new Uint8Array([9]), handle)).resolves.toEqual(new Uint8Array([9]));
+    expect(seenHandles).toEqual([handle]);
   });
 
   it('shutdown is idempotent and terminates worker references', async () => {
@@ -158,9 +158,6 @@ describe('crypto pool', () => {
         await new Promise<void>((_resolve, reject) => {
           rejectInFlight = reject;
         });
-      },
-      async decryptShard(shardBytes: Uint8Array): Promise<Uint8Array> {
-        return shardBytes;
       },
       async decryptShardWithTierKey(shardBytes: Uint8Array): Promise<Uint8Array> {
         return shardBytes;

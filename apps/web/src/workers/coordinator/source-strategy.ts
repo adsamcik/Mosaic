@@ -13,7 +13,6 @@
  *      `LinkDecryptionKey` from the link tier-key store.
  *
  * Strategies resolve opaque worker-owned handles for production decrypt paths.
- * Raw tier-key bytes remain accepted only as a legacy/transitional escape hatch.
  *
  * Future strategies (e.g. P2P sidecar) plug in here.
  */
@@ -23,8 +22,7 @@ export type SourceStrategyKind = 'authenticated' | 'share-link';
 
 export type ResolvedKeyMaterial =
   | { kind: 'epoch-handle'; handleId: EpochHandleId }
-  | { kind: 'link-tier-handle'; handleId: LinkTierHandleId }
-  | { kind: 'raw-bytes'; bytes: Uint8Array };
+  | { kind: 'link-tier-handle'; handleId: LinkTierHandleId };
 
 export interface SourceStrategy {
   /** Stable identifier for telemetry / ZK-safe logging. */
@@ -45,11 +43,10 @@ export interface SourceStrategy {
   /**
    * Resolve the decryption material for a given epoch.
    *
-   * - Authenticated: epoch handle from the epoch-key service.
-   * - Share-link: tier-3 link-tier handle from the tier-key store.
- * - Raw tier-key bytes: legacy/transitional callers only.
-   *
-   * Implementations MUST throw a DownloadError with an appropriate code
+ * - Authenticated: epoch handle from the epoch-key service.
+ * - Share-link: tier-3 link-tier handle from the tier-key store.
+ *
+ * Implementations MUST throw a DownloadError with an appropriate code
    * (e.g. `AccessRevoked`) when the key cannot be resolved.
    */
   resolveKey(albumId: string, epochId: number): Promise<ResolvedKeyMaterial>;

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createThumbnailStreamer, type ThumbnailManifestEntry, type ThumbnailStreamerDeps } from '../thumbnail-streamer';
+import type { EpochHandleId } from '../../types';
+import type { ResolvedKeyMaterial } from '../source-strategy';
 
 interface UrlRegistry {
   created: string[];
@@ -49,7 +51,7 @@ function makeEntry(idSuffix: string): ThumbnailManifestEntry {
 function makeDeps(overrides: Partial<ThumbnailStreamerDeps>, urls: UrlRegistry): ThumbnailStreamerDeps {
   return {
     fetchShard: async (_id, _signal) => new Uint8Array([1, 2, 3]),
-    resolveThumbKey: async () => new Uint8Array(32),
+    resolveThumbKey: async () => ({ kind: 'epoch-handle', handleId: 'epch_thumb_default' as EpochHandleId }),
     decryptShard: async (bytes) => bytes,
     resolveJobThumbnails: () => asyncIterable([]),
     createObjectURL: urls.createObjectURL,
@@ -147,9 +149,8 @@ describe('thumbnail-streamer', () => {
       globalConcurrency: 8,
     }, urls));
     streamer.subscribe('job-C', () => undefined);
-    await new Promise((r) => setTimeout(r, 200));
+    await vi.waitFor(() => expect(urls.created.length).toBe(10), { timeout: 2_000 });
     expect(peak).toBeLessThanOrEqual(2);
-    expect(urls.created.length).toBe(10);
     streamer.stop('job-C');
   });
 
@@ -253,13 +254,13 @@ describe('thumbnail-streamer', () => {
   it('keeps concurrent jobs bound to their own thumbnail source', async () => {
     interface BoundThumbnailManifestEntry extends ThumbnailManifestEntry {
       readonly fetchShard: (shardId: string, signal: AbortSignal) => Promise<Uint8Array>;
-      readonly resolveThumbKey: (photoId: string, epochId: string) => Promise<Uint8Array>;
+      readonly resolveThumbKey: (photoId: string, epochId: string) => Promise<ResolvedKeyMaterial>;
     }
 
     const urls = makeUrlRegistry();
     const authFetch = vi.fn(async (_shardId: string, _signal: AbortSignal) => new Uint8Array([0xA1]));
     const visitorFetch = vi.fn(async (_shardId: string, _signal: AbortSignal) => new Uint8Array([0xB2]));
-    const key = new Uint8Array(32);
+    const key: ResolvedKeyMaterial = { kind: 'epoch-handle', handleId: 'epch_thumb_bound' as EpochHandleId };
     const entriesByJob: ReadonlyMap<string, ReadonlyArray<BoundThumbnailManifestEntry>> = new Map([
       ['job-auth', [{
         ...makeEntry('auth'),

@@ -4,6 +4,7 @@ import { executePhotoTask, type DownloadPlanEntry, type PhotoPipelineDeps } from
 import { createDecryptCache } from '../decrypt-cache';
 import type { ShardMirror } from '../shard-mirror';
 import type { CryptoPool } from '../../crypto-pool';
+import type { EpochHandleId } from '../../types';
 
 async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
   const buf = await crypto.subtle.digest('SHA-256', new Uint8Array(bytes));
@@ -55,7 +56,6 @@ function makePool(): CryptoPool {
   return {
     size: 1,
     verifyShard: vi.fn(async (): Promise<void> => undefined),
-    decryptShard: vi.fn(async (b: Uint8Array): Promise<Uint8Array> => b),
     decryptShardWithTierKey: vi.fn(async (b: Uint8Array): Promise<Uint8Array> => b),
     decryptShardWithEpochHandle: vi.fn(async (_handle, b: Uint8Array): Promise<Uint8Array> => b),
     decryptShardWithLinkTierHandle: vi.fn(async (_handle, b: Uint8Array): Promise<Uint8Array> => b),
@@ -90,7 +90,7 @@ function baseDeps(extra: Partial<PhotoPipelineDeps> = {}): PhotoPipelineDeps {
   return {
     pool: makePool(),
     fetchShards: vi.fn(async (ids: string[]): Promise<Uint8Array[]> => ids.map((id) => (id === 's-a' ? SHARD_A : SHARD_B))),
-    getEpochSeed: vi.fn(async (): Promise<Uint8Array> => new Uint8Array(32).fill(7)),
+    getEpochSeed: vi.fn(async () => ({ kind: 'epoch-handle' as const, handleId: 'epch_mirror_test' as EpochHandleId })),
     writePhotoChunk: vi.fn(async (): Promise<void> => undefined),
     truncatePhoto: vi.fn(async (): Promise<void> => undefined),
     getPhotoFileLength: vi.fn(async (): Promise<number | null> => null),

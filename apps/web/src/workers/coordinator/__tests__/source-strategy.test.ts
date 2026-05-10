@@ -141,11 +141,11 @@ describe('createShareLinkSourceStrategy', () => {
     expect(out).toEqual({ kind: 'link-tier-handle', handleId: tier3 });
   });
 
-  it('resolveKey returns raw byte material for legacy raw keys', async () => {
+  it('rejects raw byte material from untyped legacy key sources', async () => {
     const raw = new Uint8Array(32).fill(7);
-    const s = createShareLinkSourceStrategy({ linkId: 'L', getTierKey: (epoch) => (epoch === 9 ? raw : undefined) });
-    const out = await s.resolveKey('album', 9);
-    expect(out).toEqual({ kind: 'raw-bytes', bytes: raw });
+    const getTierKey = ((epoch: number) => (epoch === 9 ? raw : undefined)) as unknown as (epoch: number) => LinkDecryptionKey | undefined;
+    const s = createShareLinkSourceStrategy({ linkId: 'L', getTierKey });
+    await expect(s.resolveKey('album', 9)).rejects.toMatchObject({ code: 'IllegalState' });
   });
 
   it('decryptResolvedShard uses the source-owning crypto client for link-tier handles', async () => {
@@ -171,7 +171,6 @@ describe('photo pipeline key-material routing', () => {
     return {
       size: 1,
       verifyShard: vi.fn(async (): Promise<void> => undefined),
-      decryptShard: vi.fn(async (bytes: Uint8Array): Promise<Uint8Array> => bytes),
       decryptShardWithTierKey: vi.fn(async (bytes: Uint8Array): Promise<Uint8Array> => bytes),
       decryptShardWithEpochHandle: vi.fn(async (_handle, bytes: Uint8Array): Promise<Uint8Array> => bytes),
       decryptShardWithLinkTierHandle: vi.fn(async (_handle, bytes: Uint8Array): Promise<Uint8Array> => bytes),
@@ -186,7 +185,6 @@ describe('photo pipeline key-material routing', () => {
     const shard = new Uint8Array([1, 2, 3]);
     await decryptShardWithResolvedKey(pool, shard, { kind: 'epoch-handle', handleId }, 3);
     expect(pool.decryptShardWithEpochHandle).toHaveBeenCalledWith(handleId, shard);
-    expect(pool.decryptShard).not.toHaveBeenCalled();
   });
 
   it('routes link-tier handles to decryptShardWithLinkTierHandle', async () => {
@@ -195,18 +193,8 @@ describe('photo pipeline key-material routing', () => {
     const shard = new Uint8Array([4, 5, 6]);
     await decryptShardWithResolvedKey(pool, shard, { kind: 'link-tier-handle', handleId }, 3);
     expect(pool.decryptShardWithLinkTierHandle).toHaveBeenCalledWith(handleId, shard);
-    expect(pool.decryptShard).not.toHaveBeenCalled();
   });
 
-  it('routes raw bytes to the legacy decryptShard path', async () => {
-    const pool = makePool();
-    const bytes = new Uint8Array(32).fill(9);
-    const shard = new Uint8Array([7, 8, 9]);
-    await decryptShardWithResolvedKey(pool, shard, { kind: 'raw-bytes', bytes }, 2);
-    expect(pool.decryptShard).toHaveBeenCalledWith(shard, bytes, 2);
-    expect(pool.decryptShardWithEpochHandle).not.toHaveBeenCalled();
-    expect(pool.decryptShardWithLinkTierHandle).not.toHaveBeenCalled();
-  });
 });
 
 describe('SourceStrategy.getScopeKey', () => {

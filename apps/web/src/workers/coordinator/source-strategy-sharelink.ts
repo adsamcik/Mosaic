@@ -17,7 +17,7 @@ export interface ShareLinkSourceStrategyOptions {
    * lookup pattern in `shared-album-download.ts` and `SharedPhotoLightbox`.
    * Returning `undefined` is treated as access revoked / link downgraded.
    */
-  readonly getTierKey: (epochId: number) => LinkDecryptionKey | Uint8Array | undefined;
+  readonly getTierKey: (epochId: number) => LinkDecryptionKey | undefined;
 }
 
 /**
@@ -109,10 +109,13 @@ export function createShareLinkSourceStrategy(
           'Share-link tier-3 key unavailable for epoch',
         );
       }
-      if (typeof key === 'string') {
-        return { kind: 'link-tier-handle', handleId: key };
+      if (typeof key !== 'string') {
+        throw new DownloadError(
+          'IllegalState',
+          'Share-link tier key must be an opaque link-tier handle',
+        );
       }
-      return { kind: 'raw-bytes', bytes: key };
+      return { kind: 'link-tier-handle', handleId: key };
     },
     async decryptResolvedShard(
       keyMaterial: ResolvedKeyMaterial,

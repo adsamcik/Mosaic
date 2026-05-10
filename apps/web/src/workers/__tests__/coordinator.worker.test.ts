@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { WorkerCryptoError, WorkerCryptoErrorCode, type DownloadPhase, type StartJobInput } from '../types';
+import { WorkerCryptoError, WorkerCryptoErrorCode, type DownloadPhase, type LinkTierHandleId, type StartJobInput } from '../types';
 
 const rustMocks = vi.hoisted(() => ({
   ensureRustReady: vi.fn<() => Promise<void>>(),
@@ -26,7 +26,6 @@ const cryptoPoolMocks = vi.hoisted(() => {
   const pool = {
     size: 2,
     verifyShard: vi.fn(),
-    decryptShard: vi.fn(),
     decryptShardWithTierKey: vi.fn(),
     decryptShardWithEpochHandle: vi.fn(),
     decryptShardWithLinkTierHandle: vi.fn(),
@@ -441,14 +440,13 @@ afterEach(() => {
 describe('CoordinatorWorker', () => {
   it('subscribeToThumbnails emits each thumbnail from the in-memory manifest', async () => {
     vi.useRealTimers();
-    // Mock crypto pool so decryptShard returns the input bytes (identity).
+    // Mock crypto pool so handle decrypt returns the input bytes (identity).
     const decrypt = vi.fn(async (bytes: Uint8Array) => bytes);
     cbor.setCryptoPoolFactory(async () => ({
       size: 1,
-      decryptShard: decrypt,
       decryptShardWithTierKey: vi.fn(),
       decryptShardWithEpochHandle: vi.fn(),
-      decryptShardWithLinkTierHandle: vi.fn(),
+      decryptShardWithLinkTierHandle: vi.fn(async (_handle: LinkTierHandleId, bytes: Uint8Array) => decrypt(bytes)),
     } as unknown as Awaited<ReturnType<typeof cryptoPoolMocks.getCryptoPool>>));
     const fetched: string[] = [];
     const fakeSource: SourceStrategy = {
@@ -456,7 +454,7 @@ describe('CoordinatorWorker', () => {
       getScopeKey: (): string => 'auth:00000000000000000000000000000000',
       fetchShard: async (id: string): Promise<Uint8Array> => { fetched.push(id); return new Uint8Array([id.charCodeAt(0)]); },
       fetchShards: async (): Promise<Uint8Array[]> => [],
-      resolveKey: async () => ({ kind: 'raw-bytes' as const, bytes: new Uint8Array(32) }),
+      resolveKey: async () => ({ kind: 'link-tier-handle' as const, handleId: 'lnkt_thumb_test' as LinkTierHandleId }),
     };
     const worker = new CoordinatorWorker();
     await worker.initialize({ nowMs });
@@ -1037,12 +1035,12 @@ describe('CoordinatorWorker', () => {
   it('routes pipeline shard + key requests through the provided source strategy', async () => {
     interface FullDeps {
       readonly fetchShards: (ids: ReadonlyArray<string>, signal: AbortSignal) => Promise<Uint8Array[]>;
-      readonly getEpochSeed: (albumId: string, epochId: number) => Promise<{ kind: 'raw-bytes'; bytes: Uint8Array }>;
+      readonly getEpochSeed: (albumId: string, epochId: number) => Promise<{ kind: 'link-tier-handle'; handleId: LinkTierHandleId }>;
     }
     const fetchSpy = vi.fn(async (_ids: ReadonlyArray<string>, _signal: AbortSignal): Promise<Uint8Array[]> => [new Uint8Array([1, 2, 3])]);
     const resolveSpy = vi.fn(async (_albumId: string, _epochId: number) => ({
-      kind: 'raw-bytes' as const,
-      bytes: new Uint8Array(32).fill(9),
+      kind: 'link-tier-handle' as const,
+      handleId: 'lnkt_source_test' as LinkTierHandleId,
     }));
     const customSource: SourceStrategy = {
       kind: 'share-link',
@@ -1056,8 +1054,8 @@ describe('CoordinatorWorker', () => {
       const shards = await full.fetchShards(['shard-x'], new AbortController().signal);
       const key = await full.getEpochSeed(albumId, 7);
       expect(shards).toHaveLength(1);
-      expect(key.kind).toBe('raw-bytes');
-      expect(key.bytes).toHaveLength(32);
+      expect(key.kind).toBe('link-tier-handle');
+      expect(key.handleId).toBe('lnkt_source_test');
       return { kind: 'done', bytesWritten: 123 };
     });
     cbor.setExecutePhotoTask(pipelineMocks.executePhotoTask);
@@ -1107,7 +1105,7 @@ describe('CoordinatorWorker', () => {
       kind: 'share-link',
       fetchShard: vi.fn(async (): Promise<Uint8Array> => new Uint8Array()),
       fetchShards: vi.fn(async (): Promise<Uint8Array[]> => []),
-      resolveKey: vi.fn(async () => ({ kind: 'raw-bytes' as const, bytes: new Uint8Array(32) })),
+      resolveKey: vi.fn(async () => ({ kind: 'link-tier-handle' as const, handleId: 'lnkt_scope_test' as LinkTierHandleId })),
       getScopeKey: () => visitorScope,
     };
     const worker = new CoordinatorWorker();
@@ -1140,7 +1138,7 @@ describe('CoordinatorWorker', () => {
         kind: 'share-link',
         fetchShard: vi.fn(async (): Promise<Uint8Array> => new Uint8Array()),
         fetchShards: vi.fn(async (): Promise<Uint8Array[]> => []),
-        resolveKey: vi.fn(async () => ({ kind: 'raw-bytes' as const, bytes: new Uint8Array(32) })),
+        resolveKey: vi.fn(async () => ({ kind: 'link-tier-handle' as const, handleId: 'lnkt_rebind_test' as LinkTierHandleId })),
         getScopeKey: () => scopeKey,
       };
     }

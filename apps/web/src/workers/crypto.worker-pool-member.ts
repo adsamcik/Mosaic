@@ -2,12 +2,11 @@
 import * as Comlink from 'comlink';
 import { getCryptoClient } from '../lib/crypto-client';
 import { DownloadError } from './crypto-pool';
-import { rustDecryptShardWithSeed, rustVerifyShardIntegrity } from './rust-crypto-core';
+import { rustVerifyShardIntegrity } from './rust-crypto-core';
 import type { EpochHandleId, LinkDecryptionKey, LinkTierHandleId } from './types';
 
 interface CryptoPoolMemberApi {
   verifyShard(shardBytes: Uint8Array, expectedHash: Uint8Array): Promise<void>;
-  decryptShard(shardBytes: Uint8Array, rawKeyBytes: Uint8Array, tier: number): Promise<Uint8Array>;
   decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: LinkDecryptionKey): Promise<Uint8Array>;
   decryptShardWithEpochHandle(epochHandleId: EpochHandleId, envelopeBytes: Uint8Array): Promise<Uint8Array>;
   decryptShardWithLinkTierHandle(linkTierHandleId: LinkTierHandleId, envelopeBytes: Uint8Array): Promise<Uint8Array>;
@@ -22,28 +21,10 @@ const memberApi: CryptoPoolMemberApi = {
     }
   },
 
-  async decryptShard(shardBytes: Uint8Array, rawKeyBytes: Uint8Array, _tier: number): Promise<Uint8Array> {
-    try {
-      return await rustDecryptShardWithSeed(shardBytes, rawKeyBytes);
-    } catch (error) {
-      if (error instanceof DownloadError) {
-        throw error;
-      }
-      throw new DownloadError('Decrypt', 'Shard AEAD decrypt failed', { cause: error });
-    }
-  },
-
   async decryptShardWithTierKey(shardBytes: Uint8Array, tierKey: LinkDecryptionKey): Promise<Uint8Array> {
-    if (typeof tierKey === 'string') {
-      const crypto = await getCryptoClient();
-      try {
-        return await crypto.decryptShardWithLinkTierHandle(tierKey, shardBytes);
-      } catch (error) {
-        throw new DownloadError('Decrypt', 'Shard AEAD decrypt failed', { cause: error });
-      }
-    }
+    const crypto = await getCryptoClient();
     try {
-      return await rustDecryptShardWithSeed(shardBytes, tierKey);
+      return await crypto.decryptShardWithLinkTierHandle(tierKey, shardBytes);
     } catch (error) {
       throw new DownloadError('Decrypt', 'Shard AEAD decrypt failed', { cause: error });
     }
