@@ -10,6 +10,7 @@ use mosaic_uniffi::{
     ClientCoreUploadShardRef as UniUploadShardRef, DownloadInitInput, DownloadPlanEntryInput,
     DownloadPlanInput, DownloadPlanShardInput, MediaFormat as UniMediaFormat,
 };
+use mosaic_vectors::{default_corpus_dir, load_vector, vectors::ContentHashVector};
 use mosaic_wasm::{
     AccountUnlockRequest as WasmAccountUnlockRequest,
     ClientCoreUploadJobSnapshot as WasmUploadJobSnapshot,
@@ -604,7 +605,7 @@ fn protocol_blake2b_snapshot_checksum_32_matches_known_vector_across_wasm_and_un
 }
 
 #[test]
-fn plaintext_content_hash_matches_sha256_across_wasm_and_uniffi() {
+fn compute_plaintext_content_hash_matches_sha256_across_wasm_and_uniffi() {
     let input = b"mosaic plaintext content".to_vec();
     let expected = "caab5e9856837cefa6f597cd56ff0bba59c1bdcc659fe038fd324fe7fbc2dcee";
 
@@ -615,6 +616,35 @@ fn plaintext_content_hash_matches_sha256_across_wasm_and_uniffi() {
     assert_eq!(direct, expected);
     assert_eq!(wasm, expected);
     assert_eq!(uniffi, expected);
+}
+
+#[test]
+fn content_hash_dedup_fixture_hashes_source_file_bytes_across_wasm_and_uniffi() {
+    // CONTRACT: see docs/specs/SPEC-UploadContentHash.md. This fixture models
+    // the byte vector both web File.arrayBuffer() and Android source staging
+    // must feed to the Rust core before any EXIF strip, transcode, re-encode,
+    // or thumbnail transform.
+    let vector = content_hash_dedup_vector();
+    let direct = hex_lower(&Sha256::digest(&vector.source_file_bytes));
+    let wasm = mosaic_wasm::compute_plaintext_content_hash(vector.source_file_bytes.clone());
+    let uniffi = mosaic_uniffi::compute_plaintext_content_hash(vector.source_file_bytes.clone());
+
+    assert_eq!(
+        vector.source_file_bytes.len(),
+        64,
+        "fixture must remain a stable 64-byte source-photo byte vector"
+    );
+    assert_eq!(direct, vector.expected_plaintext_sha256_hex);
+    assert_eq!(wasm, vector.expected_plaintext_sha256_hex);
+    assert_eq!(uniffi, vector.expected_plaintext_sha256_hex);
+    assert_eq!(
+        mosaic_wasm::sha256_hex_of_bytes(vector.source_file_bytes.clone()),
+        vector.expected_plaintext_sha256_hex
+    );
+    assert_eq!(
+        mosaic_uniffi::sha256_hex_of_bytes(vector.source_file_bytes),
+        vector.expected_plaintext_sha256_hex
+    );
 }
 
 #[test]
@@ -1646,6 +1676,16 @@ fn hex_lower(bytes: &[u8]) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>()
+}
+
+fn content_hash_dedup_vector() -> ContentHashVector {
+    let mut path = default_corpus_dir();
+    path.push("content_hash_dedup.json");
+    let parsed = must(load_vector(&path), "load content_hash_dedup vector");
+    must(
+        ContentHashVector::from(&parsed),
+        "parse content_hash_dedup vector",
+    )
 }
 
 fn uuid_to_bytes(uuid: &str) -> Vec<u8> {

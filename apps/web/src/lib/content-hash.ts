@@ -30,6 +30,8 @@ export async function computeContentHash(bytes: Uint8Array): Promise<string> {
     return testOnlyHashHex(bytes);
   }
   try {
+    // CONTRACT: see docs/specs/SPEC-UploadContentHash.md. Callers must pass
+    // source-of-truth user file bytes, not transformed tier or thumbnail bytes.
     return computePlaintextContentHash(bytes);
   } catch (error) {
     if (import.meta.env.MODE === 'test') {

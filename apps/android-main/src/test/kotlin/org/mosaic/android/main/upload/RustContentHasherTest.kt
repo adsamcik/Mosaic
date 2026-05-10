@@ -1,5 +1,9 @@
 package org.mosaic.android.main.upload
 
+import java.io.File
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -14,5 +18,56 @@ class RustContentHasherTest {
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
       RustContentHasher.sha256Hex("abc".toByteArray(Charsets.UTF_8)),
     )
+  }
+
+  @Test
+  fun sha256HexMatchesContentHashDedupSourceFileFixture() {
+    val fixture = loadContentHashDedupFixture()
+    val webFileArrayBufferBytes = fixture.sourceFileBytes.copyOf()
+    val androidStagingInputBytes = fixture.sourceFileBytes.copyOf()
+
+    assertEquals(64, fixture.sourceFileBytes.size)
+    assertEquals(
+      fixture.plaintextSha256Hex,
+      RustContentHasher.sha256Hex(webFileArrayBufferBytes),
+    )
+    assertEquals(
+      fixture.plaintextSha256Hex,
+      RustContentHasher.sha256Hex(androidStagingInputBytes),
+    )
+  }
+
+  private data class ContentHashDedupFixture(
+    val sourceFileBytes: ByteArray,
+    val plaintextSha256Hex: String,
+  )
+
+  private fun loadContentHashDedupFixture(): ContentHashDedupFixture {
+    val fixtureFile = repoRoot().resolve("tests/vectors/content_hash_dedup.json")
+    val root = Json.parseToJsonElement(fixtureFile.readText()).jsonObject
+    val inputs = root.getValue("inputs").jsonObject
+    val expected = root.getValue("expected").jsonObject
+    return ContentHashDedupFixture(
+      sourceFileBytes = hexToBytes(inputs.getValue("sourceFileBytesHex").jsonPrimitive.content),
+      plaintextSha256Hex = expected.getValue("plaintextSha256Hex").jsonPrimitive.content,
+    )
+  }
+
+  private fun repoRoot(): File {
+    var current = File(System.getProperty("user.dir")).absoluteFile
+    while (true) {
+      if (current.resolve("tests/vectors/content_hash_dedup.json").isFile) {
+        return current
+      }
+      current = current.parentFile
+        ?: error("Could not find Mosaic repository root from ${System.getProperty("user.dir")}")
+    }
+  }
+
+  private fun hexToBytes(hex: String): ByteArray {
+    require(hex.length % 2 == 0) { "fixture hex must have even length" }
+    return ByteArray(hex.length / 2) { index ->
+      hex.substring(index * 2, index * 2 + 2).toInt(16).toByte()
+    }
   }
 }

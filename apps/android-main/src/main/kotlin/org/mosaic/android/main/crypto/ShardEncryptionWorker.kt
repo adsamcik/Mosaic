@@ -44,6 +44,11 @@ class ShardEncryptionWorker internal constructor(
       val store = envelopeStore
       val plaintextLength = store.stagingLength(stagingUri)
       val smallPlaintext = if (plaintextLength > STREAMING_THRESHOLD_BYTES) null else store.readStagingBytes(stagingUri)
+      // CONTRACT: see docs/specs/SPEC-UploadContentHash.md. The stream hashed here
+      // MUST contain the source-of-truth user file bytes (BEFORE any transformation).
+      // When MediaTierGenerator wires up, the stager will produce per-tier-encoded
+      // bytes; this worker MUST then accept an album-level content hash as a
+      // parameter instead of recomputing from the staging input.
       val plaintextSha256Hex = RustContentHasher.sha256Hex(smallPlaintext ?: store.readStagingBytes(stagingUri))
       if (!albumId.isNullOrBlank() && !photoId.isNullOrBlank()) {
         val duplicate = contentHashDedup.lookup(albumId, plaintextSha256Hex)

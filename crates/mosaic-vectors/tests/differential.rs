@@ -31,10 +31,11 @@ use mosaic_vectors::{
     ParsedVector, default_corpus_dir, load_all, load_vector,
     vectors::{
         AccountUnlockVector, AuthChallengeVector, AuthKeypairVector, ContentEncryptVector,
-        EpochDeriveVector, IdentityVector, LinkKeysVector, ManifestTranscriptVector,
-        SealedBundleVector, ShardEnvelopeVector, TierKeyWrapVector,
+        ContentHashVector, EpochDeriveVector, IdentityVector, LinkKeysVector,
+        ManifestTranscriptVector, SealedBundleVector, ShardEnvelopeVector, TierKeyWrapVector,
     },
 };
+use sha2::{Digest, Sha256};
 
 fn corpus_path(name: &str) -> PathBuf {
     let mut path = default_corpus_dir();
@@ -115,6 +116,24 @@ fn link_secret_smoke_returns_thirty_two_bytes() {
         secret.len(),
         32,
         "generate_link_secret must return 32 bytes"
+    );
+}
+
+#[test]
+fn content_hash_dedup_vector_matches_rust_sha256_source_bytes() {
+    let parsed = load("content_hash_dedup.json");
+    let vector = ContentHashVector::from(&parsed).expect("content_hash_dedup vector");
+    let digest = Sha256::digest(&vector.source_file_bytes);
+
+    assert_eq!(
+        vector.source_file_bytes.len(),
+        64,
+        "fixture must remain a stable 64-byte source-photo byte vector"
+    );
+    assert_eq!(
+        hex(&digest),
+        vector.expected_plaintext_sha256_hex,
+        "content-hash dedup must hash source-of-truth user file bytes"
     );
 }
 

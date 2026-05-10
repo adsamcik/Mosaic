@@ -658,6 +658,7 @@ dependencies = [
  "mosaic-domain",
  "mosaic-media",
  "mosaic-uniffi",
+ "mosaic-vectors",
  "mosaic-wasm",
  "sha2",
 ]

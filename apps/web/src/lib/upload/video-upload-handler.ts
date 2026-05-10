@@ -32,6 +32,10 @@ export async function processVideoUpload(
   ctx: UploadHandlerContext,
 ): Promise<void> {
   log.info('processVideoUpload started', taskIdentity(task));
+  // CONTRACT: see docs/specs/SPEC-UploadContentHash.md. The bytes hashed here
+  // MUST be the source-of-truth user file bytes (BEFORE any transformation).
+  // Adding any per-tier transform between the source bytes and this call is
+  // a v1 protocol break.
   const originalBytes = new Uint8Array(await task.file.arrayBuffer());
   const contentHash = await computeContentHash(originalBytes);
   task.contentHash = contentHash;

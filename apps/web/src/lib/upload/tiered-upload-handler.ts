@@ -76,6 +76,10 @@ export async function processTieredUpload(
 ): Promise<void> {
   log.info('processTieredUpload started', taskIdentity(task));
   try {
+    // CONTRACT: see docs/specs/SPEC-UploadContentHash.md. The bytes hashed here
+    // MUST be the source-of-truth user file bytes (BEFORE any transformation).
+    // Adding any per-tier transform between the source bytes and this call is
+    // a v1 protocol break.
     const originalBytes = new Uint8Array(await task.file.arrayBuffer());
     const contentHash = await computeContentHash(originalBytes);
     task.contentHash = contentHash;

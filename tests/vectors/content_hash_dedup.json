@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "rust_canonical": true,
+  "operation": "content-hash.dedup.v1",
+  "protocolVersion": "mosaic-v1",
+  "description": "Content-hash dedup uses SHA-256 over source-of-truth user file bytes before any platform transform.",
+  "algorithms": {
+    "contentHash": "SHA-256"
+  },
+  "domainLabels": [],
+  "inputs": {
+    "sourceFileBytesHex": "ffd8ffe1003645786966000049492a00080000000100120103000100000001000000deadbeef0102030405060708090a0b0c0d0e0f101112131415161718ffd9",
+    "sourceDescription": "64-byte JPEG-like byte sequence with SOI, APP1/Exif marker, TIFF header, pseudo-random payload, and EOI."
+  },
+  "expected": {
+    "plaintextSha256Hex": "8be347a00517761ba396a7da425acd6c85df5b4cdff8b59c5fc67445f2a69fe3",
+    "hexCasing": "lowercase",
+    "dedupKeyShape": "(albumId, contentHashHex)"
+  },
+  "negativeCases": [],
+  "serverBoundOutputs": [],
+  "forbiddenServerOutputs": [
+    {
+      "name": "transformedTierBytesHash",
+      "reason": "The dedup hash must not be recomputed from EXIF-stripped, transcoded, tier-reencoded, thumbnail, or other platform-transformed bytes.",
+      "errorCode": "CONTENT_HASH_SOURCE_BYTES_REQUIRED"
+    }
+  ]
+}

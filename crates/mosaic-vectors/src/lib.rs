@@ -259,6 +259,42 @@ pub mod vectors {
         })
     }
 
+    /// `content-hash.dedup.v1` parsed inputs/outputs.
+    pub struct ContentHashVector {
+        pub source_file_bytes: alloc::vec::Vec<u8>,
+        pub expected_plaintext_sha256_hex: alloc::string::String,
+    }
+
+    #[derive(Deserialize)]
+    struct ContentHashInputs {
+        #[serde(rename = "sourceFileBytesHex")]
+        source_file_bytes_hex: alloc::string::String,
+    }
+
+    #[derive(Deserialize)]
+    struct ContentHashExpected {
+        #[serde(rename = "plaintextSha256Hex")]
+        plaintext_sha256_hex: alloc::string::String,
+    }
+
+    impl ContentHashVector {
+        /// # Errors
+        /// Returns [`VectorLoadError`] on missing fields or invalid hex.
+        pub fn from(parsed: &ParsedVector) -> Result<Self, VectorLoadError> {
+            let inputs: ContentHashInputs = extract(&parsed.document, "inputs", &parsed.path)?;
+            let expected: ContentHashExpected =
+                extract(&parsed.document, "expected", &parsed.path)?;
+            Ok(Self {
+                source_file_bytes: decode_hex(
+                    &inputs.source_file_bytes_hex,
+                    "sourceFileBytesHex",
+                    &parsed.path,
+                )?,
+                expected_plaintext_sha256_hex: expected.plaintext_sha256_hex,
+            })
+        }
+    }
+
     /// `link.derive-keys.v1` parsed inputs/outputs.
     pub struct LinkKeysVector {
         pub link_secret: alloc::vec::Vec<u8>,
