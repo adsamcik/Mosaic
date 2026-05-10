@@ -3,12 +3,15 @@ import { TUS_ENDPOINT } from '../api';
 import { createLogger } from '../logger';
 
 const log = createLogger('TusUpload');
+const SHA256_HEX_BYTES = 32;
+const LOWERCASE_SHA256_HEX = /^[0-9a-f]{64}$/;
+const SHA256_HEX = /^[0-9a-fA-F]{64}$/;
 
 /**
  * Upload data via Tus resumable protocol
  * @param albumId - Album to upload to
  * @param data - Encrypted shard data
- * @param sha256 - SHA256 hash of the encrypted data for verification
+ * @param sha256 - SHA256 hash of the encrypted data for verification (base64url or hex)
  * @param shardIndex - Index of this shard in the file
  * @returns Shard ID from server
  */
@@ -33,7 +36,7 @@ export async function tusUpload(
       metadata: {
         albumId,
         shardIndex: String(shardIndex),
-        sha256,
+        'content-sha256': sha256ToTusMetadataHex(sha256),
       },
       // Send credentials (cookies) with requests for authentication
       // In tus-js-client v2+, withCredentials is set via onBeforeRequest
@@ -74,4 +77,42 @@ export async function tusUpload(
     log.info(`TUS upload.start() called`);
     upload.start();
   });
+}
+
+function sha256ToTusMetadataHex(sha256: string): string {
+  const trimmed = sha256.trim();
+  if (LOWERCASE_SHA256_HEX.test(trimmed)) {
+    return trimmed;
+  }
+  if (SHA256_HEX.test(trimmed)) {
+    return trimmed.toLowerCase();
+  }
+
+  const bytes = base64UrlToBytes(trimmed);
+  if (bytes.byteLength !== SHA256_HEX_BYTES) {
+    throw new Error('Invalid SHA-256 hash for Tus metadata');
+  }
+  return bytesToHex(bytes);
+}
+
+function base64UrlToBytes(value: string): Uint8Array {
+  let normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const remainder = normalized.length % 4;
+  if (remainder === 1) {
+    throw new Error('Invalid SHA-256 hash for Tus metadata');
+  }
+  if (remainder !== 0) {
+    normalized = normalized.padEnd(normalized.length + 4 - remainder, '=');
+  }
+
+  const binary = globalThis.atob(normalized);
+  const output = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    output[i] = binary.charCodeAt(i);
+  }
+  return output;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }

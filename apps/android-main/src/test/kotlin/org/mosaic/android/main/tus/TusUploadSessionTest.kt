@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.RandomAccessFile
 import java.security.MessageDigest
+import java.util.Base64
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -39,18 +40,21 @@ class TusUploadSessionTest {
     server.enqueue(MockResponse().setResponseCode(204).setHeader("Upload-Offset", "6"))
     server.start()
     val staged = stageBytes("abcdef")
+    val expectedSha256 = sha256Hex("abcdef".toByteArray(Charsets.UTF_8))
     val client = TusClientFactory.create(server.url("/files"), OkHttpClient())
     val session = TusUploadSession(client, stagingManager, chunkSizeBytes = 16)
 
-    val manifest = session.upload(staged, mapOf("filename" to "shard.bin"))
+    val manifest = session.upload(staged, mapOf("filename" to "shard.bin", "content-sha256" to expectedSha256))
 
     assertEquals(server.url("/uploads/shard-1").toString(), manifest.uploadUrl)
     assertEquals(6L, manifest.uploadedBytes)
-    assertEquals(64, manifest.sha256.length)
+    assertEquals(expectedSha256, manifest.sha256)
     val post = server.takeRequest()
     assertEquals("POST", post.method)
     assertEquals("6", post.getHeader("Upload-Length"))
-    assertTrue(post.getHeader("Upload-Metadata")!!.startsWith("filename "))
+    val metadata = parseTusMetadata(post.getHeader("Upload-Metadata")!!)
+    assertEquals("shard.bin", metadata["filename"])
+    assertEquals(expectedSha256, metadata["content-sha256"])
     val patch = server.takeRequest()
     assertEquals("PATCH", patch.method)
     assertEquals("0", patch.getHeader("Upload-Offset"))
@@ -217,5 +221,13 @@ class TusUploadSessionTest {
   private fun usedHeapBytes(): Long {
     val runtime = Runtime.getRuntime()
     return runtime.totalMemory() - runtime.freeMemory()
+  }
+
+  private fun sha256Hex(bytes: ByteArray): String =
+    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+  private fun parseTusMetadata(header: String): Map<String, String> = header.split(",").associate { item ->
+    val parts = item.split(" ", limit = 2)
+    parts[0] to String(Base64.getDecoder().decode(parts[1]), Charsets.UTF_8)
   }
 }

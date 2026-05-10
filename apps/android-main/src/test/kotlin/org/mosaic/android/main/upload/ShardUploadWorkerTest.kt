@@ -10,6 +10,7 @@ import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import java.io.File
 import java.security.MessageDigest
+import java.util.Base64
 import kotlinx.serialization.SerializationException
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -67,9 +68,11 @@ class ShardUploadWorkerTest {
     val post = server.takeRequest()
     assertEquals("POST", post.method)
     val metadata = requireNotNull(post.getHeader("Upload-Metadata"))
-    assertTrue(metadata.contains("shardId "))
-    assertTrue(metadata.contains("expectedSha256 "))
-    assertTrue(metadata.contains("metadataSignature "))
+    val decodedMetadata = parseTusMetadata(metadata)
+    assertEquals("shard-1", decodedMetadata["shardId"])
+    assertEquals(sha256, decodedMetadata["expectedSha256"])
+    assertEquals(sha256, decodedMetadata["content-sha256"])
+    assertEquals("signed-metadata", decodedMetadata["metadataSignature"])
     val patch = server.takeRequest()
     assertEquals("PATCH", patch.method)
     assertEquals("encrypted-body", patch.body.readUtf8())
@@ -317,6 +320,11 @@ class ShardUploadWorkerTest {
 
   private fun sha256Hex(bytes: ByteArray): String =
     MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+  private fun parseTusMetadata(header: String): Map<String, String> = header.split(",").associate { item ->
+    val parts = item.split(" ", limit = 2)
+    parts[0] to String(Base64.getDecoder().decode(parts[1]), Charsets.UTF_8)
+  }
 
   private class RealTestTusSessionFactory(
     private val stagingManager: AppPrivateStagingManager,

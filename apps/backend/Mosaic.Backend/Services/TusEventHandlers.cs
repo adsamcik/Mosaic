@@ -1,5 +1,5 @@
-using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Mosaic.Backend.Data;
@@ -16,7 +16,9 @@ public static class TusEventHandlers
     private const string ReservedBytesItemKey = "QuotaReservedBytes";
     private const string ReservationUserIdItemKey = "TusReservationUserId";
     private const string ReservationAlbumIdItemKey = "TusReservationAlbumId";
+    private const string ContentSha256MetadataKey = "content-sha256";
     private static readonly TimeSpan ReservationLifetime = TimeSpan.FromHours(24);
+    private static readonly Regex ContentSha256Regex = new("^[0-9a-f]{64}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static async Task OnBeforeCreateAsync(
         BeforeCreateContext context,
@@ -34,6 +36,12 @@ public static class TusEventHandlers
         if (string.IsNullOrEmpty(authSub))
         {
             context.FailRequest("Unauthorized");
+            return;
+        }
+
+        if (!TryReadContentSha256Metadata(context.Metadata, out _, out var hashError))
+        {
+            context.FailRequest(hashError);
             return;
         }
 
@@ -213,17 +221,11 @@ public static class TusEventHandlers
             throw new InvalidOperationException($"Upload reservation missing for tus file {fileId}.");
         }
 
-        var (fileSize, sha256Hex, metadata) = await ReadUploadAsync(context.Store, fileId, context.CancellationToken);
-
-        if (metadata != null && metadata.TryGetValue("sha256", out var hashMetadata))
+        var (fileSize, metadata) = await ReadUploadAsync(context.Store, fileId, context.CancellationToken);
+        if (!TryReadContentSha256Metadata(metadata, out var sha256Hex, out var hashError))
         {
-            var clientHash = hashMetadata.GetString(Encoding.UTF8);
-            if (!Sha256Matches(sha256Hex, clientHash))
-            {
-                await CleanupFailedUploadAsync(context.Store, fileId, reservation, services, context.CancellationToken);
-                throw new InvalidOperationException(
-                    $"Integrity check failed: server SHA256 {sha256Hex} does not match client SHA256 {clientHash}");
-            }
+            await CleanupFailedUploadAsync(context.Store, fileId, reservation, services, context.CancellationToken);
+            throw new InvalidOperationException(hashError);
         }
 
         var accessError = reservation.AlbumId.HasValue
@@ -327,13 +329,12 @@ public static class TusEventHandlers
         return deletedCount;
     }
 
-    private static async Task<(long FileSize, string? Sha256Hex, Dictionary<string, tusdotnet.Models.Metadata>? Metadata)> ReadUploadAsync(
+    private static async Task<(long FileSize, Dictionary<string, tusdotnet.Models.Metadata>? Metadata)> ReadUploadAsync(
         ITusStore store,
         string fileId,
         CancellationToken cancellationToken)
     {
         long fileSize = 0;
-        string? sha256Hex = null;
         Dictionary<string, tusdotnet.Models.Metadata>? metadata = null;
 
         if (store is ITusReadableStore readable)
@@ -343,69 +344,34 @@ public static class TusEventHandlers
             {
                 using var stream = await file.GetContentAsync(cancellationToken);
                 fileSize = stream.Length;
-                stream.Position = 0;
-                sha256Hex = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken)).ToLowerInvariant();
                 metadata = await file.GetMetadataAsync(cancellationToken);
             }
         }
 
-        return (fileSize, sha256Hex, metadata);
+        return (fileSize, metadata);
     }
 
-    private static bool Sha256Matches(string? serverSha256Hex, string clientHash)
+    private static bool TryReadContentSha256Metadata(
+        Dictionary<string, tusdotnet.Models.Metadata>? metadata,
+        out string contentSha256,
+        out string error)
     {
-        var clientSha256Hex = NormalizeSha256Hash(clientHash);
-        return serverSha256Hex != null
-            && clientSha256Hex != null
-            && string.Equals(serverSha256Hex, clientSha256Hex, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string? NormalizeSha256Hash(string hash)
-    {
-        var trimmed = hash.Trim();
-        if (trimmed.Length == 64 && IsHex(trimmed))
+        contentSha256 = string.Empty;
+        if (metadata == null || !metadata.TryGetValue(ContentSha256MetadataKey, out var hashMetadata))
         {
-            return trimmed.ToLowerInvariant();
+            error = $"Missing Tus metadata '{ContentSha256MetadataKey}'";
+            return false;
         }
 
-        var normalizedBase64 = trimmed.Replace('-', '+').Replace('_', '/');
-        var remainder = normalizedBase64.Length % 4;
-        if (remainder == 1)
+        var candidate = hashMetadata.GetString(Encoding.UTF8);
+        if (!ContentSha256Regex.IsMatch(candidate))
         {
-            return null;
+            error = $"Tus metadata '{ContentSha256MetadataKey}' must be a lowercase 64-character hex SHA-256";
+            return false;
         }
 
-        if (remainder != 0)
-        {
-            normalizedBase64 = normalizedBase64.PadRight(normalizedBase64.Length + 4 - remainder, '=');
-        }
-
-        try
-        {
-            var bytes = Convert.FromBase64String(normalizedBase64);
-            return bytes.Length == SHA256.HashSizeInBytes
-                ? Convert.ToHexString(bytes).ToLowerInvariant()
-                : null;
-        }
-        catch (FormatException)
-        {
-            return null;
-        }
-    }
-
-    private static bool IsHex(string value)
-    {
-        foreach (var c in value)
-        {
-            var isHex = c is >= '0' and <= '9'
-                or >= 'a' and <= 'f'
-                or >= 'A' and <= 'F';
-            if (!isHex)
-            {
-                return false;
-            }
-        }
-
+        contentSha256 = candidate;
+        error = string.Empty;
         return true;
     }
 

@@ -10,6 +10,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.net.URL
 import java.security.MessageDigest
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
@@ -105,6 +106,7 @@ class ShardUploadWorker internal constructor(
   ): Map<String, String> = buildMap {
     put("shardId", shardId)
     put("expectedSha256", expectedSha256)
+    put("content-sha256", expectedSha256.lowercase(Locale.ROOT))
     if (!metadataSignature.isNullOrBlank()) {
       put("metadataSignature", metadataSignature)
     }

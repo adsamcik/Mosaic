@@ -19,6 +19,7 @@ namespace Mosaic.Backend.Tests.Services;
 
 public sealed class TusUploadFlowTests : IDisposable
 {
+    private const string ValidContentSha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     private readonly SqliteConnection _connection;
     private readonly MosaicDbContext _db;
     private readonly ServiceProvider _provider;
@@ -73,7 +74,7 @@ public sealed class TusUploadFlowTests : IDisposable
         Assert.Equal(1024, quota!.UsedStorageBytes);
 
         var fileId = Guid.NewGuid().ToString();
-        var metadata = CreateMetadata(album.Id);
+        var metadata = CreateMetadata(album.Id, ValidContentSha256);
         var createComplete = CreateContext<CreateCompleteContext>(httpContext, ctx =>
         {
             ctx.FileId = fileId;
@@ -103,13 +104,12 @@ public sealed class TusUploadFlowTests : IDisposable
     }
 
     [Fact]
-    public async Task OnFileComplete_AcceptsBase64UrlSha256MetadataFromWebClient()
+    public async Task OnFileComplete_AcceptsContentSha256MetadataFromWebClient()
     {
         var builder = new TestDataBuilder(_db);
         var user = await builder.CreateUserAsync("web-hash-user");
         var album = await builder.CreateAlbumAsync(user);
         var payload = Encoding.UTF8.GetBytes("encrypted shard envelope bytes");
-        var clientSha256 = Base64UrlEncode(SHA256.HashData(payload));
         var serverSha256Hex = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
 
         var fileId = Guid.NewGuid().ToString();
@@ -124,7 +124,7 @@ public sealed class TusUploadFlowTests : IDisposable
         });
         await _db.SaveChangesAsync();
 
-        var metadata = CreateMetadata(album.Id, clientSha256);
+        var metadata = CreateMetadata(album.Id, serverSha256Hex);
         var store = new FakeTusStore();
         store.AddFile(fileId, payload, metadata);
         var fileComplete = CreateContext<FileCompleteContext>(TestHttpContext.Create("web-hash-user"), ctx =>
@@ -142,13 +142,53 @@ public sealed class TusUploadFlowTests : IDisposable
     }
 
     [Fact]
+    public async Task OnBeforeCreate_FailsRequest_WhenContentSha256MetadataMissing()
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync("missing-hash-user");
+        var album = await builder.CreateAlbumAsync(user);
+        var httpContext = TestHttpContext.Create(user.AuthSub);
+        var beforeCreate = CreateContext<BeforeCreateContext>(httpContext, ctx =>
+        {
+            ctx.UploadLength = 1024;
+            ctx.Metadata = CreateMetadata(album.Id, contentSha256: null);
+        });
+
+        await TusEventHandlers.OnBeforeCreateAsync(beforeCreate, _provider);
+
+        Assert.True(beforeCreate.HasFailed);
+        Assert.Equal("Missing Tus metadata 'content-sha256'", beforeCreate.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData("ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789")]
+    [InlineData("0123456789abcdef")]
+    [InlineData("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg")]
+    public async Task OnBeforeCreate_FailsRequest_WhenContentSha256MetadataMalformed(string malformedSha256)
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync($"bad-hash-user-{Guid.NewGuid()}");
+        var album = await builder.CreateAlbumAsync(user);
+        var httpContext = TestHttpContext.Create(user.AuthSub);
+        var beforeCreate = CreateContext<BeforeCreateContext>(httpContext, ctx =>
+        {
+            ctx.UploadLength = 1024;
+            ctx.Metadata = CreateMetadata(album.Id, malformedSha256);
+        });
+
+        await TusEventHandlers.OnBeforeCreateAsync(beforeCreate, _provider);
+
+        Assert.True(beforeCreate.HasFailed);
+        Assert.Equal("Tus metadata 'content-sha256' must be a lowercase 64-character hex SHA-256", beforeCreate.ErrorMessage);
+    }
+
+    [Fact]
     public async Task OnFileComplete_PersistsAndroidOpaqueShard_WhenMimeMetadataDoesNotMatchCiphertext()
     {
         var builder = new TestDataBuilder(_db);
         var user = await builder.CreateUserAsync("android-opaque-user");
         var album = await builder.CreateAlbumAsync(user);
         var payload = Encoding.UTF8.GetBytes("not-a-jpeg encrypted Android shard envelope; exif=private-gps");
-        var clientSha256 = Base64UrlEncode(SHA256.HashData(payload));
         var serverSha256Hex = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
         var plaintextFilename = "android-cleartext-private-location.jpg";
 
@@ -166,7 +206,7 @@ public sealed class TusUploadFlowTests : IDisposable
 
         var metadata = CreateMetadata(
             album.Id,
-            clientSha256,
+            serverSha256Hex,
             new Dictionary<string, string>
             {
                 ["contentType"] = "image/jpeg",
@@ -296,7 +336,7 @@ public sealed class TusUploadFlowTests : IDisposable
         await _db.SaveChangesAsync();
 
         var store = new FakeTusStore();
-        store.AddFile(reservation.FileId, new byte[1024], CreateMetadata(album.Id));
+        store.AddFile(reservation.FileId, new byte[1024], CreateMetadata(album.Id, ValidContentSha256));
 
         var fileComplete = CreateContext<FileCompleteContext>(TestHttpContext.Create("revoked-user"), ctx =>
         {
@@ -319,7 +359,7 @@ public sealed class TusUploadFlowTests : IDisposable
         var ctx = new BeforeCreateContext
         {
             UploadLength = uploadLength,
-            Metadata = CreateMetadata(albumId)
+            Metadata = CreateMetadata(albumId, ValidContentSha256)
         };
 
         SetHttpContext(ctx, httpContext);
@@ -328,13 +368,13 @@ public sealed class TusUploadFlowTests : IDisposable
 
     private static Dictionary<string, tusdotnet.Models.Metadata> CreateMetadata(
         Guid albumId,
-        string? sha256 = null,
+        string? contentSha256 = ValidContentSha256,
         IReadOnlyDictionary<string, string>? extraMetadata = null)
     {
         var header = $"albumId {Convert.ToBase64String(Encoding.UTF8.GetBytes(albumId.ToString()))}";
-        if (!string.IsNullOrWhiteSpace(sha256))
+        if (contentSha256 != null)
         {
-            header += $",sha256 {Convert.ToBase64String(Encoding.UTF8.GetBytes(sha256))}";
+            header += $",content-sha256 {Convert.ToBase64String(Encoding.UTF8.GetBytes(contentSha256))}";
         }
         if (extraMetadata != null)
         {
@@ -346,9 +386,6 @@ public sealed class TusUploadFlowTests : IDisposable
 
         return tusdotnet.Models.Metadata.Parse(header);
     }
-
-    private static string Base64UrlEncode(byte[] bytes)
-        => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     private static TContext CreateContext<TContext>(HttpContext httpContext, Action<TContext> configure)
         where TContext : EventContext<TContext>, new()

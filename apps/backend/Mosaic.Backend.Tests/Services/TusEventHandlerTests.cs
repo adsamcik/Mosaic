@@ -20,6 +20,7 @@ namespace Mosaic.Backend.Tests.Services;
 /// </summary>
 public class TusEventHandlerTests : IDisposable
 {
+    private const string ValidContentSha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     private readonly SqliteConnection _connection;
     private readonly MosaicDbContext _db;
     private readonly IServiceProvider _provider;
@@ -65,7 +66,7 @@ public class TusEventHandlerTests : IDisposable
         Dictionary<string, tusdotnet.Models.Metadata> metadata;
         if (albumId.HasValue)
         {
-            var hdr = $"albumId {Convert.ToBase64String(Encoding.UTF8.GetBytes(albumId.Value.ToString()))}";
+            var hdr = $"albumId {Convert.ToBase64String(Encoding.UTF8.GetBytes(albumId.Value.ToString()))},content-sha256 {Convert.ToBase64String(Encoding.UTF8.GetBytes(ValidContentSha256))}";
             metadata = tusdotnet.Models.Metadata.Parse(hdr);
         }
         else
