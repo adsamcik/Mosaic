@@ -110,10 +110,12 @@ class ShardEncryptionWorkerTest {
     val result = worker.doWork()
 
     assertTrue(result is ListenableWorker.Result.Success)
+    val output = (result as ListenableWorker.Result.Success).outputData
     assertEquals(0, crypto.smallCalls)
     assertEquals(1, crypto.streamingCalls)
     assertEquals(plaintext.size.toLong(), crypto.lastStreamingLength)
     assertArrayEquals(plaintext, crypto.lastStreamingPlaintext)
+    assertEquals(sha256Hex(plaintext), output.getString(ShardEncryptionWorker.KEY_CONTENT_HASH_HEX))
   }
 
   @Test

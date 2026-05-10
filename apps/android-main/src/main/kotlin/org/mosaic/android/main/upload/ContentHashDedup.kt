@@ -1,6 +1,5 @@
 package org.mosaic.android.main.upload
 
-import java.security.MessageDigest
 import org.mosaic.android.main.db.AlbumContentHashDao
 import org.mosaic.android.main.db.AlbumContentHashRecord
 
@@ -41,6 +40,3 @@ object NoOpContentHashDedup : ContentHashDedup {
   override fun record(albumId: String, contentHash: String, photoId: String) = Unit
   override fun clear(albumId: String): Int = 0
 }
-
-fun computePlaintextContentHash(bytes: ByteArray): String =
-  MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { byte -> "%02x".format(byte) }

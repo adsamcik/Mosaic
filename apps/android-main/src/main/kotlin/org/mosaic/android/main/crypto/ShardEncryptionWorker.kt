@@ -8,6 +8,7 @@ import org.mosaic.android.main.db.UploadQueueDatabase
 import org.mosaic.android.main.upload.ContentHashDedup
 import org.mosaic.android.main.upload.NoOpContentHashDedup
 import org.mosaic.android.main.upload.RoomContentHashDedup
+import org.mosaic.android.main.upload.RustContentHasher
 
 class ShardEncryptionWorker internal constructor(
   appContext: Context,
@@ -43,11 +44,7 @@ class ShardEncryptionWorker internal constructor(
       val store = envelopeStore
       val plaintextLength = store.stagingLength(stagingUri)
       val smallPlaintext = if (plaintextLength > STREAMING_THRESHOLD_BYTES) null else store.readStagingBytes(stagingUri)
-      val plaintextSha256Hex = if (smallPlaintext == null) {
-        ShardEnvelopeStore.sha256Hex(store.openStagingInputStream(stagingUri))
-      } else {
-        ShardEnvelopeStore.sha256Hex(smallPlaintext)
-      }
+      val plaintextSha256Hex = RustContentHasher.sha256Hex(smallPlaintext ?: store.readStagingBytes(stagingUri))
       if (!albumId.isNullOrBlank() && !photoId.isNullOrBlank()) {
         val duplicate = contentHashDedup.lookup(albumId, plaintextSha256Hex)
         if (duplicate != null) {
