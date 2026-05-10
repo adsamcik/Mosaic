@@ -883,6 +883,62 @@ fn wasm_sealed_bundle_opens_via_uniffi_recipient_seed_path() {
 
 #[cfg(feature = "cross-client-vectors")]
 #[test]
+fn uniffi_sealed_bundle_opens_via_wasm() {
+    let wrapped_account_key = wrapped_account_key();
+    let wasm_account = unlock_wasm_account(wrapped_account_key.clone());
+    let uniffi_account = unlock_uniffi_account(wrapped_account_key);
+
+    let uniffi_identity = mosaic_uniffi::create_identity_handle(uniffi_account);
+    assert_ok(uniffi_identity.code, "uniffi create bundle sharer identity");
+    let wasm_recipient = mosaic_wasm::create_identity_handle(wasm_account);
+    assert_ok(wasm_recipient.code, "wasm create bundle recipient identity");
+    let uniffi_epoch = mosaic_uniffi::create_epoch_key_handle(uniffi_account, 93);
+    assert_ok(uniffi_epoch.code, "uniffi create bundle epoch");
+
+    let sealed = mosaic_uniffi::seal_bundle_with_epoch_handle(
+        uniffi_identity.handle,
+        uniffi_epoch.handle,
+        wasm_recipient.signing_pubkey.clone(),
+        ALBUM_ID.to_owned(),
+    );
+    assert_ok(sealed.code, "uniffi seal epoch bundle");
+    assert_eq!(sealed.sharer_pubkey, uniffi_identity.signing_pubkey);
+
+    let wasm_opened = mosaic_wasm::verify_and_import_epoch_bundle(
+        wasm_recipient.handle,
+        sealed.sealed,
+        sealed.signature,
+        sealed.sharer_pubkey,
+        ALBUM_ID.to_owned(),
+        93,
+        false,
+    );
+    assert_ok(wasm_opened.code, "wasm open uniffi sealed bundle");
+    assert_eq!(wasm_opened.epoch_id, 93);
+    assert_eq!(wasm_opened.sign_public_key, uniffi_epoch.sign_public_key);
+
+    let plaintext = b"uniffi sealed bundle recovered by wasm decrypts this shard".to_vec();
+    let uniffi_encrypted = mosaic_uniffi::encrypt_shard_with_epoch_handle(
+        uniffi_epoch.handle,
+        plaintext.clone(),
+        9,
+        ShardTier::Original.to_byte(),
+    );
+    assert_ok(uniffi_encrypted.code, "uniffi encrypt with sealed epoch");
+    let wasm_decrypted = mosaic_wasm::decrypt_shard_with_epoch_handle(
+        wasm_opened.handle,
+        uniffi_encrypted.envelope_bytes,
+    );
+    assert_ok(wasm_decrypted.code, "wasm decrypt with opened bundle epoch");
+    assert_eq!(wasm_decrypted.plaintext, plaintext);
+
+    close_epoch_handles(&[uniffi_epoch.handle, wasm_opened.handle]);
+    close_identity_handles(&[uniffi_identity.handle, wasm_recipient.handle]);
+    close_account_handles(&[wasm_account, uniffi_account]);
+}
+
+#[cfg(feature = "cross-client-vectors")]
+#[test]
 fn wasm_streaming_encrypt_uniffi_streaming_decrypt_round_trip() {
     streaming_round_trip_case("one final frame", patterned_plaintext(777), &[777]);
     streaming_round_trip_case(

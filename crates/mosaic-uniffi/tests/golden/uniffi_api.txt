@@ -198,6 +198,12 @@ record DecryptedShardResult
   code: u16
   plaintext: Vec<u8>
 end
+record SealedBundleResult
+  code: u16
+  sealed: Vec<u8>
+  signature: Vec<u8>
+  sharer_pubkey: Vec<u8>
+end
 record CryptoDomainGoldenVectorSnapshot
   code: u16
   envelope_header: Vec<u8>
@@ -531,6 +537,7 @@ record ContentDecryptFfiResult
   plaintext: Vec<u8>
 end
 export pub fn wrap_tier_key_for_link_handle( handle_id: u64, tier_key_handle: u64, tier: u8, ) -> WrappedTierKeyFfiResult
+export pub fn seal_bundle_with_epoch_handle( identity_handle: u64, epoch_handle: u64, recipient_pubkey: Vec<u8>, album_id: String, ) -> SealedBundleResult
 record DownloadPlanShardInput
   shard_id: Vec<u8>
   epoch_id: u32

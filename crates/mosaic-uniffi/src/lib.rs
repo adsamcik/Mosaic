@@ -658,6 +658,29 @@ pub struct DecryptedShardResult {
     pub plaintext: Vec<u8>,
 }
 
+/// UniFFI sealed bundle result.
+///
+/// The sealed payload and signature are public ciphertext/authentication bytes;
+/// epoch seed and identity seed material remain inside Rust-owned handles.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SealedBundleResult {
+    pub code: u16,
+    pub sealed: Vec<u8>,
+    pub signature: Vec<u8>,
+    pub sharer_pubkey: Vec<u8>,
+}
+
+impl fmt::Debug for SealedBundleResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SealedBundleResult")
+            .field("code", &self.code)
+            .field("sealed_len", &self.sealed.len())
+            .field("signature_len", &self.signature.len())
+            .field("sharer_pubkey_len", &self.sharer_pubkey.len())
+            .finish()
+    }
+}
+
 /// UniFFI record for public crypto/domain golden-vector snapshots.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct CryptoDomainGoldenVectorSnapshot {
@@ -2525,6 +2548,17 @@ fn decrypted_shard_result_from_client(
     DecryptedShardResult {
         code: result.code.as_u16(),
         plaintext: std::mem::take(&mut result.plaintext),
+    }
+}
+
+fn sealed_bundle_result_from_client(
+    result: mosaic_client::SealedBundleResult,
+) -> SealedBundleResult {
+    SealedBundleResult {
+        code: result.code.as_u16(),
+        sealed: result.sealed,
+        signature: result.signature,
+        sharer_pubkey: result.sharer_pubkey,
     }
 }
 
@@ -4494,6 +4528,27 @@ pub fn verify_and_open_bundle_with_recipient_seed(
         }
         Err(error) => empty_result(map_crypto_error_uniffi(error)),
     }
+}
+
+/// Atomically seals an epoch key bundle for `recipient_pubkey` using Rust-owned
+/// identity and epoch handles.
+///
+/// Raw epoch/identity seed material never crosses FFI; callers receive only the
+/// sealed ciphertext, detached signature, and sharer public key.
+#[uniffi::export]
+#[must_use]
+pub fn seal_bundle_with_epoch_handle(
+    identity_handle: u64,
+    epoch_handle: u64,
+    recipient_pubkey: Vec<u8>,
+    album_id: String,
+) -> SealedBundleResult {
+    sealed_bundle_result_from_client(mosaic_client::seal_bundle_with_epoch_handle(
+        identity_handle,
+        epoch_handle,
+        &recipient_pubkey,
+        album_id,
+    ))
 }
 
 /// Decrypts album content with a caller-supplied raw 32-byte content key
