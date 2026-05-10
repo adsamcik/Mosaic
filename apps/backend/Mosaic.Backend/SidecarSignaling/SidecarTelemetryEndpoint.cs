@@ -31,8 +31,8 @@ public static class SidecarTelemetryEndpoint
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
-        // Strict mode: reject unknown fields so the schema cannot widen.
-        UnknownTypeHandling = JsonUnknownTypeHandling.JsonElement,
+        // Strict mode: reject unmapped fields so the schema cannot widen.
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
     private static readonly HashSet<string> ValidEvents = new(StringComparer.Ordinal)

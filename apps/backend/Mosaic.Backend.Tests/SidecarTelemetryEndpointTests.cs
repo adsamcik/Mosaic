@@ -1,7 +1,10 @@
+using System.Reflection;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Mosaic.Backend.SidecarSignaling;
 using Xunit;
 
 namespace Mosaic.Backend.Tests;
@@ -29,6 +32,13 @@ public sealed class SidecarTelemetryEndpointTests
 
     private static StringContent Json(string body) =>
         new(body, Encoding.UTF8, "application/json");
+
+    private static Type TelemetryEnvelopeType => typeof(SidecarTelemetryEndpoint)
+        .GetNestedType("TelemetryEnvelope", BindingFlags.NonPublic)!;
+
+    private static JsonSerializerOptions TelemetryJsonOptions => (JsonSerializerOptions)typeof(SidecarTelemetryEndpoint)
+        .GetField("JsonOpts", BindingFlags.NonPublic | BindingFlags.Static)!
+        .GetValue(null)!;
 
     [Fact]
     public async Task ValidEnvelope_Returns204()
@@ -97,14 +107,42 @@ public sealed class SidecarTelemetryEndpointTests
     }
 
     [Fact]
-    public async Task UnknownProperties_AreSilentlyIgnored()
+    public void JsonOptions_DeserializeKnownFields()
     {
-        // The endpoint MUST NOT accept events whose KNOWN fields are valid but
-        // also smuggle additional properties (System.Text.Json drops unknown
-        // properties by default — we rely on that and the strict per-field
-        // validation. Verify a request laden with smuggle attempts is still
-        // accepted as long as the known fields are valid, AND the unknown
-        // properties never appear in any persisted state.).
+        var body = """
+        { "events": [
+            { "event": "session-completed", "errCode": "WrongCode", "turnUsed": true,
+              "photoCountBucket": "10-50", "bytesBucket": "medium",
+              "throughputBucket": "fast", "durationBucket": "short" }
+        ]}
+        """;
+
+        var envelope = JsonSerializer.Deserialize(body, TelemetryEnvelopeType, TelemetryJsonOptions);
+
+        Assert.NotNull(envelope);
+        var eventsProperty = TelemetryEnvelopeType.GetProperty("Events", BindingFlags.Public | BindingFlags.Instance)!;
+        var events = Assert.IsAssignableFrom<System.Collections.IEnumerable>(eventsProperty.GetValue(envelope));
+        Assert.Single(events.Cast<object>());
+    }
+
+    [Fact]
+    public void JsonOptions_UnknownEventField_ThrowsJsonException()
+    {
+        var body = """
+        { "events": [
+            { "event": "pair-completed", "roomId": "deadbeefdeadbeefdeadbeefdeadbeef" }
+        ]}
+        """;
+
+        var exception = Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize(body, TelemetryEnvelopeType, TelemetryJsonOptions));
+
+        Assert.Contains("roomId", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UnknownProperties_Return400()
+    {
         using var http = NewClient();
         var body = """
         { "events": [
@@ -117,11 +155,7 @@ public sealed class SidecarTelemetryEndpointTests
         ]}
         """;
         var resp = await http.PostAsync("/api/sidecar/telemetry/v1", Json(body));
-        // Accepted because the known field 'event' is valid; unknown fields
-        // are dropped at deserialisation. The structured log in the
-        // implementation has a fixed message template, so smuggle vectors
-        // never reach storage.
-        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
     }
 
     [Fact]
