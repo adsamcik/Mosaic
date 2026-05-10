@@ -28,5 +28,8 @@ mosaic-vectors = { path = "../mosaic-vectors", version = "0.1.0" }
 mosaic-wasm = { path = "../mosaic-wasm", version = "0.1.0" }
 sha2 = { version = "=0.10.9", default-features = false }
 
+[dev-dependencies]
+proptest = "=1.6.0"
+
 [lints]
 workspace = true

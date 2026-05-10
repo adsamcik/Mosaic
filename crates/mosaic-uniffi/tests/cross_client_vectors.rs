@@ -5,6 +5,7 @@
 //! silently skip the shared corpus.
 
 #![allow(clippy::expect_used)]
+#![cfg(feature = "cross-client-vectors")]
 
 use std::path::PathBuf;
 

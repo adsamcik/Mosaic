@@ -16,6 +16,8 @@ use mosaic_wasm::{
     ClientCoreUploadJobSnapshot as WasmUploadJobSnapshot,
     ClientCoreUploadShardRef as WasmUploadShardRef,
 };
+use proptest::prelude::*;
+use proptest::test_runner::{Config, TestCaseError, TestRunner};
 use sha2::{Digest, Sha256};
 
 const PASSWORD: &[u8] = b"correct horse battery staple";
@@ -109,6 +111,114 @@ fn password_nfkc_normalization_matches_known_utf8_vector() {
 
     assert_eq!(nfd, expected);
     assert_eq!(nfc, expected);
+}
+
+#[cfg(feature = "cross-client-vectors")]
+#[test]
+fn validate_auth_username_rejection_parity_for_non_ascii() {
+    for username in ["İstanbul", "café", "Ω"] {
+        let core = core_auth_challenge_code(username);
+        let wasm = mosaic_wasm::build_auth_challenge_transcript(
+            username.to_owned(),
+            0,
+            false,
+            auth_challenge_bytes(),
+        )
+        .code;
+        let uniffi = mosaic_uniffi::build_auth_challenge_transcript_bytes(
+            username.to_owned(),
+            -1,
+            auth_challenge_bytes(),
+        )
+        .code;
+
+        assert_eq!(core, ClientErrorCode::InvalidUsername.as_u16());
+        assert_eq!(wasm, core, "{username}");
+        assert_eq!(uniffi, core, "{username}");
+    }
+}
+
+#[test]
+fn derive_session_salt_non_ascii_golden_vector() {
+    const DOMAIN: &str = "v2:";
+    const USERNAME: &str = "Ωmega";
+    const EXPECTED: [u8; 16] = [
+        0xc6, 0xc0, 0xac, 0xf9, 0xcb, 0xf6, 0x8f, 0xab, 0x2d, 0x74, 0xa9, 0x91, 0xb7, 0xff, 0x79,
+        0xc2,
+    ];
+
+    let crypto = must(
+        mosaic_crypto::derive_session_salt(DOMAIN, USERNAME),
+        "crypto non-ASCII session salt",
+    );
+    let wasm = must(
+        mosaic_wasm::derive_session_salt_from_username(DOMAIN.to_owned(), USERNAME.to_owned()),
+        "wasm non-ASCII session salt",
+    );
+    let uniffi = must(
+        mosaic_uniffi::derive_session_salt_from_username(DOMAIN.to_owned(), USERNAME.to_owned()),
+        "uniffi non-ASCII session salt",
+    );
+
+    assert_eq!(crypto, EXPECTED);
+    assert_eq!(wasm, EXPECTED);
+    assert_eq!(uniffi, EXPECTED);
+}
+
+#[test]
+fn surrogate_pair_lone_surrogate_handling_parity() {
+    const DOMAIN: &str = "v2:";
+    const EXPECTED_REPLACEMENT_SALT: [u8; 16] = [
+        0x85, 0xad, 0x5d, 0x65, 0x7f, 0x7b, 0xb0, 0xf7, 0xe7, 0xc3, 0x62, 0xfb, 0xf8, 0x6f, 0x64,
+        0xb8,
+    ];
+    let replacement = "\u{fffd}";
+
+    // Rust `String` cannot contain a lone surrogate. The browser TextEncoder
+    // path that feeds WASM replaces U+D800 with U+FFFD, so this locks the exact
+    // replacement bytes observed after crossing into Rust-owned facades.
+    assert_eq!(replacement.as_bytes(), &[0xef, 0xbf, 0xbd]);
+
+    let crypto = must(
+        mosaic_crypto::derive_session_salt(DOMAIN, replacement),
+        "crypto replacement-character session salt",
+    );
+    let wasm = must(
+        mosaic_wasm::derive_session_salt_from_username(DOMAIN.to_owned(), replacement.to_owned()),
+        "wasm replacement-character session salt",
+    );
+    let uniffi = must(
+        mosaic_uniffi::derive_session_salt_from_username(DOMAIN.to_owned(), replacement.to_owned()),
+        "uniffi replacement-character session salt",
+    );
+
+    assert_eq!(crypto, EXPECTED_REPLACEMENT_SALT);
+    assert_eq!(wasm, EXPECTED_REPLACEMENT_SALT);
+    assert_eq!(uniffi, EXPECTED_REPLACEMENT_SALT);
+}
+
+#[cfg(feature = "cross-client-vectors")]
+#[test]
+fn username_length_cap_parity_for_emoji_utf8_overflow() {
+    let username = "😀".repeat(128);
+    assert_eq!(username.encode_utf16().count(), 256);
+    assert!(username.len() > 256);
+
+    let core = core_auth_challenge_code(&username);
+    let wasm = mosaic_wasm::build_auth_challenge_transcript(
+        username.clone(),
+        0,
+        false,
+        auth_challenge_bytes(),
+    )
+    .code;
+    let uniffi =
+        mosaic_uniffi::build_auth_challenge_transcript_bytes(username, -1, auth_challenge_bytes())
+            .code;
+
+    assert_eq!(core, ClientErrorCode::InvalidUsername.as_u16());
+    assert_eq!(wasm, core);
+    assert_eq!(uniffi, core);
 }
 
 #[test]
@@ -380,6 +490,52 @@ fn manifest_transcript_bytes_match_wasm_and_uniffi() {
 
     assert_eq!(wasm.bytes, uniffi);
     assert_eq!(wasm.bytes.len(), 156);
+}
+
+#[test]
+fn manifest_transcript_with_non_ascii_filename_bytes() {
+    let encrypted_meta = "filename=IMG_e\u{0301}.jpg".as_bytes().to_vec();
+    let encoded_shards = encoded_manifest_shards();
+
+    let wasm = mosaic_wasm::manifest_transcript_bytes(
+        ALBUM_ID_BYTES.to_vec(),
+        8,
+        encrypted_meta.clone(),
+        encoded_shards,
+    );
+    assert_ok(wasm.code, "wasm non-ASCII manifest transcript");
+
+    let uniffi =
+        match mosaic_uniffi::manifest_transcript_bytes_uniffi(ClientCoreManifestTranscriptInputs {
+            album_id: ALBUM_ID_BYTES.to_vec(),
+            epoch_id: 8,
+            encrypted_metadata_envelope: encrypted_meta.clone(),
+            shards: vec![
+                ClientCoreManifestShardRef {
+                    tier: ShardTier::Thumbnail.to_byte(),
+                    shard_index: 0,
+                    shard_id: bytes_to_uuid(&[0x10; 16]),
+                    sha256: vec![0x11; 32],
+                },
+                ClientCoreManifestShardRef {
+                    tier: ShardTier::Original.to_byte(),
+                    shard_index: 1,
+                    shard_id: bytes_to_uuid(&[0x20; 16]),
+                    sha256: vec![0x22; 32],
+                },
+            ],
+        }) {
+            Ok(bytes) => bytes,
+            Err(error) => panic!("uniffi non-ASCII manifest transcript should encode: {error:?}"),
+        };
+
+    assert!(contains_subsequence(&wasm.bytes, &encrypted_meta));
+    assert!(contains_subsequence(&uniffi, &encrypted_meta));
+    assert!(!contains_subsequence(
+        &wasm.bytes,
+        "filename=IMG_é.jpg".as_bytes()
+    ));
+    assert_eq!(wasm.bytes, uniffi);
 }
 
 #[test]
@@ -995,6 +1151,178 @@ fn content_hash_dedup_fixture_hashes_source_file_bytes_across_wasm_and_uniffi() 
 }
 
 #[test]
+fn proptest_plaintext_content_hash_matches_across_facades() {
+    let mut runner = TestRunner::new(proptest_config());
+    let strategy = prop::collection::vec(any::<u8>(), 0..=64 * 1024);
+
+    if let Err(error) = runner.run(&strategy, |plaintext| {
+        let direct = hex_lower(&Sha256::digest(&plaintext));
+        let wasm = mosaic_wasm::compute_plaintext_content_hash(plaintext.clone());
+        let uniffi = mosaic_uniffi::compute_plaintext_content_hash(plaintext);
+
+        prop_assert_eq!(wasm, direct.clone());
+        prop_assert_eq!(uniffi, direct);
+        Ok(())
+    }) {
+        panic!("plaintext content hash proptest failed: {error}");
+    }
+}
+
+#[cfg(feature = "cross-client-vectors")]
+#[test]
+fn proptest_validate_auth_username_and_session_salt_parity() {
+    let mut runner = TestRunner::new(proptest_config());
+    let strategy = username_strategy();
+
+    if let Err(error) = runner.run(&strategy, |username| {
+        let core_code = core_auth_challenge_code(&username);
+        let wasm_code = mosaic_wasm::build_auth_challenge_transcript(
+            username.clone(),
+            0,
+            false,
+            auth_challenge_bytes(),
+        )
+        .code;
+        let uniffi_code = mosaic_uniffi::build_auth_challenge_transcript_bytes(
+            username.clone(),
+            -1,
+            auth_challenge_bytes(),
+        )
+        .code;
+
+        prop_assert_eq!(wasm_code, core_code);
+        prop_assert_eq!(uniffi_code, core_code);
+
+        if core_code == ClientErrorCode::Ok.as_u16() {
+            let wasm_salt = match mosaic_wasm::derive_session_salt_from_username(
+                "v2:".to_owned(),
+                username.clone(),
+            ) {
+                Ok(value) => value,
+                Err(error) => {
+                    return prop_failure(format!(
+                        "wasm should derive salt for validated username: {error:?}"
+                    ));
+                }
+            };
+            let uniffi_salt = match mosaic_uniffi::derive_session_salt_from_username(
+                "v2:".to_owned(),
+                username.clone(),
+            ) {
+                Ok(value) => value,
+                Err(error) => {
+                    return prop_failure(format!(
+                        "uniffi should derive salt for validated username: {error:?}"
+                    ));
+                }
+            };
+            let crypto_salt = match mosaic_crypto::derive_session_salt("v2:", &username) {
+                Ok(value) => value,
+                Err(error) => {
+                    return prop_failure(format!(
+                        "crypto should derive salt for validated username: {error:?}"
+                    ));
+                }
+            };
+
+            prop_assert_eq!(wasm_salt, crypto_salt);
+            prop_assert_eq!(uniffi_salt, crypto_salt);
+        } else {
+            prop_assert_eq!(core_code, ClientErrorCode::InvalidUsername.as_u16());
+        }
+
+        Ok(())
+    }) {
+        panic!("auth username/session salt proptest failed: {error}");
+    }
+}
+
+#[test]
+fn proptest_identity_keypair_derivation_matches_across_facades() {
+    let account_material = fixed_account_material();
+    let wasm_account = unlock_wasm_account(account_material.wrapped_account_key.clone());
+    let uniffi_account = unlock_uniffi_account(account_material.wrapped_account_key.clone());
+    let mut runner = TestRunner::new(proptest_config());
+
+    let result = runner.run(&any::<[u8; 32]>(), |seed| {
+        let wrapped_identity_seed = match mosaic_crypto::wrap_secret_with_aad(
+            &seed,
+            &account_material.account_key,
+            mosaic_crypto::IDENTITY_SEED_AAD,
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                return prop_failure(format!("identity seed should wrap: {error:?}"));
+            }
+        };
+
+        let wasm_identity =
+            mosaic_wasm::open_identity_handle(wrapped_identity_seed.clone(), wasm_account);
+        if wasm_identity.code != ClientErrorCode::Ok.as_u16() {
+            return prop_failure(format!(
+                "wasm identity open returned code {}",
+                wasm_identity.code
+            ));
+        }
+        let uniffi_identity =
+            mosaic_uniffi::open_identity_handle(wrapped_identity_seed, uniffi_account);
+        if uniffi_identity.code != ClientErrorCode::Ok.as_u16() {
+            close_identity_handles(&[wasm_identity.handle]);
+            return prop_failure(format!(
+                "uniffi identity open returned code {}",
+                uniffi_identity.code
+            ));
+        }
+
+        let mut core_seed = seed;
+        let core_identity = match mosaic_crypto::derive_identity_keypair(core_seed.as_mut_slice()) {
+            Ok(value) => value,
+            Err(error) => {
+                close_identity_handles(&[wasm_identity.handle, uniffi_identity.handle]);
+                return prop_failure(format!("core identity should derive: {error:?}"));
+            }
+        };
+        let message = b"proptest identity parity message".to_vec();
+        let wasm_signature =
+            mosaic_wasm::sign_manifest_with_identity(wasm_identity.handle, message.clone());
+        let uniffi_signature =
+            mosaic_uniffi::sign_manifest_with_identity(uniffi_identity.handle, message.clone());
+        let core_signature =
+            mosaic_crypto::sign_manifest_with_identity(&message, core_identity.secret_key());
+
+        let wasm_signing_pubkey = wasm_identity.signing_pubkey.clone();
+        let wasm_encryption_pubkey = wasm_identity.encryption_pubkey.clone();
+        let uniffi_signing_pubkey = uniffi_identity.signing_pubkey.clone();
+        let uniffi_encryption_pubkey = uniffi_identity.encryption_pubkey.clone();
+        close_identity_handles(&[wasm_identity.handle, uniffi_identity.handle]);
+
+        prop_assert_eq!(wasm_signature.code, ClientErrorCode::Ok.as_u16());
+        prop_assert_eq!(uniffi_signature.code, ClientErrorCode::Ok.as_u16());
+        prop_assert_eq!(
+            wasm_signing_pubkey.clone(),
+            core_identity.signing_public_key().as_bytes().to_vec()
+        );
+        prop_assert_eq!(
+            wasm_encryption_pubkey.clone(),
+            core_identity.encryption_public_key().as_bytes().to_vec()
+        );
+        prop_assert_eq!(uniffi_signing_pubkey, wasm_signing_pubkey);
+        prop_assert_eq!(uniffi_encryption_pubkey, wasm_encryption_pubkey);
+        prop_assert_eq!(
+            wasm_signature.bytes.clone(),
+            core_signature.as_bytes().to_vec()
+        );
+        prop_assert_eq!(uniffi_signature.bytes, wasm_signature.bytes);
+        Ok(())
+    });
+
+    close_account_handles(&[wasm_account, uniffi_account]);
+    if let Err(error) = result {
+        panic!("identity keypair proptest failed: {error}");
+    }
+}
+
+#[test]
 fn canonical_upload_snapshot_cbor_matches_wasm_and_uniffi_facades() {
     let wasm = wasm_upload_snapshot();
     let uniffi = uniffi_upload_snapshot();
@@ -1423,6 +1751,39 @@ fn sidecar_canonical_bytes_match_wasm_and_uniffi() {
     assert_ok(wasm_video.code, "wasm canonical video sidecar");
     assert_ok(uniffi_video.code, "uniffi canonical video sidecar");
     assert_eq!(wasm_video.bytes, uniffi_video.bytes);
+}
+
+#[test]
+fn mime_override_preserves_non_nfc_bytes_exactly_across_wasm_and_uniffi() {
+    let decomposed_mime = "image/x-mosaic-e\u{301}".as_bytes();
+    let encoded_fields =
+        encoded_metadata_fields(&[(metadata_field_tags::MIME_OVERRIDE, decomposed_mime)]);
+
+    let wasm = mosaic_wasm::canonical_metadata_sidecar_bytes(
+        ALBUM_ID_BYTES.to_vec(),
+        PHOTO_ID_BYTES.to_vec(),
+        10,
+        encoded_fields.clone(),
+    );
+    let uniffi = mosaic_uniffi::canonical_metadata_sidecar_bytes(
+        ALBUM_ID_BYTES.to_vec(),
+        PHOTO_ID_BYTES.to_vec(),
+        10,
+        encoded_fields,
+    );
+    assert_ok(wasm.code, "wasm non-NFC MIME sidecar");
+    assert_ok(uniffi.code, "uniffi non-NFC MIME sidecar");
+    assert_eq!(wasm.bytes, uniffi.bytes);
+
+    let value_start = 59 + 2 + 4;
+    assert_eq!(
+        &wasm.bytes[value_start..value_start + decomposed_mime.len()],
+        decomposed_mime
+    );
+    assert!(!contains_subsequence(
+        &wasm.bytes,
+        "image/x-mosaic-é".as_bytes()
+    ));
 }
 
 fn encoded_manifest_shards() -> Vec<u8> {
@@ -2099,6 +2460,61 @@ fn content_hash_dedup_vector() -> ContentHashVector {
         ContentHashVector::from(&parsed),
         "parse content_hash_dedup vector",
     )
+}
+
+fn contains_subsequence(bytes: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty() && bytes.windows(needle.len()).any(|window| window == needle)
+}
+
+#[cfg(feature = "cross-client-vectors")]
+fn auth_challenge_bytes() -> Vec<u8> {
+    vec![0x44; 32]
+}
+
+#[cfg(feature = "cross-client-vectors")]
+fn core_auth_challenge_code(username: &str) -> u16 {
+    match mosaic_crypto::build_auth_challenge_transcript(username, None, &auth_challenge_bytes()) {
+        Ok(_) => ClientErrorCode::Ok.as_u16(),
+        Err(mosaic_crypto::MosaicCryptoError::InvalidUsername) => {
+            ClientErrorCode::InvalidUsername.as_u16()
+        }
+        Err(error) => panic!("unexpected core auth challenge error: {error:?}"),
+    }
+}
+
+fn proptest_config() -> Config {
+    Config {
+        cases: 32,
+        failure_persistence: None,
+        ..Config::default()
+    }
+}
+
+fn prop_failure<T>(message: String) -> Result<T, TestCaseError> {
+    Err(TestCaseError::fail(message))
+}
+
+#[cfg(feature = "cross-client-vectors")]
+fn username_strategy() -> impl Strategy<Value = String> {
+    prop_oneof![
+        prop::collection::vec(auth_username_char_strategy(), 1..=256)
+            .prop_map(|chars| chars.into_iter().collect::<String>()),
+        prop::collection::vec(any::<char>(), 0..=256)
+            .prop_map(|chars| chars.into_iter().collect::<String>()),
+    ]
+}
+
+#[cfg(feature = "cross-client-vectors")]
+fn auth_username_char_strategy() -> impl Strategy<Value = char> {
+    prop_oneof![
+        (b'a'..=b'z').prop_map(char::from),
+        (b'A'..=b'Z').prop_map(char::from),
+        (b'0'..=b'9').prop_map(char::from),
+        Just('_'),
+        Just('-'),
+        Just('@'),
+        Just('.'),
+    ]
 }
 
 fn uuid_to_bytes(uuid: &str) -> Vec<u8> {
