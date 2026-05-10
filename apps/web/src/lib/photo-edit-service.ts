@@ -3,6 +3,7 @@ import { getCryptoClient } from './crypto-client';
 import { getDbClient } from './db-client';
 import { getOrFetchEpochKey } from './epoch-key-service';
 import { createLogger } from './logger';
+import { manifestTranscriptInputForPhotoMeta } from './manifest-transcript';
 import type { EpochHandleId, PhotoMeta } from '../workers/types';
 
 const log = createLogger('PhotoEditService');
@@ -38,9 +39,12 @@ export async function rotatePhoto(
       epochHandleId,
       plaintextJson,
     );
+    const transcript = await crypto.manifestTranscriptBytes(
+      manifestTranscriptInputForPhotoMeta(newMeta, encrypted.envelopeBytes),
+    );
     const signature = await crypto.signManifestWithEpoch(
       epochHandleId,
-      encrypted.envelopeBytes,
+      transcript,
     );
     const signerPubkey = bundle.signPublicKey;
 
@@ -121,9 +125,12 @@ export async function updatePhotoDescription(
       epochHandleId,
       plaintextJson,
     );
+    const transcript = await crypto.manifestTranscriptBytes(
+      manifestTranscriptInputForPhotoMeta(newMeta, encrypted.envelopeBytes),
+    );
     const signature = await crypto.signManifestWithEpoch(
       epochHandleId,
-      encrypted.envelopeBytes,
+      transcript,
     );
     const signerPubkey = bundle.signPublicKey;
 

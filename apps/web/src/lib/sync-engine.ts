@@ -18,6 +18,10 @@ import {
 } from './epoch-key-store';
 import { createLogger } from './logger';
 import { purgeLocalPhoto } from './local-purge';
+import {
+  manifestShardIdsMatchTranscript,
+  manifestTranscriptInputForPhotoMeta,
+} from './manifest-transcript';
 
 const log = createLogger('SyncEngine');
 const MAX_SYNC_PAGINATION_ITERATIONS = 1000;
@@ -248,6 +252,7 @@ class SyncEngine extends EventTarget {
         }
 
         const decrypted: DecryptedManifest[] = [];
+        let failedVerifyCount = 0;
         for (const manifest of response.manifests) {
           throwIfAborted(signal);
 
@@ -279,18 +284,6 @@ class SyncEngine extends EventTarget {
             }
 
             throwIfAborted(signal);
-            const isValid = await crypto.verifyManifest(
-              encryptedMeta,
-              signature,
-              epochBundle.signPublicKey,
-            );
-
-            if (!isValid) {
-              log.warn(`Invalid signature for manifest ${manifest.id}`);
-              continue;
-            }
-
-            throwIfAborted(signal);
             // Slice 4 — manifest decryption now routes through the Rust
             // epoch handle. The thumb-tier key is derived inside Rust;
             // the seed and the per-epoch sign-secret never cross Comlink.
@@ -307,6 +300,34 @@ class SyncEngine extends EventTarget {
             } catch (parseErr) {
               log.warn(`Manifest ${manifest.id} JSON parse failed`, {
                 error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+              });
+              continue;
+            }
+
+            const transcriptInput = manifestTranscriptInputForPhotoMeta(meta, encryptedMeta);
+            if (!manifestShardIdsMatchTranscript(manifest.shardIds, transcriptInput)) {
+              failedVerifyCount += 1;
+              log.error('Manifest signed shard list does not match sync payload', {
+                albumId,
+                manifestId: manifest.id,
+                failedVerifyCount,
+              });
+              continue;
+            }
+
+            throwIfAborted(signal);
+            const isValid = await crypto.verifyManifestWithEpoch(
+              transcriptInput,
+              signature,
+              epochBundle.signPublicKey,
+            );
+
+            if (!isValid) {
+              failedVerifyCount += 1;
+              log.error('Manifest signature verification failed', {
+                albumId,
+                manifestId: manifest.id,
+                failedVerifyCount,
               });
               continue;
             }

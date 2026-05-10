@@ -6,11 +6,7 @@ import type { UploadEvent } from '../../rust-core/upload-adapter-port';
 
 const mockData = vi.hoisted(() => ({
   initRustWasm: vi.fn(async () => undefined),
-  manifestTranscriptBytes: vi.fn(() => ({
-    code: 0,
-    bytes: new Uint8Array([9, 8, 7, 6]),
-    free: vi.fn(),
-  })),
+  manifestTranscriptBytes: vi.fn(async () => new Uint8Array([9, 8, 7, 6])),
   getCryptoClient: vi.fn(),
   generateTieredImages: vi.fn(),
   generateThumbnail: vi.fn(),
@@ -162,6 +158,7 @@ describe('manifest finalization cutover', () => {
         sha256: SHA256_B64URL,
       })),
       signManifestWithEpoch: vi.fn(async () => SIGNATURE),
+      manifestTranscriptBytes: mockData.manifestTranscriptBytes,
       finalizeIdempotencyKey: vi.fn(async (jobId: string) => `mosaic-finalize-${jobId}`),
       encryptShardWithEpochHandle: vi.fn(
         async (_handle: EpochHandleId, _plaintext: Uint8Array, tier: number, shardIndex: number) =>

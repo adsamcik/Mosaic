@@ -16,10 +16,12 @@ const mocks = vi.hoisted(() => {
     signature,
     signerPubkey,
     epochHandleId,
+    transcriptBytes: new Uint8Array([9, 8, 7, 6]),
     encryptManifestWithEpoch: vi.fn(async () => ({
       envelopeBytes,
       sha256: 'manifest-hash',
     })),
+    manifestTranscriptBytes: vi.fn(async () => new Uint8Array([9, 8, 7, 6])),
     signManifestWithEpoch: vi.fn(async () => signature),
     updateManifestMetadata: vi.fn(async () => ({
       id: 'photo-1',
@@ -45,6 +47,7 @@ vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() =>
     Promise.resolve({
       encryptManifestWithEpoch: mocks.encryptManifestWithEpoch,
+      manifestTranscriptBytes: mocks.manifestTranscriptBytes,
       signManifestWithEpoch: mocks.signManifestWithEpoch,
     }),
   ),
@@ -196,7 +199,12 @@ describe('photo-edit-service', () => {
       const [signHandle, signedBytes] =
         mocks.signManifestWithEpoch.mock.calls[0]!;
       expect(signHandle).toBe(mocks.epochHandleId);
-      expect(signedBytes).toEqual(mocks.envelopeBytes);
+      expect(signedBytes).toEqual(mocks.transcriptBytes);
+      expect(mocks.manifestTranscriptBytes).toHaveBeenCalledWith(expect.objectContaining({
+        albumId: photo.albumId,
+        epochId: photo.epochId,
+        encryptedMeta: mocks.envelopeBytes,
+      }));
     });
 
     it('preserves photo identity fields and only changes rotation and updatedAt in encrypted metadata', async () => {

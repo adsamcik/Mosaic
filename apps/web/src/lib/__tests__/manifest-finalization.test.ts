@@ -15,6 +15,44 @@ vi.mock('../crypto-client', () => ({
 }));
 
 describe('executeManifestFinalizationEffect error events', () => {
+  it('rejects malformed shard UUIDs before submitting the finalize request', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () => new Response('{}', { status: 200 }),
+    );
+    const malformed = {
+      ...effect(),
+      tieredShards: [{
+        ...effect().tieredShards[0]!,
+        shardId: 'not-a-uuid',
+      }],
+    };
+
+    await expect(executeManifestFinalizationEffect(malformed, {
+      jobId: 'test-job',
+      fetchImpl,
+    })).rejects.toThrow(/UUID/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed shard SHA-256 values before submitting the finalize request', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () => new Response('{}', { status: 200 }),
+    );
+    const malformed = {
+      ...effect(),
+      tieredShards: [{
+        ...effect().tieredShards[0]!,
+        sha256: 'not-a-sha256',
+      }],
+    };
+
+    await expect(executeManifestFinalizationEffect(malformed, {
+      jobId: 'test-job',
+      fetchImpl,
+    })).rejects.toThrow(/SHA-256/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it.each([401, 403])('submits ManifestFailed for auth status %i', async (status) => {
     const events: unknown[] = [];
     await expect(executeManifestFinalizationEffect(effect(), {

@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
     setAlbumVersion: vi.fn(),
   },
   crypto: {
-    verifyManifest: vi.fn(),
+    verifyManifestWithEpoch: vi.fn(),
     decryptManifestWithEpoch: vi.fn(),
     decryptShard: vi.fn(),
     encryptShard: vi.fn(),
@@ -85,7 +85,7 @@ describe('syncEngine handle-based manifest decryption', () => {
     mocks.db.getAlbumVersion.mockResolvedValue(0);
     mocks.db.insertManifests.mockResolvedValue(undefined);
     mocks.db.setAlbumVersion.mockResolvedValue(undefined);
-    mocks.crypto.verifyManifest.mockResolvedValue(true);
+    mocks.crypto.verifyManifestWithEpoch.mockResolvedValue(true);
     mocks.crypto.decryptManifestWithEpoch.mockResolvedValue(
       new TextEncoder().encode(
         JSON.stringify({
@@ -100,6 +100,7 @@ describe('syncEngine handle-based manifest decryption', () => {
           createdAt: '2024-01-01T00:00:00.000Z',
           updatedAt: '2024-01-01T00:00:00.000Z',
           shardIds: ['shard-1'],
+          shardHashes: ['a'.repeat(64)],
           epochId: 7,
         }),
       ),

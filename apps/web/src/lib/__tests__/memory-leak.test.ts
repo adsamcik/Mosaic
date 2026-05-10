@@ -38,9 +38,7 @@ vi.mock('libsodium-wrappers-sumo', () => ({
 vi.mock('@mosaic/crypto', () => ({ getArgon2Params: vi.fn(() => ({ memoryKib: 8, iterations: 1, parallelism: 1 })) }));
 vi.mock('../../workers/rust-crypto-core', () => ({
   getRustFacade: vi.fn(async () => facadeMocks.facade),
-  getRustCryptoCore: vi.fn(),
   parseEnvelopeHeaderFromRust: vi.fn(),
-  verifyLegacyManifestWithRust: vi.fn(),
 }));
 
 import { cryptoWorker } from '../../workers/crypto.worker';

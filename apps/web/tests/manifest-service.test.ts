@@ -14,7 +14,16 @@ let capturedEncryptHandleId: string | null = null;
 let capturedSignHandleId: string | null = null;
 let capturedSignedBytes: Uint8Array | null = null;
 
+const TASK_ID = '018f0000-0000-7000-8000-000000000301';
+const ALBUM_ID = '018f0000-0000-7000-8000-000000000302';
+const SHARD_0 = '018f0000-0000-7000-8000-000000000303';
+const SHARD_1 = '018f0000-0000-7000-8000-000000000304';
+const SHARD_2 = '018f0000-0000-7000-8000-000000000305';
+const HASH_0 = '00'.repeat(32);
+const HASH_1 = '11'.repeat(32);
+const HASH_2 = '22'.repeat(32);
 const ENVELOPE_BYTES = new Uint8Array([1, 2, 3]);
+const TRANSCRIPT_BYTES = new Uint8Array([9, 8, 7, 6]);
 
 const mockEncryptManifestWithEpoch = vi.fn(
   async (epochHandleId: string, plaintext: Uint8Array) => {
@@ -30,11 +39,12 @@ const mockSignManifestWithEpoch = vi.fn(
     return new Uint8Array([4, 5, 6]);
   },
 );
+const mockManifestTranscriptBytes = vi.fn(async () => TRANSCRIPT_BYTES);
 const mockCreateManifest = vi.fn(async () => {});
 const mockFetch = vi.fn(async () =>
   new Response(JSON.stringify({
     protocolVersion: 1,
-    manifestId: 'task-1',
+    manifestId: TASK_ID,
     metadataVersion: 1,
     createdAt: '2026-05-06T00:00:00.000Z',
     tieredShards: [],
@@ -45,6 +55,7 @@ vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() =>
     Promise.resolve({
       encryptManifestWithEpoch: mockEncryptManifestWithEpoch,
+      manifestTranscriptBytes: mockManifestTranscriptBytes,
       signManifestWithEpoch: mockSignManifestWithEpoch,
       finalizeIdempotencyKey: async (jobId: string) => `mosaic-finalize-${jobId}`,
     }),
@@ -67,17 +78,17 @@ function lastFinalizeBody(): Record<string, unknown> {
 
 function makeBaseTask(overrides: Partial<UploadTask> = {}): UploadTask {
   return {
-    id: 'task-1',
+    id: TASK_ID,
     file: new File(['data'], 'photo.jpg', { type: 'image/jpeg' }),
-    albumId: 'album-1',
+    albumId: ALBUM_ID,
     epochId: 1,
     readKey: new Uint8Array(32),
     status: 'complete',
     currentAction: 'finalizing',
     progress: 1,
     completedShards: [
-      { index: 0, shardId: 'shard-0', sha256: 'hash-0', tier: 1 },
-      { index: 1, shardId: 'shard-1', sha256: 'hash-1', tier: 2 },
+      { index: 0, shardId: SHARD_0, sha256: HASH_0, tier: 1 },
+      { index: 1, shardId: SHARD_1, sha256: HASH_1, tier: 2 },
     ],
     retryCount: 0,
     lastAttemptAt: 0,
@@ -117,7 +128,7 @@ describe('manifest-service', () => {
   describe('Slice 4 handle-based contract', () => {
     it('passes the epoch handle id (not raw seed) to encryptManifestWithEpoch', async () => {
       const task = makeBaseTask();
-      await createManifestForUpload(task, ['shard-0', 'shard-1'], epochKey);
+      await createManifestForUpload(task, [SHARD_0, SHARD_1], epochKey);
 
       expect(mockEncryptManifestWithEpoch).toHaveBeenCalledTimes(1);
       expect(capturedEncryptHandleId).toBe('epoch-handle-test-1');
@@ -126,18 +137,19 @@ describe('manifest-service', () => {
 
     it('signs manifest transcript bytes (not plaintext metadata)', async () => {
       const task = makeBaseTask();
-      await createManifestForUpload(task, ['shard-0'], epochKey);
+      await createManifestForUpload(task, [SHARD_0], epochKey);
 
       expect(mockSignManifestWithEpoch).toHaveBeenCalledTimes(1);
       expect(capturedSignedBytes).not.toEqual(
         new TextEncoder().encode(JSON.stringify(capturedPhotoMeta)),
       );
       expect(capturedSignedBytes).not.toEqual(ENVELOPE_BYTES);
+      expect(capturedSignedBytes).toEqual(TRANSCRIPT_BYTES);
     });
 
     it('publishes the per-epoch sign public key (not a placeholder secret)', async () => {
       const task = makeBaseTask();
-      await createManifestForUpload(task, ['shard-0'], epochKey);
+      await createManifestForUpload(task, [SHARD_0], epochKey);
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
       const request = lastFinalizeBody() as { signerPubkey: string };
@@ -150,7 +162,7 @@ describe('manifest-service', () => {
   describe('photo uploads (no videoMetadata)', () => {
     it('builds PhotoMeta with image dimensions and thumbnail', async () => {
       const task = makeBaseTask();
-      await createManifestForUpload(task, ['shard-0', 'shard-1'], epochKey);
+      await createManifestForUpload(task, [SHARD_0, SHARD_1], epochKey);
 
       expect(capturedPhotoMeta).not.toBeNull();
       const meta = capturedPhotoMeta!;
@@ -165,7 +177,7 @@ describe('manifest-service', () => {
 
     it('does not set video fields for photo uploads', async () => {
       const task = makeBaseTask();
-      await createManifestForUpload(task, ['shard-0', 'shard-1'], epochKey);
+      await createManifestForUpload(task, [SHARD_0, SHARD_1], epochKey);
 
       const meta = capturedPhotoMeta!;
       expect(meta.isVideo).toBeUndefined();
@@ -175,7 +187,7 @@ describe('manifest-service', () => {
 
     it('uses detected MIME type over file type', async () => {
       const task = makeBaseTask({ detectedMimeType: 'image/heic' });
-      await createManifestForUpload(task, ['shard-0'], epochKey);
+      await createManifestForUpload(task, [SHARD_0], epochKey);
 
       expect(capturedPhotoMeta!.mimeType).toBe('image/heic');
     });
@@ -199,7 +211,7 @@ describe('manifest-service', () => {
         },
       });
 
-      await createManifestForUpload(task, ['shard-0'], epochKey);
+      await createManifestForUpload(task, [SHARD_0], epochKey);
 
       const meta = capturedPhotoMeta!;
       expect(meta.isVideo).toBe(true);
@@ -224,7 +236,7 @@ describe('manifest-service', () => {
         },
       });
 
-      await createManifestForUpload(task, ['shard-0'], epochKey);
+      await createManifestForUpload(task, [SHARD_0], epochKey);
 
       const meta = capturedPhotoMeta!;
       expect(meta.width).toBe(1920);
@@ -249,7 +261,7 @@ describe('manifest-service', () => {
         },
       });
 
-      await createManifestForUpload(task, ['shard-0'], epochKey);
+      await createManifestForUpload(task, [SHARD_0], epochKey);
 
       const meta = capturedPhotoMeta!;
       expect(meta.thumbnail).toBe('video-thumb');
@@ -272,7 +284,7 @@ describe('manifest-service', () => {
         },
       });
 
-      await createManifestForUpload(task, ['shard-0'], epochKey);
+      await createManifestForUpload(task, [SHARD_0], epochKey);
 
       const meta = capturedPhotoMeta!;
       expect(meta.isVideo).toBe(true);
@@ -287,7 +299,7 @@ describe('manifest-service', () => {
         // No videoMetadata — pure photo path
       });
 
-      await createManifestForUpload(task, ['shard-0'], epochKey);
+      await createManifestForUpload(task, [SHARD_0], epochKey);
 
       const meta = capturedPhotoMeta!;
       expect(meta.width).toBe(800);
@@ -309,7 +321,7 @@ describe('manifest-service', () => {
         },
       });
 
-      await createManifestForUpload(task, ['shard-0'], epochKey);
+      await createManifestForUpload(task, [SHARD_0], epochKey);
 
       const meta = capturedPhotoMeta!;
       expect(meta.thumbnail).toBe('photo-thumb-fallback');
@@ -323,15 +335,15 @@ describe('manifest-service', () => {
     it('sorts shard hashes by index', async () => {
       const task = makeBaseTask({
         completedShards: [
-          { index: 2, shardId: 's2', sha256: 'h2', tier: 3 },
-          { index: 0, shardId: 's0', sha256: 'h0', tier: 1 },
-          { index: 1, shardId: 's1', sha256: 'h1', tier: 2 },
+          { index: 2, shardId: SHARD_2, sha256: HASH_2, tier: 3 },
+          { index: 0, shardId: SHARD_0, sha256: HASH_0, tier: 1 },
+          { index: 1, shardId: SHARD_1, sha256: HASH_1, tier: 2 },
         ],
       });
 
-      await createManifestForUpload(task, ['s0', 's1', 's2'], epochKey);
+      await createManifestForUpload(task, [SHARD_0, SHARD_1, SHARD_2], epochKey);
 
-      expect(capturedPhotoMeta!.shardHashes).toEqual(['h0', 'h1', 'h2']);
+      expect(capturedPhotoMeta!.shardHashes).toEqual([HASH_0, HASH_1, HASH_2]);
     });
   });
 });

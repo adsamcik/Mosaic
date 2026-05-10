@@ -3,10 +3,9 @@ import type { EpochKeyBundle } from './epoch-key-store';
 import type { PhotoMeta, TieredShardIds } from '../workers/types';
 import type { UploadTask } from './upload/types';
 import type { UploadEvent, UploadEffect } from './rust-core/upload-adapter-port';
+import { manifestTranscriptInputForFinalize } from './manifest-transcript';
 
 const API_BASE = '/api';
-const SHARD_TRANSCRIPT_RECORD_BYTES = 53;
-const UUID_BYTES = 16;
 const SHA256_BYTES = 32;
 
 export const MANIFEST_INVALID_SIGNATURE = 400;
@@ -156,12 +155,12 @@ export async function finalizeManifestForUpload(
     plaintextJson,
   );
   const finalizeShards = toFinalizeTieredShards(task);
-  const transcript = await buildManifestTranscriptBytes({
+  const transcript = await crypto.manifestTranscriptBytes(manifestTranscriptInputForFinalize({
     albumId: task.albumId,
     epochId: task.epochId,
     encryptedMeta: encrypted.envelopeBytes,
     tieredShards: finalizeShards,
-  });
+  }));
   const signature = await crypto.signManifestWithEpoch(
     epochKey.epochHandleId,
     transcript,
@@ -308,29 +307,8 @@ async function manifestFinalizeErrorDetailFromResponse(response: Response): Prom
   }
 }
 
-export async function buildManifestTranscriptBytes(input: {
-  readonly albumId: string;
-  readonly epochId: number;
-  readonly encryptedMeta: Uint8Array;
-  readonly tieredShards: readonly ManifestFinalizeTieredShard[];
-}): Promise<Uint8Array> {
-  const albumId = uuidToBytes(input.albumId, UUID_BYTES);
-  const encodedShards = encodeTranscriptShards(input.tieredShards);
-  const transcript = new Uint8Array(
-    albumId.byteLength + 4 + input.encryptedMeta.byteLength + encodedShards.byteLength,
-  );
-  let offset = 0;
-  transcript.set(albumId, offset);
-  offset += albumId.byteLength;
-  writeU32Le(transcript, offset, input.epochId);
-  offset += 4;
-  transcript.set(input.encryptedMeta, offset);
-  offset += input.encryptedMeta.byteLength;
-  transcript.set(encodedShards, offset);
-  return transcript;
-}
-
 function toFinalizeRequestBody(effect: FinalizeManifestEffect): Record<string, unknown> {
+  validateUuidString(effect.albumId);
   return {
     protocolVersion: effect.protocolVersion,
     albumId: effect.albumId,
@@ -342,7 +320,11 @@ function toFinalizeRequestBody(effect: FinalizeManifestEffect): Record<string, u
     signature: bytesToBase64(effect.signature),
     signerPubkey: bytesToBase64(effect.signerPubkey),
     shardIds: [],
-    tieredShards: effect.tieredShards,
+    tieredShards: effect.tieredShards.map((shard) => ({
+      ...shard,
+      shardId: validateUuidString(shard.shardId),
+      sha256: sha256ToHex(shard.sha256),
+    })),
   };
 }
 
@@ -405,37 +387,12 @@ function manifestFinalizeErrorDetail(value: unknown): string {
   return typeof candidate.detail === 'string' ? candidate.detail : 'manifest already finalized';
 }
 
-function encodeTranscriptShards(shards: readonly ManifestFinalizeTieredShard[]): Uint8Array {
-  const output = new Uint8Array(shards.length * SHARD_TRANSCRIPT_RECORD_BYTES);
-  let offset = 0;
-  for (const shard of shards) {
-    const shardId = uuidToBytes(shard.shardId, UUID_BYTES);
-    const sha256 = hexToBytes(shard.sha256);
-    writeU32Le(output, offset, shard.shardIndex);
-    offset += 4;
-    output[offset] = shard.tier;
-    offset += 1;
-    output.set(shardId, offset);
-    offset += UUID_BYTES;
-    output.set(sha256, offset);
-    offset += SHA256_BYTES;
-  }
-  return output;
-}
-
-function writeU32Le(output: Uint8Array, offset: number, value: number): void {
-  output[offset] = value & 0xff;
-  output[offset + 1] = (value >>> 8) & 0xff;
-  output[offset + 2] = (value >>> 16) & 0xff;
-  output[offset + 3] = (value >>> 24) & 0xff;
-}
-
-function uuidToBytes(uuid: string, fallbackLength: number): Uint8Array {
+function validateUuidString(uuid: string): string {
   const hex = uuid.replace(/-/g, '');
-  if (/^[0-9a-fA-F]{32}$/.test(hex)) {
-    return hexToBytes(hex);
+  if (!/^[0-9a-fA-F]{32}$/.test(hex)) {
+    throw new Error('Malformed UUID: expected 32 hexadecimal UUID bytes');
   }
-  return textFallbackBytes(uuid, fallbackLength);
+  return uuid;
 }
 
 function sha256ToHex(value: string): string {
@@ -446,19 +403,8 @@ function sha256ToHex(value: string): string {
   try {
     return bytesToHex(base64UrlToBytes(trimmed));
   } catch {
-    return bytesToHex(textFallbackBytes(trimmed, SHA256_BYTES));
+    throw new Error('Malformed SHA-256: expected 64 hex characters or base64url-encoded 32 bytes');
   }
-}
-
-function hexToBytes(hex: string): Uint8Array {
-  if (hex.length % 2 !== 0) {
-    throw new Error('Invalid hex length');
-  }
-  const output = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < output.length; i++) {
-    output[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  }
-  return output;
 }
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -485,13 +431,4 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(bytes[i]!);
   }
   return btoa(binary);
-}
-
-function textFallbackBytes(value: string, length: number): Uint8Array {
-  const encoded = new TextEncoder().encode(value);
-  const output = new Uint8Array(length);
-  for (let i = 0; i < output.length; i++) {
-    output[i] = encoded[i % Math.max(encoded.length, 1)] ?? 0;
-  }
-  return output;
 }

@@ -53,6 +53,7 @@ interface ContractFixture {
 const mocks = vi.hoisted(() => ({
   createManifest: vi.fn(),
   encryptManifestWithEpoch: vi.fn(),
+  manifestTranscriptBytes: vi.fn(),
   signManifestWithEpoch: vi.fn(),
 }));
 
@@ -82,6 +83,7 @@ vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() =>
     Promise.resolve({
       encryptManifestWithEpoch: mocks.encryptManifestWithEpoch,
+      manifestTranscriptBytes: mocks.manifestTranscriptBytes,
       signManifestWithEpoch: mocks.signManifestWithEpoch,
       finalizeIdempotencyKey: async (jobId: string) => `mosaic-finalize-${jobId}`,
     }),
@@ -216,6 +218,8 @@ describe('Android manual upload cross-client contract', () => {
       envelopeBytes: encryptedMeta,
       sha256: 'encrypted-manifest-digest-is-client-local',
     });
+    const canonicalTranscript = new Uint8Array([1, 3, 3, 7]);
+    mocks.manifestTranscriptBytes.mockResolvedValue(canonicalTranscript);
     mocks.signManifestWithEpoch.mockResolvedValue(signature);
     const finalizeFetch = vi.fn(async () =>
       new Response(JSON.stringify({
@@ -273,9 +277,21 @@ describe('Android manual upload cross-client contract', () => {
 
     expect(mocks.signManifestWithEpoch).toHaveBeenCalledWith(
       `test-epoch-handle-${fixture.clientCore.epochId}`,
-      expect.any(Uint8Array),
+      canonicalTranscript,
     );
-    expect(mocks.signManifestWithEpoch.mock.calls[0][1]).not.toEqual(encryptedMeta);
+    expect(mocks.manifestTranscriptBytes).toHaveBeenCalledWith(expect.objectContaining({
+      albumId: fixture.androidHandoff.albumId,
+      epochId: fixture.clientCore.epochId,
+      encryptedMeta,
+      shards: fixture.clientCore.completedShards.map((shard, chunkIndex) =>
+        expect.objectContaining({
+          chunkIndex,
+          tier: shard.tier,
+          shardId: shard.shardId,
+          sha256: shard.sha256,
+        }),
+      ),
+    }));
     expect(finalizeFetch).toHaveBeenCalledTimes(1);
     const finalizeCalls = finalizeFetch.mock.calls as unknown as Array<[string, RequestInit]>;
     expect(finalizeCalls[0]![1].headers).toEqual(expect.objectContaining({

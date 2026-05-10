@@ -239,6 +239,20 @@ export interface DecryptedManifest {
   shardIds: string[];
 }
 
+export interface ManifestTranscriptShard {
+  readonly chunkIndex: number;
+  readonly tier: number;
+  readonly shardId: string;
+  readonly sha256: string;
+}
+
+export interface ManifestTranscriptInput {
+  readonly albumId: string;
+  readonly epochId: number;
+  readonly encryptedMeta: Uint8Array;
+  readonly shards: readonly ManifestTranscriptShard[];
+}
+
 /** Geographic point for map clustering */
 export interface GeoPoint {
   id: string;
@@ -518,14 +532,15 @@ export interface CryptoWorkerApi {
   }>;
 
   /**
-   * Verify manifest signature using the per-epoch manifest signing key.
-   *
-   * Slice 4 — routes through Rust `verifyManifestWithEpoch`. The signing
-   * public key crosses Comlink (it's safe to expose); the manifest
-   * transcript bytes and signature do too.
+   * Build canonical Rust manifest transcript bytes for signing and verifying.
    */
-  verifyManifest(
-    manifest: Uint8Array,
+  manifestTranscriptBytes(input: ManifestTranscriptInput): Promise<Uint8Array>;
+
+  /**
+   * Verify a canonical manifest signature using the per-epoch manifest signing key.
+   */
+  verifyManifestWithEpoch(
+    input: ManifestTranscriptInput,
     signature: Uint8Array,
     pubKey: Uint8Array,
   ): Promise<boolean>;

@@ -153,7 +153,8 @@ describe('Worker API interface completeness', () => {
       'encryptShard',
       'decryptShard',
       'decryptManifest',
-      'verifyManifest',
+      'manifestTranscriptBytes',
+      'verifyManifestWithEpoch',
       'getIdentityPublicKey',
       'deriveIdentity',
       'openEpochKeyBundle',
@@ -165,7 +166,7 @@ describe('Worker API interface completeness', () => {
 
     // This is a compile-time check - if CryptoWorkerApi is missing any method,
     // TypeScript will fail to compile
-    expect(requiredMethods).toHaveLength(15);
+    expect(requiredMethods).toHaveLength(16);
   });
 
   it('DbWorkerApi has required methods', () => {

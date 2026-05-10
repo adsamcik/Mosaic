@@ -12,6 +12,7 @@ import {
   type IdentityHandleId,
   type LinkShareHandleId,
   type LinkTierHandleId,
+  type ManifestTranscriptInput,
   type OpenEpochKeyBundleOptions,
   type PhotoMeta,
   type ShardTier,
@@ -35,10 +36,7 @@ import {
   getArgon2Params,
 } from '@mosaic/crypto';
 import {
-  getRustCryptoCore,
   getRustFacade,
-  parseEnvelopeHeaderFromRust,
-  verifyLegacyManifestWithRust,
   type RustHandleFacade,
 } from './rust-crypto-core';
 
@@ -1132,28 +1130,13 @@ class CryptoWorker implements CryptoWorkerApi {
   async peekHeader(
     envelope: Uint8Array,
   ): Promise<{ epochId: number; shardId: number; tier: number }> {
-    const rust = await getRustCryptoCore();
-    return parseEnvelopeHeaderFromRust(rust, envelope);
-  }
-
-  /**
-   * Verify manifest signature using Ed25519.
-   *
-   * Uses domain separation (Mosaic_Manifest_v1 context prefix)
-   * to prevent signature reuse attacks.
-   *
-   * @param manifest - Manifest bytes that were signed
-   * @param signature - Ed25519 signature (64 bytes)
-   * @param pubKey - Ed25519 signing public key (32 bytes)
-   * @returns true if signature is valid
-   */
-  async verifyManifest(
-    manifest: Uint8Array,
-    signature: Uint8Array,
-    pubKey: Uint8Array,
-  ): Promise<boolean> {
-    const rust = await getRustCryptoCore();
-    return verifyLegacyManifestWithRust(rust, manifest, signature, pubKey);
+    const facade = await getRustFacade();
+    const parsed = facade.parseEnvelopeHeader(envelope);
+    return {
+      epochId: parsed.epochId,
+      shardId: parsed.shardIndex,
+      tier: parsed.tier,
+    };
   }
 
   /**
@@ -1343,6 +1326,23 @@ class CryptoWorker implements CryptoWorkerApi {
       'epoch',
       (rustEpoch) => facade.signManifestWithEpochHandle(rustEpoch, manifestBytes),
     );
+  }
+
+  async manifestTranscriptBytes(
+    input: ManifestTranscriptInput,
+  ): Promise<Uint8Array> {
+    const facade = await getRustFacade();
+    return facade.manifestTranscriptBytes(input);
+  }
+
+  async verifyManifestWithEpoch(
+    input: ManifestTranscriptInput,
+    signature: Uint8Array,
+    pubKey: Uint8Array,
+  ): Promise<boolean> {
+    const facade = await getRustFacade();
+    const transcript = facade.manifestTranscriptBytes(input);
+    return facade.verifyManifestWithEpoch(transcript, signature, pubKey);
   }
 
   async finalizeIdempotencyKey(jobId: string): Promise<string> {

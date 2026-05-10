@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
     setAlbumVersion: vi.fn(),
   },
   crypto: {
-    verifyManifest: vi.fn(),
+    verifyManifestWithEpoch: vi.fn(),
     decryptManifestWithEpoch: vi.fn(),
   },
   epochService: {
@@ -24,6 +24,13 @@ const mocks = vi.hoisted(() => ({
   },
   localPurge: {
     purgeLocalPhoto: vi.fn(),
+  },
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    startTimer: vi.fn(() => ({ end: vi.fn() })),
   },
 }));
 
@@ -57,13 +64,7 @@ vi.mock('../src/lib/local-purge', () => ({
 }));
 
 vi.mock('../src/lib/logger', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-    startTimer: () => ({ end: vi.fn() }),
-  }),
+  createLogger: () => mocks.logger,
 }));
 
 function toBase64(bytes: Uint8Array): string {
@@ -77,6 +78,7 @@ async function importSyncEngine() {
 }
 
 const SAMPLE_PHOTO_META = {
+  id: 'manifest-1',
   assetId: 'asset-1',
   albumId: 'album-1',
   filename: 'image.jpg',
@@ -87,6 +89,7 @@ const SAMPLE_PHOTO_META = {
   createdAt: '2024-01-01T00:00:00Z',
   updatedAt: '2024-01-01T00:00:00Z',
   shardIds: ['shard-1'],
+  shardHashes: ['a'.repeat(64)],
   epochId: 1,
 };
 
@@ -108,7 +111,7 @@ describe('syncEngine', () => {
       removedUploadTasks: 0,
       blockers: [],
     });
-    mocks.crypto.verifyManifest.mockResolvedValue(true);
+    mocks.crypto.verifyManifestWithEpoch.mockResolvedValue(true);
     mocks.crypto.decryptManifestWithEpoch.mockResolvedValue(
       SAMPLE_PHOTO_META_BYTES,
     );
@@ -311,7 +314,7 @@ describe('syncEngine', () => {
       photoId: 'manifest-deleted',
       reason: 'sync-deleted',
     });
-    expect(mocks.crypto.verifyManifest).not.toHaveBeenCalled();
+    expect(mocks.crypto.verifyManifestWithEpoch).not.toHaveBeenCalled();
     expect(mocks.crypto.decryptManifestWithEpoch).not.toHaveBeenCalled();
     expect(mocks.db.insertManifests).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -347,7 +350,7 @@ describe('syncEngine', () => {
 
     await syncEngine.sync('album-1');
 
-    expect(mocks.crypto.verifyManifest).not.toHaveBeenCalled();
+    expect(mocks.crypto.verifyManifestWithEpoch).not.toHaveBeenCalled();
     expect(mocks.crypto.decryptManifestWithEpoch).not.toHaveBeenCalled();
     expect(mocks.db.insertManifests).not.toHaveBeenCalled();
     expect(mocks.db.setAlbumVersion).toHaveBeenCalledWith('album-1', 1);
@@ -376,7 +379,7 @@ describe('syncEngine', () => {
 
     await syncEngine.sync('album-1');
 
-    expect(mocks.crypto.verifyManifest).not.toHaveBeenCalled();
+    expect(mocks.crypto.verifyManifestWithEpoch).not.toHaveBeenCalled();
     expect(mocks.db.insertManifests).not.toHaveBeenCalled();
   });
 
@@ -409,5 +412,38 @@ describe('syncEngine', () => {
     expect(handleId).toBe('epoch-handle-7');
     expect(envelopeBytes).toEqual(new Uint8Array([1, 2, 3]));
     expect(mocks.db.insertManifests).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs and skips manifests whose canonical epoch signature does not verify', async () => {
+    mocks.crypto.verifyManifestWithEpoch.mockResolvedValueOnce(false);
+    mocks.api.syncAlbum.mockResolvedValue({
+      manifests: [
+        {
+          id: 'manifest-1',
+          albumId: 'album-1',
+          versionCreated: 1,
+          isDeleted: false,
+          encryptedMeta: toBase64(new Uint8Array([1, 2, 3])),
+          signature: toBase64(new Uint8Array([4, 5, 6])),
+          signerPubkey: toBase64(new Uint8Array(32).fill(9)),
+          shardIds: ['shard-1'],
+        },
+      ],
+      currentEpochId: 7,
+      albumVersion: 1,
+      hasMore: false,
+    });
+
+    const syncEngine = await importSyncEngine();
+
+    await syncEngine.sync('album-1');
+
+    expect(mocks.crypto.verifyManifestWithEpoch).toHaveBeenCalledTimes(1);
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      'Manifest signature verification failed',
+      expect.objectContaining({ albumId: 'album-1', manifestId: 'manifest-1' }),
+    );
+    expect(mocks.db.insertManifests).not.toHaveBeenCalled();
+    expect(mocks.db.setAlbumVersion).toHaveBeenCalledWith('album-1', 1);
   });
 });

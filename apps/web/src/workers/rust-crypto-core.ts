@@ -17,13 +17,18 @@
 
 import initRustWasm, * as rustWasm from '../generated/mosaic-wasm/mosaic_wasm.js';
 import type { DownloadSchedule } from '../lib/download-schedule';
-import { WorkerCryptoError, WorkerCryptoErrorCode } from './types';
+import {
+  WorkerCryptoError,
+  WorkerCryptoErrorCode,
+  type ManifestTranscriptInput,
+  type ManifestTranscriptShard,
+} from './types';
 
 const RUST_OK = 0;
 const ENVELOPE_HEADER_BYTES = 64;
-const MANIFEST_SIGNATURE_BYTES = 64;
-const IDENTITY_PUBLIC_KEY_BYTES = 32;
-const MANIFEST_CONTEXT_BYTES = new TextEncoder().encode('Mosaic_Manifest_v1');
+const UUID_BYTES = 16;
+const SHA256_BYTES = 32;
+const SHARD_TRANSCRIPT_RECORD_BYTES = 53;
 const WORKER_ONLY_ERROR_CODE_START = 1000;
 const KNOWN_RUST_CLIENT_ERROR_CODES = new Set<number>(
   Object.values(WorkerCryptoErrorCode).filter(
@@ -471,7 +476,7 @@ export class RustHandleFacade {
    * manifest signing public key. Returns true on `Ok`, false on
    * `AuthenticationFailed`. Other error codes throw.
    *
-   * Slice 4 — replaces the legacy TS `verifyManifest`.
+   * Slice 4 — replaces the legacy TypeScript manifest verifier.
    */
   verifyManifestWithEpoch(
     transcriptBytes: Uint8Array,
@@ -487,6 +492,20 @@ export class RustHandleFacade {
     if (code === WorkerCryptoErrorCode.AuthenticationFailed) return false;
     throwIfErrorCode(code, 'verifyManifestWithEpoch');
     return false;
+  }
+
+  manifestTranscriptBytes(input: ManifestTranscriptInput): Uint8Array {
+    const albumId = uuidToBytes(input.albumId);
+    const encodedShards = encodeManifestTranscriptShards(input.shards);
+    const result = rustWasm.manifestTranscriptBytes(
+      albumId,
+      input.epochId,
+      input.encryptedMeta,
+      encodedShards,
+    );
+    return consumeResult(result, 'manifestTranscriptBytes', (r) =>
+      copyBytes(r.bytes),
+    );
   }
 
   encryptMetadataSidecarWithEpochHandle(
@@ -1049,10 +1068,7 @@ export async function rustOpenStreamingShard(
 
 export const STREAMING_CHUNK_TAG_BYTES_V1 = STREAMING_CHUNK_TAG_BYTES;
 // ---------------------------------------------------------------------------
-// Legacy compatibility surface — used by Slice 0 wiring and the existing
-// rust-crypto-core unit tests. Slices 2-9 will replace each caller; for now
-// these adapters keep the prior behaviour pointing at the new facade so
-// peekHeader / verifyManifest continue to work without regression.
+// Compatibility surface for header parsing through the generated Rust facade.
 // ---------------------------------------------------------------------------
 
 const RUST_OK_LEGACY = 0;
@@ -1067,11 +1083,6 @@ export interface RustHeaderResult {
 
 export interface RustCryptoCore {
   parseEnvelopeHeader(bytes: Uint8Array): RustHeaderResult;
-  verifyManifestWithIdentity(
-    transcriptBytes: Uint8Array,
-    signature: Uint8Array,
-    publicKey: Uint8Array,
-  ): number;
 }
 
 let legacyCorePromise: Promise<RustCryptoCore> | null = null;
@@ -1080,37 +1091,6 @@ let legacyCorePromise: Promise<RustCryptoCore> | null = null;
 export function getRustCryptoCore(): Promise<RustCryptoCore> {
   legacyCorePromise ??= ensureRustReady().then(() => rustWasm);
   return legacyCorePromise;
-}
-
-export function buildLegacyManifestTranscript(
-  manifest: Uint8Array,
-): Uint8Array {
-  const transcript = new Uint8Array(
-    MANIFEST_CONTEXT_BYTES.length + manifest.length,
-  );
-  transcript.set(MANIFEST_CONTEXT_BYTES, 0);
-  transcript.set(manifest, MANIFEST_CONTEXT_BYTES.length);
-  return transcript;
-}
-
-export function verifyLegacyManifestWithRust(
-  rust: RustCryptoCore,
-  manifest: Uint8Array,
-  signature: Uint8Array,
-  publicKey: Uint8Array,
-): boolean {
-  if (
-    signature.length !== MANIFEST_SIGNATURE_BYTES ||
-    publicKey.length !== IDENTITY_PUBLIC_KEY_BYTES
-  ) {
-    return false;
-  }
-
-  const transcript = buildLegacyManifestTranscript(manifest);
-  return (
-    rust.verifyManifestWithIdentity(transcript, signature, publicKey) ===
-    RUST_OK_LEGACY
-  );
 }
 
 export function parseEnvelopeHeaderFromRust(
@@ -1131,6 +1111,81 @@ export function parseEnvelopeHeaderFromRust(
   } finally {
     result.free();
   }
+}
+
+function encodeManifestTranscriptShards(
+  shards: readonly ManifestTranscriptShard[],
+): Uint8Array {
+  const output = new Uint8Array(shards.length * SHARD_TRANSCRIPT_RECORD_BYTES);
+  let offset = 0;
+  for (const shard of shards) {
+    const shardId = uuidToBytes(shard.shardId);
+    const sha256 = sha256ToBytes(shard.sha256);
+    writeU32Le(output, offset, shard.chunkIndex);
+    offset += 4;
+    output[offset] = shard.tier;
+    offset += 1;
+    output.set(shardId, offset);
+    offset += UUID_BYTES;
+    output.set(sha256, offset);
+    offset += SHA256_BYTES;
+  }
+  return output;
+}
+
+function writeU32Le(output: Uint8Array, offset: number, value: number): void {
+  output[offset] = value & 0xff;
+  output[offset + 1] = (value >>> 8) & 0xff;
+  output[offset + 2] = (value >>> 16) & 0xff;
+  output[offset + 3] = (value >>> 24) & 0xff;
+}
+
+function uuidToBytes(uuid: string): Uint8Array {
+  const hex = uuid.replace(/-/g, '');
+  if (!/^[0-9a-fA-F]{32}$/.test(hex)) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidInputLength,
+      'manifest transcript UUID must contain 16 bytes',
+    );
+  }
+  return hexToBytes(hex);
+}
+
+function sha256ToBytes(value: string): Uint8Array {
+  const trimmed = value.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+    return hexToBytes(trimmed);
+  }
+  const decoded = base64UrlToBytes(trimmed);
+  if (decoded.byteLength !== SHA256_BYTES) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidInputLength,
+      'manifest transcript SHA-256 must contain 32 bytes',
+    );
+  }
+  return decoded;
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const output = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < output.length; i += 1) {
+    output[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return output;
+}
+
+function base64UrlToBytes(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(
+    normalized.length + ((4 - normalized.length % 4) % 4),
+    '=',
+  );
+  const binary = atob(padded);
+  const output = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    output[i] = binary.charCodeAt(i);
+  }
+  return output;
 }
 
 // ---------------------------------------------------------------------------

@@ -80,6 +80,8 @@ allowlist = {
     "crates/mosaic-wasm/src/lib.rs::sign_manifest_with_identity": "SAFE: Returns a 64-byte Ed25519 manifest signature; identity signing key remains inside Rust handle.",
     # Returns a 64-byte Ed25519 manifest signature; epoch signing seed remains inside Rust handle.
     "crates/mosaic-wasm/src/lib.rs::sign_manifest_with_epoch_handle": "SAFE: Returns a 64-byte Ed25519 manifest signature; epoch signing seed remains inside Rust handle.",
+    # Returns a 64-byte Ed25519 manifest signature; epoch signing seed remains inside Rust handle.
+    "crates/mosaic-uniffi/src/lib.rs::sign_manifest_with_epoch_handle": "SAFE: Returns a 64-byte Ed25519 manifest signature; epoch signing seed remains inside Rust handle.",
     # Returns a 64-byte Ed25519 auth signature; account-derived signing secret is not exported.
     "crates/mosaic-wasm/src/lib.rs::sign_auth_challenge_with_account": "SAFE: Returns a 64-byte Ed25519 auth signature; account-derived signing secret is not exported.",
     # Returns JS-visible Ed25519 manifest signature bytes; identity signing key remains inside Rust handle.
