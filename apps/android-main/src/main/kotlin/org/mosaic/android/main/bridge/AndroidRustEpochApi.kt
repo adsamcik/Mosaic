@@ -16,26 +16,26 @@ class AndroidRustEpochApi : GeneratedRustEpochApi {
     AndroidRustCoreLibraryLoader.warmUp()
   }
 
-  override fun createEpochKeyHandle(accountKeyHandle: Long, epochId: Int): RustEpochHandleFfiResult {
+  override fun createEpochKeyHandle(accountKeyHandle: ULong, epochId: Int): RustEpochHandleFfiResult {
     require(epochId >= 0) { "epoch id must not be negative" }
-    val result = rustCreateEpochKeyHandle(accountKeyHandle.toULong(), epochId.toUInt())
+    val result = rustCreateEpochKeyHandle(accountKeyHandle, epochId.toUInt())
     return result.toShellResult()
   }
 
   override fun openEpochKeyHandle(
     wrappedEpochSeed: ByteArray,
-    accountKeyHandle: Long,
+    accountKeyHandle: ULong,
     epochId: Int,
   ): RustEpochHandleFfiResult {
     require(epochId >= 0) { "epoch id must not be negative" }
-    val result = rustOpenEpochKeyHandle(wrappedEpochSeed, accountKeyHandle.toULong(), epochId.toUInt())
+    val result = rustOpenEpochKeyHandle(wrappedEpochSeed, accountKeyHandle, epochId.toUInt())
     return result.toShellResult()
   }
 
   internal fun RustEpochKeyHandleResultUniFfi.toShellResult(): RustEpochHandleFfiResult =
     RustEpochHandleFfiResult(
       code = code.toInt(),
-      handle = handle.toLong(),
+      handle = handle,
       epochId = epochId.toInt(),
       wrappedEpochSeed = wrappedEpochSeed,
       signPublicKey = signPublicKey,
@@ -44,17 +44,17 @@ class AndroidRustEpochApi : GeneratedRustEpochApi {
   internal fun RustEpochHandleFfiResult.toUniFfiResult(): RustEpochKeyHandleResultUniFfi =
     RustEpochKeyHandleResultUniFfi(
       code = code.toUShort(),
-      handle = handle.toULong(),
+      handle = handle,
       epochId = epochId.toUInt(),
       wrappedEpochSeed = wrappedEpochSeed,
       signPublicKey = signPublicKey,
     )
 
-  override fun epochKeyHandleIsOpen(handle: Long): RustEpochHandleStatusFfiResult {
-    val result = rustEpochKeyHandleIsOpen(handle.toULong())
+  override fun epochKeyHandleIsOpen(handle: ULong): RustEpochHandleStatusFfiResult {
+    val result = rustEpochKeyHandleIsOpen(handle)
     return RustEpochHandleStatusFfiResult(code = result.code.toInt(), isOpen = result.isOpen)
   }
 
-  override fun closeEpochKeyHandle(handle: Long): Int =
-    rustCloseEpochKeyHandle(handle.toULong()).toInt()
+  override fun closeEpochKeyHandle(handle: ULong): Int =
+    rustCloseEpochKeyHandle(handle).toInt()
 }

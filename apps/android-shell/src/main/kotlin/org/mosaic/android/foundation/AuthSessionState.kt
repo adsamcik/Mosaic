@@ -8,9 +8,9 @@ value class ServerAccountId(val value: String) {
 }
 
 @JvmInline
-value class AccountKeyHandle(val value: Long) {
+value class AccountKeyHandle(val value: ULong) {
   init {
-    require(value > 0) { "account key handle must be positive" }
+    require(value != 0UL) { "account key handle must be non-zero" }
   }
 
   override fun toString(): String = "AccountKeyHandle(<redacted>)"

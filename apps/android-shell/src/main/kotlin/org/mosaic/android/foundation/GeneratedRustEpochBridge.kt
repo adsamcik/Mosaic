@@ -13,9 +13,9 @@ object RustEpochStableCode {
 }
 
 @JvmInline
-value class EpochKeyHandle(val value: Long) {
+value class EpochKeyHandle(val value: ULong) {
   init {
-    require(value > 0) { "epoch key handle must be positive" }
+    require(value != 0UL) { "epoch key handle must be non-zero" }
   }
 
   override fun toString(): String = "EpochKeyHandle(<redacted>)"
@@ -99,14 +99,13 @@ interface RustEpochBridge {
 
 data class RustEpochHandleFfiResult(
   val code: Int,
-  val handle: Long,
+  val handle: ULong,
   val epochId: Int,
   val wrappedEpochSeed: ByteArray,
   val signPublicKey: ByteArray,
 ) {
   init {
     require(code >= 0) { "epoch code must not be negative" }
-    require(handle >= 0) { "epoch handle must not be negative" }
     require(epochId >= 0) { "epoch id must not be negative" }
   }
 
@@ -144,17 +143,17 @@ data class RustEpochHandleStatusFfiResult(
 )
 
 interface GeneratedRustEpochApi {
-  fun createEpochKeyHandle(accountKeyHandle: Long, epochId: Int): RustEpochHandleFfiResult
+  fun createEpochKeyHandle(accountKeyHandle: ULong, epochId: Int): RustEpochHandleFfiResult
 
   fun openEpochKeyHandle(
     wrappedEpochSeed: ByteArray,
-    accountKeyHandle: Long,
+    accountKeyHandle: ULong,
     epochId: Int,
   ): RustEpochHandleFfiResult
 
-  fun epochKeyHandleIsOpen(handle: Long): RustEpochHandleStatusFfiResult
+  fun epochKeyHandleIsOpen(handle: ULong): RustEpochHandleStatusFfiResult
 
-  fun closeEpochKeyHandle(handle: Long): Int
+  fun closeEpochKeyHandle(handle: ULong): Int
 }
 
 class GeneratedRustEpochBridge(
@@ -170,7 +169,7 @@ class GeneratedRustEpochBridge(
         RustEpochStableCode.HANDLE_SPACE_EXHAUSTED -> EpochCreateCode.HANDLE_SPACE_EXHAUSTED
         else -> EpochCreateCode.INTERNAL_ERROR
       }
-      val handle = if (code == EpochCreateCode.SUCCESS && result.handle > 0) EpochKeyHandle(result.handle) else null
+      val handle = if (code == EpochCreateCode.SUCCESS && result.handle != 0UL) EpochKeyHandle(result.handle) else null
       val safeCode = if (code == EpochCreateCode.SUCCESS && handle == null) EpochCreateCode.INTERNAL_ERROR else code
       EpochCreateResult(
         code = safeCode,
@@ -202,7 +201,7 @@ class GeneratedRustEpochBridge(
         RustEpochStableCode.HANDLE_SPACE_EXHAUSTED -> EpochOpenCode.HANDLE_SPACE_EXHAUSTED
         else -> EpochOpenCode.INTERNAL_ERROR
       }
-      val handle = if (code == EpochOpenCode.SUCCESS && result.handle > 0) EpochKeyHandle(result.handle) else null
+      val handle = if (code == EpochOpenCode.SUCCESS && result.handle != 0UL) EpochKeyHandle(result.handle) else null
       val safeCode = if (code == EpochOpenCode.SUCCESS && handle == null) EpochOpenCode.INTERNAL_ERROR else code
       EpochOpenResult(
         code = safeCode,

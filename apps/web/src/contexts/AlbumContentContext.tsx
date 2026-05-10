@@ -22,6 +22,7 @@ import {
 import { getApi, ApiError } from '../lib/api';
 import { toBase64, fromBase64 } from '../lib/api';
 import {
+  canonicalJson,
   hasManualConflicts,
   mergeAlbumContent,
 } from '../lib/conflict-resolution';
@@ -550,9 +551,7 @@ async function resolveAndRetrySave(
     // If the merge produced an output identical to the server, there is
     // nothing new to push. Treat as a successful recovery without an
     // additional write.
-    if (
-      JSON.stringify(mergeResult.merged) === JSON.stringify(serverDocument)
-    ) {
+    if (canonicalJson(mergeResult.merged) === canonicalJson(serverDocument)) {
       return {
         merged: mergeResult.merged,
         newVersion: conflictResponse.version,

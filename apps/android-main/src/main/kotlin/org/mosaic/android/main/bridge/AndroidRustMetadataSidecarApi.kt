@@ -27,7 +27,7 @@ class AndroidRustMetadataSidecarApi : GeneratedRustMetadataSidecarApi {
   }
 
   override fun encryptMetadataSidecarWithEpochHandle(
-    handle: Long,
+    handle: ULong,
     albumId: ByteArray,
     photoId: ByteArray,
     epochId: Int,
@@ -37,7 +37,7 @@ class AndroidRustMetadataSidecarApi : GeneratedRustMetadataSidecarApi {
     require(epochId >= 0) { "epoch id must not be negative" }
     require(shardIndex >= 0) { "shard index must not be negative" }
     val result = rustEncryptMetadataSidecarWithEpochHandle(
-      handle = handle.toULong(),
+      handle = handle,
       albumId = albumId,
       photoId = photoId,
       epochId = epochId.toUInt(),
@@ -63,7 +63,7 @@ class AndroidRustMetadataSidecarApi : GeneratedRustMetadataSidecarApi {
   }
 
   override fun encryptMediaMetadataSidecarWithEpochHandle(
-    handle: Long,
+    handle: ULong,
     albumId: ByteArray,
     photoId: ByteArray,
     epochId: Int,
@@ -73,7 +73,7 @@ class AndroidRustMetadataSidecarApi : GeneratedRustMetadataSidecarApi {
     require(epochId >= 0) { "epoch id must not be negative" }
     require(shardIndex >= 0) { "shard index must not be negative" }
     val result = rustEncryptMediaMetadataSidecarWithEpochHandle(
-      handle = handle.toULong(),
+      handle = handle,
       albumId = albumId,
       photoId = photoId,
       epochId = epochId.toUInt(),

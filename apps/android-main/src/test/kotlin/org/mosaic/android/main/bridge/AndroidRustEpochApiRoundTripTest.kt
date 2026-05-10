@@ -12,9 +12,9 @@ class AndroidRustEpochApiRoundTripTest {
   fun createEpochWithMissingAccountHandleReturnsErrorCode() {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustEpochApi()
-    val result = api.createEpochKeyHandle(accountKeyHandle = 0xDEADBEEFL, epochId = 1)
+    val result = api.createEpochKeyHandle(accountKeyHandle = 0xDEADBEEFUL, epochId = 1)
     assertNotEquals(0, result.code)
-    assertEquals(0L, result.handle)
+    assertEquals(0UL, result.handle)
   }
 
   @Test
@@ -23,7 +23,7 @@ class AndroidRustEpochApiRoundTripTest {
     val api = AndroidRustEpochApi()
     val result = api.openEpochKeyHandle(
       wrappedEpochSeed = ByteArray(48),
-      accountKeyHandle = 0xDEADBEEFL,
+      accountKeyHandle = 0xDEADBEEFUL,
       epochId = 1,
     )
     assertNotEquals(0, result.code)
@@ -36,7 +36,7 @@ class AndroidRustEpochApiRoundTripTest {
     // 4 bytes is well below the wrapped key minimum (32 bytes + 12 nonce + 16 tag).
     val result = api.openEpochKeyHandle(
       wrappedEpochSeed = ByteArray(4),
-      accountKeyHandle = 0xDEADBEEFL,
+      accountKeyHandle = 0xDEADBEEFUL,
       epochId = 1,
     )
     assertNotEquals(0, result.code)
@@ -46,7 +46,7 @@ class AndroidRustEpochApiRoundTripTest {
   fun isEpochOpenForMissingHandleReportsNotOpen() {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustEpochApi()
-    val status = api.epochKeyHandleIsOpen(handle = 0xCAFEBABEL)
+    val status = api.epochKeyHandleIsOpen(handle = 0xCAFEBABEUL)
     assertTrue(status.code != 0 || !status.isOpen)
   }
 
@@ -54,7 +54,7 @@ class AndroidRustEpochApiRoundTripTest {
   fun closeEpochForMissingHandleReturnsNotFound() {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustEpochApi()
-    val code = api.closeEpochKeyHandle(handle = 0xCAFEBABEL)
+    val code = api.closeEpochKeyHandle(handle = 0xCAFEBABEUL)
     assertNotEquals(0, code)
   }
 
@@ -62,7 +62,7 @@ class AndroidRustEpochApiRoundTripTest {
   fun createEpochRejectsNegativeEpochIdAtBridgeLevel() {
     val api = AndroidRustEpochApi()
     val ex = runCatching {
-      api.createEpochKeyHandle(accountKeyHandle = 1L, epochId = -1)
+      api.createEpochKeyHandle(accountKeyHandle = 1UL, epochId = -1)
     }.exceptionOrNull()
     assertNotEquals("expected pre-FFI rejection of negative epoch id", null, ex)
   }

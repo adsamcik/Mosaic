@@ -18,8 +18,8 @@ class AndroidRustHeaderApi : GeneratedRustHeaderApi {
     val result = rustParseEnvelopeHeader(bytes)
     return RustHeaderParseFfiResult(
       code = result.code.toInt(),
-      epochId = result.epochId.toInt(),
-      shardIndex = result.shardIndex.toInt(),
+      epochId = result.epochId.toLong(),
+      shardIndex = result.shardIndex.toLong(),
       tier = result.tier.toInt(),
       nonce = result.nonce,
     )

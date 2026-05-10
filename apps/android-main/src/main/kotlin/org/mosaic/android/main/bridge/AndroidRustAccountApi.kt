@@ -43,18 +43,18 @@ class AndroidRustAccountApi : GeneratedRustAccountApi {
     val result = rustUnlockAccountKey(password, uniRequest)
     return RustAccountUnlockFfiResult(
       code = result.code.toInt(),
-      handle = result.handle.toLong(),
+      handle = result.handle,
     )
   }
 
-  override fun accountKeyHandleIsOpen(handle: Long): RustAccountKeyHandleStatusFfiResult {
-    val result = rustAccountKeyHandleIsOpen(handle.toULong())
+  override fun accountKeyHandleIsOpen(handle: ULong): RustAccountKeyHandleStatusFfiResult {
+    val result = rustAccountKeyHandleIsOpen(handle)
     return RustAccountKeyHandleStatusFfiResult(
       code = result.code.toInt(),
       isOpen = result.isOpen,
     )
   }
 
-  override fun closeAccountKeyHandle(handle: Long): Int =
-    rustCloseAccountKeyHandle(handle.toULong()).toInt()
+  override fun closeAccountKeyHandle(handle: ULong): Int =
+    rustCloseAccountKeyHandle(handle).toInt()
 }

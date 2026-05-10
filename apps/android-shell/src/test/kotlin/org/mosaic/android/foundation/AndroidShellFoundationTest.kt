@@ -94,7 +94,7 @@ private fun serverAndCryptoStateAreDistinct() {
   assertFalse(serverOnly.isCryptoUnlocked)
   assertFalse(serverOnly.canQueueUploads)
 
-  val unlocked = serverOnly.withCryptoUnlocked(AccountKeyHandle(42), "mosaic-v1")
+  val unlocked = serverOnly.withCryptoUnlocked(AccountKeyHandle(42UL), "mosaic-v1")
   assertTrue(unlocked.isServerAuthenticated)
   assertTrue(unlocked.isCryptoUnlocked)
   assertTrue(unlocked.canQueueUploads)
@@ -108,9 +108,9 @@ private fun serverAndCryptoStateAreDistinct() {
 private fun cryptoHandleStringOutputIsRedacted() {
   val unlocked = ShellSessionState.initial()
     .withServerAuthenticated(ServerAccountId("server-account-1"))
-    .withCryptoUnlocked(AccountKeyHandle(42), "mosaic-v1")
+    .withCryptoUnlocked(AccountKeyHandle(42UL), "mosaic-v1")
 
-  assertFalse(AccountKeyHandle(42).toString().contains("42"))
+  assertFalse(AccountKeyHandle(42UL).toString().contains("42"))
   assertFalse(unlocked.cryptoUnlockState.toString().contains("42"))
   assertFalse(unlocked.toString().contains("42"))
   assertTrue(unlocked.cryptoUnlockState.toString().contains("<redacted>"))
@@ -119,7 +119,7 @@ private fun cryptoHandleStringOutputIsRedacted() {
 private fun cryptoUnlockBeforeServerAuthenticationRejected() {
   val initial = ShellSessionState.initial()
   expectThrows("crypto unlock requires server auth") {
-    initial.withCryptoUnlocked(AccountKeyHandle(7), "mosaic-v1")
+    initial.withCryptoUnlocked(AccountKeyHandle(7UL), "mosaic-v1")
   }
 }
 
@@ -344,7 +344,7 @@ private fun manualUploadResultStringsRedactStagedSourcesAndHandles() {
   val coordinator = manualUploadCoordinator()
   val session = ShellSessionState.initial()
     .withServerAuthenticated(ServerAccountId("server-account-1"))
-    .withCryptoUnlocked(AccountKeyHandle(4242), "mosaic-v1")
+    .withCryptoUnlocked(AccountKeyHandle(4242UL), "mosaic-v1")
 
   val result = coordinator.queueOnePhoto(
     sessionState = session,
@@ -606,7 +606,7 @@ private fun fakeRustBridgeModelsUnlockLifecycle() {
 }
 
 private fun generatedRustBridgeMapsUniFfiAccountCalls() {
-  val api = FakeGeneratedRustAccountApi()
+  val api = FakeGeneratedRustAccountApi(firstHandle = ULong.MAX_VALUE)
   val bridge = GeneratedRustAccountBridge(api)
   assertEquals("mosaic-v1", bridge.protocolVersion())
 
@@ -645,7 +645,7 @@ private fun generatedRustBridgeMapsUniFfiAccountCalls() {
   assertEquals(AccountUnlockCode.SUCCESS, unlocked.code)
   assertTrue(password.all { it == 0.toByte() })
   val handle = requireNotNull(unlocked.handle) { "success must include handle" }
-  assertEquals(1L, handle.value)
+  assertEquals(ULong.MAX_VALUE, handle.value)
   assertEquals(65536, api.lastUnlockRequest?.kdfMemoryKiB)
   assertEquals(3, api.lastUnlockRequest?.kdfIterations)
   assertEquals(1, api.lastUnlockRequest?.kdfParallelism)
@@ -968,7 +968,7 @@ private fun clientCoreUploadRequestWithSecrets(): ManualUploadClientCoreHandoffR
 
 private fun authenticatedUnlockedSession(): ShellSessionState = ShellSessionState.initial()
   .withServerAuthenticated(ServerAccountId("server-account-1"))
-  .withCryptoUnlocked(AccountKeyHandle(42), "mosaic-v1")
+  .withCryptoUnlocked(AccountKeyHandle(42UL), "mosaic-v1")
 
 private fun stagedUploadReceipt(): PhotoPickerReadReceipt = PhotoPickerReadReceipt(
   stagedSource = StagedMediaReference.of("mosaic-staged://manual-upload/source-1"),
@@ -1029,7 +1029,7 @@ private fun unlockRequest(): AccountUnlockRequest = AccountUnlockRequest(
 )
 
 private class FakeRustAccountBridge : RustAccountBridge {
-  private var nextHandle = 1L
+  private var nextHandle = 1UL
   private val openHandles = mutableSetOf<AccountKeyHandle>()
   private val correctPassword = "correct horse battery staple".encodeToByteArray()
 
@@ -1055,9 +1055,9 @@ private class FakeRustAccountBridge : RustAccountBridge {
     if (openHandles.remove(handle)) AccountCloseCode.SUCCESS else AccountCloseCode.NOT_FOUND
 }
 
-private class FakeGeneratedRustAccountApi : GeneratedRustAccountApi {
-  private var nextHandle = 1L
-  private val openHandles = mutableSetOf<Long>()
+private class FakeGeneratedRustAccountApi(firstHandle: ULong = 1UL) : GeneratedRustAccountApi {
+  private var nextHandle = firstHandle
+  private val openHandles = mutableSetOf<ULong>()
   private val correctPassword = "correct horse battery staple".encodeToByteArray()
 
   var lastUnlockRequest: RustAccountUnlockFfiRequest? = null
@@ -1073,13 +1073,13 @@ private class FakeGeneratedRustAccountApi : GeneratedRustAccountApi {
     if (request.userSalt.size != AccountUnlockRequest.SALT_LENGTH ||
       request.accountSalt.size != AccountUnlockRequest.SALT_LENGTH
     ) {
-      return RustAccountUnlockFfiResult(RustClientStableCode.INVALID_SALT_LENGTH, 0)
+      return RustAccountUnlockFfiResult(RustClientStableCode.INVALID_SALT_LENGTH, 0UL)
     }
     if (request.kdfMemoryKiB < 65536) {
-      return RustAccountUnlockFfiResult(RustClientStableCode.KDF_PROFILE_TOO_WEAK, 0)
+      return RustAccountUnlockFfiResult(RustClientStableCode.KDF_PROFILE_TOO_WEAK, 0UL)
     }
     if (!password.contentEquals(correctPassword)) {
-      return RustAccountUnlockFfiResult(RustClientStableCode.AUTHENTICATION_FAILED, 0)
+      return RustAccountUnlockFfiResult(RustClientStableCode.AUTHENTICATION_FAILED, 0UL)
     }
 
     val handle = nextHandle++
@@ -1087,10 +1087,10 @@ private class FakeGeneratedRustAccountApi : GeneratedRustAccountApi {
     return RustAccountUnlockFfiResult(RustClientStableCode.OK, handle)
   }
 
-  override fun accountKeyHandleIsOpen(handle: Long): RustAccountKeyHandleStatusFfiResult =
+  override fun accountKeyHandleIsOpen(handle: ULong): RustAccountKeyHandleStatusFfiResult =
     RustAccountKeyHandleStatusFfiResult(RustClientStableCode.OK, handle in openHandles)
 
-  override fun closeAccountKeyHandle(handle: Long): Int =
+  override fun closeAccountKeyHandle(handle: ULong): Int =
     if (openHandles.remove(handle)) RustClientStableCode.OK else RustClientStableCode.SECRET_HANDLE_NOT_FOUND
 }
 

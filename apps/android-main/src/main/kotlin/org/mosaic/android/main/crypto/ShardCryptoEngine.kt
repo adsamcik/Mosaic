@@ -32,7 +32,7 @@ internal class AndroidShardCryptoEngine(
     shardIndex: Int,
   ): ByteArray {
     val result = rustShardApi.encryptShardWithEpochHandle(
-      epochKeyHandle = epochHandleId,
+      epochKeyHandle = epochHandleId.toULong(),
       plaintext = plaintext,
       shardIndex = shardIndex,
       tier = tier,

@@ -9,6 +9,12 @@ import androidx.work.OneTimeWorkRequestBuilder
 import java.util.concurrent.TimeUnit
 
 object ShardEncryptionScheduler {
+  /**
+   * `epochHandleId` is the bit-pattern carrier for a Rust `u64` handle.
+   * WorkManager `Data` cannot store `ULong`, so high-bit handles are
+   * intentionally transported as negative `Long` values and reinterpreted
+   * with `toULong()` by the crypto engine.
+   */
   fun buildRequest(
     jobId: String,
     stagingUri: String,

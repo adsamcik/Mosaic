@@ -17,9 +17,9 @@ class AndroidRustIdentityApiRoundTripTest {
   fun createIdentityWithMissingAccountHandleReturnsErrorCode() {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustIdentityApi()
-    val result = api.createIdentityHandle(accountKeyHandle = 0xDEADBEEFL)
+    val result = api.createIdentityHandle(accountKeyHandle = 0xDEADBEEFUL)
     assertNotEquals(0, result.code)
-    assertEquals(0L, result.handle)
+    assertEquals(0UL, result.handle)
   }
 
   @Test
@@ -28,7 +28,7 @@ class AndroidRustIdentityApiRoundTripTest {
     val api = AndroidRustIdentityApi()
     val result = api.openIdentityHandle(
       wrappedSeed = ByteArray(64),
-      accountKeyHandle = 0xDEADBEEFL,
+      accountKeyHandle = 0xDEADBEEFUL,
     )
     assertNotEquals(0, result.code)
   }
@@ -37,7 +37,7 @@ class AndroidRustIdentityApiRoundTripTest {
   fun signingPubkeyForMissingHandleReturnsErrorCode() {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustIdentityApi()
-    val result = api.identitySigningPubkey(handle = 0xCAFEBABEL)
+    val result = api.identitySigningPubkey(handle = 0xCAFEBABEUL)
     assertNotEquals(0, result.code)
   }
 
@@ -45,7 +45,7 @@ class AndroidRustIdentityApiRoundTripTest {
   fun encryptionPubkeyForMissingHandleReturnsErrorCode() {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustIdentityApi()
-    val result = api.identityEncryptionPubkey(handle = 0xCAFEBABEL)
+    val result = api.identityEncryptionPubkey(handle = 0xCAFEBABEUL)
     assertNotEquals(0, result.code)
   }
 
@@ -53,7 +53,7 @@ class AndroidRustIdentityApiRoundTripTest {
   fun signManifestWithMissingHandleReturnsErrorCode() {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustIdentityApi()
-    val result = api.signManifestWithIdentity(handle = 0xCAFEBABEL, transcriptBytes = ByteArray(48))
+    val result = api.signManifestWithIdentity(handle = 0xCAFEBABEUL, transcriptBytes = ByteArray(48))
     assertNotEquals(0, result.code)
     assertNotNull(result.bytes)
   }
@@ -62,7 +62,7 @@ class AndroidRustIdentityApiRoundTripTest {
   fun closeIdentityForMissingHandleReturnsNotFound() {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustIdentityApi()
-    val code = api.closeIdentityHandle(handle = 0xCAFEBABEL)
+    val code = api.closeIdentityHandle(handle = 0xCAFEBABEUL)
     assertNotEquals(0, code)
   }
 
@@ -74,8 +74,8 @@ class AndroidRustIdentityApiRoundTripTest {
     // ByteArray.
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustIdentityApi()
-    val first = api.identitySigningPubkey(0xCAFEBABEL)
-    val second = api.identitySigningPubkey(0xCAFEBABEL)
+    val first = api.identitySigningPubkey(0xCAFEBABEUL)
+    val second = api.identitySigningPubkey(0xCAFEBABEUL)
     // Both should fail identically; their byte arrays must not be the SAME
     // instance (or if they are, mutating one must not affect the other).
     if (first.bytes.isNotEmpty()) {

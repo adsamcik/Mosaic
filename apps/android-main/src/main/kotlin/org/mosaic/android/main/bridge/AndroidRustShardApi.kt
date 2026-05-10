@@ -14,7 +14,7 @@ class AndroidRustShardApi : GeneratedRustShardApi {
   }
 
   override fun encryptShardWithEpochHandle(
-    epochKeyHandle: Long,
+    epochKeyHandle: ULong,
     plaintext: ByteArray,
     shardIndex: Int,
     tier: Int,
@@ -23,7 +23,7 @@ class AndroidRustShardApi : GeneratedRustShardApi {
     require(shardIndex >= 0) { "shard index must not be negative" }
     require(tier in MIN_TIER..MAX_TIER) { "tier must be within [$MIN_TIER, $MAX_TIER]" }
     val result = rustEncryptShardWithEpochHandle(
-      handle = epochKeyHandle.toULong(),
+      handle = epochKeyHandle,
       plaintext = plaintext,
       shardIndex = shardIndex.toUInt(),
       tierByte = tier.toUByte(),
@@ -36,11 +36,11 @@ class AndroidRustShardApi : GeneratedRustShardApi {
   }
 
   override fun decryptShardWithEpochHandle(
-    epochKeyHandle: Long,
+    epochKeyHandle: ULong,
     envelopeBytes: ByteArray,
   ): RustDecryptedShardFfiResult {
     require(envelopeBytes.isNotEmpty()) { "envelope bytes must not be empty" }
-    val result = rustDecryptShardWithEpochHandle(epochKeyHandle.toULong(), envelopeBytes)
+    val result = rustDecryptShardWithEpochHandle(epochKeyHandle, envelopeBytes)
     return RustDecryptedShardFfiResult(
       code = result.code.toInt(),
       plaintext = result.plaintext,

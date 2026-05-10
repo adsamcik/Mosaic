@@ -20,8 +20,8 @@ enum class HeaderParseCode {
 }
 
 class ParsedShardEnvelopeHeader(
-  val epochId: Int,
-  val shardIndex: Int,
+  val epochId: Long,
+  val shardIndex: Long,
   val tier: Int,
   nonce: ByteArray,
 ) {
@@ -64,8 +64,8 @@ interface RustHeaderBridge {
 
 data class RustHeaderParseFfiResult(
   val code: Int,
-  val epochId: Int,
-  val shardIndex: Int,
+  val epochId: Long,
+  val shardIndex: Long,
   val tier: Int,
   val nonce: ByteArray,
 ) {
@@ -95,8 +95,8 @@ data class RustHeaderParseFfiResult(
 
   override fun hashCode(): Int {
     var result = code
-    result = 31 * result + epochId
-    result = 31 * result + shardIndex
+    result = 31 * result + epochId.hashCode()
+    result = 31 * result + shardIndex.hashCode()
     result = 31 * result + tier
     result = 31 * result + nonce.contentHashCode()
     return result

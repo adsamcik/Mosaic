@@ -68,7 +68,7 @@ private fun galleryDecryptHandlesCannotBecomeDurableSchedulerState() {
     albumId = AlbumId("album-1"),
     capability = AutoImportCapability.GalleryDecryptHandle(
       serverAccountId = ServerAccountId("server-account-1"),
-      accountKeyHandle = AccountKeyHandle(4242),
+      accountKeyHandle = AccountKeyHandle(4242UL),
     ),
   )
 
@@ -287,7 +287,7 @@ private fun autoImportStringsRemainPrivacySafe() {
 private fun uploadOnlyBackgroundCapabilityIsSeparateFromGalleryDecryptHandle() {
   val galleryHandle = AutoImportCapability.GalleryDecryptHandle(
     serverAccountId = ServerAccountId("server-account-1"),
-    accountKeyHandle = AccountKeyHandle(4242),
+    accountKeyHandle = AccountKeyHandle(4242UL),
   )
   val uploadOnly = autoImportUploadCapability()
 

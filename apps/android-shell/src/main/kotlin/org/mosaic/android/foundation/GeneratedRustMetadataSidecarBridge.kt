@@ -249,7 +249,7 @@ interface GeneratedRustMetadataSidecarApi {
   ): RustBytesFfiResult
 
   fun encryptMetadataSidecarWithEpochHandle(
-    handle: Long,
+    handle: ULong,
     albumId: ByteArray,
     photoId: ByteArray,
     epochId: Int,
@@ -265,7 +265,7 @@ interface GeneratedRustMetadataSidecarApi {
   ): RustBytesFfiResult
 
   fun encryptMediaMetadataSidecarWithEpochHandle(
-    handle: Long,
+    handle: ULong,
     albumId: ByteArray,
     photoId: ByteArray,
     epochId: Int,

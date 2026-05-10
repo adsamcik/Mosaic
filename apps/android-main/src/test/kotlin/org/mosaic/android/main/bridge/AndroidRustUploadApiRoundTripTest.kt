@@ -92,7 +92,7 @@ class AndroidRustUploadApiRoundTripTest {
   private fun buildEpochImport(signPublicKey: ByteArray): RustEpochHandleFfiResult =
     RustEpochHandleFfiResult(
       code = 0,
-      handle = 17L,
+      handle = 1UL,
       epochId = 11,
       wrappedEpochSeed = ByteArray(32) { (it + 64).toByte() },
       signPublicKey = signPublicKey,

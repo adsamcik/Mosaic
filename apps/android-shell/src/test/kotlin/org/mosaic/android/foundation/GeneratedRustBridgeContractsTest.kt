@@ -126,8 +126,8 @@ private fun headerBridgeMapsOkResult() {
 
   bridgeAssertTrue(result.code == HeaderParseCode.SUCCESS)
   val parsed = result.parsed ?: error("expected parsed header")
-  bridgeAssertTrue(parsed.epochId == 7)
-  bridgeAssertTrue(parsed.shardIndex == 3)
+  bridgeAssertTrue(parsed.epochId == 7L)
+  bridgeAssertTrue(parsed.shardIndex == 3L)
   bridgeAssertTrue(parsed.tier == 2)
   bridgeAssertTrue(parsed.nonce.contentEquals(expectedNonce))
   // The bridge wiped the FFI buffer; the test's local nonce reference is now zeroed.
@@ -175,10 +175,10 @@ private fun headerParseFfiResultRedactsNonce() {
 private fun parsedHeaderRejectsBadFields() {
   val nonce = ByteArray(ParsedShardEnvelopeHeader.NONCE_LENGTH)
   bridgeExpectThrows("negative epoch id") {
-    ParsedShardEnvelopeHeader(epochId = -1, shardIndex = 0, tier = 1, nonce = nonce)
+    ParsedShardEnvelopeHeader(epochId = -1L, shardIndex = 0, tier = 1, nonce = nonce)
   }
   bridgeExpectThrows("negative shard index") {
-    ParsedShardEnvelopeHeader(epochId = 0, shardIndex = -1, tier = 1, nonce = nonce)
+    ParsedShardEnvelopeHeader(epochId = 0, shardIndex = -1L, tier = 1, nonce = nonce)
   }
   bridgeExpectThrows("tier zero") {
     ParsedShardEnvelopeHeader(epochId = 0, shardIndex = 0, tier = 0, nonce = nonce)
@@ -249,15 +249,15 @@ private fun identityBridgeCreateMapsOkAndMissingHandle() {
   val okApi = FakeGeneratedRustIdentityApi(
     create = RustIdentityHandleFfiResult(
       code = RustIdentityStableCode.OK,
-      handle = 42,
+      handle = ULong.MAX_VALUE,
       signingPubkey = signing,
       encryptionPubkey = encryption,
       wrappedSeed = seed,
     ),
   )
-  val ok = GeneratedRustIdentityBridge(okApi).createIdentity(AccountKeyHandle(7))
+  val ok = GeneratedRustIdentityBridge(okApi).createIdentity(AccountKeyHandle(7UL))
   bridgeAssertTrue(ok.code == IdentityCreateCode.SUCCESS)
-  bridgeAssertTrue(ok.handle != null && ok.handle!!.value == 42L)
+  bridgeAssertTrue(ok.handle != null && ok.handle!!.value == ULong.MAX_VALUE)
   bridgeAssertTrue(ok.signingPubkey.contentEquals(expectedSigning))
   bridgeAssertTrue(ok.encryptionPubkey.contentEquals(expectedEncryption))
   bridgeAssertTrue(ok.wrappedSeed.contentEquals(expectedSeed))
@@ -269,13 +269,13 @@ private fun identityBridgeCreateMapsOkAndMissingHandle() {
   val missingApi = FakeGeneratedRustIdentityApi(
     create = RustIdentityHandleFfiResult(
       code = RustIdentityStableCode.SECRET_HANDLE_NOT_FOUND,
-      handle = 0,
+      handle = 0UL,
       signingPubkey = ByteArray(0),
       encryptionPubkey = ByteArray(0),
       wrappedSeed = ByteArray(0),
     ),
   )
-  val missing = GeneratedRustIdentityBridge(missingApi).createIdentity(AccountKeyHandle(7))
+  val missing = GeneratedRustIdentityBridge(missingApi).createIdentity(AccountKeyHandle(7UL))
   bridgeAssertTrue(missing.code == IdentityCreateCode.ACCOUNT_HANDLE_NOT_FOUND)
   bridgeAssertTrue(missing.handle == null)
 }
@@ -284,13 +284,13 @@ private fun identityBridgeOpenMapsAuthenticationFailure() {
   val api = FakeGeneratedRustIdentityApi(
     open = RustIdentityHandleFfiResult(
       code = RustIdentityStableCode.AUTHENTICATION_FAILED,
-      handle = 0,
+      handle = 0UL,
       signingPubkey = ByteArray(0),
       encryptionPubkey = ByteArray(0),
       wrappedSeed = ByteArray(0),
     ),
   )
-  val result = GeneratedRustIdentityBridge(api).openIdentity(ByteArray(48), AccountKeyHandle(7))
+  val result = GeneratedRustIdentityBridge(api).openIdentity(ByteArray(48), AccountKeyHandle(7UL))
   bridgeAssertTrue(result.code == IdentityOpenCode.AUTHENTICATION_FAILED)
   bridgeAssertTrue(result.handle == null)
 }
@@ -299,7 +299,7 @@ private fun identityBridgePubkeyMapsMissingHandle() {
   val api = FakeGeneratedRustIdentityApi(
     signingPubkey = RustBytesFfiResult(code = RustIdentityStableCode.IDENTITY_HANDLE_NOT_FOUND, bytes = ByteArray(0)),
   )
-  val result = GeneratedRustIdentityBridge(api).signingPubkey(IdentityHandle(99))
+  val result = GeneratedRustIdentityBridge(api).signingPubkey(IdentityHandle(99UL))
   bridgeAssertTrue(result.code == IdentityPubkeyCode.IDENTITY_HANDLE_NOT_FOUND)
   bridgeAssertTrue(result.pubkey.isEmpty())
 }
@@ -308,26 +308,26 @@ private fun identityBridgeSignManifestMapsInvalidInputLength() {
   val api = FakeGeneratedRustIdentityApi(
     signature = RustBytesFfiResult(code = RustIdentityStableCode.INVALID_INPUT_LENGTH, bytes = ByteArray(0)),
   )
-  val result = GeneratedRustIdentityBridge(api).signManifest(IdentityHandle(99), ByteArray(0))
+  val result = GeneratedRustIdentityBridge(api).signManifest(IdentityHandle(99UL), ByteArray(0))
   bridgeAssertTrue(result.code == IdentitySignCode.INVALID_INPUT_LENGTH)
   bridgeAssertTrue(result.signature.isEmpty())
 }
 
 private fun identityBridgeCloseMapsNotFound() {
   val api = FakeGeneratedRustIdentityApi(closeCode = RustIdentityStableCode.IDENTITY_HANDLE_NOT_FOUND)
-  bridgeAssertTrue(GeneratedRustIdentityBridge(api).closeIdentity(IdentityHandle(99)) == IdentityCloseCode.NOT_FOUND)
+  bridgeAssertTrue(GeneratedRustIdentityBridge(api).closeIdentity(IdentityHandle(99UL)) == IdentityCloseCode.NOT_FOUND)
 
   val okApi = FakeGeneratedRustIdentityApi(closeCode = RustIdentityStableCode.OK)
-  bridgeAssertTrue(GeneratedRustIdentityBridge(okApi).closeIdentity(IdentityHandle(99)) == IdentityCloseCode.SUCCESS)
+  bridgeAssertTrue(GeneratedRustIdentityBridge(okApi).closeIdentity(IdentityHandle(99UL)) == IdentityCloseCode.SUCCESS)
 }
 
 private fun identityDtosRedactKeyMaterial() {
-  val handle = IdentityHandle(7)
+  val handle = IdentityHandle(7UL)
   bridgeAssertTrue("IdentityHandle(<redacted>)" == handle.toString())
 
   val createResult = IdentityCreateResult(
     code = IdentityCreateCode.SUCCESS,
-    handle = IdentityHandle(7),
+    handle = IdentityHandle(7UL),
     signingPubkey = ByteArray(32) { 0x11 },
     encryptionPubkey = ByteArray(32) { 0x22 },
     wrappedSeed = ByteArray(64) { 0x33 },
@@ -354,15 +354,15 @@ private fun epochBridgeCreateMapsOkAndMissingAccountHandle() {
   val okApi = FakeGeneratedRustEpochApi(
     create = RustEpochHandleFfiResult(
       code = RustEpochStableCode.OK,
-      handle = 88,
+      handle = ULong.MAX_VALUE,
       epochId = 5,
       wrappedEpochSeed = seed,
       signPublicKey = ByteArray(32),
     ),
   )
-  val ok = GeneratedRustEpochBridge(okApi).createEpoch(AccountKeyHandle(7), epochId = 5)
+  val ok = GeneratedRustEpochBridge(okApi).createEpoch(AccountKeyHandle(7UL), epochId = 5)
   bridgeAssertTrue(ok.code == EpochCreateCode.SUCCESS)
-  bridgeAssertTrue(ok.handle?.value == 88L)
+  bridgeAssertTrue(ok.handle?.value == ULong.MAX_VALUE)
   bridgeAssertTrue(ok.epochId == 5)
   bridgeAssertTrue(ok.wrappedEpochSeed.contentEquals(expectedSeed))
   bridgeAssertTrue(seed.all { it == 0.toByte() })
@@ -370,13 +370,13 @@ private fun epochBridgeCreateMapsOkAndMissingAccountHandle() {
   val missingApi = FakeGeneratedRustEpochApi(
     create = RustEpochHandleFfiResult(
       code = RustEpochStableCode.SECRET_HANDLE_NOT_FOUND,
-      handle = 0,
+      handle = 0UL,
       epochId = 0,
       wrappedEpochSeed = ByteArray(0),
       signPublicKey = ByteArray(0),
     ),
   )
-  val missing = GeneratedRustEpochBridge(missingApi).createEpoch(AccountKeyHandle(7), epochId = 5)
+  val missing = GeneratedRustEpochBridge(missingApi).createEpoch(AccountKeyHandle(7UL), epochId = 5)
   bridgeAssertTrue(missing.code == EpochCreateCode.ACCOUNT_HANDLE_NOT_FOUND)
   bridgeAssertTrue(missing.handle == null)
 }
@@ -385,13 +385,13 @@ private fun epochBridgeOpenMapsWrappedKeyTooShort() {
   val api = FakeGeneratedRustEpochApi(
     open = RustEpochHandleFfiResult(
       code = RustEpochStableCode.WRAPPED_KEY_TOO_SHORT,
-      handle = 0,
+      handle = 0UL,
       epochId = 0,
       wrappedEpochSeed = ByteArray(0),
       signPublicKey = ByteArray(0),
     ),
   )
-  val result = GeneratedRustEpochBridge(api).openEpoch(ByteArray(8), AccountKeyHandle(7), epochId = 1)
+  val result = GeneratedRustEpochBridge(api).openEpoch(ByteArray(8), AccountKeyHandle(7UL), epochId = 1)
   bridgeAssertTrue(result.code == EpochOpenCode.WRAPPED_KEY_TOO_SHORT)
   bridgeAssertTrue(result.handle == null)
 }
@@ -400,34 +400,34 @@ private fun epochBridgeIsOpenReflectsStatus() {
   val openApi = FakeGeneratedRustEpochApi(
     status = RustEpochHandleStatusFfiResult(code = RustEpochStableCode.OK, isOpen = true),
   )
-  bridgeAssertTrue(GeneratedRustEpochBridge(openApi).isEpochOpen(EpochKeyHandle(99)))
+  bridgeAssertTrue(GeneratedRustEpochBridge(openApi).isEpochOpen(EpochKeyHandle(99UL)))
 
   val closedApi = FakeGeneratedRustEpochApi(
     status = RustEpochHandleStatusFfiResult(code = RustEpochStableCode.OK, isOpen = false),
   )
-  bridgeAssertFalse(GeneratedRustEpochBridge(closedApi).isEpochOpen(EpochKeyHandle(99)))
+  bridgeAssertFalse(GeneratedRustEpochBridge(closedApi).isEpochOpen(EpochKeyHandle(99UL)))
 
   val errorApi = FakeGeneratedRustEpochApi(
     status = RustEpochHandleStatusFfiResult(code = RustEpochStableCode.EPOCH_HANDLE_NOT_FOUND, isOpen = false),
   )
-  bridgeAssertFalse(GeneratedRustEpochBridge(errorApi).isEpochOpen(EpochKeyHandle(99)))
+  bridgeAssertFalse(GeneratedRustEpochBridge(errorApi).isEpochOpen(EpochKeyHandle(99UL)))
 }
 
 private fun epochBridgeCloseMapsNotFound() {
   val api = FakeGeneratedRustEpochApi(closeCode = RustEpochStableCode.EPOCH_HANDLE_NOT_FOUND)
-  bridgeAssertTrue(GeneratedRustEpochBridge(api).closeEpoch(EpochKeyHandle(99)) == EpochCloseCode.NOT_FOUND)
+  bridgeAssertTrue(GeneratedRustEpochBridge(api).closeEpoch(EpochKeyHandle(99UL)) == EpochCloseCode.NOT_FOUND)
 
   val okApi = FakeGeneratedRustEpochApi(closeCode = RustEpochStableCode.OK)
-  bridgeAssertTrue(GeneratedRustEpochBridge(okApi).closeEpoch(EpochKeyHandle(99)) == EpochCloseCode.SUCCESS)
+  bridgeAssertTrue(GeneratedRustEpochBridge(okApi).closeEpoch(EpochKeyHandle(99UL)) == EpochCloseCode.SUCCESS)
 }
 
 private fun epochDtosRedactWrappedSeed() {
-  val handle = EpochKeyHandle(7)
+  val handle = EpochKeyHandle(7UL)
   bridgeAssertTrue("EpochKeyHandle(<redacted>)" == handle.toString())
 
   val result = EpochCreateResult(
     code = EpochCreateCode.SUCCESS,
-    handle = EpochKeyHandle(7),
+    handle = EpochKeyHandle(7UL),
     epochId = 5,
     wrappedEpochSeed = ByteArray(48) { 0x44 },
   )
@@ -450,7 +450,7 @@ private fun shardEncryptMapsOkAndRejectsEmpty() {
     ),
   )
   val bridge = GeneratedRustShardBridge(api)
-  val result = bridge.encryptShard(EpochKeyHandle(99), ByteArray(32) { it.toByte() }, shardIndex = 0, tier = 1)
+  val result = bridge.encryptShard(EpochKeyHandle(99UL), ByteArray(32) { it.toByte() }, shardIndex = 0, tier = 1)
   bridgeAssertTrue(result.code == ShardEncryptCode.SUCCESS)
   val env = result.envelope ?: error("expected envelope")
   bridgeAssertTrue(env.envelopeBytes.contentEquals(expectedEnvelope))
@@ -458,10 +458,10 @@ private fun shardEncryptMapsOkAndRejectsEmpty() {
   bridgeAssertTrue(envelope.all { it == 0.toByte() })
 
   bridgeExpectThrows("empty plaintext") {
-    bridge.encryptShard(EpochKeyHandle(99), ByteArray(0), shardIndex = 0, tier = 1)
+    bridge.encryptShard(EpochKeyHandle(99UL), ByteArray(0), shardIndex = 0, tier = 1)
   }
   bridgeExpectThrows("invalid tier") {
-    bridge.encryptShard(EpochKeyHandle(99), ByteArray(8), shardIndex = 0, tier = 0)
+    bridge.encryptShard(EpochKeyHandle(99UL), ByteArray(8), shardIndex = 0, tier = 0)
   }
 }
 
@@ -473,7 +473,7 @@ private fun shardEncryptMapsRngFailure() {
       sha256 = "0".repeat(64),
     ),
   )
-  val result = GeneratedRustShardBridge(api).encryptShard(EpochKeyHandle(99), ByteArray(8), shardIndex = 0, tier = 1)
+  val result = GeneratedRustShardBridge(api).encryptShard(EpochKeyHandle(99UL), ByteArray(8), shardIndex = 0, tier = 1)
   bridgeAssertTrue(result.code == ShardEncryptCode.RNG_FAILURE)
   bridgeAssertTrue(result.envelope == null)
 }
@@ -483,7 +483,7 @@ private fun shardDecryptMapsOkAndAuthFailure() {
   val okApi = FakeGeneratedRustShardApi(
     decrypt = RustDecryptedShardFfiResult(code = RustShardStableCode.OK, plaintext = plaintext),
   )
-  val ok = GeneratedRustShardBridge(okApi).decryptShard(EpochKeyHandle(99), ByteArray(64) { it.toByte() })
+  val ok = GeneratedRustShardBridge(okApi).decryptShard(EpochKeyHandle(99UL), ByteArray(64) { it.toByte() })
   bridgeAssertTrue(ok.code == ShardDecryptCode.SUCCESS)
   val shard = ok.shard ?: error("expected shard")
   bridgeAssertTrue(shard.plaintext.contentEquals(plaintext))
@@ -491,7 +491,7 @@ private fun shardDecryptMapsOkAndAuthFailure() {
   val authApi = FakeGeneratedRustShardApi(
     decrypt = RustDecryptedShardFfiResult(code = RustShardStableCode.AUTHENTICATION_FAILED, plaintext = ByteArray(0)),
   )
-  val auth = GeneratedRustShardBridge(authApi).decryptShard(EpochKeyHandle(99), ByteArray(64) { it.toByte() })
+  val auth = GeneratedRustShardBridge(authApi).decryptShard(EpochKeyHandle(99UL), ByteArray(64) { it.toByte() })
   bridgeAssertTrue(auth.code == ShardDecryptCode.AUTHENTICATION_FAILED)
   bridgeAssertTrue(auth.shard == null)
 }
@@ -551,7 +551,7 @@ private fun metadataSidecarEncryptMapsInvalidFormat() {
     ),
   )
   val request = EncryptMediaMetadataSidecarRequest(
-    epochKeyHandle = EpochKeyHandle(99),
+    epochKeyHandle = EpochKeyHandle(99UL),
     albumId = ByteArray(16) { it.toByte() },
     photoId = ByteArray(16) { it.toByte() },
     epochId = 1,
@@ -783,8 +783,8 @@ private fun mediaTierLayoutMapsInvalidDimensions() {
 private fun publicBridgeDtosAvoidPrivacyForbiddenText() {
   val forbiddenTerms = listOf("IMG_0001", "content://", "file://", "gps", "latitude", "EXIF", "PLAINTEXT")
   val candidates = listOf<Any>(
-    IdentityHandle(7).toString(),
-    EpochKeyHandle(7).toString(),
+    IdentityHandle(7UL).toString(),
+    EpochKeyHandle(7UL).toString(),
     AlbumSyncCursor("anything").toString(),
     AlbumSyncRequestId("req-1").toString(),
     EncryptedShardEnvelope(ByteArray(8), "0".repeat(64)).toString(),
@@ -797,7 +797,7 @@ private fun publicBridgeDtosAvoidPrivacyForbiddenText() {
       encodedFields = ByteArray(8) { it.toByte() },
     ).toString(),
     EncryptMediaMetadataSidecarRequest(
-      epochKeyHandle = EpochKeyHandle(99),
+      epochKeyHandle = EpochKeyHandle(99UL),
       albumId = ByteArray(8) { it.toByte() },
       photoId = ByteArray(8) { it.toByte() },
       epochId = 1,
@@ -978,14 +978,14 @@ private fun openedBundleResultRedactsBytes() {
 }
 
 private fun rustAccountUnlockFfiResultRedactsHandle() {
-  // The raw handle Long is an opaque capability into an unlocked Rust
+  // The raw handle ULong is an opaque capability into an unlocked Rust
   // account-key registry; logging it would defeat the same redaction
   // contract `AccountKeyHandle.toString` already enforces. Default
   // data-class toString prints the raw value, so a custom override is
   // required.
   val ffi = RustAccountUnlockFfiResult(
     code = RustClientStableCode.OK,
-    handle = 0x4242_DEAD_BEEFL,
+    handle = 0x4242_DEAD_BEEFUL,
   )
   val s = ffi.toString()
   bridgeAssertTrue("handle=<redacted>" in s)
@@ -1019,22 +1019,22 @@ private class FakeGeneratedRustIdentityApi(
   private val signature: RustBytesFfiResult? = null,
   private val closeCode: Int = RustIdentityStableCode.OK,
 ) : GeneratedRustIdentityApi {
-  override fun createIdentityHandle(accountKeyHandle: Long): RustIdentityHandleFfiResult =
+  override fun createIdentityHandle(accountKeyHandle: ULong): RustIdentityHandleFfiResult =
     create ?: error("create not configured")
 
-  override fun openIdentityHandle(wrappedSeed: ByteArray, accountKeyHandle: Long): RustIdentityHandleFfiResult =
+  override fun openIdentityHandle(wrappedSeed: ByteArray, accountKeyHandle: ULong): RustIdentityHandleFfiResult =
     open ?: error("open not configured")
 
-  override fun identitySigningPubkey(handle: Long): RustBytesFfiResult =
+  override fun identitySigningPubkey(handle: ULong): RustBytesFfiResult =
     signingPubkey ?: error("signingPubkey not configured")
 
-  override fun identityEncryptionPubkey(handle: Long): RustBytesFfiResult =
+  override fun identityEncryptionPubkey(handle: ULong): RustBytesFfiResult =
     encryptionPubkey ?: error("encryptionPubkey not configured")
 
-  override fun signManifestWithIdentity(handle: Long, transcriptBytes: ByteArray): RustBytesFfiResult =
+  override fun signManifestWithIdentity(handle: ULong, transcriptBytes: ByteArray): RustBytesFfiResult =
     signature ?: error("signature not configured")
 
-  override fun closeIdentityHandle(handle: Long): Int = closeCode
+  override fun closeIdentityHandle(handle: ULong): Int = closeCode
 }
 
 private class FakeGeneratedRustEpochApi(
@@ -1043,19 +1043,19 @@ private class FakeGeneratedRustEpochApi(
   private val status: RustEpochHandleStatusFfiResult? = null,
   private val closeCode: Int = RustEpochStableCode.OK,
 ) : GeneratedRustEpochApi {
-  override fun createEpochKeyHandle(accountKeyHandle: Long, epochId: Int): RustEpochHandleFfiResult =
+  override fun createEpochKeyHandle(accountKeyHandle: ULong, epochId: Int): RustEpochHandleFfiResult =
     create ?: error("create not configured")
 
   override fun openEpochKeyHandle(
     wrappedEpochSeed: ByteArray,
-    accountKeyHandle: Long,
+    accountKeyHandle: ULong,
     epochId: Int,
   ): RustEpochHandleFfiResult = open ?: error("open not configured")
 
-  override fun epochKeyHandleIsOpen(handle: Long): RustEpochHandleStatusFfiResult =
+  override fun epochKeyHandleIsOpen(handle: ULong): RustEpochHandleStatusFfiResult =
     status ?: error("status not configured")
 
-  override fun closeEpochKeyHandle(handle: Long): Int = closeCode
+  override fun closeEpochKeyHandle(handle: ULong): Int = closeCode
 }
 
 private class FakeGeneratedRustShardApi(
@@ -1063,14 +1063,14 @@ private class FakeGeneratedRustShardApi(
   private val decrypt: RustDecryptedShardFfiResult? = null,
 ) : GeneratedRustShardApi {
   override fun encryptShardWithEpochHandle(
-    epochKeyHandle: Long,
+    epochKeyHandle: ULong,
     plaintext: ByteArray,
     shardIndex: Int,
     tier: Int,
   ): RustEncryptedShardFfiResult = encrypt ?: error("encrypt not configured")
 
   override fun decryptShardWithEpochHandle(
-    epochKeyHandle: Long,
+    epochKeyHandle: ULong,
     envelopeBytes: ByteArray,
   ): RustDecryptedShardFfiResult = decrypt ?: error("decrypt not configured")
 }
@@ -1089,7 +1089,7 @@ private class FakeGeneratedRustMetadataSidecarApi(
   ): RustBytesFfiResult = canonical ?: error("canonical not configured")
 
   override fun encryptMetadataSidecarWithEpochHandle(
-    handle: Long,
+    handle: ULong,
     albumId: ByteArray,
     photoId: ByteArray,
     epochId: Int,
@@ -1105,7 +1105,7 @@ private class FakeGeneratedRustMetadataSidecarApi(
   ): RustBytesFfiResult = canonicalMedia ?: error("canonicalMedia not configured")
 
   override fun encryptMediaMetadataSidecarWithEpochHandle(
-    handle: Long,
+    handle: ULong,
     albumId: ByteArray,
     photoId: ByteArray,
     epochId: Int,
@@ -1184,7 +1184,7 @@ private class FakeGeneratedRustMediaApiBridge(
 private fun identityCreateResultWipesAllSensitiveBytes() {
   val result = IdentityCreateResult(
     code = IdentityCreateCode.SUCCESS,
-    handle = IdentityHandle(1),
+    handle = IdentityHandle(1UL),
     signingPubkey = ByteArray(32) { 1 },
     encryptionPubkey = ByteArray(32) { 2 },
     wrappedSeed = ByteArray(64) { 3 },
@@ -1201,7 +1201,7 @@ private fun identityCreateResultWipesAllSensitiveBytes() {
 private fun identityOpenResultWipesPubkeys() {
   val result = IdentityOpenResult(
     code = IdentityOpenCode.SUCCESS,
-    handle = IdentityHandle(1),
+    handle = IdentityHandle(1UL),
     signingPubkey = ByteArray(32) { 1 },
     encryptionPubkey = ByteArray(32) { 2 },
   )
@@ -1231,7 +1231,7 @@ private fun manifestSignatureResultWipesSignature() {
 private fun epochCreateResultWipesWrappedSeed() {
   val result = EpochCreateResult(
     code = EpochCreateCode.SUCCESS,
-    handle = EpochKeyHandle(1),
+    handle = EpochKeyHandle(1UL),
     epochId = 0,
     wrappedEpochSeed = ByteArray(64) { 5 },
   )
@@ -1254,7 +1254,7 @@ private fun shardBridgeWipesFfiResultAfterDecrypt() {
   val plaintext = ByteArray(48) { 0x42 }
   val ffi = RustDecryptedShardFfiResult(code = RustShardStableCode.OK, plaintext = plaintext)
   val api = SharedFfiResultShardApi(decryptResult = ffi)
-  val result = GeneratedRustShardBridge(api).decryptShard(EpochKeyHandle(1), ByteArray(64) { it.toByte() })
+  val result = GeneratedRustShardBridge(api).decryptShard(EpochKeyHandle(1UL), ByteArray(64) { it.toByte() })
   bridgeAssertTrue(result.code == ShardDecryptCode.SUCCESS)
   // The downstream DecryptedShard has its own copy.
   bridgeAssertTrue(result.shard?.plaintext?.contentEquals(plaintext) == true)
@@ -1272,7 +1272,7 @@ private fun encryptShardWipingPlaintextWipesCallerPlaintext() {
     ),
   )
   val bridge = GeneratedRustShardBridge(api)
-  val result = bridge.encryptShardWipingPlaintext(EpochKeyHandle(1), plaintext, shardIndex = 0, tier = 1)
+  val result = bridge.encryptShardWipingPlaintext(EpochKeyHandle(1UL), plaintext, shardIndex = 0, tier = 1)
   bridgeAssertTrue(result.code == ShardEncryptCode.SUCCESS)
   bridgeAssertTrue(plaintext.all { it == 0.toByte() })
 }
@@ -1290,7 +1290,7 @@ private fun metadataSidecarRequestsWipeAllBytes() {
   bridgeAssertTrue(canonical.encodedFields.all { it == 0.toByte() })
 
   val encrypt = EncryptMetadataSidecarRequest(
-    epochKeyHandle = EpochKeyHandle(1),
+    epochKeyHandle = EpochKeyHandle(1UL),
     albumId = ByteArray(16) { 4 },
     photoId = ByteArray(16) { 5 },
     epochId = 0,
@@ -1314,7 +1314,7 @@ private fun metadataSidecarRequestsWipeAllBytes() {
   bridgeAssertTrue(canonicalMedia.mediaBytes.all { it == 0.toByte() })
 
   val encryptMedia = EncryptMediaMetadataSidecarRequest(
-    epochKeyHandle = EpochKeyHandle(1),
+    epochKeyHandle = EpochKeyHandle(1UL),
     albumId = ByteArray(16) { 10 },
     photoId = ByteArray(16) { 11 },
     epochId = 0,
@@ -1338,14 +1338,14 @@ private class SharedFfiResultShardApi(
   private val decryptResult: RustDecryptedShardFfiResult,
 ) : GeneratedRustShardApi {
   override fun encryptShardWithEpochHandle(
-    epochKeyHandle: Long,
+    epochKeyHandle: ULong,
     plaintext: ByteArray,
     shardIndex: Int,
     tier: Int,
   ): RustEncryptedShardFfiResult = error("encrypt not used")
 
   override fun decryptShardWithEpochHandle(
-    epochKeyHandle: Long,
+    epochKeyHandle: ULong,
     envelopeBytes: ByteArray,
   ): RustDecryptedShardFfiResult = decryptResult
 }
@@ -1356,15 +1356,15 @@ private fun epochBridgeOpenWipesFfiSeed() {
   val api = FakeGeneratedRustEpochApi(
     open = RustEpochHandleFfiResult(
       code = RustEpochStableCode.OK,
-      handle = 17,
+      handle = 17UL,
       epochId = 9,
       wrappedEpochSeed = seed,
       signPublicKey = ByteArray(32),
     ),
   )
-  val result = GeneratedRustEpochBridge(api).openEpoch(ByteArray(64), AccountKeyHandle(7), epochId = 9)
+  val result = GeneratedRustEpochBridge(api).openEpoch(ByteArray(64), AccountKeyHandle(7UL), epochId = 9)
   bridgeAssertTrue(result.code == EpochOpenCode.SUCCESS)
-  bridgeAssertTrue(result.handle?.value == 17L)
+  bridgeAssertTrue(result.handle?.value == 17UL)
   // FFI buffer was zeroed by bridge finally; downstream EpochOpenResult does not carry the seed.
   bridgeAssertTrue(seed.all { it == 0.toByte() })
   // Seed values were captured before wipe.
@@ -1378,13 +1378,13 @@ private fun identityBridgeOpenWipesFfi() {
   val api = FakeGeneratedRustIdentityApi(
     open = RustIdentityHandleFfiResult(
       code = RustIdentityStableCode.OK,
-      handle = 5,
+      handle = 5UL,
       signingPubkey = signing,
       encryptionPubkey = encryption,
       wrappedSeed = ignored,
     ),
   )
-  val result = GeneratedRustIdentityBridge(api).openIdentity(ByteArray(64), AccountKeyHandle(7))
+  val result = GeneratedRustIdentityBridge(api).openIdentity(ByteArray(64), AccountKeyHandle(7UL))
   bridgeAssertTrue(result.code == IdentityOpenCode.SUCCESS)
   bridgeAssertTrue(signing.all { it == 0.toByte() })
   bridgeAssertTrue(encryption.all { it == 0.toByte() })
@@ -1397,7 +1397,7 @@ private fun identityBridgeSignManifestWipesFfi() {
   val api = FakeGeneratedRustIdentityApi(
     signature = RustBytesFfiResult(code = RustIdentityStableCode.OK, bytes = sig),
   )
-  val result = GeneratedRustIdentityBridge(api).signManifest(IdentityHandle(7), ByteArray(32))
+  val result = GeneratedRustIdentityBridge(api).signManifest(IdentityHandle(7UL), ByteArray(32))
   bridgeAssertTrue(result.code == IdentitySignCode.SUCCESS)
   bridgeAssertTrue(result.signature.contentEquals(expectedSig))
   // FFI signature buffer is now zeroed; downstream ManifestSignatureResult kept its own copy.
@@ -1412,10 +1412,10 @@ private fun identityBridgePubkeyOpsWipeFfi() {
     encryptionPubkey = RustBytesFfiResult(code = RustIdentityStableCode.OK, bytes = encryptionBytes),
   )
   val bridge = GeneratedRustIdentityBridge(signApi)
-  val signResult = bridge.signingPubkey(IdentityHandle(1))
+  val signResult = bridge.signingPubkey(IdentityHandle(1UL))
   bridgeAssertTrue(signResult.code == IdentityPubkeyCode.SUCCESS)
   bridgeAssertTrue(signingBytes.all { it == 0.toByte() })
-  val encResult = bridge.encryptionPubkey(IdentityHandle(1))
+  val encResult = bridge.encryptionPubkey(IdentityHandle(1UL))
   bridgeAssertTrue(encResult.code == IdentityPubkeyCode.SUCCESS)
   bridgeAssertTrue(encryptionBytes.all { it == 0.toByte() })
 }
@@ -1439,7 +1439,7 @@ private fun metadataSidecarEncryptOpsWipeFfi() {
 
   val res1 = bridge.encryptMetadataSidecar(
     EncryptMetadataSidecarRequest(
-      epochKeyHandle = EpochKeyHandle(1),
+      epochKeyHandle = EpochKeyHandle(1UL),
       albumId = ByteArray(16) { 1 },
       photoId = ByteArray(16) { 2 },
       epochId = 0,
@@ -1452,7 +1452,7 @@ private fun metadataSidecarEncryptOpsWipeFfi() {
 
   val res2 = bridge.encryptMediaMetadataSidecar(
     EncryptMediaMetadataSidecarRequest(
-      epochKeyHandle = EpochKeyHandle(1),
+      epochKeyHandle = EpochKeyHandle(1UL),
       albumId = ByteArray(16) { 1 },
       photoId = ByteArray(16) { 2 },
       epochId = 0,
@@ -1547,14 +1547,14 @@ private fun openIdentityWipingWrappedSeedWipesCallerBuffer() {
   val api = FakeGeneratedRustIdentityApi(
     open = RustIdentityHandleFfiResult(
       code = RustIdentityStableCode.OK,
-      handle = 1,
+      handle = 1UL,
       signingPubkey = ByteArray(32),
       encryptionPubkey = ByteArray(32),
       wrappedSeed = ByteArray(64),
     ),
   )
   val bridge = GeneratedRustIdentityBridge(api)
-  val result = bridge.openIdentityWipingWrappedSeed(wrappedSeed, AccountKeyHandle(7))
+  val result = bridge.openIdentityWipingWrappedSeed(wrappedSeed, AccountKeyHandle(7UL))
   bridgeAssertTrue(result.code == IdentityOpenCode.SUCCESS)
   bridgeAssertTrue(wrappedSeed.all { it == 0.toByte() })
 }
@@ -1564,14 +1564,14 @@ private fun openEpochWipingWrappedSeedWipesCallerBuffer() {
   val api = FakeGeneratedRustEpochApi(
     open = RustEpochHandleFfiResult(
       code = RustEpochStableCode.OK,
-      handle = 9,
+      handle = 9UL,
       epochId = 3,
       wrappedEpochSeed = ByteArray(48),
       signPublicKey = ByteArray(32),
     ),
   )
   val bridge = GeneratedRustEpochBridge(api)
-  val result = bridge.openEpochWipingWrappedSeed(wrappedSeed, AccountKeyHandle(7), epochId = 3)
+  val result = bridge.openEpochWipingWrappedSeed(wrappedSeed, AccountKeyHandle(7UL), epochId = 3)
   bridgeAssertTrue(result.code == EpochOpenCode.SUCCESS)
   bridgeAssertTrue(wrappedSeed.all { it == 0.toByte() })
 }
@@ -1584,7 +1584,7 @@ private fun decryptShardWipingEnvelopeWipesCallerBuffer() {
     decrypt = RustDecryptedShardFfiResult(code = RustShardStableCode.OK, plaintext = plaintext),
   )
   val bridge = GeneratedRustShardBridge(api)
-  val result = bridge.decryptShardWipingEnvelope(EpochKeyHandle(1), envelope)
+  val result = bridge.decryptShardWipingEnvelope(EpochKeyHandle(1UL), envelope)
   bridgeAssertTrue(result.code == ShardDecryptCode.SUCCESS)
   // Decrypted shard kept its own copy.
   bridgeAssertTrue(result.shard?.plaintext?.contentEquals(expectedPlaintext) == true)
@@ -1598,7 +1598,7 @@ private fun signManifestWipingTranscriptWipesCallerBuffer() {
     signature = RustBytesFfiResult(code = RustIdentityStableCode.OK, bytes = ByteArray(64) { 0xBC.toByte() }),
   )
   val bridge = GeneratedRustIdentityBridge(api)
-  val result = bridge.signManifestWipingTranscript(IdentityHandle(1), transcript)
+  val result = bridge.signManifestWipingTranscript(IdentityHandle(1UL), transcript)
   bridgeAssertTrue(result.code == IdentitySignCode.SUCCESS)
   bridgeAssertTrue(transcript.all { it == 0.toByte() })
 }

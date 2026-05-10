@@ -75,7 +75,7 @@ class AndroidRustAccountApiRoundTripTest {
     // Handle 1 is unlikely to exist; any non-existent handle should yield
     // SECRET_HANDLE_NOT_FOUND (400). The exact stable code is what the Rust
     // core returns; we assert it's non-zero (failure).
-    val rawCode = api.closeAccountKeyHandle(handle = 0xDEADBEEFL)
+    val rawCode = api.closeAccountKeyHandle(handle = 0xDEADBEEFUL)
     assertNotEquals(0, rawCode)
   }
 
@@ -87,7 +87,7 @@ class AndroidRustAccountApiRoundTripTest {
     )
 
     val api = AndroidRustAccountApi()
-    val status = api.accountKeyHandleIsOpen(0xCAFEBABEL)
+    val status = api.accountKeyHandleIsOpen(0xCAFEBABEUL)
     // Either status code reports a missing handle, or isOpen is false.
     assertTrue(
       "non-existent handle should report not-open via either code or flag",

@@ -131,7 +131,7 @@ function blocksEqual(a: ContentBlock, b: ContentBlock): boolean {
  * (objects, arrays, primitives). It does not need to handle Date, Map,
  * Set, or BigInt because the schema does not allow those.
  */
-function canonicalJson(value: unknown): string {
+export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') {
     return JSON.stringify(value);
   }

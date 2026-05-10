@@ -17,49 +17,49 @@ class AndroidRustIdentityApi : GeneratedRustIdentityApi {
     AndroidRustCoreLibraryLoader.warmUp()
   }
 
-  override fun createIdentityHandle(accountKeyHandle: Long): RustIdentityHandleFfiResult {
-    val result = rustCreateIdentityHandle(accountKeyHandle.toULong())
+  override fun createIdentityHandle(accountKeyHandle: ULong): RustIdentityHandleFfiResult {
+    val result = rustCreateIdentityHandle(accountKeyHandle)
     return RustIdentityHandleFfiResult(
       code = result.code.toInt(),
-      handle = result.handle.toLong(),
+      handle = result.handle,
       signingPubkey = result.signingPubkey,
       encryptionPubkey = result.encryptionPubkey,
       wrappedSeed = result.wrappedSeed,
     )
   }
 
-  override fun openIdentityHandle(wrappedSeed: ByteArray, accountKeyHandle: Long): RustIdentityHandleFfiResult {
-    val result = rustOpenIdentityHandle(wrappedSeed, accountKeyHandle.toULong())
+  override fun openIdentityHandle(wrappedSeed: ByteArray, accountKeyHandle: ULong): RustIdentityHandleFfiResult {
+    val result = rustOpenIdentityHandle(wrappedSeed, accountKeyHandle)
     return RustIdentityHandleFfiResult(
       code = result.code.toInt(),
-      handle = result.handle.toLong(),
+      handle = result.handle,
       signingPubkey = result.signingPubkey,
       encryptionPubkey = result.encryptionPubkey,
       wrappedSeed = result.wrappedSeed,
     )
   }
 
-  override fun identitySigningPubkey(handle: Long): RustBytesFfiResult {
-    val result = rustIdentitySigningPubkey(handle.toULong())
+  override fun identitySigningPubkey(handle: ULong): RustBytesFfiResult {
+    val result = rustIdentitySigningPubkey(handle)
     return RustBytesFfiResult(code = result.code.toInt(), bytes = result.bytes)
   }
 
-  override fun identityEncryptionPubkey(handle: Long): RustBytesFfiResult {
-    val result = rustIdentityEncryptionPubkey(handle.toULong())
+  override fun identityEncryptionPubkey(handle: ULong): RustBytesFfiResult {
+    val result = rustIdentityEncryptionPubkey(handle)
     return RustBytesFfiResult(code = result.code.toInt(), bytes = result.bytes)
   }
 
-  override fun signManifestWithIdentity(handle: Long, transcriptBytes: ByteArray): RustBytesFfiResult {
+  override fun signManifestWithIdentity(handle: ULong, transcriptBytes: ByteArray): RustBytesFfiResult {
     require(transcriptBytes.isNotEmpty()) { "manifest transcript must not be empty" }
     require(transcriptBytes.size <= MAX_TRANSCRIPT_BYTES) {
       "manifest transcript must be at most $MAX_TRANSCRIPT_BYTES bytes"
     }
-    val result = rustSignManifestWithIdentity(handle.toULong(), transcriptBytes)
+    val result = rustSignManifestWithIdentity(handle, transcriptBytes)
     return RustBytesFfiResult(code = result.code.toInt(), bytes = result.bytes)
   }
 
-  override fun closeIdentityHandle(handle: Long): Int =
-    rustCloseIdentityHandle(handle.toULong()).toInt()
+  override fun closeIdentityHandle(handle: ULong): Int =
+    rustCloseIdentityHandle(handle).toInt()
 
   companion object {
     // 64 KiB is generous: real manifest transcripts for a single album are

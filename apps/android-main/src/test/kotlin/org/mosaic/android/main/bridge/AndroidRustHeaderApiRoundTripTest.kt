@@ -6,8 +6,36 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.mosaic.android.foundation.GeneratedRustHeaderApi
+import org.mosaic.android.foundation.GeneratedRustHeaderBridge
+import org.mosaic.android.foundation.HeaderParseCode
+import org.mosaic.android.foundation.RustHeaderParseFfiResult
+import org.mosaic.android.foundation.RustHeaderStableCode
 
 class AndroidRustHeaderApiRoundTripTest {
+
+  @Test
+  fun generatedBridgePreservesUnsignedHeaderFieldsBeyondIntRange() {
+    val bridge = GeneratedRustHeaderBridge(
+      object : GeneratedRustHeaderApi {
+        override fun parseEnvelopeHeader(bytes: ByteArray): RustHeaderParseFfiResult =
+          RustHeaderParseFfiResult(
+            code = RustHeaderStableCode.OK,
+            epochId = 0xFFFF_FFFFL,
+            shardIndex = 0x8000_0000L,
+            tier = 1,
+            nonce = ByteArray(24),
+          )
+      },
+    )
+
+    val result = bridge.parseEnvelopeHeader(ByteArray(64))
+
+    assertEquals(HeaderParseCode.SUCCESS, result.code)
+    val parsed = requireNotNull(result.parsed)
+    assertEquals(0xFFFF_FFFFL, parsed.epochId)
+    assertEquals(0x8000_0000L, parsed.shardIndex)
+  }
 
   @Test
   fun parseEnvelopeHeaderRejectsTooShortBytes() {

@@ -50,9 +50,9 @@ class RustAccountUnlockFfiRequest private constructor(
 
 data class RustAccountUnlockFfiResult(
   val code: Int,
-  val handle: Long,
+  val handle: ULong,
 ) {
-  // Redacts the raw account-key handle Long. Per SPEC-CrossPlatformHardening
+  // Redacts the raw account-key handle. Per SPEC-CrossPlatformHardening
   // "Android shell" checklist: DTO toString methods must redact handles. The
   // handle is an opaque capability; logging its raw value would leak the same
   // information `AccountKeyHandle.toString()` already redacts.
@@ -73,9 +73,9 @@ interface GeneratedRustAccountApi {
     request: RustAccountUnlockFfiRequest,
   ): RustAccountUnlockFfiResult
 
-  fun accountKeyHandleIsOpen(handle: Long): RustAccountKeyHandleStatusFfiResult
+  fun accountKeyHandleIsOpen(handle: ULong): RustAccountKeyHandleStatusFfiResult
 
-  fun closeAccountKeyHandle(handle: Long): Int
+  fun closeAccountKeyHandle(handle: ULong): Int
 }
 
 class GeneratedRustAccountBridge(
@@ -90,7 +90,7 @@ class GeneratedRustAccountBridge(
   override fun unlockAccount(password: ByteArray, request: AccountUnlockRequest): AccountUnlockResult {
     val result = api.unlockAccountKey(password, RustAccountUnlockFfiRequest.from(request))
     val code = accountUnlockCodeFromStableCode(result.code)
-    return if (code == AccountUnlockCode.SUCCESS && result.handle > 0) {
+    return if (code == AccountUnlockCode.SUCCESS && result.handle != 0UL) {
       AccountUnlockResult(AccountUnlockCode.SUCCESS, AccountKeyHandle(result.handle))
     } else {
       AccountUnlockResult(

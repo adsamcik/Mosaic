@@ -29,7 +29,7 @@ class AndroidRustMetadataSidecarApiRoundTripTest {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustMetadataSidecarApi()
     val result = api.encryptMetadataSidecarWithEpochHandle(
-      handle = 0xDEADBEEFL,
+      handle = 0xDEADBEEFUL,
       albumId = ByteArray(16) { it.toByte() },
       photoId = ByteArray(16) { it.toByte() },
       epochId = 1,
@@ -57,7 +57,7 @@ class AndroidRustMetadataSidecarApiRoundTripTest {
     assumeTrue(NativeLibraryAvailability.isAvailable)
     val api = AndroidRustMetadataSidecarApi()
     val result = api.encryptMediaMetadataSidecarWithEpochHandle(
-      handle = 0xDEADBEEFL,
+      handle = 0xDEADBEEFUL,
       albumId = ByteArray(16) { it.toByte() },
       photoId = ByteArray(16) { it.toByte() },
       epochId = 1,

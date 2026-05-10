@@ -240,6 +240,25 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
+  fun schedulerPreservesHighBitRustU64HandleBitPattern() {
+    val highBitHandle = ULong.MAX_VALUE.toLong()
+    val request = ShardEncryptionScheduler.buildRequest(
+      jobId = "job-high-bit",
+      stagingUri = "file:///staged-high-bit.bin",
+      epochHandleId = highBitHandle,
+      tier = 2,
+      shardIndex = 9,
+    )
+
+    val storedHandle = request.workSpec.input.getLong(
+      ShardEncryptionWorker.KEY_EPOCH_HANDLE_ID,
+      0L,
+    )
+    assertEquals(highBitHandle, storedHandle)
+    assertEquals(ULong.MAX_VALUE, storedHandle.toULong())
+  }
+
+  @Test
   fun schedulerBuildsLocalEncryptionWorkWithUploadJobTags() {
     val request = ShardEncryptionScheduler.buildRequest(
       jobId = "job-123",

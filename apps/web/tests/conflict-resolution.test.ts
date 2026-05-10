@@ -11,6 +11,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  canonicalJson,
   hasManualConflicts,
   mergeAlbumContent,
   mergeBlocks,
@@ -247,6 +248,29 @@ describe('mergeBlocks (three-way merge)', () => {
         category: 'manual',
       }),
     );
+  });
+});
+
+describe('canonicalJson', () => {
+  it('ignores object key insertion order but preserves semantic differences', () => {
+    const first = {
+      id: 'doc',
+      nested: { b: 2, a: 1 },
+      list: [{ y: true, x: 'same' }],
+    };
+    const second = {
+      list: [{ x: 'same', y: true }],
+      nested: { a: 1, b: 2 },
+      id: 'doc',
+    };
+    const different = {
+      list: [{ x: 'same', y: false }],
+      nested: { a: 1, b: 2 },
+      id: 'doc',
+    };
+
+    expect(canonicalJson(first)).toBe(canonicalJson(second));
+    expect(canonicalJson(first)).not.toBe(canonicalJson(different));
   });
 });
 

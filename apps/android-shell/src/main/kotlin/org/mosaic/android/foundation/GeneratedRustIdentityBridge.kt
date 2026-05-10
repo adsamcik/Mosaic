@@ -14,9 +14,9 @@ object RustIdentityStableCode {
 }
 
 @JvmInline
-value class IdentityHandle(val value: Long) {
+value class IdentityHandle(val value: ULong) {
   init {
-    require(value > 0) { "identity handle must be positive" }
+    require(value != 0UL) { "identity handle must be non-zero" }
   }
 
   override fun toString(): String = "IdentityHandle(<redacted>)"
@@ -184,14 +184,13 @@ interface RustIdentityBridge {
 
 data class RustIdentityHandleFfiResult(
   val code: Int,
-  val handle: Long,
+  val handle: ULong,
   val signingPubkey: ByteArray,
   val encryptionPubkey: ByteArray,
   val wrappedSeed: ByteArray,
 ) {
   init {
     require(code >= 0) { "identity code must not be negative" }
-    require(handle >= 0) { "identity handle must not be negative" }
   }
 
   fun wipe() {
@@ -248,17 +247,17 @@ data class RustBytesFfiResult(
 }
 
 interface GeneratedRustIdentityApi {
-  fun createIdentityHandle(accountKeyHandle: Long): RustIdentityHandleFfiResult
+  fun createIdentityHandle(accountKeyHandle: ULong): RustIdentityHandleFfiResult
 
-  fun openIdentityHandle(wrappedSeed: ByteArray, accountKeyHandle: Long): RustIdentityHandleFfiResult
+  fun openIdentityHandle(wrappedSeed: ByteArray, accountKeyHandle: ULong): RustIdentityHandleFfiResult
 
-  fun identitySigningPubkey(handle: Long): RustBytesFfiResult
+  fun identitySigningPubkey(handle: ULong): RustBytesFfiResult
 
-  fun identityEncryptionPubkey(handle: Long): RustBytesFfiResult
+  fun identityEncryptionPubkey(handle: ULong): RustBytesFfiResult
 
-  fun signManifestWithIdentity(handle: Long, transcriptBytes: ByteArray): RustBytesFfiResult
+  fun signManifestWithIdentity(handle: ULong, transcriptBytes: ByteArray): RustBytesFfiResult
 
-  fun closeIdentityHandle(handle: Long): Int
+  fun closeIdentityHandle(handle: ULong): Int
 }
 
 class GeneratedRustIdentityBridge(
@@ -268,7 +267,7 @@ class GeneratedRustIdentityBridge(
     val result = api.createIdentityHandle(accountKeyHandle.value)
     return try {
       val code = createCodeFor(result.code)
-      val handle = if (code == IdentityCreateCode.SUCCESS && result.handle > 0) {
+      val handle = if (code == IdentityCreateCode.SUCCESS && result.handle != 0UL) {
         IdentityHandle(result.handle)
       } else null
       val safeCode = if (code == IdentityCreateCode.SUCCESS && handle == null) {
@@ -290,7 +289,7 @@ class GeneratedRustIdentityBridge(
     val result = api.openIdentityHandle(wrappedSeed, accountKeyHandle.value)
     return try {
       val code = openCodeFor(result.code)
-      val handle = if (code == IdentityOpenCode.SUCCESS && result.handle > 0) {
+      val handle = if (code == IdentityOpenCode.SUCCESS && result.handle != 0UL) {
         IdentityHandle(result.handle)
       } else null
       val safeCode = if (code == IdentityOpenCode.SUCCESS && handle == null) {

@@ -65,7 +65,6 @@ object PrivacyPatternValidator {
         is ByteArray -> value.toString(Charsets.UTF_8)
         else -> value.toString()
       }
-      val normalized = text.lowercase()
       if (findQueuePlaintextMarkers(text).isNotEmpty()) {
         throw IllegalArgumentException("Mosaic privacy validator rejected plaintext marker in $tableName")
       }

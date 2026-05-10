@@ -7,8 +7,8 @@ private data class EdgeCase(
 
 fun main() {
   val tests = listOf(
-    EdgeCase("identity handle rejects zero and negative values", ::identityHandleRejectsZeroAndNegative),
-    EdgeCase("epoch handle rejects zero and negative values", ::epochHandleRejectsZeroAndNegative),
+    EdgeCase("identity handle rejects zero values", ::identityHandleRejectsZero),
+    EdgeCase("epoch handle rejects zero values", ::epochHandleRejectsZero),
     EdgeCase("identity handle equality is value-based", ::identityHandleEqualityIsValueBased),
     EdgeCase("epoch handle equality is value-based", ::epochHandleEqualityIsValueBased),
 
@@ -63,32 +63,28 @@ fun main() {
 
 // region handle invariants
 
-private fun identityHandleRejectsZeroAndNegative() {
-  edgeExpectThrows("zero handle") { IdentityHandle(0) }
-  edgeExpectThrows("negative handle") { IdentityHandle(-1) }
-  edgeExpectThrows("MIN_VALUE handle") { IdentityHandle(Long.MIN_VALUE) }
+private fun identityHandleRejectsZero() {
+  edgeExpectThrows("zero handle") { IdentityHandle(0UL) }
 }
 
-private fun epochHandleRejectsZeroAndNegative() {
-  edgeExpectThrows("zero handle") { EpochKeyHandle(0) }
-  edgeExpectThrows("negative handle") { EpochKeyHandle(-1) }
-  edgeExpectThrows("MIN_VALUE handle") { EpochKeyHandle(Long.MIN_VALUE) }
+private fun epochHandleRejectsZero() {
+  edgeExpectThrows("zero handle") { EpochKeyHandle(0UL) }
 }
 
 private fun identityHandleEqualityIsValueBased() {
-  val a = IdentityHandle(42)
-  val b = IdentityHandle(42)
+  val a = IdentityHandle(42UL)
+  val b = IdentityHandle(42UL)
   edgeAssertTrue(a == b)
   edgeAssertTrue(a.hashCode() == b.hashCode())
-  edgeAssertTrue(a != IdentityHandle(43))
+  edgeAssertTrue(a != IdentityHandle(43UL))
 }
 
 private fun epochHandleEqualityIsValueBased() {
-  val a = EpochKeyHandle(99)
-  val b = EpochKeyHandle(99)
+  val a = EpochKeyHandle(99UL)
+  val b = EpochKeyHandle(99UL)
   edgeAssertTrue(a == b)
   edgeAssertTrue(a.hashCode() == b.hashCode())
-  edgeAssertTrue(a != EpochKeyHandle(100))
+  edgeAssertTrue(a != EpochKeyHandle(100UL))
 }
 
 // endregion
@@ -159,7 +155,7 @@ private fun identityCreateRequiresBytesOnSuccess() {
   // Successful creates require populated handle + non-empty pubkeys + non-empty wrapped seed.
   IdentityCreateResult(
     code = IdentityCreateCode.SUCCESS,
-    handle = IdentityHandle(7),
+    handle = IdentityHandle(7UL),
     signingPubkey = ByteArray(32) { 0x11 },
     encryptionPubkey = ByteArray(32) { 0x22 },
     wrappedSeed = ByteArray(48) { 0x33 },
@@ -187,7 +183,7 @@ private fun identityCreateRejectsSuccessWithoutHandle() {
   edgeExpectThrows("failure with handle") {
     IdentityCreateResult(
       code = IdentityCreateCode.INTERNAL_ERROR,
-      handle = IdentityHandle(7),
+      handle = IdentityHandle(7UL),
       signingPubkey = ByteArray(0),
       encryptionPubkey = ByteArray(0),
       wrappedSeed = ByteArray(0),
@@ -207,7 +203,7 @@ private fun epochCreateRejectsSuccessWithoutHandle() {
   edgeExpectThrows("failure with handle") {
     EpochCreateResult(
       code = EpochCreateCode.INTERNAL_ERROR,
-      handle = EpochKeyHandle(99),
+      handle = EpochKeyHandle(99UL),
       epochId = 5,
       wrappedEpochSeed = ByteArray(0),
     )
@@ -241,7 +237,7 @@ private fun encryptMediaSidecarRequestCopiesBytes() {
   val photoId = ByteArray(16) { it.toByte() }
   val mediaBytes = ByteArray(64) { it.toByte() }
   val request = EncryptMediaMetadataSidecarRequest(
-    epochKeyHandle = EpochKeyHandle(99),
+    epochKeyHandle = EpochKeyHandle(99UL),
     albumId = albumId,
     photoId = photoId,
     epochId = 1,
@@ -355,18 +351,18 @@ private fun rustBytesFfiResultEquality() {
 }
 
 private fun rustIdentityHandleFfiResultEquality() {
-  val a = RustIdentityHandleFfiResult(0, 1, ByteArray(8), ByteArray(8), ByteArray(8))
-  val b = RustIdentityHandleFfiResult(0, 1, ByteArray(8), ByteArray(8), ByteArray(8))
-  val c = RustIdentityHandleFfiResult(0, 2, ByteArray(8), ByteArray(8), ByteArray(8))
+  val a = RustIdentityHandleFfiResult(0, 1UL, ByteArray(8), ByteArray(8), ByteArray(8))
+  val b = RustIdentityHandleFfiResult(0, 1UL, ByteArray(8), ByteArray(8), ByteArray(8))
+  val c = RustIdentityHandleFfiResult(0, 2UL, ByteArray(8), ByteArray(8), ByteArray(8))
   edgeAssertTrue(a == b)
   edgeAssertTrue(a.hashCode() == b.hashCode())
   edgeAssertTrue(a != c)
 }
 
 private fun rustEpochHandleFfiResultEquality() {
-  val a = RustEpochHandleFfiResult(0, 1, 5, ByteArray(8), ByteArray(32))
-  val b = RustEpochHandleFfiResult(0, 1, 5, ByteArray(8), ByteArray(32))
-  val c = RustEpochHandleFfiResult(0, 1, 6, ByteArray(8), ByteArray(32))
+  val a = RustEpochHandleFfiResult(0, 1UL, 5, ByteArray(8), ByteArray(32))
+  val b = RustEpochHandleFfiResult(0, 1UL, 5, ByteArray(8), ByteArray(32))
+  val c = RustEpochHandleFfiResult(0, 1UL, 6, ByteArray(8), ByteArray(32))
   edgeAssertTrue(a == b)
   edgeAssertTrue(a.hashCode() == b.hashCode())
   edgeAssertTrue(a != c)
@@ -404,18 +400,18 @@ private fun headerBridgeMapsUnknownCodes() {
 
 private fun identityBridgeMapsUnknownCodes() {
   val api = SimpleIdentityApi(
-    create = RustIdentityHandleFfiResult(99, 0, ByteArray(0), ByteArray(0), ByteArray(0)),
+    create = RustIdentityHandleFfiResult(99, 0UL, ByteArray(0), ByteArray(0), ByteArray(0)),
   )
-  val result = GeneratedRustIdentityBridge(api).createIdentity(AccountKeyHandle(7))
+  val result = GeneratedRustIdentityBridge(api).createIdentity(AccountKeyHandle(7UL))
   edgeAssertTrue(result.code == IdentityCreateCode.INTERNAL_ERROR)
   edgeAssertTrue(result.handle == null)
 }
 
 private fun epochBridgeMapsUnknownCodes() {
   val api = SimpleEpochApi(
-    create = RustEpochHandleFfiResult(99, 0, 0, ByteArray(0), ByteArray(0)),
+    create = RustEpochHandleFfiResult(99, 0UL, 0, ByteArray(0), ByteArray(0)),
   )
-  val result = GeneratedRustEpochBridge(api).createEpoch(AccountKeyHandle(7), 1)
+  val result = GeneratedRustEpochBridge(api).createEpoch(AccountKeyHandle(7UL), 1)
   edgeAssertTrue(result.code == EpochCreateCode.INTERNAL_ERROR)
   edgeAssertTrue(result.handle == null)
 }
@@ -424,7 +420,7 @@ private fun shardBridgeMapsUnknownCodes() {
   val api = SimpleShardApi(
     encrypt = RustEncryptedShardFfiResult(99, ByteArray(0), "0".repeat(64)),
   )
-  val result = GeneratedRustShardBridge(api).encryptShard(EpochKeyHandle(99), ByteArray(8), 0, 1)
+  val result = GeneratedRustShardBridge(api).encryptShard(EpochKeyHandle(99UL), ByteArray(8), 0, 1)
   edgeAssertTrue(result.code == ShardEncryptCode.INTERNAL_ERROR)
   edgeAssertTrue(result.envelope == null)
 }
@@ -453,48 +449,48 @@ private class SimpleHeaderApi(private val canned: RustHeaderParseFfiResult) : Ge
 private class SimpleIdentityApi(
   private val create: RustIdentityHandleFfiResult? = null,
 ) : GeneratedRustIdentityApi {
-  override fun createIdentityHandle(accountKeyHandle: Long): RustIdentityHandleFfiResult =
+  override fun createIdentityHandle(accountKeyHandle: ULong): RustIdentityHandleFfiResult =
     create ?: error("not configured")
 
-  override fun openIdentityHandle(wrappedSeed: ByteArray, accountKeyHandle: Long): RustIdentityHandleFfiResult =
+  override fun openIdentityHandle(wrappedSeed: ByteArray, accountKeyHandle: ULong): RustIdentityHandleFfiResult =
     error("not configured")
 
-  override fun identitySigningPubkey(handle: Long): RustBytesFfiResult = error("not configured")
-  override fun identityEncryptionPubkey(handle: Long): RustBytesFfiResult = error("not configured")
-  override fun signManifestWithIdentity(handle: Long, transcriptBytes: ByteArray): RustBytesFfiResult =
+  override fun identitySigningPubkey(handle: ULong): RustBytesFfiResult = error("not configured")
+  override fun identityEncryptionPubkey(handle: ULong): RustBytesFfiResult = error("not configured")
+  override fun signManifestWithIdentity(handle: ULong, transcriptBytes: ByteArray): RustBytesFfiResult =
     error("not configured")
 
-  override fun closeIdentityHandle(handle: Long): Int = 0
+  override fun closeIdentityHandle(handle: ULong): Int = 0
 }
 
 private class SimpleEpochApi(
   private val create: RustEpochHandleFfiResult? = null,
 ) : GeneratedRustEpochApi {
-  override fun createEpochKeyHandle(accountKeyHandle: Long, epochId: Int): RustEpochHandleFfiResult =
+  override fun createEpochKeyHandle(accountKeyHandle: ULong, epochId: Int): RustEpochHandleFfiResult =
     create ?: error("not configured")
 
   override fun openEpochKeyHandle(
     wrappedEpochSeed: ByteArray,
-    accountKeyHandle: Long,
+    accountKeyHandle: ULong,
     epochId: Int,
   ): RustEpochHandleFfiResult = error("not configured")
 
-  override fun epochKeyHandleIsOpen(handle: Long): RustEpochHandleStatusFfiResult = error("not configured")
-  override fun closeEpochKeyHandle(handle: Long): Int = 0
+  override fun epochKeyHandleIsOpen(handle: ULong): RustEpochHandleStatusFfiResult = error("not configured")
+  override fun closeEpochKeyHandle(handle: ULong): Int = 0
 }
 
 private class SimpleShardApi(
   private val encrypt: RustEncryptedShardFfiResult? = null,
 ) : GeneratedRustShardApi {
   override fun encryptShardWithEpochHandle(
-    epochKeyHandle: Long,
+    epochKeyHandle: ULong,
     plaintext: ByteArray,
     shardIndex: Int,
     tier: Int,
   ): RustEncryptedShardFfiResult = encrypt ?: error("not configured")
 
   override fun decryptShardWithEpochHandle(
-    epochKeyHandle: Long,
+    epochKeyHandle: ULong,
     envelopeBytes: ByteArray,
   ): RustDecryptedShardFfiResult = error("not configured")
 }

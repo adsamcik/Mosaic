@@ -172,14 +172,14 @@ class RustDecryptedShardFfiResult(
 
 interface GeneratedRustShardApi {
   fun encryptShardWithEpochHandle(
-    epochKeyHandle: Long,
+    epochKeyHandle: ULong,
     plaintext: ByteArray,
     shardIndex: Int,
     tier: Int,
   ): RustEncryptedShardFfiResult
 
   fun decryptShardWithEpochHandle(
-    epochKeyHandle: Long,
+    epochKeyHandle: ULong,
     envelopeBytes: ByteArray,
   ): RustDecryptedShardFfiResult
 }
