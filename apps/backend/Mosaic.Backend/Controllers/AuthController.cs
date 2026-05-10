@@ -201,6 +201,13 @@ public partial class AuthController : ControllerBase
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
+        if (!ValidUsernamePattern().IsMatch(request.Username))
+        {
+            return Problem(
+                detail: "Invalid username format",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
         var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
 
         // Rate limit verify attempts (max 10 per IP per minute)

@@ -237,6 +237,25 @@ public class AuthControllerTests
     }
 
     [Fact]
+    public async Task VerifyAuth_RejectsInvalidUsernameFormatBeforeChallengeLookup()
+    {
+        // Arrange
+        using var db = TestDbContextFactory.Create();
+        var controller = CreateController(db);
+
+        // Act
+        var result = await controller.VerifyAuth(new AuthVerifyRequest(
+            "café",
+            Guid.CreateVersion7(),
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(64))
+        ));
+
+        // Assert
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("Invalid username format", ProblemDetailsAssertions.GetDetail(badRequest));
+    }
+
+    [Fact]
     public async Task VerifyAuth_FailsWithWrongSignature()
     {
         // Arrange
