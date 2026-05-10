@@ -198,6 +198,15 @@ impl TunnelKeyMaterial {
     pub fn seed_for_tests(&self) -> &[u8] {
         &self.seed
     }
+
+    /// Constructs tunnel material from fixed bytes for cross-facade parity vectors.
+    ///
+    /// SECURITY: gated behind test/introspection builds only. Production callers
+    /// must derive tunnel material from the PAKE handshake.
+    #[must_use]
+    pub fn from_seed_for_tests(seed: [u8; TUNNEL_KEY_BYTES], role: TunnelRoleTag) -> Self {
+        Self { seed, role }
+    }
 }
 
 impl core::fmt::Debug for TunnelKeyMaterial {

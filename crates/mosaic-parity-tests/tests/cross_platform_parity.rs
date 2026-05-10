@@ -7,7 +7,8 @@ use mosaic_domain::{
 use mosaic_uniffi::{
     AccountUnlockRequest as UniAccountUnlockRequest, ClientCoreManifestShardRef,
     ClientCoreManifestTranscriptInputs, ClientCoreUploadJobSnapshot as UniUploadJobSnapshot,
-    ClientCoreUploadShardRef as UniUploadShardRef, MediaFormat as UniMediaFormat,
+    ClientCoreUploadShardRef as UniUploadShardRef, DownloadInitInput, DownloadPlanEntryInput,
+    DownloadPlanInput, DownloadPlanShardInput, MediaFormat as UniMediaFormat,
 };
 use mosaic_wasm::{
     AccountUnlockRequest as WasmAccountUnlockRequest,
@@ -224,6 +225,121 @@ fn sidecar_room_id_matches_known_vector_across_crypto_wasm_and_uniffi() {
     assert_eq!(uniffi, expected);
 }
 
+#[cfg(feature = "cross-client-vectors")]
+#[test]
+fn sidecar_pake_initiator_responder_round_trip_across_wasm_and_uniffi() {
+    let code = b"123456".to_vec();
+
+    let wasm_start = mosaic_wasm::sidecar_pake_initiator_start_v1(&code);
+    assert_ok_u32(wasm_start.code, "wasm PAKE initiator start");
+    let uniffi_response =
+        mosaic_uniffi::sidecar_pake_responder_v1(code.clone(), wasm_start.msg1.clone());
+    assert_ok_u32(uniffi_response.code, "uniffi PAKE responder");
+    let wasm_finish = mosaic_wasm::sidecar_pake_initiator_finish_v1(
+        wasm_start.handle_id,
+        &uniffi_response.msg2,
+        &uniffi_response.responder_confirm,
+    );
+    assert_ok_u32(wasm_finish.code, "wasm PAKE initiator finish");
+    let uniffi_finish = mosaic_uniffi::sidecar_pake_responder_finish_v1(
+        uniffi_response.responder_handle_id,
+        wasm_finish.initiator_confirm.clone(),
+    );
+    assert_ok_u32(uniffi_finish.code, "uniffi PAKE responder finish");
+
+    let wasm_seed =
+        mosaic_wasm::sidecar_tunnel_material_seed_for_tests(wasm_finish.material_handle_id);
+    let uniffi_seed =
+        mosaic_uniffi::sidecar_tunnel_material_seed_for_tests(uniffi_finish.material_handle_id);
+    assert_ok(wasm_seed.code, "wasm PAKE seed");
+    assert_ok(uniffi_seed.code, "uniffi PAKE seed");
+    assert_eq!(wasm_seed.bytes, uniffi_seed.bytes);
+
+    let uniffi_start = mosaic_uniffi::sidecar_pake_initiator_start_v1(code.clone());
+    assert_ok_u32(uniffi_start.code, "uniffi PAKE initiator start");
+    let wasm_response = mosaic_wasm::sidecar_pake_responder_v1(&code, &uniffi_start.msg1);
+    assert_ok_u32(wasm_response.code, "wasm PAKE responder");
+    let uniffi_finish = mosaic_uniffi::sidecar_pake_initiator_finish_v1(
+        uniffi_start.handle_id,
+        wasm_response.msg2.clone(),
+        wasm_response.responder_confirm.clone(),
+    );
+    assert_ok_u32(uniffi_finish.code, "uniffi PAKE initiator finish");
+    let wasm_finish = mosaic_wasm::sidecar_pake_responder_finish_v1(
+        wasm_response.responder_handle_id,
+        &uniffi_finish.initiator_confirm,
+    );
+    assert_ok_u32(wasm_finish.code, "wasm PAKE responder finish");
+
+    let uniffi_seed =
+        mosaic_uniffi::sidecar_tunnel_material_seed_for_tests(uniffi_finish.material_handle_id);
+    let wasm_seed =
+        mosaic_wasm::sidecar_tunnel_material_seed_for_tests(wasm_finish.material_handle_id);
+    assert_ok(uniffi_seed.code, "uniffi reverse PAKE seed");
+    assert_ok(wasm_seed.code, "wasm reverse PAKE seed");
+    assert_eq!(uniffi_seed.bytes, wasm_seed.bytes);
+}
+
+#[cfg(feature = "cross-client-vectors")]
+#[test]
+fn sidecar_tunnel_seal_open_round_trip_across_wasm_and_uniffi() {
+    let seed = fixed_sidecar_seed();
+    let wasm_material = mosaic_wasm::sidecar_tunnel_material_from_seed_for_tests(seed.to_vec(), 0);
+    assert_ok_u32(wasm_material.code, "wasm fixed initiator material");
+    let uniffi_material =
+        mosaic_uniffi::sidecar_tunnel_material_from_seed_for_tests(seed.to_vec(), 1);
+    assert_ok_u32(uniffi_material.code, "uniffi fixed responder material");
+
+    let wasm_tunnel = mosaic_wasm::sidecar_tunnel_open_v1(wasm_material.material_handle_id);
+    assert_ok_u32(wasm_tunnel.code, "wasm tunnel open");
+    let uniffi_tunnel = mosaic_uniffi::sidecar_tunnel_open_v1(uniffi_material.material_handle_id);
+    assert_ok_u32(uniffi_tunnel.code, "uniffi tunnel open");
+
+    let plaintext = b"wasm-to-uniffi fixed sidecar tunnel frame".to_vec();
+    let wasm_sealed = mosaic_wasm::sidecar_tunnel_seal_v1(wasm_tunnel.send_handle_id, &plaintext);
+    assert_ok_u32(wasm_sealed.code, "wasm tunnel seal");
+    let uniffi_open = mosaic_uniffi::sidecar_tunnel_open_message_v1(
+        uniffi_tunnel.recv_handle_id,
+        wasm_sealed.sealed.clone(),
+    );
+    assert_ok_u32(uniffi_open.code, "uniffi tunnel open wasm frame");
+    assert_eq!(uniffi_open.plaintext, plaintext);
+
+    let reverse_plaintext = b"uniffi-to-wasm fixed sidecar tunnel frame".to_vec();
+    let uniffi_sealed = mosaic_uniffi::sidecar_tunnel_seal_v1(
+        uniffi_tunnel.send_handle_id,
+        reverse_plaintext.clone(),
+    );
+    assert_ok_u32(uniffi_sealed.code, "uniffi tunnel seal");
+    let wasm_open = mosaic_wasm::sidecar_tunnel_open_message_v1(
+        wasm_tunnel.recv_handle_id,
+        &uniffi_sealed.sealed,
+    );
+    assert_ok_u32(wasm_open.code, "wasm tunnel open uniffi frame");
+    assert_eq!(wasm_open.plaintext, reverse_plaintext);
+
+    assert_eq!(
+        hex_lower(&wasm_sealed.sealed),
+        "00000000000000001c176dc7c1b62c0d74bdf421334a604915909beba1247646b8d409558692546a43be584524698e6d689c1c05e2a4775fad14d70b8531733ad9"
+    );
+    assert_ne!(wasm_sealed.sealed, uniffi_sealed.sealed);
+
+    assert_ok_u32(
+        mosaic_wasm::sidecar_tunnel_close_v1(
+            wasm_tunnel.send_handle_id,
+            wasm_tunnel.recv_handle_id,
+        ),
+        "close wasm tunnel",
+    );
+    assert_ok_u32(
+        mosaic_uniffi::sidecar_tunnel_close_v1(
+            uniffi_tunnel.send_handle_id,
+            uniffi_tunnel.recv_handle_id,
+        ),
+        "close uniffi tunnel",
+    );
+}
+
 #[test]
 fn manifest_transcript_bytes_match_wasm_and_uniffi() {
     let encrypted_meta = vec![0xaa, 0xbb, 0xcc];
@@ -263,6 +379,87 @@ fn manifest_transcript_bytes_match_wasm_and_uniffi() {
 
     assert_eq!(wasm.bytes, uniffi);
     assert_eq!(wasm.bytes.len(), 156);
+}
+
+#[test]
+fn sign_manifest_with_identity_matches_across_wasm_and_uniffi() {
+    let (wrapped_account_key, wrapped_identity_seed) = fixed_account_and_wrapped_identity_seed();
+    let wasm_account = unlock_wasm_account(wrapped_account_key.clone());
+    let uniffi_account = unlock_uniffi_account(wrapped_account_key);
+    let wasm_identity =
+        mosaic_wasm::open_identity_handle(wrapped_identity_seed.clone(), wasm_account);
+    assert_ok(wasm_identity.code, "wasm open fixed identity");
+    let uniffi_identity =
+        mosaic_uniffi::open_identity_handle(wrapped_identity_seed, uniffi_account);
+    assert_ok(uniffi_identity.code, "uniffi open fixed identity");
+    assert_eq!(wasm_identity.signing_pubkey, uniffi_identity.signing_pubkey);
+
+    let transcript = fixed_manifest_transcript();
+    let wasm_sig =
+        mosaic_wasm::sign_manifest_with_identity(wasm_identity.handle, transcript.clone());
+    let uniffi_sig =
+        mosaic_uniffi::sign_manifest_with_identity(uniffi_identity.handle, transcript.clone());
+    assert_ok(wasm_sig.code, "wasm identity manifest sign");
+    assert_ok(uniffi_sig.code, "uniffi identity manifest sign");
+
+    assert_eq!(wasm_sig.bytes, uniffi_sig.bytes);
+    assert_eq!(wasm_sig.bytes.len(), 64);
+    assert_ok(
+        mosaic_wasm::verify_manifest_with_identity(
+            transcript.clone(),
+            uniffi_sig.bytes.clone(),
+            wasm_identity.signing_pubkey.clone(),
+        ),
+        "wasm cross-verify uniffi identity signature",
+    );
+    assert_ok(
+        mosaic_uniffi::verify_manifest_with_identity(
+            transcript,
+            wasm_sig.bytes,
+            uniffi_identity.signing_pubkey,
+        ),
+        "uniffi cross-verify wasm identity signature",
+    );
+
+    close_identity_handles(&[wasm_identity.handle, uniffi_identity.handle]);
+    close_account_handles(&[wasm_account, uniffi_account]);
+}
+
+#[cfg(feature = "cross-client-vectors")]
+#[test]
+fn sign_manifest_with_epoch_handle_matches_across_wasm_and_uniffi() {
+    let fixture = wasm_sealed_bundle_opened_by_uniffi_fixture(91);
+    let transcript = fixed_manifest_transcript();
+
+    let wasm_sig =
+        mosaic_wasm::sign_manifest_with_epoch_handle(fixture.wasm_epoch_handle, transcript.clone());
+    let uniffi_sig = mosaic_uniffi::sign_manifest_with_epoch_handle(
+        fixture.uniffi_opened_epoch_handle,
+        transcript.clone(),
+    );
+    assert_ok(wasm_sig.code, "wasm epoch manifest sign");
+    assert_ok(uniffi_sig.code, "uniffi epoch manifest sign");
+
+    assert_eq!(wasm_sig.bytes, uniffi_sig.bytes);
+    assert_eq!(wasm_sig.bytes.len(), 64);
+    assert_ok(
+        mosaic_wasm::verify_manifest_with_epoch(
+            transcript.clone(),
+            uniffi_sig.bytes.clone(),
+            fixture.sign_public_key.clone(),
+        ),
+        "wasm cross-verify uniffi epoch signature",
+    );
+    assert_ok(
+        mosaic_uniffi::verify_manifest_with_epoch(
+            transcript,
+            wasm_sig.bytes,
+            fixture.sign_public_key.clone(),
+        ),
+        "uniffi cross-verify wasm epoch signature",
+    );
+
+    fixture.close();
 }
 
 #[test]
@@ -432,6 +629,84 @@ fn canonical_upload_snapshot_cbor_matches_wasm_and_uniffi_facades() {
 }
 
 #[test]
+fn canonical_download_snapshot_cbor_matches_wasm_and_uniffi() {
+    let wasm_plan = mosaic_wasm::download_build_plan_v1(&download_plan_builder_input_cbor());
+    assert_ok_u32(wasm_plan.code, "wasm download build plan");
+    let uniffi_plan = mosaic_uniffi::build_download_plan(download_plan_input());
+    assert_ok(uniffi_plan.code, "uniffi download build plan");
+    assert_eq!(wasm_plan.plan_cbor, uniffi_plan.plan_cbor);
+
+    let init_input = download_init_input_cbor(&wasm_plan.plan_cbor);
+    let wasm_snapshot = mosaic_wasm::download_init_snapshot_v1(&init_input);
+    assert_ok_u32(wasm_snapshot.code, "wasm download init snapshot");
+    let uniffi_snapshot = mosaic_uniffi::init_download_job(DownloadInitInput {
+        job_id: uuid_to_bytes(JOB_ID),
+        album_id: uuid_to_bytes(ALBUM_ID),
+        plan_cbor: uniffi_plan.plan_cbor.clone(),
+        now_ms: 1_700_000_020_000,
+    });
+    assert_ok(uniffi_snapshot.code, "uniffi download init snapshot");
+    assert_eq!(wasm_snapshot.body, uniffi_snapshot.body);
+    assert_eq!(wasm_snapshot.checksum, uniffi_snapshot.checksum);
+
+    let wasm_load =
+        mosaic_wasm::download_load_snapshot_v1(&wasm_snapshot.body, &wasm_snapshot.checksum);
+    assert_ok_u32(wasm_load.code, "wasm download load snapshot");
+    let uniffi_load = mosaic_uniffi::load_download_snapshot(
+        uniffi_snapshot.body.clone(),
+        uniffi_snapshot.checksum.clone(),
+    );
+    assert_ok(uniffi_load.code, "uniffi download load snapshot");
+    assert_eq!(wasm_load.snapshot_cbor, uniffi_load.snapshot_cbor);
+    assert_eq!(
+        wasm_load.schema_version_loaded,
+        uniffi_load.schema_version_loaded
+    );
+
+    let wasm_commit = mosaic_wasm::download_commit_snapshot_v1(&wasm_load.snapshot_cbor);
+    assert_ok_u32(wasm_commit.code, "wasm download commit snapshot");
+    let uniffi_commit = mosaic_uniffi::commit_download_snapshot(uniffi_load.snapshot_cbor.clone());
+    assert_ok(uniffi_commit.code, "uniffi download commit snapshot");
+    assert_eq!(wasm_commit.checksum, uniffi_commit.checksum);
+    assert_eq!(uniffi_commit.body, uniffi_load.snapshot_cbor);
+
+    let wasm_verify =
+        mosaic_wasm::download_verify_snapshot_v1(&wasm_load.snapshot_cbor, &wasm_commit.checksum);
+    let uniffi_verify = mosaic_uniffi::verify_download_snapshot(
+        uniffi_load.snapshot_cbor.clone(),
+        uniffi_commit.checksum.clone(),
+    );
+    assert_ok_u32(wasm_verify.code, "wasm download verify snapshot");
+    assert_ok(uniffi_verify.code, "uniffi download verify snapshot");
+    assert!(wasm_verify.valid);
+    assert_eq!(wasm_verify.valid, uniffi_verify.valid);
+    assert_eq!(
+        wasm_commit.checksum,
+        mosaic_wasm::blake2b_snapshot_checksum_32(wasm_load.snapshot_cbor.clone())
+    );
+    assert_eq!(
+        uniffi_commit.checksum,
+        mosaic_uniffi::blake2b_snapshot_checksum_32(uniffi_load.snapshot_cbor)
+    );
+
+    let mut wasm_state = download_state_cbor(0);
+    let mut uniffi_state = wasm_state.clone();
+    for event in [
+        download_start_event_cbor(),
+        download_plan_ready_event_cbor(),
+    ] {
+        let wasm_next = mosaic_wasm::download_apply_event_v1(&wasm_state, &event);
+        let uniffi_next = mosaic_uniffi::apply_download_event(uniffi_state, event);
+        assert_ok_u32(wasm_next.code, "wasm download apply event");
+        assert_ok(uniffi_next.code, "uniffi download apply event");
+        assert_eq!(wasm_next.new_state_cbor, uniffi_next.new_state_cbor);
+        wasm_state = wasm_next.new_state_cbor;
+        uniffi_state = uniffi_next.new_state_cbor;
+    }
+    assert_eq!(wasm_state, download_state_cbor(2));
+}
+
+#[test]
 fn metadata_strip_outputs_match_wasm_and_uniffi() {
     for case in strip_cases() {
         let wasm = match case.format {
@@ -542,6 +817,136 @@ fn streaming_aead_envelope_decrypts_across_uniffi_and_shared_core() {
     assert_eq!(uniffi_decrypted, plaintext);
 
     close_epoch_handles(&[uniffi_epoch.handle, wasm_epoch.handle]);
+    close_account_handles(&[wasm_account, uniffi_account]);
+}
+
+#[cfg(feature = "cross-client-vectors")]
+#[test]
+fn wasm_sealed_bundle_opens_via_uniffi_recipient_seed_path() {
+    let fixture = wasm_sealed_bundle_opened_by_uniffi_fixture(92);
+
+    assert_eq!(fixture.opened_epoch_id, 92);
+    assert_eq!(fixture.opened_album_id, ALBUM_ID);
+    assert_eq!(fixture.opened_recipient_pubkey, fixture.recipient_pubkey);
+    assert_eq!(fixture.sign_public_key, fixture.wasm_sign_public_key);
+
+    let plaintext = b"sealed bundle recovered epoch seed decrypts this shard".to_vec();
+    let wasm_encrypted = mosaic_wasm::encrypt_shard_with_epoch_handle(
+        fixture.wasm_epoch_handle,
+        plaintext.clone(),
+        8,
+        ShardTier::Preview.to_byte(),
+    );
+    assert_ok(wasm_encrypted.code, "wasm encrypt with sealed epoch");
+    let uniffi_decrypted = mosaic_uniffi::decrypt_shard_with_epoch_handle(
+        fixture.uniffi_opened_epoch_handle,
+        wasm_encrypted.envelope_bytes,
+    );
+    assert_ok(
+        uniffi_decrypted.code,
+        "uniffi decrypt with opened bundle epoch",
+    );
+    assert_eq!(uniffi_decrypted.plaintext, plaintext);
+
+    fixture.close();
+}
+
+#[cfg(feature = "cross-client-vectors")]
+#[test]
+fn wasm_streaming_encrypt_uniffi_streaming_decrypt_round_trip() {
+    streaming_round_trip_case("one final frame", patterned_plaintext(777), &[777]);
+    streaming_round_trip_case(
+        "three frames",
+        patterned_plaintext(STREAMING_SHARD_FRAME_SIZE * 2 + 333),
+        &[STREAMING_SHARD_FRAME_SIZE, STREAMING_SHARD_FRAME_SIZE, 333],
+    );
+}
+
+#[cfg(feature = "cross-client-vectors")]
+#[test]
+fn streaming_aead_tampered_chunk_fails_on_opposite_facade() {
+    let wrapped_account_key = wrapped_account_key();
+    let wasm_account = unlock_wasm_account(wrapped_account_key.clone());
+    let uniffi_account = unlock_uniffi_account(wrapped_account_key);
+    let wasm_epoch = mosaic_wasm::create_epoch_key_handle(wasm_account, 123);
+    assert_ok(wasm_epoch.code, "wasm create tamper epoch");
+    let uniffi_epoch = mosaic_uniffi::open_epoch_key_handle(
+        wasm_epoch.wrapped_epoch_seed.clone(),
+        uniffi_account,
+        123,
+    );
+    assert_ok(uniffi_epoch.code, "uniffi open tamper epoch");
+
+    let plaintext = patterned_plaintext(STREAMING_SHARD_FRAME_SIZE + 19);
+    let mut wasm_encryptor = mosaic_wasm::StreamingShardEncryptor::new(
+        wasm_epoch.handle,
+        ShardTier::Original.to_byte(),
+        Some(2),
+    );
+    let first =
+        wasm_encryptor.encrypt_frame_for_tests(plaintext[..STREAMING_SHARD_FRAME_SIZE].to_vec());
+    assert_ok(first.code, "wasm tamper first frame");
+    let second =
+        wasm_encryptor.encrypt_frame_for_tests(plaintext[STREAMING_SHARD_FRAME_SIZE..].to_vec());
+    assert_ok(second.code, "wasm tamper second frame");
+    let envelope = wasm_encryptor.finalize_for_tests();
+    assert_ok(envelope.code, "wasm tamper finalize");
+
+    let uniffi_decryptor =
+        match mosaic_uniffi::StreamingDecryptor::new(uniffi_epoch.handle, envelope.bytes.clone()) {
+            Ok(value) => value,
+            Err(error) => panic!("uniffi decryptor should open wasm envelope: {error:?}"),
+        };
+    let first_plaintext = match uniffi_decryptor.decrypt_frame(first.bytes) {
+        Ok(bytes) => bytes,
+        Err(error) => panic!("uniffi first frame should decrypt before tamper: {error:?}"),
+    };
+    assert_eq!(first_plaintext, plaintext[..STREAMING_SHARD_FRAME_SIZE]);
+    let mut tampered = second.bytes;
+    let last = tampered
+        .last_mut()
+        .expect("encrypted streaming frame carries a tag byte");
+    *last ^= 0x80;
+    assert!(
+        uniffi_decryptor.decrypt_frame(tampered).is_err(),
+        "uniffi decryptor must reject a WASM-encrypted tampered frame"
+    );
+
+    let uniffi_encryptor = match mosaic_uniffi::StreamingEncryptor::new(
+        uniffi_epoch.handle,
+        ShardTier::Original.to_byte(),
+        Some(1),
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("uniffi encryptor should initialize: {error:?}"),
+    };
+    let frame = match uniffi_encryptor.encrypt_frame(b"tamper reverse".to_vec()) {
+        Ok(frame) => frame,
+        Err(error) => panic!("uniffi reverse frame should encrypt: {error:?}"),
+    };
+    let envelope = match uniffi_encryptor.finalize() {
+        Ok(bytes) => bytes,
+        Err(error) => panic!("uniffi reverse envelope should finalize: {error:?}"),
+    };
+    let mut tampered = frame.bytes;
+    let last = tampered
+        .last_mut()
+        .expect("encrypted streaming frame carries a tag byte");
+    *last ^= 0x40;
+    let mut wasm_decryptor = mosaic_wasm::StreamingShardDecryptor::new(wasm_epoch.handle, envelope);
+    let tampered_result = wasm_decryptor.decrypt_frame_for_tests(tampered);
+    assert_ne!(
+        tampered_result.code,
+        ClientErrorCode::Ok.as_u16(),
+        "wasm decryptor must reject a UniFFI-encrypted tampered frame"
+    );
+    assert_ne!(
+        wasm_decryptor.finalize_for_tests().code,
+        ClientErrorCode::Ok.as_u16(),
+        "wasm decryptor must not finalize after a tampered frame"
+    );
+
+    close_epoch_handles(&[wasm_epoch.handle, uniffi_epoch.handle]);
     close_account_handles(&[wasm_account, uniffi_account]);
 }
 
@@ -1259,6 +1664,331 @@ fn uuid_to_bytes(uuid: &str) -> Vec<u8> {
     bytes
 }
 
+fn fixed_identity_seed() -> [u8; 32] {
+    [
+        0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50,
+        0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f,
+        0x60, 0x61,
+    ]
+}
+
+#[cfg(feature = "cross-client-vectors")]
+fn fixed_recipient_identity_seed() -> [u8; 32] {
+    [
+        0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf,
+        0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe,
+        0xbf, 0xc0,
+    ]
+}
+
+#[cfg(feature = "cross-client-vectors")]
+fn fixed_sidecar_seed() -> [u8; 32] {
+    [
+        0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e,
+        0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d,
+        0x4e, 0x4f,
+    ]
+}
+
+fn fixed_manifest_transcript() -> Vec<u8> {
+    let result = mosaic_wasm::manifest_transcript_bytes(
+        ALBUM_ID_BYTES.to_vec(),
+        19,
+        vec![0x90, 0x91, 0x92, 0x93],
+        encoded_manifest_shards(),
+    );
+    assert_ok(result.code, "fixed manifest transcript");
+    result.bytes
+}
+
+fn fixed_account_and_wrapped_identity_seed() -> (Vec<u8>, Vec<u8>) {
+    let profile = match KdfProfile::new(MIN_KDF_MEMORY_KIB, MIN_KDF_ITERATIONS, 1) {
+        Ok(value) => value,
+        Err(error) => panic!("minimum Mosaic KDF profile should be valid: {error:?}"),
+    };
+    let material =
+        match derive_account_key(PASSWORD.to_vec().into(), &USER_SALT, &ACCOUNT_SALT, profile) {
+            Ok(value) => value,
+            Err(error) => panic!("account key should derive: {error:?}"),
+        };
+    let wrapped_identity_seed = match mosaic_crypto::wrap_secret_with_aad(
+        &fixed_identity_seed(),
+        &material.account_key,
+        mosaic_crypto::IDENTITY_SEED_AAD,
+    ) {
+        Ok(bytes) => bytes,
+        Err(error) => panic!("fixed identity seed should wrap: {error:?}"),
+    };
+    (material.wrapped_account_key, wrapped_identity_seed)
+}
+
+fn cbor_bytes(value: Value) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    if let Err(error) = ciborium::ser::into_writer(&value, &mut bytes) {
+        panic!("CBOR fixture should encode: {error:?}");
+    }
+    bytes
+}
+
+fn download_plan_builder_input_cbor() -> Vec<u8> {
+    let shard = Value::Map(vec![
+        cbor_pair(0, Value::Bytes(uuid_to_bytes(SHARD_ID))),
+        cbor_pair(1, Value::Integer(7.into())),
+        cbor_pair(2, Value::Integer(ShardTier::Original.to_byte().into())),
+        cbor_pair(3, Value::Bytes(vec![0x55; 32])),
+        cbor_pair(4, Value::Integer(1234.into())),
+    ]);
+    let photo = Value::Map(vec![
+        cbor_pair(
+            0,
+            Value::Text(PHOTO_ID_BYTES.iter().map(|b| format!("{b:02x}")).collect()),
+        ),
+        cbor_pair(1, Value::Text("IMG_0001.JPG".to_owned())),
+        cbor_pair(2, Value::Array(vec![shard])),
+    ]);
+    cbor_bytes(Value::Map(vec![cbor_pair(0, Value::Array(vec![photo]))]))
+}
+
+fn download_plan_input() -> DownloadPlanInput {
+    DownloadPlanInput {
+        album_id: uuid_to_bytes(ALBUM_ID),
+        entries: vec![DownloadPlanEntryInput {
+            photo_id: PHOTO_ID_BYTES.iter().map(|b| format!("{b:02x}")).collect(),
+            filename: "IMG_0001.JPG".to_owned(),
+            shards: vec![DownloadPlanShardInput {
+                shard_id: uuid_to_bytes(SHARD_ID),
+                epoch_id: 7,
+                tier: ShardTier::Original.to_byte(),
+                expected_hash: vec![0x55; 32],
+                declared_size: 1234,
+            }],
+        }],
+    }
+}
+
+fn download_init_input_cbor(plan_cbor: &[u8]) -> Vec<u8> {
+    cbor_bytes(Value::Map(vec![
+        cbor_pair(0, Value::Bytes(uuid_to_bytes(JOB_ID))),
+        cbor_pair(1, Value::Bytes(uuid_to_bytes(ALBUM_ID))),
+        cbor_pair(2, Value::Bytes(plan_cbor.to_vec())),
+        cbor_pair(3, Value::Integer(1_700_000_020_000_i64.into())),
+        cbor_pair(4, Value::Text(legacy_scope_for_job())),
+    ]))
+}
+
+fn legacy_scope_for_job() -> String {
+    format!("legacy:{}", JOB_ID.replace('-', ""))
+}
+
+fn download_state_cbor(state: u8) -> Vec<u8> {
+    cbor_bytes(Value::Map(vec![cbor_pair(0, Value::Integer(state.into()))]))
+}
+
+fn download_start_event_cbor() -> Vec<u8> {
+    cbor_bytes(Value::Map(vec![
+        cbor_pair(0, Value::Integer(0.into())),
+        cbor_pair(1, Value::Bytes(uuid_to_bytes(JOB_ID))),
+        cbor_pair(2, Value::Bytes(uuid_to_bytes(ALBUM_ID))),
+    ]))
+}
+
+fn download_plan_ready_event_cbor() -> Vec<u8> {
+    cbor_bytes(Value::Map(vec![cbor_pair(0, Value::Integer(1.into()))]))
+}
+
+#[cfg(feature = "cross-client-vectors")]
+struct SealedBundleFixture {
+    wasm_account_handle: u64,
+    wasm_identity_handle: u64,
+    wasm_epoch_handle: u64,
+    uniffi_opened_epoch_handle: u64,
+    opened_epoch_id: u32,
+    opened_album_id: String,
+    recipient_pubkey: Vec<u8>,
+    opened_recipient_pubkey: Vec<u8>,
+    sign_public_key: Vec<u8>,
+    wasm_sign_public_key: Vec<u8>,
+}
+
+#[cfg(feature = "cross-client-vectors")]
+impl SealedBundleFixture {
+    fn close(self) {
+        close_epoch_handles(&[self.wasm_epoch_handle, self.uniffi_opened_epoch_handle]);
+        close_identity_handles(&[self.wasm_identity_handle]);
+        close_account_handles(&[self.wasm_account_handle]);
+    }
+}
+
+#[cfg(feature = "cross-client-vectors")]
+fn wasm_sealed_bundle_opened_by_uniffi_fixture(epoch_id: u32) -> SealedBundleFixture {
+    let wrapped_account_key = wrapped_account_key();
+    let wasm_account = unlock_wasm_account(wrapped_account_key);
+    let wasm_identity = mosaic_wasm::create_identity_handle(wasm_account);
+    assert_ok(wasm_identity.code, "wasm create bundle sharer identity");
+    let wasm_epoch = mosaic_wasm::create_epoch_key_handle(wasm_account, epoch_id);
+    assert_ok(wasm_epoch.code, "wasm create bundle epoch");
+
+    let recipient_seed = fixed_recipient_identity_seed();
+    let recipient = mosaic_uniffi::derive_identity_from_raw_seed(
+        recipient_seed.to_vec(),
+        b"recipient-public-key-probe".to_vec(),
+    );
+    assert_ok(recipient.code, "uniffi derive recipient identity");
+
+    let sealed = mosaic_wasm::seal_bundle_with_epoch_handle(
+        wasm_identity.handle,
+        wasm_epoch.handle,
+        recipient.signing_pubkey.clone(),
+        ALBUM_ID.to_owned(),
+    );
+    assert_ok(sealed.code, "wasm seal epoch bundle");
+    assert_eq!(sealed.sharer_pubkey, wasm_identity.signing_pubkey);
+
+    let opened = mosaic_uniffi::verify_and_open_bundle_with_recipient_seed(
+        recipient_seed.to_vec(),
+        sealed.sealed,
+        sealed.signature,
+        sealed.sharer_pubkey,
+        wasm_identity.signing_pubkey.clone(),
+        ALBUM_ID.to_owned(),
+        epoch_id,
+        false,
+    );
+    assert_ok(opened.code, "uniffi open wasm sealed bundle");
+
+    SealedBundleFixture {
+        wasm_account_handle: wasm_account,
+        wasm_identity_handle: wasm_identity.handle,
+        wasm_epoch_handle: wasm_epoch.handle,
+        uniffi_opened_epoch_handle: opened.epoch_handle_id,
+        opened_epoch_id: opened.epoch_id,
+        opened_album_id: opened.album_id,
+        recipient_pubkey: recipient.signing_pubkey,
+        opened_recipient_pubkey: opened.recipient_pubkey,
+        sign_public_key: opened.sign_public_key,
+        wasm_sign_public_key: wasm_epoch.sign_public_key,
+    }
+}
+
+#[cfg(feature = "cross-client-vectors")]
+fn streaming_round_trip_case(name: &str, plaintext: Vec<u8>, chunk_sizes: &[usize]) {
+    let wrapped_account_key = wrapped_account_key();
+    let wasm_account = unlock_wasm_account(wrapped_account_key.clone());
+    let uniffi_account = unlock_uniffi_account(wrapped_account_key);
+    let wasm_epoch = mosaic_wasm::create_epoch_key_handle(wasm_account, 121);
+    assert_ok(wasm_epoch.code, "wasm create streaming parity epoch");
+    let uniffi_epoch = mosaic_uniffi::open_epoch_key_handle(
+        wasm_epoch.wrapped_epoch_seed.clone(),
+        uniffi_account,
+        121,
+    );
+    assert_ok(uniffi_epoch.code, "uniffi open streaming parity epoch");
+
+    let mut wasm_encryptor = mosaic_wasm::StreamingShardEncryptor::new(
+        wasm_epoch.handle,
+        ShardTier::Original.to_byte(),
+        Some(u32::try_from(chunk_sizes.len()).expect("chunk count fits u32")),
+    );
+    let mut offset = 0;
+    let mut wasm_frames = Vec::new();
+    for (index, size) in chunk_sizes.iter().copied().enumerate() {
+        let frame =
+            wasm_encryptor.encrypt_frame_for_tests(plaintext[offset..offset + size].to_vec());
+        assert_ok(frame.code, name);
+        assert_eq!(
+            frame.frame_index,
+            u32::try_from(index).expect("frame index fits u32")
+        );
+        wasm_frames.push(frame.bytes);
+        offset += size;
+    }
+    assert_eq!(offset, plaintext.len(), "{name}");
+    let wasm_envelope = wasm_encryptor.finalize_for_tests();
+    assert_ok(wasm_envelope.code, name);
+
+    let uniffi_decryptor =
+        match mosaic_uniffi::StreamingDecryptor::new(uniffi_epoch.handle, wasm_envelope.bytes) {
+            Ok(value) => value,
+            Err(error) => panic!("{name}: uniffi decryptor should open wasm envelope: {error:?}"),
+        };
+    let mut decrypted = Vec::new();
+    for frame in wasm_frames {
+        let bytes = match uniffi_decryptor.decrypt_frame(frame) {
+            Ok(bytes) => bytes,
+            Err(error) => panic!("{name}: uniffi should decrypt wasm frame: {error:?}"),
+        };
+        decrypted.extend_from_slice(&bytes);
+    }
+    if let Err(error) = uniffi_decryptor.finalize() {
+        panic!("{name}: uniffi decryptor should finalize: {error:?}");
+    }
+    assert_eq!(decrypted, plaintext, "{name}");
+
+    let uniffi_encryptor = match mosaic_uniffi::StreamingEncryptor::new(
+        uniffi_epoch.handle,
+        ShardTier::Original.to_byte(),
+        Some(u32::try_from(chunk_sizes.len()).expect("chunk count fits u32")),
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("{name}: uniffi encryptor should initialize: {error:?}"),
+    };
+    let mut offset = 0;
+    let mut uniffi_frames = Vec::new();
+    for (index, size) in chunk_sizes.iter().copied().enumerate() {
+        let frame = match uniffi_encryptor.encrypt_frame(plaintext[offset..offset + size].to_vec())
+        {
+            Ok(frame) => frame,
+            Err(error) => panic!("{name}: uniffi should encrypt frame: {error:?}"),
+        };
+        assert_eq!(
+            frame.frame_index,
+            u32::try_from(index).expect("frame index fits u32")
+        );
+        uniffi_frames.push(frame.bytes);
+        offset += size;
+    }
+    let uniffi_envelope = match uniffi_encryptor.finalize() {
+        Ok(bytes) => bytes,
+        Err(error) => panic!("{name}: uniffi should finalize envelope: {error:?}"),
+    };
+    let mut wasm_decryptor =
+        mosaic_wasm::StreamingShardDecryptor::new(wasm_epoch.handle, uniffi_envelope);
+    let mut wasm_decrypted = Vec::new();
+    for frame in uniffi_frames {
+        let result = wasm_decryptor.decrypt_frame_for_tests(frame);
+        assert_ok(result.code, name);
+        wasm_decrypted.extend_from_slice(&result.plaintext);
+    }
+    let finalized = wasm_decryptor.finalize_for_tests();
+    assert_ok(finalized.code, name);
+    assert_eq!(finalized.bytes, Vec::<u8>::new(), "{name}");
+    assert_eq!(wasm_decrypted, plaintext, "{name}");
+
+    close_epoch_handles(&[wasm_epoch.handle, uniffi_epoch.handle]);
+    close_account_handles(&[wasm_account, uniffi_account]);
+}
+
+fn close_identity_handles(handles: &[u64]) {
+    for handle in handles {
+        let wasm_code = mosaic_wasm::close_identity_handle(*handle);
+        if wasm_code != ClientErrorCode::Ok.as_u16()
+            && wasm_code != ClientErrorCode::IdentityHandleNotFound.as_u16()
+        {
+            panic!("unexpected wasm close identity code: {wasm_code}");
+        }
+        let uniffi_code = mosaic_uniffi::close_identity_handle(*handle);
+        if uniffi_code != ClientErrorCode::Ok.as_u16()
+            && uniffi_code != ClientErrorCode::IdentityHandleNotFound.as_u16()
+        {
+            panic!("unexpected uniffi close identity code: {uniffi_code}");
+        }
+    }
+}
+
 fn assert_ok(code: u16, context: &str) {
     assert_eq!(code, ClientErrorCode::Ok.as_u16(), "{context}");
+}
+
+fn assert_ok_u32(code: u32, context: &str) {
+    assert_eq!(code, u32::from(ClientErrorCode::Ok.as_u16()), "{context}");
 }

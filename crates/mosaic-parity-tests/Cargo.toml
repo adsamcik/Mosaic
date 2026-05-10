@@ -10,6 +10,11 @@ publish.workspace = true
 [features]
 default = []
 parity-tests = []
+cross-client-vectors = [
+  "mosaic-crypto/__test-introspection",
+  "mosaic-uniffi/cross-client-vectors",
+  "mosaic-wasm/cross-client-vectors",
+]
 weak-kdf = ["mosaic-crypto/weak-kdf", "mosaic-wasm/weak-kdf", "mosaic-uniffi/weak-kdf"]
 
 [dependencies]

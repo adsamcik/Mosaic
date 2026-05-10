@@ -49,6 +49,10 @@ function fromHex(value: string): Uint8Array {
   return out;
 }
 
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -161,9 +165,42 @@ describe('cross-client golden vector corpus (Web WASM facade)', () => {
     expect(failCode).not.toBe(0);
   });
 
-  it('manifest_transcript.json declares Rust-canonical (sanity)', () => {
+  it('manifest_transcript.json builds byte-exactly through WASM manifestTranscriptBytes', () => {
     const v = loadVector('manifest_transcript.json');
-    expect(v.rust_canonical).toBe(true);
+    const inputs = v.inputs as {
+      albumIdHex: string;
+      epochId: number;
+      encryptedMetaHex: string;
+      shards: Array<{
+        chunkIndex: number;
+        tier: number;
+        shardIdHex: string;
+        sha256Hex: string;
+      }>;
+    };
+    const expected = v.expected as { transcriptHex: string };
+    const encodedShards = new Uint8Array(inputs.shards.length * 53);
+    const view = new DataView(encodedShards.buffer);
+    inputs.shards.forEach((shard, index) => {
+      const offset = index * 53;
+      view.setUint32(offset, shard.chunkIndex, true);
+      encodedShards[offset + 4] = shard.tier;
+      encodedShards.set(fromHex(shard.shardIdHex), offset + 5);
+      encodedShards.set(fromHex(shard.sha256Hex), offset + 21);
+    });
+
+    const built = rustWasm.manifestTranscriptBytes(
+      fromHex(inputs.albumIdHex),
+      inputs.epochId,
+      fromHex(inputs.encryptedMetaHex),
+      encodedShards,
+    );
+    try {
+      expect(built.code).toBe(0);
+      expect(toHex(built.bytes)).toBe(expected.transcriptHex);
+    } finally {
+      built.free();
+    }
   });
 
   // -------------------------------------------------------------------------

@@ -108,6 +108,39 @@ record BytesResult
   code: u16
   bytes: Vec<u8>
 end
+record SidecarPakeStartResult
+  code: u32
+  handle_id: u32
+  msg1: Vec<u8>
+end
+record SidecarPakeResponderResult
+  code: u32
+  responder_handle_id: u32
+  msg2: Vec<u8>
+  responder_confirm: Vec<u8>
+end
+record SidecarPakeInitiatorFinishResult
+  code: u32
+  material_handle_id: u32
+  initiator_confirm: Vec<u8>
+end
+record SidecarPakeResponderFinishResult
+  code: u32
+  material_handle_id: u32
+end
+record SidecarTunnelOpenResult
+  code: u32
+  send_handle_id: u32
+  recv_handle_id: u32
+end
+record SidecarTunnelSealResult
+  code: u32
+  sealed: Vec<u8>
+end
+record SidecarTunnelOpenMsgResult
+  code: u32
+  plaintext: Vec<u8>
+end
 enum MediaFormat
   Jpeg = 1
   Png = 2
@@ -395,6 +428,16 @@ export pub fn android_progress_probe(total_steps: u32, cancel_after: Option<u32>
 export pub fn derive_session_salt_from_username( domain: String, username: String, ) -> Result<Vec<u8>, MosaicError>
 export pub fn derive_account_salt(user_salt: Vec<u8>) -> Vec<u8>
 export pub fn derive_sidecar_room_id(msg1: Vec<u8>) -> Vec<u8>
+export pub fn sidecar_pake_initiator_start_v1(code: Vec<u8>) -> SidecarPakeStartResult
+export pub fn sidecar_pake_responder_v1(code: Vec<u8>, msg1: Vec<u8>) -> SidecarPakeResponderResult
+export pub fn sidecar_pake_initiator_finish_v1( handle_id: u32, msg2: Vec<u8>, responder_confirm: Vec<u8>, ) -> SidecarPakeInitiatorFinishResult
+export pub fn sidecar_pake_responder_finish_v1( handle_id: u32, initiator_confirm: Vec<u8>, ) -> SidecarPakeResponderFinishResult
+export pub fn sidecar_tunnel_open_v1(material_handle_id: u32) -> SidecarTunnelOpenResult
+export pub fn sidecar_tunnel_seal_v1(send_handle_id: u32, plaintext: Vec<u8>) -> SidecarTunnelSealResult
+export pub fn sidecar_tunnel_open_message_v1( recv_handle_id: u32, sealed: Vec<u8>, ) -> SidecarTunnelOpenMsgResult
+export pub fn sidecar_tunnel_close_v1(send_handle_id: u32, recv_handle_id: u32) -> u32
+export pub fn sidecar_pake_initiator_close_v1(handle_id: u32) -> u32
+export pub fn sidecar_pake_responder_close_v1(handle_id: u32) -> u32
 export pub fn derive_master_key_from_password( password: Vec<u8>, salt: Vec<u8>, ops_limit: u32, mem_limit_kib: u32, ) -> Result<u64, MosaicError>
 export pub fn consume_master_key_handle_for_aes_gcm(handle: u64) -> Result<Vec<u8>, MosaicError>
 export pub fn unlock_account_key(password: Vec<u8>, request: AccountUnlockRequest) -> AccountUnlockResult
@@ -405,6 +448,9 @@ export pub fn open_identity_handle( wrapped_identity_seed: Vec<u8>, account_key_
 export pub fn identity_signing_pubkey(handle: u64) -> BytesResult
 export pub fn identity_encryption_pubkey(handle: u64) -> BytesResult
 export pub fn sign_manifest_with_identity(handle: u64, transcript_bytes: Vec<u8>) -> BytesResult
+export pub fn verify_manifest_with_identity( transcript_bytes: Vec<u8>, signature_bytes: Vec<u8>, public_key_bytes: Vec<u8>, ) -> u16
+export pub fn sign_manifest_with_epoch_handle(handle: u64, transcript_bytes: Vec<u8>) -> BytesResult
+export pub fn verify_manifest_with_epoch( transcript_bytes: Vec<u8>, signature_bytes: Vec<u8>, public_key_bytes: Vec<u8>, ) -> u16
 export pub fn canonical_metadata_sidecar_bytes( album_id: Vec<u8>, photo_id: Vec<u8>, epoch_id: u32, encoded_fields: Vec<u8>, ) -> BytesResult
 export pub fn strip_known_metadata(format: MediaFormat, input_bytes: Vec<u8>) -> StripResult
 export pub fn strip_avif_metadata(input_bytes: Vec<u8>) -> StripResult

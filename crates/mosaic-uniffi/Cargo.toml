@@ -24,7 +24,7 @@ sha2 = "=0.10.9"
 
 [features]
 default = []
-cross-client-vectors = []
+cross-client-vectors = ["mosaic-crypto/__test-introspection"]
 # SECURITY: Propagates `mosaic-crypto/weak-kdf`. Test-only. Never enable in
 # production builds. See `mosaic-crypto/Cargo.toml`.
 weak-kdf = ["mosaic-crypto/weak-kdf", "mosaic-client/weak-kdf"]

@@ -8,7 +8,7 @@ use std::{
     io::Cursor,
     sync::{
         Mutex, OnceLock,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
     },
 };
 
@@ -24,6 +24,13 @@ use mosaic_domain::{
 use self_cell::self_cell;
 use sha2::{Digest as ShaDigest, Sha256};
 use zeroize::Zeroizing;
+
+use mosaic_crypto::sidecar::{
+    Confirm as SidecarConfirm, Msg1 as SidecarMsg1, Msg2 as SidecarMsg2, PakeInitiator,
+    PakeResponder, RecvTunnel, SendTunnel, SidecarError, TunnelKeyMaterial,
+    open_tunnel as sidecar_open_tunnel, pake_initiator_start as sidecar_pake_initiator_start,
+    pake_responder as sidecar_pake_responder,
+};
 
 type CryptoStreamingEncryptor<'a> = mosaic_crypto::StreamingEncryptor<'a>;
 type CryptoStreamingDecryptor<'a> = mosaic_crypto::StreamingDecryptor<'a>;
@@ -384,6 +391,109 @@ impl fmt::Debug for BytesResult {
         f.debug_struct("BytesResult")
             .field("code", &self.code)
             .field("bytes_len", &self.bytes.len())
+            .finish()
+    }
+}
+
+/// UniFFI record for sidecar PAKE initiator start results.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SidecarPakeStartResult {
+    pub code: u32,
+    pub handle_id: u32,
+    pub msg1: Vec<u8>,
+}
+
+impl fmt::Debug for SidecarPakeStartResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SidecarPakeStartResult")
+            .field("code", &self.code)
+            .field("handle_id", &self.handle_id)
+            .field("msg1_len", &self.msg1.len())
+            .finish()
+    }
+}
+
+/// UniFFI record for sidecar PAKE responder results.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SidecarPakeResponderResult {
+    pub code: u32,
+    pub responder_handle_id: u32,
+    pub msg2: Vec<u8>,
+    pub responder_confirm: Vec<u8>,
+}
+
+impl fmt::Debug for SidecarPakeResponderResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SidecarPakeResponderResult")
+            .field("code", &self.code)
+            .field("responder_handle_id", &self.responder_handle_id)
+            .field("msg2_len", &self.msg2.len())
+            .field("responder_confirm_len", &self.responder_confirm.len())
+            .finish()
+    }
+}
+
+/// UniFFI record for sidecar PAKE initiator finish results.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SidecarPakeInitiatorFinishResult {
+    pub code: u32,
+    pub material_handle_id: u32,
+    pub initiator_confirm: Vec<u8>,
+}
+
+impl fmt::Debug for SidecarPakeInitiatorFinishResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SidecarPakeInitiatorFinishResult")
+            .field("code", &self.code)
+            .field("material_handle_id", &self.material_handle_id)
+            .field("initiator_confirm_len", &self.initiator_confirm.len())
+            .finish()
+    }
+}
+
+/// UniFFI record for sidecar PAKE responder finish results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct SidecarPakeResponderFinishResult {
+    pub code: u32,
+    pub material_handle_id: u32,
+}
+
+/// UniFFI record for sidecar tunnel open results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct SidecarTunnelOpenResult {
+    pub code: u32,
+    pub send_handle_id: u32,
+    pub recv_handle_id: u32,
+}
+
+/// UniFFI record for sidecar tunnel seal results.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SidecarTunnelSealResult {
+    pub code: u32,
+    pub sealed: Vec<u8>,
+}
+
+impl fmt::Debug for SidecarTunnelSealResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SidecarTunnelSealResult")
+            .field("code", &self.code)
+            .field("sealed_len", &self.sealed.len())
+            .finish()
+    }
+}
+
+/// UniFFI record for sidecar tunnel open-message results.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SidecarTunnelOpenMsgResult {
+    pub code: u32,
+    pub plaintext: Vec<u8>,
+}
+
+impl fmt::Debug for SidecarTunnelOpenMsgResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SidecarTunnelOpenMsgResult")
+            .field("code", &self.code)
+            .field("plaintext_len", &self.plaintext.len())
             .finish()
     }
 }
@@ -1054,6 +1164,504 @@ pub fn derive_sidecar_room_id(msg1: Vec<u8>) -> Vec<u8> {
     mosaic_crypto::derive_sidecar_room_id(&msg1).to_vec()
 }
 
+fn sidecar_error_code(error: SidecarError) -> u32 {
+    let code = match error {
+        SidecarError::InvalidPairingCodeLength { .. }
+        | SidecarError::InvalidPakeMessageLength { .. }
+        | SidecarError::TruncatedFrame => mosaic_client::ClientErrorCode::InvalidInputLength,
+        SidecarError::PakeFailed
+        | SidecarError::ConfirmationFailed
+        | SidecarError::TunnelDecryptFailed => mosaic_client::ClientErrorCode::AuthenticationFailed,
+        SidecarError::OutOfOrderFrame => mosaic_client::ClientErrorCode::StreamingChunkOutOfOrder,
+        SidecarError::NonceOverflow => mosaic_client::ClientErrorCode::OperationCancelled,
+        SidecarError::KdfFailure => mosaic_client::ClientErrorCode::KdfFailure,
+    };
+    u32::from(code.as_u16())
+}
+
+fn sidecar_next_id() -> u32 {
+    static NEXT: AtomicU32 = AtomicU32::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+fn sidecar_initiator_registry() -> &'static Mutex<HashMap<u32, PakeInitiator>> {
+    static R: OnceLock<Mutex<HashMap<u32, PakeInitiator>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn sidecar_responder_registry() -> &'static Mutex<HashMap<u32, PakeResponder>> {
+    static R: OnceLock<Mutex<HashMap<u32, PakeResponder>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn sidecar_material_registry() -> &'static Mutex<HashMap<u32, TunnelKeyMaterial>> {
+    static R: OnceLock<Mutex<HashMap<u32, TunnelKeyMaterial>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn sidecar_send_registry() -> &'static Mutex<HashMap<u32, SendTunnel>> {
+    static R: OnceLock<Mutex<HashMap<u32, SendTunnel>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn sidecar_recv_registry() -> &'static Mutex<HashMap<u32, RecvTunnel>> {
+    static R: OnceLock<Mutex<HashMap<u32, RecvTunnel>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn sidecar_poison_code() -> u32 {
+    u32::from(mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16())
+}
+
+fn sidecar_handle_not_found_code() -> u32 {
+    u32::from(mosaic_client::ClientErrorCode::SecretHandleNotFound.as_u16())
+}
+
+/// Starts the initiator side of the sidecar PAKE handshake.
+#[uniffi::export]
+#[must_use]
+pub fn sidecar_pake_initiator_start_v1(code: Vec<u8>) -> SidecarPakeStartResult {
+    let (initiator, msg1) = match sidecar_pake_initiator_start(&code) {
+        Ok(value) => value,
+        Err(error) => {
+            return SidecarPakeStartResult {
+                code: sidecar_error_code(error),
+                handle_id: 0,
+                msg1: Vec::new(),
+            };
+        }
+    };
+    let id = sidecar_next_id();
+    match sidecar_initiator_registry().lock() {
+        Ok(mut guard) => {
+            guard.insert(id, initiator);
+            SidecarPakeStartResult {
+                code: 0,
+                handle_id: id,
+                msg1: msg1.as_bytes().to_vec(),
+            }
+        }
+        Err(_) => SidecarPakeStartResult {
+            code: sidecar_poison_code(),
+            handle_id: 0,
+            msg1: Vec::new(),
+        },
+    }
+}
+
+/// Runs the responder side of the sidecar PAKE handshake.
+#[uniffi::export]
+#[must_use]
+pub fn sidecar_pake_responder_v1(code: Vec<u8>, msg1: Vec<u8>) -> SidecarPakeResponderResult {
+    let msg1_parsed = match SidecarMsg1::from_slice(&msg1) {
+        Ok(value) => value,
+        Err(error) => {
+            return SidecarPakeResponderResult {
+                code: sidecar_error_code(error),
+                responder_handle_id: 0,
+                msg2: Vec::new(),
+                responder_confirm: Vec::new(),
+            };
+        }
+    };
+    let (responder, msg2, confirm) = match sidecar_pake_responder(&code, &msg1_parsed) {
+        Ok(value) => value,
+        Err(error) => {
+            return SidecarPakeResponderResult {
+                code: sidecar_error_code(error),
+                responder_handle_id: 0,
+                msg2: Vec::new(),
+                responder_confirm: Vec::new(),
+            };
+        }
+    };
+    let id = sidecar_next_id();
+    match sidecar_responder_registry().lock() {
+        Ok(mut guard) => {
+            guard.insert(id, responder);
+            SidecarPakeResponderResult {
+                code: 0,
+                responder_handle_id: id,
+                msg2: msg2.as_bytes().to_vec(),
+                responder_confirm: confirm.as_bytes().to_vec(),
+            }
+        }
+        Err(_) => SidecarPakeResponderResult {
+            code: sidecar_poison_code(),
+            responder_handle_id: 0,
+            msg2: Vec::new(),
+            responder_confirm: Vec::new(),
+        },
+    }
+}
+
+/// Finishes the initiator side of the sidecar PAKE handshake.
+#[uniffi::export]
+#[must_use]
+pub fn sidecar_pake_initiator_finish_v1(
+    handle_id: u32,
+    msg2: Vec<u8>,
+    responder_confirm: Vec<u8>,
+) -> SidecarPakeInitiatorFinishResult {
+    let initiator = {
+        let mut guard = match sidecar_initiator_registry().lock() {
+            Ok(value) => value,
+            Err(_) => {
+                return SidecarPakeInitiatorFinishResult {
+                    code: sidecar_poison_code(),
+                    material_handle_id: 0,
+                    initiator_confirm: Vec::new(),
+                };
+            }
+        };
+        match guard.remove(&handle_id) {
+            Some(value) => value,
+            None => {
+                return SidecarPakeInitiatorFinishResult {
+                    code: sidecar_handle_not_found_code(),
+                    material_handle_id: 0,
+                    initiator_confirm: Vec::new(),
+                };
+            }
+        }
+    };
+    let msg2 = match SidecarMsg2::from_slice(&msg2) {
+        Ok(value) => value,
+        Err(error) => {
+            return SidecarPakeInitiatorFinishResult {
+                code: sidecar_error_code(error),
+                material_handle_id: 0,
+                initiator_confirm: Vec::new(),
+            };
+        }
+    };
+    let responder_confirm = match SidecarConfirm::from_slice(&responder_confirm) {
+        Ok(value) => value,
+        Err(error) => {
+            return SidecarPakeInitiatorFinishResult {
+                code: sidecar_error_code(error),
+                material_handle_id: 0,
+                initiator_confirm: Vec::new(),
+            };
+        }
+    };
+    let (material, initiator_confirm) = match initiator.finish(&msg2, &responder_confirm) {
+        Ok(value) => value,
+        Err(error) => {
+            return SidecarPakeInitiatorFinishResult {
+                code: sidecar_error_code(error),
+                material_handle_id: 0,
+                initiator_confirm: Vec::new(),
+            };
+        }
+    };
+    let material_id = sidecar_next_id();
+    match sidecar_material_registry().lock() {
+        Ok(mut guard) => {
+            guard.insert(material_id, material);
+            SidecarPakeInitiatorFinishResult {
+                code: 0,
+                material_handle_id: material_id,
+                initiator_confirm: initiator_confirm.as_bytes().to_vec(),
+            }
+        }
+        Err(_) => SidecarPakeInitiatorFinishResult {
+            code: sidecar_poison_code(),
+            material_handle_id: 0,
+            initiator_confirm: Vec::new(),
+        },
+    }
+}
+
+/// Finishes the responder side of the sidecar PAKE handshake.
+#[uniffi::export]
+#[must_use]
+pub fn sidecar_pake_responder_finish_v1(
+    handle_id: u32,
+    initiator_confirm: Vec<u8>,
+) -> SidecarPakeResponderFinishResult {
+    let responder = {
+        let mut guard = match sidecar_responder_registry().lock() {
+            Ok(value) => value,
+            Err(_) => {
+                return SidecarPakeResponderFinishResult {
+                    code: sidecar_poison_code(),
+                    material_handle_id: 0,
+                };
+            }
+        };
+        match guard.remove(&handle_id) {
+            Some(value) => value,
+            None => {
+                return SidecarPakeResponderFinishResult {
+                    code: sidecar_handle_not_found_code(),
+                    material_handle_id: 0,
+                };
+            }
+        }
+    };
+    let initiator_confirm = match SidecarConfirm::from_slice(&initiator_confirm) {
+        Ok(value) => value,
+        Err(error) => {
+            return SidecarPakeResponderFinishResult {
+                code: sidecar_error_code(error),
+                material_handle_id: 0,
+            };
+        }
+    };
+    let material = match responder.finish(&initiator_confirm) {
+        Ok(value) => value,
+        Err(error) => {
+            return SidecarPakeResponderFinishResult {
+                code: sidecar_error_code(error),
+                material_handle_id: 0,
+            };
+        }
+    };
+    let material_id = sidecar_next_id();
+    match sidecar_material_registry().lock() {
+        Ok(mut guard) => {
+            guard.insert(material_id, material);
+            SidecarPakeResponderFinishResult {
+                code: 0,
+                material_handle_id: material_id,
+            }
+        }
+        Err(_) => SidecarPakeResponderFinishResult {
+            code: sidecar_poison_code(),
+            material_handle_id: 0,
+        },
+    }
+}
+
+/// Opens sidecar tunnel send/receive handles from PAKE-derived material.
+#[uniffi::export]
+#[must_use]
+pub fn sidecar_tunnel_open_v1(material_handle_id: u32) -> SidecarTunnelOpenResult {
+    let material = {
+        let mut guard = match sidecar_material_registry().lock() {
+            Ok(value) => value,
+            Err(_) => {
+                return SidecarTunnelOpenResult {
+                    code: sidecar_poison_code(),
+                    send_handle_id: 0,
+                    recv_handle_id: 0,
+                };
+            }
+        };
+        match guard.remove(&material_handle_id) {
+            Some(value) => value,
+            None => {
+                return SidecarTunnelOpenResult {
+                    code: sidecar_handle_not_found_code(),
+                    send_handle_id: 0,
+                    recv_handle_id: 0,
+                };
+            }
+        }
+    };
+    let (send, recv) = sidecar_open_tunnel(material);
+    let send_id = sidecar_next_id();
+    let recv_id = sidecar_next_id();
+    if let Ok(mut guard) = sidecar_send_registry().lock() {
+        guard.insert(send_id, send);
+    } else {
+        return SidecarTunnelOpenResult {
+            code: sidecar_poison_code(),
+            send_handle_id: 0,
+            recv_handle_id: 0,
+        };
+    }
+    if let Ok(mut guard) = sidecar_recv_registry().lock() {
+        guard.insert(recv_id, recv);
+    } else {
+        if let Ok(mut guard) = sidecar_send_registry().lock() {
+            guard.remove(&send_id);
+        }
+        return SidecarTunnelOpenResult {
+            code: sidecar_poison_code(),
+            send_handle_id: 0,
+            recv_handle_id: 0,
+        };
+    }
+    SidecarTunnelOpenResult {
+        code: 0,
+        send_handle_id: send_id,
+        recv_handle_id: recv_id,
+    }
+}
+
+/// Seals a sidecar tunnel plaintext frame.
+#[uniffi::export]
+#[must_use]
+pub fn sidecar_tunnel_seal_v1(send_handle_id: u32, plaintext: Vec<u8>) -> SidecarTunnelSealResult {
+    let mut guard = match sidecar_send_registry().lock() {
+        Ok(value) => value,
+        Err(_) => {
+            return SidecarTunnelSealResult {
+                code: sidecar_poison_code(),
+                sealed: Vec::new(),
+            };
+        }
+    };
+    let Some(send) = guard.get_mut(&send_handle_id) else {
+        return SidecarTunnelSealResult {
+            code: sidecar_handle_not_found_code(),
+            sealed: Vec::new(),
+        };
+    };
+    match send.seal(&plaintext) {
+        Ok(sealed) => SidecarTunnelSealResult { code: 0, sealed },
+        Err(error) => SidecarTunnelSealResult {
+            code: sidecar_error_code(error),
+            sealed: Vec::new(),
+        },
+    }
+}
+
+/// Opens a sidecar tunnel ciphertext frame.
+#[uniffi::export]
+#[must_use]
+pub fn sidecar_tunnel_open_message_v1(
+    recv_handle_id: u32,
+    sealed: Vec<u8>,
+) -> SidecarTunnelOpenMsgResult {
+    let mut guard = match sidecar_recv_registry().lock() {
+        Ok(value) => value,
+        Err(_) => {
+            return SidecarTunnelOpenMsgResult {
+                code: sidecar_poison_code(),
+                plaintext: Vec::new(),
+            };
+        }
+    };
+    let Some(recv) = guard.get_mut(&recv_handle_id) else {
+        return SidecarTunnelOpenMsgResult {
+            code: sidecar_handle_not_found_code(),
+            plaintext: Vec::new(),
+        };
+    };
+    match recv.open(&sealed) {
+        Ok(plaintext) => SidecarTunnelOpenMsgResult { code: 0, plaintext },
+        Err(error) => SidecarTunnelOpenMsgResult {
+            code: sidecar_error_code(error),
+            plaintext: Vec::new(),
+        },
+    }
+}
+
+/// Closes sidecar tunnel send/receive handles.
+#[uniffi::export]
+#[must_use]
+pub fn sidecar_tunnel_close_v1(send_handle_id: u32, recv_handle_id: u32) -> u32 {
+    let first = match sidecar_send_registry().lock() {
+        Ok(mut guard) => {
+            guard.remove(&send_handle_id);
+            0
+        }
+        Err(_) => sidecar_poison_code(),
+    };
+    let second = match sidecar_recv_registry().lock() {
+        Ok(mut guard) => {
+            guard.remove(&recv_handle_id);
+            0
+        }
+        Err(_) => sidecar_poison_code(),
+    };
+    if first != 0 { first } else { second }
+}
+
+/// Closes a sidecar PAKE initiator handle.
+#[uniffi::export]
+#[must_use]
+pub fn sidecar_pake_initiator_close_v1(handle_id: u32) -> u32 {
+    match sidecar_initiator_registry().lock() {
+        Ok(mut guard) => {
+            guard.remove(&handle_id);
+            0
+        }
+        Err(_) => sidecar_poison_code(),
+    }
+}
+
+/// Closes a sidecar PAKE responder handle.
+#[uniffi::export]
+#[must_use]
+pub fn sidecar_pake_responder_close_v1(handle_id: u32) -> u32 {
+    match sidecar_responder_registry().lock() {
+        Ok(mut guard) => {
+            guard.remove(&handle_id);
+            0
+        }
+        Err(_) => sidecar_poison_code(),
+    }
+}
+
+#[cfg(feature = "cross-client-vectors")]
+#[uniffi::export]
+#[must_use]
+pub fn sidecar_tunnel_material_seed_for_tests(material_handle_id: u32) -> BytesResult {
+    match sidecar_material_registry().lock() {
+        Ok(guard) => match guard.get(&material_handle_id) {
+            Some(material) => BytesResult {
+                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                bytes: material.seed_for_tests().to_vec(),
+            },
+            None => BytesResult {
+                code: mosaic_client::ClientErrorCode::SecretHandleNotFound.as_u16(),
+                bytes: Vec::new(),
+            },
+        },
+        Err(_) => BytesResult {
+            code: mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16(),
+            bytes: Vec::new(),
+        },
+    }
+}
+
+#[cfg(feature = "cross-client-vectors")]
+#[uniffi::export]
+#[must_use]
+pub fn sidecar_tunnel_material_from_seed_for_tests(
+    seed: Vec<u8>,
+    role: u8,
+) -> SidecarPakeResponderFinishResult {
+    let seed = match <[u8; mosaic_crypto::sidecar::TUNNEL_KEY_BYTES]>::try_from(seed.as_slice()) {
+        Ok(value) => value,
+        Err(_) => {
+            return SidecarPakeResponderFinishResult {
+                code: u32::from(mosaic_client::ClientErrorCode::InvalidKeyLength.as_u16()),
+                material_handle_id: 0,
+            };
+        }
+    };
+    let role = match role {
+        0 => mosaic_crypto::sidecar::TunnelRoleTag::Initiator,
+        1 => mosaic_crypto::sidecar::TunnelRoleTag::Responder,
+        _ => {
+            return SidecarPakeResponderFinishResult {
+                code: u32::from(mosaic_client::ClientErrorCode::InvalidTier.as_u16()),
+                material_handle_id: 0,
+            };
+        }
+    };
+    let material = TunnelKeyMaterial::from_seed_for_tests(seed, role);
+    let material_id = sidecar_next_id();
+    match sidecar_material_registry().lock() {
+        Ok(mut guard) => {
+            guard.insert(material_id, material);
+            SidecarPakeResponderFinishResult {
+                code: 0,
+                material_handle_id: material_id,
+            }
+        }
+        Err(_) => SidecarPakeResponderFinishResult {
+            code: sidecar_poison_code(),
+            material_handle_id: 0,
+        },
+    }
+}
+
 /// Derives the session L0 master key and stores it behind an opaque handle.
 #[uniffi::export]
 pub fn derive_master_key_from_password(
@@ -1190,6 +1798,53 @@ pub fn sign_manifest_with_identity(handle: u64, transcript_bytes: Vec<u8>) -> By
         handle,
         &transcript_bytes,
     ))
+}
+
+/// Verifies manifest transcript bytes with an identity signing public key.
+#[uniffi::export]
+#[must_use]
+pub fn verify_manifest_with_identity(
+    transcript_bytes: Vec<u8>,
+    signature_bytes: Vec<u8>,
+    public_key_bytes: Vec<u8>,
+) -> u16 {
+    let transcript_bytes = Zeroizing::new(transcript_bytes);
+    let signature_bytes = Zeroizing::new(signature_bytes);
+    mosaic_client::verify_manifest_with_identity(
+        &transcript_bytes,
+        &signature_bytes,
+        &public_key_bytes,
+    )
+    .as_u16()
+}
+
+/// Signs manifest transcript bytes with a per-epoch manifest signing key.
+#[uniffi::export]
+#[must_use]
+pub fn sign_manifest_with_epoch_handle(handle: u64, transcript_bytes: Vec<u8>) -> BytesResult {
+    let transcript_bytes = Zeroizing::new(transcript_bytes);
+    bytes_result_from_client(mosaic_client::sign_manifest_with_epoch_handle(
+        handle,
+        &transcript_bytes,
+    ))
+}
+
+/// Verifies manifest transcript bytes with a per-epoch manifest signing public key.
+#[uniffi::export]
+#[must_use]
+pub fn verify_manifest_with_epoch(
+    transcript_bytes: Vec<u8>,
+    signature_bytes: Vec<u8>,
+    public_key_bytes: Vec<u8>,
+) -> u16 {
+    let transcript_bytes = Zeroizing::new(transcript_bytes);
+    let signature_bytes = Zeroizing::new(signature_bytes);
+    mosaic_client::verify_manifest_with_epoch(
+        &transcript_bytes,
+        &signature_bytes,
+        &public_key_bytes,
+    )
+    .as_u16()
 }
 
 /// Builds canonical plaintext metadata sidecar bytes from a compact encoded field list.

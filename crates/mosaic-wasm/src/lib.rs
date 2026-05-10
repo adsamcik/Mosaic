@@ -3167,6 +3167,68 @@ impl StreamingShardEncryptor {
     }
 }
 
+#[cfg(feature = "cross-client-vectors")]
+impl StreamingShardEncryptor {
+    /// Encrypts one plaintext frame and returns the Rust-side facade result.
+    #[must_use]
+    pub fn encrypt_frame_for_tests(&mut self, plaintext: Vec<u8>) -> StreamingFrameResult {
+        if self.code != 0 {
+            return streaming_frame_error(self.code);
+        }
+        let plaintext = Zeroizing::new(plaintext);
+        self.inner
+            .lock()
+            .map_err(|_| mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16())
+            .and_then(|mut guard| {
+                let cell = guard.as_mut().ok_or_else(already_finalized_code)?;
+                cell.with_dependent_mut(|_, state| {
+                    let encryptor = state.0.as_mut().ok_or_else(already_finalized_code)?;
+                    encryptor.encrypt_frame(&plaintext).map_or_else(
+                        |error| Err(client_error_code_from_crypto(error)),
+                        |frame| {
+                            Ok(StreamingFrameResult {
+                                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                                frame_index: frame.frame_index,
+                                bytes: frame.bytes,
+                            })
+                        },
+                    )
+                })
+            })
+            .unwrap_or_else(streaming_frame_error)
+    }
+
+    /// Finalizes the stream and returns the Rust-side facade envelope result.
+    #[must_use]
+    pub fn finalize_for_tests(self) -> StreamingEnvelopeResult {
+        if self.code != 0 {
+            return streaming_envelope_error(self.code);
+        }
+        self.inner
+            .lock()
+            .map_err(|_| mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16())
+            .and_then(|mut guard| {
+                let mut cell = guard.take().ok_or_else(already_finalized_code)?;
+                cell.with_dependent_mut(|_, state| {
+                    let encryptor = state.0.take().ok_or_else(already_finalized_code)?;
+                    encryptor.finalize().map_or_else(
+                        |error| Err(client_error_code_from_crypto(error)),
+                        |envelope| {
+                            Ok(StreamingEnvelopeResult {
+                                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                                header: envelope.header.to_vec(),
+                                bytes: envelope.bytes,
+                                frame_count: envelope.frame_count,
+                                final_frame_size: envelope.final_frame_size,
+                            })
+                        },
+                    )
+                })
+            })
+            .unwrap_or_else(streaming_envelope_error)
+    }
+}
+
 /// Stateful v0x04 streaming shard decryptor exposed to WASM.
 #[wasm_bindgen]
 pub struct StreamingShardDecryptor {
@@ -3281,11 +3343,77 @@ impl StreamingShardDecryptor {
     }
 }
 
+#[cfg(feature = "cross-client-vectors")]
+impl StreamingShardDecryptor {
+    /// Decrypts one serialized frame and returns the Rust-side facade result.
+    #[must_use]
+    pub fn decrypt_frame_for_tests(&mut self, frame: Vec<u8>) -> DecryptedShardResult {
+        if self.code != 0 {
+            return DecryptedShardResult {
+                code: self.code,
+                plaintext: Vec::new(),
+            };
+        }
+        self.inner
+            .lock()
+            .map_err(|_| mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16())
+            .and_then(|mut guard| {
+                let cell = guard.as_mut().ok_or_else(already_finalized_code)?;
+                cell.with_dependent_mut(|_, state| {
+                    let decryptor = state.0.as_mut().ok_or_else(already_finalized_code)?;
+                    decryptor.decrypt_frame(&frame).map_or_else(
+                        |error| Err(client_error_code_from_crypto(error)),
+                        |plaintext| {
+                            Ok(DecryptedShardResult {
+                                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                                plaintext,
+                            })
+                        },
+                    )
+                })
+            })
+            .unwrap_or_else(|code| DecryptedShardResult {
+                code,
+                plaintext: Vec::new(),
+            })
+    }
+
+    /// Finalizes the stream and returns the Rust-side facade code.
+    #[must_use]
+    pub fn finalize_for_tests(self) -> BytesResult {
+        if self.code != 0 {
+            return BytesResult {
+                code: self.code,
+                bytes: Vec::new(),
+            };
+        }
+        self.inner
+            .lock()
+            .map_err(|_| mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16())
+            .and_then(|mut guard| {
+                let mut cell = guard.take().ok_or_else(already_finalized_code)?;
+                cell.with_dependent_mut(|_, state| {
+                    let decryptor = state.0.take().ok_or_else(already_finalized_code)?;
+                    decryptor
+                        .finalize()
+                        .map_err(client_error_code_from_crypto)
+                        .map(|()| BytesResult {
+                            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                            bytes: Vec::new(),
+                        })
+                })
+            })
+            .unwrap_or_else(|code| BytesResult {
+                code,
+                bytes: Vec::new(),
+            })
+    }
+}
+
 /// Decrypts a v0x03/v0x04 envelope using the epoch-handle dispatcher surface.
-#[wasm_bindgen(js_name = decryptEnvelope)]
 #[must_use]
-pub fn decrypt_envelope_js(epoch_handle_id: u64, envelope: Vec<u8>) -> JsValue {
-    let result = mosaic_client::epoch_key_material_for_handle(epoch_handle_id).map_or_else(
+fn decrypt_envelope_result(epoch_handle_id: u64, envelope: Vec<u8>) -> DecryptedShardResult {
+    mosaic_client::epoch_key_material_for_handle(epoch_handle_id).map_or_else(
         |error| DecryptedShardResult {
             code: error.code.as_u16(),
             plaintext: Vec::new(),
@@ -3302,8 +3430,14 @@ pub fn decrypt_envelope_js(epoch_handle_id: u64, envelope: Vec<u8>) -> JsValue {
                 },
             )
         },
-    );
-    js_decrypted_shard_result_from_rust(result).into()
+    )
+}
+
+/// Decrypts a v0x03/v0x04 envelope using the epoch-handle dispatcher surface.
+#[wasm_bindgen(js_name = decryptEnvelope)]
+#[must_use]
+pub fn decrypt_envelope_js(epoch_handle_id: u64, envelope: Vec<u8>) -> JsValue {
+    js_decrypted_shard_result_from_rust(decrypt_envelope_result(epoch_handle_id, envelope)).into()
 }
 
 /// Decrypts a legacy raw-key shard envelope with a Rust-owned epoch-key handle.
@@ -8388,6 +8522,69 @@ pub fn sidecar_pake_responder_close_v1(handle_id: u32) -> u32 {
             client_ok()
         }
         Err(_) => poison_code(),
+    }
+}
+
+#[cfg(feature = "cross-client-vectors")]
+#[must_use]
+pub fn sidecar_tunnel_material_seed_for_tests(material_handle_id: u32) -> BytesResult {
+    match sidecar_material_registry().lock() {
+        Ok(guard) => match guard.get(&material_handle_id) {
+            Some(material) => BytesResult {
+                code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+                bytes: material.seed_for_tests().to_vec(),
+            },
+            None => BytesResult {
+                code: mosaic_client::ClientErrorCode::SecretHandleNotFound.as_u16(),
+                bytes: Vec::new(),
+            },
+        },
+        Err(_) => BytesResult {
+            code: mosaic_client::ClientErrorCode::InternalStatePoisoned.as_u16(),
+            bytes: Vec::new(),
+        },
+    }
+}
+
+#[cfg(feature = "cross-client-vectors")]
+#[must_use]
+pub fn sidecar_tunnel_material_from_seed_for_tests(
+    seed: Vec<u8>,
+    role: u8,
+) -> SidecarPakeResponderFinishResult {
+    let seed = match <[u8; mosaic_crypto::sidecar::TUNNEL_KEY_BYTES]>::try_from(seed.as_slice()) {
+        Ok(value) => value,
+        Err(_) => {
+            return SidecarPakeResponderFinishResult {
+                code: client_code(mosaic_client::ClientErrorCode::InvalidKeyLength),
+                material_handle_id: 0,
+            };
+        }
+    };
+    let role = match role {
+        0 => mosaic_crypto::sidecar::TunnelRoleTag::Initiator,
+        1 => mosaic_crypto::sidecar::TunnelRoleTag::Responder,
+        _ => {
+            return SidecarPakeResponderFinishResult {
+                code: client_code(mosaic_client::ClientErrorCode::InvalidTier),
+                material_handle_id: 0,
+            };
+        }
+    };
+    let material = TunnelKeyMaterial::from_seed_for_tests(seed, role);
+    let mat_id = sidecar_next_id();
+    match sidecar_material_registry().lock() {
+        Ok(mut guard) => {
+            guard.insert(mat_id, material);
+            SidecarPakeResponderFinishResult {
+                code: client_ok(),
+                material_handle_id: mat_id,
+            }
+        }
+        Err(_) => SidecarPakeResponderFinishResult {
+            code: poison_code(),
+            material_handle_id: 0,
+        },
     }
 }
 

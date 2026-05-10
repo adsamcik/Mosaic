@@ -29,6 +29,7 @@ require_tool() {
 run_step "Rust format" cargo fmt --all --check
 run_step "Rust clippy" cargo clippy --workspace --all-targets --all-features -- -D warnings
 run_step "Rust tests" cargo test --workspace --locked
+run_step "Rust parity cross-client vectors" cargo test -p mosaic-parity-tests --features cross-client-vectors --locked
 run_step "Rust architecture boundaries" bash "$PROJECT_ROOT/tests/architecture/rust-boundaries.sh"
 run_step "Rust cutover boundary" pwsh "$PROJECT_ROOT/tests/architecture/rust-cutover-boundary.ps1"
 
