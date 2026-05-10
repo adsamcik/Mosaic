@@ -83,6 +83,80 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
+  fun duplicateLookupAllowsSelfMatchOnRetry() = runBlocking {
+    val plaintext = "self-match-retry".toByteArray()
+    val staging = stageBytes(plaintext)
+    val crypto = RecordingCryptoEngine()
+    val dedup = RecordingContentHashDedup()
+    val albumId = "album-1"
+    val photoId = "photo-self"
+
+    val first = assertSuccessResult(
+      workerFor(
+        staging,
+        albumId = albumId,
+        photoId = photoId,
+        crypto = crypto,
+        contentHashDedup = dedup,
+      ).doWork(),
+      "initial upload",
+    )
+    val firstEnvelopeUri = first.outputData.getString(ShardEncryptionWorker.KEY_ENVELOPE_URI)
+    val firstEnvelopeSha256 = first.outputData.getString(ShardEncryptionWorker.KEY_SHA256_HEX)
+    crypto.smallEnvelope = "would-only-appear-if-reencrypted".toByteArray()
+
+    val retry = workerFor(
+      staging,
+      albumId = albumId,
+      photoId = photoId,
+      crypto = crypto,
+      contentHashDedup = dedup,
+    ).doWork()
+
+    val success = assertSuccessResult(retry, "retry with self-match")
+    assertEquals(firstEnvelopeUri, success.outputData.getString(ShardEncryptionWorker.KEY_ENVELOPE_URI))
+    assertEquals(firstEnvelopeSha256, success.outputData.getString(ShardEncryptionWorker.KEY_SHA256_HEX))
+    assertEquals("retry must reuse the cached envelope instead of re-encrypting", 1, crypto.smallCalls)
+    assertEquals(listOf(Triple(albumId, sha256Hex(plaintext), photoId)), dedup.recorded)
+    assertEquals(1, dedup.storedRows.size)
+  }
+
+  @Test
+  fun multiTierUploadFromSameStagingUriSucceeds() = runBlocking {
+    val plaintext = "multi-tier-source".toByteArray()
+    val staging = stageBytes(plaintext)
+    val crypto = RecordingCryptoEngine()
+    val dedup = RecordingContentHashDedup()
+    val albumId = "album-1"
+    val photoId = "photo-tiered"
+    val contentHash = sha256Hex(plaintext)
+
+    (1..3).forEach { tier ->
+      val result = workerFor(
+        staging,
+        tier = tier,
+        albumId = albumId,
+        photoId = photoId,
+        crypto = crypto,
+        contentHashDedup = dedup,
+      ).doWork()
+
+      assertSuccessResult(result, "tier $tier upload")
+    }
+
+    assertEquals("each tier has a distinct envelope cache key", 3, crypto.smallCalls)
+    assertEquals(
+      listOf(
+        Triple(albumId, contentHash, photoId),
+        Triple(albumId, contentHash, photoId),
+        Triple(albumId, contentHash, photoId),
+      ),
+      dedup.recorded,
+    )
+    assertEquals(listOf(Triple(albumId, contentHash, photoId)), dedup.storedRows)
+  }
+
+  @Test
   fun recordsContentHashAfterSuccessfulEncryptionWhenAlbumAndPhotoAreProvided() = runBlocking {
     val plaintext = "record-me".toByteArray()
     val staging = stageBytes(plaintext)
@@ -230,6 +304,22 @@ class ShardEncryptionWorkerTest {
   private fun sha256Hex(bytes: ByteArray): String =
     MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
+  private fun assertSuccessResult(
+    result: ListenableWorker.Result,
+    context: String,
+  ): ListenableWorker.Result.Success {
+    val failure = result as? ListenableWorker.Result.Failure
+    val failureReason = failure?.outputData?.getString(ShardEncryptionWorker.KEY_FAILURE_REASON)
+    val duplicatePhotoId = failure?.outputData?.getString(ShardEncryptionWorker.KEY_DUPLICATE_PHOTO_ID)
+    val diagnostic = if (failureReason == ShardEncryptionWorker.FAILURE_DUPLICATE) {
+      "$context: self-match returned FAILURE_DUPLICATE for duplicate photoId=$duplicatePhotoId"
+    } else {
+      "$context: expected success but got ${result.javaClass.simpleName}"
+    }
+    assertTrue(diagnostic, result is ListenableWorker.Result.Success)
+    return result as ListenableWorker.Result.Success
+  }
+
   private class RecordingCryptoEngine : ShardCryptoEngine {
     var smallEnvelope: ByteArray = "small-envelope".toByteArray()
     var streamingEnvelope: ByteArray = "streaming-envelope".toByteArray()
@@ -283,11 +373,19 @@ class ShardEncryptionWorkerTest {
     private val duplicate: DuplicateContent? = null,
   ) : ContentHashDedup {
     val recorded = mutableListOf<Triple<String, String, String>>()
+    private val rows = linkedMapOf<Pair<String, String>, DuplicateContent>()
+    val storedRows: List<Triple<String, String, String>>
+      get() = rows.map { (key, value) -> Triple(key.first, key.second, value.photoId) }
 
-    override fun lookup(albumId: String, contentHash: String): DuplicateContent? = duplicate
+    override fun lookup(albumId: String, contentHash: String): DuplicateContent? =
+      duplicate ?: rows[albumId to contentHash]
 
     override fun record(albumId: String, contentHash: String, photoId: String) {
       recorded += Triple(albumId, contentHash, photoId)
+      rows[albumId to contentHash] = DuplicateContent(
+        photoId = photoId,
+        dateAdded = 1_700_000_000_000L + recorded.size,
+      )
     }
 
     override fun clear(albumId: String): Int = 0

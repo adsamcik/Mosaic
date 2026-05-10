@@ -47,7 +47,7 @@ class ShardEncryptionWorker internal constructor(
       val plaintextSha256Hex = RustContentHasher.sha256Hex(smallPlaintext ?: store.readStagingBytes(stagingUri))
       if (!albumId.isNullOrBlank() && !photoId.isNullOrBlank()) {
         val duplicate = contentHashDedup.lookup(albumId, plaintextSha256Hex)
-        if (duplicate != null) {
+        if (duplicate != null && duplicate.photoId != photoId) {
           return Result.failure(
             workDataOf(
               KEY_DUPLICATE_PHOTO_ID to duplicate.photoId,
