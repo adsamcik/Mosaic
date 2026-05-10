@@ -136,6 +136,9 @@ describe('safeCreateImageBitmap', () => {
     const result = await safeCreateImageBitmap(blob);
     expect(result.width).toBe(1);
     expect(result.height).toBe(1);
+    expect(globalThis.createImageBitmap).toHaveBeenCalledWith(blob, {
+      imageOrientation: 'none',
+    });
     expect(close).not.toHaveBeenCalled();
   });
 });

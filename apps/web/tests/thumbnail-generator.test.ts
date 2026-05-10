@@ -287,7 +287,9 @@ describe('generateThumbnail', () => {
 
     const result = await generateThumbnail(file);
 
-    expect(globalThis.createImageBitmap).toHaveBeenCalledWith(file);
+    expect(globalThis.createImageBitmap).toHaveBeenCalledWith(file, {
+      imageOrientation: 'none',
+    });
     // Default is now 300px for embedded manifest thumbnails (crisp at 200-220px gallery rows)
     expect(result.width).toBe(300); // Scaled from 800
     expect(result.height).toBe(225); // Scaled proportionally from 600

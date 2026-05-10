@@ -433,7 +433,9 @@ describe('Format Conversion Pipeline', () => {
         const file = createMockFile(inputFormat);
         await generateThumbnail(file);
 
-        expect(globalThis.createImageBitmap).toHaveBeenCalledWith(file);
+        expect(globalThis.createImageBitmap).toHaveBeenCalledWith(file, {
+          imageOrientation: 'none',
+        });
         expect(capturedOutputFormat).toBe('image/avif');
       },
     );
@@ -460,7 +462,9 @@ describe('Format Conversion Pipeline', () => {
       });
 
       // Then use decoded JPEG blob for bitmap
-      expect(globalThis.createImageBitmap).toHaveBeenCalledWith(mockJpegBlob);
+      expect(globalThis.createImageBitmap).toHaveBeenCalledWith(mockJpegBlob, {
+        imageOrientation: 'none',
+      });
 
       // Output should be AVIF
       expect(capturedOutputFormat).toBe('image/avif');

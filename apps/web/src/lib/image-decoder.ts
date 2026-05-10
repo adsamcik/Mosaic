@@ -162,7 +162,7 @@ export async function safeCreateImageBitmap(blob: Blob): Promise<ImageBitmap> {
   assertInputSize(blob);
 
   const bitmap = await withDecodeTimeout(
-    createImageBitmap(blob),
+    createImageBitmap(blob, { imageOrientation: 'none' }),
     'createImageBitmap',
   );
 

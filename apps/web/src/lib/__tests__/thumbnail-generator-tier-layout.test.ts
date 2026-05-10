@@ -81,8 +81,12 @@ describe('thumbnail generator canonical tier layout', () => {
     expect(layout.preview.width).toBe(1024);
     expect(layout.preview.height).toBe(1024);
 
-    const result = await generateTieredImages(createJpegFile());
+    const file = createJpegFile();
+    const result = await generateTieredImages(file);
 
+    expect(globalThis.createImageBitmap).toHaveBeenCalledWith(file, {
+      imageOrientation: 'none',
+    });
     expect(result.thumbnail.width).toBe(layout.thumbnail.width);
     expect(result.thumbnail.height).toBe(192);
     expect(result.preview.width).toBe(layout.preview.width);
