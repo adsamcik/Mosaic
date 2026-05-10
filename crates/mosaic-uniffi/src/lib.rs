@@ -1745,6 +1745,29 @@ pub fn unlock_account_key(password: Vec<u8>, request: AccountUnlockRequest) -> A
     }
 }
 
+/// Wraps `plaintext` with the L2 account key referenced by `account_handle`.
+#[uniffi::export]
+#[must_use]
+pub fn wrap_with_account_handle(account_handle: u64, plaintext: Vec<u8>) -> BytesResult {
+    let plaintext = Zeroizing::new(plaintext);
+    bytes_result_from_client(mosaic_client::wrap_with_account_handle(
+        account_handle,
+        &plaintext,
+    ))
+}
+
+/// Unwraps an ACCOUNT_DATA_AAD blob with the L2 account key referenced by
+/// `account_handle`.
+#[uniffi::export]
+#[must_use]
+pub fn unwrap_with_account_handle(account_handle: u64, wrapped: Vec<u8>) -> BytesResult {
+    let wrapped = Zeroizing::new(wrapped);
+    bytes_result_from_client(mosaic_client::unwrap_with_account_handle(
+        account_handle,
+        &wrapped,
+    ))
+}
+
 /// Returns whether an account-key handle is currently open.
 #[uniffi::export]
 #[must_use]
@@ -2456,6 +2479,50 @@ pub fn mint_link_tier_handle_from_raw_key(raw_key: Vec<u8>) -> LinkTierHandleFfi
         code: result.code.as_u16(),
         link_tier_handle_id: result.handle,
     }
+}
+
+/// Imports a share-link wrapped tier key into a Rust-owned link-tier handle.
+#[uniffi::export]
+#[must_use]
+pub fn import_link_tier_handle(
+    link_url_token: Vec<u8>,
+    nonce: Vec<u8>,
+    encrypted_key: Vec<u8>,
+    album_id: String,
+    tier_byte: u8,
+) -> LinkTierHandleFfiResult {
+    let link_url_token = Zeroizing::new(link_url_token);
+    let result = mosaic_client::import_link_tier_handle(
+        &link_url_token,
+        &nonce,
+        &encrypted_key,
+        album_id,
+        tier_byte,
+    );
+    LinkTierHandleFfiResult {
+        code: result.code.as_u16(),
+        link_tier_handle_id: result.handle,
+    }
+}
+
+/// Decrypts a shard using a Rust-owned share-link tier handle.
+#[uniffi::export]
+#[must_use]
+pub fn decrypt_shard_with_link_tier_handle(
+    link_tier_handle: u64,
+    envelope_bytes: Vec<u8>,
+) -> DecryptedShardResult {
+    decrypted_shard_result_from_client(mosaic_client::decrypt_shard_with_link_tier_handle(
+        link_tier_handle,
+        &envelope_bytes,
+    ))
+}
+
+/// Closes a Rust-owned share-link tier handle.
+#[uniffi::export]
+#[must_use]
+pub fn close_link_tier_handle(handle: u64) -> u16 {
+    mosaic_client::close_link_tier_handle(handle)
 }
 
 /// Verifies shard ciphertext SHA-256 using Rust core.

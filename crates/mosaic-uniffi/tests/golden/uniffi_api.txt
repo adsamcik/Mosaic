@@ -447,6 +447,8 @@ export pub fn sidecar_pake_responder_close_v1(handle_id: u32) -> u32
 export pub fn derive_master_key_from_password( password: Vec<u8>, salt: Vec<u8>, ops_limit: u32, mem_limit_kib: u32, ) -> Result<u64, MosaicError>
 export pub fn consume_master_key_handle_for_aes_gcm(handle: u64) -> Result<Vec<u8>, MosaicError>
 export pub fn unlock_account_key(password: Vec<u8>, request: AccountUnlockRequest) -> AccountUnlockResult
+export pub fn wrap_with_account_handle(account_handle: u64, plaintext: Vec<u8>) -> BytesResult
+export pub fn unwrap_with_account_handle(account_handle: u64, wrapped: Vec<u8>) -> BytesResult
 export pub fn account_key_handle_is_open(handle: u64) -> AccountKeyHandleStatusResult
 export pub fn close_account_key_handle(handle: u64) -> u16
 export pub fn create_identity_handle(account_key_handle: u64) -> IdentityHandleResult
@@ -489,6 +491,9 @@ export pub fn advance_album_sync( snapshot: ClientCoreAlbumSyncSnapshot, event: 
 export pub fn advance_album_sync_uniffi( snapshot: ClientCoreAlbumSyncSnapshot, event: ClientCoreAlbumSyncEvent, ) -> ClientCoreAlbumSyncTransition
 export pub fn manifest_transcript_bytes_uniffi( inputs: ClientCoreManifestTranscriptInputs, ) -> Result<Vec<u8>, MosaicError>
 export pub fn mint_link_tier_handle_from_raw_key(raw_key: Vec<u8>) -> LinkTierHandleFfiResult
+export pub fn import_link_tier_handle( link_url_token: Vec<u8>, nonce: Vec<u8>, encrypted_key: Vec<u8>, album_id: String, tier_byte: u8, ) -> LinkTierHandleFfiResult
+export pub fn decrypt_shard_with_link_tier_handle( link_tier_handle: u64, envelope_bytes: Vec<u8>, ) -> DecryptedShardResult
+export pub fn close_link_tier_handle(handle: u64) -> u16
 export pub fn verify_shard_integrity_sha256( envelope: Vec<u8>, expected_sha256: Vec<u8>, ) -> Result<bool, MosaicError>
 export pub fn sha256_of_bytes(bytes: Vec<u8>) -> Vec<u8>
 export pub fn sha256_hex_of_bytes(bytes: Vec<u8>) -> String
