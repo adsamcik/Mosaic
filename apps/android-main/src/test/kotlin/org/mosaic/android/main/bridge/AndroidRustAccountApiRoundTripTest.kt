@@ -45,7 +45,7 @@ class AndroidRustAccountApiRoundTripTest {
     )
 
     val bridge = GeneratedRustAccountBridge(AndroidRustAccountApi())
-    val password = "round-trip-smoke-password".toByteArray(Charsets.UTF_8)
+    val password = normalizePasswordForKdf("round-trip-smoke-password")
     val request = AccountUnlockRequest(
       userSalt = ByteArray(AccountUnlockRequest.SALT_LENGTH),
       accountSalt = ByteArray(AccountUnlockRequest.SALT_LENGTH),

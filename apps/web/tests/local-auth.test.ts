@@ -38,6 +38,7 @@ import {
   localAuthRegister,
   isLocalAuthMode,
   initAuth,
+  normalizePasswordForKdf,
   verifyAuth,
   registerUser,
 } from '../src/lib/local-auth';
@@ -70,6 +71,19 @@ describe('LocalAuth', () => {
       mockFetch.mockRejectedValue(new Error('Network error'));
       const result = await isLocalAuthMode();
       expect(result).toBe(false);
+    });
+  });
+
+  describe('normalizePasswordForKdf', () => {
+    it('normalizes canonically equivalent passwords to the same UTF-8 bytes', () => {
+      const nfd = normalizePasswordForKdf('cafe\u0301');
+      const nfc = normalizePasswordForKdf('caf\u00e9');
+
+      expect(Array.from(nfd)).toEqual(Array.from(nfc));
+      expect(Array.from(nfc)).toEqual([0x63, 0x61, 0x66, 0xc3, 0xa9]);
+
+      nfd.fill(0);
+      nfc.fill(0);
     });
   });
 

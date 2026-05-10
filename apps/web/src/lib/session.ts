@@ -26,6 +26,10 @@ import {
 } from './key-cache';
 import { clearLinkKeyEncryption } from './link-tier-key-store';
 import { localAuthLogin, localAuthRegister } from './local-auth';
+import {
+  encodeLegacyPasswordForKdfCompatibility,
+  normalizePasswordForKdf,
+} from './local-auth-normalization';
 import { createLogger } from './logger';
 import { getIdleTimeoutMs, subscribeToSettings } from './settings-service';
 import { syncCoordinator } from './sync-coordinator';
@@ -212,7 +216,7 @@ async function deriveSaltEncryptionKeyV2(
   await ensureRustWasmInitialized();
   const argon2Params = getArgon2Params();
   const argonSalt = await deriveArgon2SaltForUser(username);
-  const passwordBytes = new TextEncoder().encode(password);
+  const passwordBytes = normalizePasswordForKdf(password);
 
   let derivedForAesImport: Uint8Array | null = null;
   try {
@@ -248,32 +252,90 @@ async function deriveSaltEncryptionKeyV2(
  * successful v1 decryption immediately triggers a re-encryption with v2
  * via {@link migrateLegacySaltToV2}.
  */
+async function deriveSaltEncryptionKeyV1FromPasswordBytes(
+  passwordBytes: Uint8Array,
+  username: string,
+): Promise<CryptoKey> {
+  try {
+    const passwordKey = await crypto.subtle.importKey(
+      'raw',
+      toArrayBufferView(passwordBytes),
+      'PBKDF2',
+      false,
+      ['deriveKey'],
+    );
+
+    const usernameSalt = new TextEncoder().encode(username);
+
+    return await crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: usernameSalt,
+        iterations: LEGACY_SALT_ENCRYPTION_PBKDF2_ITERATIONS,
+        hash: 'SHA-256',
+      },
+      passwordKey,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['decrypt'],
+    );
+  } finally {
+    sodium.memzero(passwordBytes);
+  }
+}
+
 async function deriveSaltEncryptionKeyV1Legacy(
   password: string,
   username: string,
 ): Promise<CryptoKey> {
-  const passwordKey = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(password),
-    'PBKDF2',
-    false,
-    ['deriveKey'],
+  await sodium.ready;
+  return deriveSaltEncryptionKeyV1FromPasswordBytes(
+    normalizePasswordForKdf(password),
+    username,
   );
+}
 
-  const usernameSalt = new TextEncoder().encode(username);
-
-  return crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt: usernameSalt,
-      iterations: LEGACY_SALT_ENCRYPTION_PBKDF2_ITERATIONS,
-      hash: 'SHA-256',
-    },
-    passwordKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['decrypt'],
+async function deriveSaltEncryptionKeyV1RawLegacyCompatibility(
+  password: string,
+  username: string,
+): Promise<CryptoKey> {
+  await sodium.ready;
+  return deriveSaltEncryptionKeyV1FromPasswordBytes(
+    encodeLegacyPasswordForKdfCompatibility(password),
+    username,
   );
+}
+
+function isAesGcmDecryptionFailure(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === 'OperationError';
+  }
+
+  if (typeof error !== 'object' || error === null || !('name' in error)) {
+    return false;
+  }
+
+  return (error as { name?: unknown }).name === 'OperationError';
+}
+
+async function tryDecryptV1Salt(
+  key: CryptoKey,
+  nonce: Uint8Array,
+  envelope: Uint8Array,
+): Promise<Uint8Array | null> {
+  try {
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
+      key,
+      toArrayBufferView(envelope),
+    );
+    return new Uint8Array(decrypted);
+  } catch (error) {
+    if (isAesGcmDecryptionFailure(error)) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 /** Build a v2 envelope (`0x02 || ciphertext+tag`) from a raw AES-GCM ciphertext. */
@@ -372,23 +434,31 @@ export async function decryptSalt(
         toArrayBufferView(ciphertext),
       );
       return new Uint8Array(decrypted);
-    } catch {
+    } catch (error) {
+      if (!isAesGcmDecryptionFailure(error)) {
+        throw error;
+      }
       // Fall through to v1 in case the version byte happens to coincide
       // with a legacy ciphertext's first byte (1-in-256 chance).
     }
   }
 
   // --- Try legacy v1 (PBKDF2-100k(username)) ---
-  let salt: Uint8Array;
-  try {
-    const key = await deriveSaltEncryptionKeyV1Legacy(password, username);
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
-      key,
-      toArrayBufferView(envelope),
+  const normalizedLegacyKey = await deriveSaltEncryptionKeyV1Legacy(
+    password,
+    username,
+  );
+  let salt = await tryDecryptV1Salt(normalizedLegacyKey, nonce, envelope);
+
+  if (!salt) {
+    const rawLegacyKey = await deriveSaltEncryptionKeyV1RawLegacyCompatibility(
+      password,
+      username,
     );
-    salt = new Uint8Array(decrypted);
-  } catch {
+    salt = await tryDecryptV1Salt(rawLegacyKey, nonce, envelope);
+  }
+
+  if (!salt) {
     throw new SaltDecryptionError();
   }
 

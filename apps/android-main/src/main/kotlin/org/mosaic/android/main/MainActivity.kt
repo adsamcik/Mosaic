@@ -16,6 +16,7 @@ import org.mosaic.android.foundation.KdfProfile
 import org.mosaic.android.foundation.unlockAccountWipingAll
 import org.mosaic.android.main.bridge.AndroidRustAccountApi
 import org.mosaic.android.main.bridge.AndroidRustDiagnosticsApi
+import org.mosaic.android.main.bridge.normalizePasswordForKdf
 
 /**
  * Smoke-test launcher activity that proves the Rust↔Kotlin FFI is wired:
@@ -69,7 +70,7 @@ class MainActivity : ComponentActivity() {
    */
   private fun smokeLineText(): String = try {
     val bridge = GeneratedRustAccountBridge(AndroidRustAccountApi())
-    val password = "mosaic-smoke-test-password".toByteArray(Charsets.UTF_8)
+    val password = normalizePasswordForKdf("mosaic-smoke-test-password")
     val request = AccountUnlockRequest(
       userSalt = ByteArray(AccountUnlockRequest.SALT_LENGTH),
       accountSalt = ByteArray(AccountUnlockRequest.SALT_LENGTH),

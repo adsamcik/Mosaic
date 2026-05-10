@@ -39,6 +39,7 @@ import {
   getRustFacade,
   type RustHandleFacade,
 } from './rust-crypto-core';
+import { normalizePasswordForKdf } from '../lib/local-auth-normalization';
 
 // Create scoped logger for crypto worker
 const log = createLogger('CryptoWorker');
@@ -1424,7 +1425,7 @@ class CryptoWorker implements CryptoWorkerApi {
     userSalt: Uint8Array,
   ): Promise<Uint8Array> {
     const kdf = this.kdfFromSodiumParams();
-    const passwordBytes = new TextEncoder().encode(password);
+    const passwordBytes = normalizePasswordForKdf(password);
     const passwordCopy = new Uint8Array(passwordBytes);
     const userSaltCopy = new Uint8Array(userSalt);
     const facade = await getRustFacade();
@@ -1604,7 +1605,7 @@ class CryptoWorker implements CryptoWorkerApi {
     // prior handle so the new handle ID is the only authoritative one.
     await this.handleRegistry.clearAll();
     const facade = await getRustFacade();
-    const passwordBytes = new TextEncoder().encode(opts.password);
+    const passwordBytes = normalizePasswordForKdf(opts.password);
     try {
       const rustHandle = facade.unlockAccount({
         password: passwordBytes,
@@ -1635,7 +1636,7 @@ class CryptoWorker implements CryptoWorkerApi {
     // secret handle in one Rust round-trip.
     await this.handleRegistry.clearAll();
     const facade = await getRustFacade();
-    const passwordBytes = new TextEncoder().encode(opts.password);
+    const passwordBytes = normalizePasswordForKdf(opts.password);
     try {
       const out = facade.createNewAccount({
         password: passwordBytes,

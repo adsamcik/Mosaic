@@ -286,6 +286,43 @@ describe('decryptSalt - legacy v1 → v2 migration', () => {
     expect(updateCurrentUserMock).not.toHaveBeenCalled();
   });
 
+  it('decrypts raw UTF-8 v1 payloads with NFD passwords and migrates them to v2', async () => {
+    const rawNfdPassword = 'cafe\u0301';
+    const legacy = await craftLegacyV1Payload(
+      TEST_SALT,
+      rawNfdPassword,
+      TEST_USERNAME,
+    );
+
+    const decrypted = await decryptSalt(
+      legacy.encryptedSalt,
+      legacy.saltNonce,
+      rawNfdPassword,
+      TEST_USERNAME,
+    );
+    expect(decrypted).toEqual(TEST_SALT);
+
+    expect(updateCurrentUserMock).toHaveBeenCalledTimes(1);
+    const callArg = updateCurrentUserMock.mock.calls[0]?.[0] as
+      | { encryptedSalt: string; saltNonce: string }
+      | undefined;
+    expect(callArg).toBeDefined();
+    if (!callArg) return;
+    const migratedBytes = fromBase64(callArg.encryptedSalt);
+    expect(migratedBytes[0]).toBe(SALT_VERSION_V2);
+    expect(migratedBytes.length).toBe(1 + TEST_SALT.length + 16);
+
+    updateCurrentUserMock.mockClear();
+    const v2Decrypted = await decryptSalt(
+      callArg.encryptedSalt,
+      callArg.saltNonce,
+      rawNfdPassword,
+      TEST_USERNAME,
+    );
+    expect(v2Decrypted).toEqual(TEST_SALT);
+    expect(updateCurrentUserMock).not.toHaveBeenCalled();
+  });
+
   it('still resolves successfully when the migration upload fails', async () => {
     const legacy = await craftLegacyV1Payload(
       TEST_SALT,

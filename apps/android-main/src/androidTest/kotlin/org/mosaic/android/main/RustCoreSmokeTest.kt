@@ -18,6 +18,7 @@ import org.mosaic.android.main.bridge.AndroidRustAccountApi
 import org.mosaic.android.main.bridge.AndroidRustCoreLibraryLoader
 import org.mosaic.android.main.bridge.AndroidRustDiagnosticsApi
 import org.mosaic.android.main.bridge.AndroidRustHeaderApi
+import org.mosaic.android.main.bridge.normalizePasswordForKdf
 
 /**
  * Instrumented smoke test that proves the Rust↔Kotlin↔Android FFI is wired end-to-end
@@ -49,7 +50,7 @@ class RustCoreSmokeTest {
   @Test
   fun unlockAccountKeyRejectsWeakKdfProfile() {
     val bridge = GeneratedRustAccountBridge(AndroidRustAccountApi())
-    val password = "mosaic-instrumented-smoke".toByteArray(Charsets.UTF_8)
+    val password = normalizePasswordForKdf("mosaic-instrumented-smoke")
     val request = AccountUnlockRequest(
       userSalt = ByteArray(AccountUnlockRequest.SALT_LENGTH),
       accountSalt = ByteArray(AccountUnlockRequest.SALT_LENGTH),

@@ -18,6 +18,7 @@ use mosaic_domain::{
 };
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
+use unicode_normalization::UnicodeNormalization;
 use zeroize::{Zeroize, Zeroizing};
 
 mod content;
@@ -201,6 +202,12 @@ pub const CONTENT_KEY_INFO: &[u8] = b"mosaic:tier:content:v1";
 /// Do not delete this constant. See plan §11 KDF-labels row + Opus P-W7.5/P-W7.8
 /// review notes for rationale.
 pub const DB_SESSION_KEY_INFO: &[u8] = b"mosaic:db-session-key:v1";
+
+/// Normalize password text before password-rooted KDF byte encoding.
+#[must_use]
+pub fn normalize_password_for_kdf(password: &str) -> Vec<u8> {
+    password.nfkc().collect::<String>().into_bytes()
+}
 
 /// HKDF-SHA256 info prefix for deriving v0x04 per-frame AEAD keys.
 pub const STREAM_FRAME_KEY_AAD: &[u8] = b"mosaic:stream-frame-key:v1";

@@ -100,6 +100,16 @@ fn share_link_url_builder_matches_wasm_and_uniffi() {
 }
 
 #[test]
+fn password_nfkc_normalization_matches_known_utf8_vector() {
+    let nfd = mosaic_crypto::normalize_password_for_kdf("cafe\u{0301}");
+    let nfc = mosaic_crypto::normalize_password_for_kdf("caf\u{00e9}");
+    let expected = b"caf\xC3\xA9".to_vec();
+
+    assert_eq!(nfd, expected);
+    assert_eq!(nfc, expected);
+}
+
+#[test]
 fn session_key_derivation_matches_crypto_wasm_and_uniffi() {
     const DOMAIN: &str = "v2:";
     const USERNAME: &str = "alice";

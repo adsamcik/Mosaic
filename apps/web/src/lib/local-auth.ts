@@ -12,6 +12,8 @@ import initRustWasm, {
   deriveAccountSalt,
 } from '../generated/mosaic-wasm/mosaic_wasm.js';
 
+export { normalizePasswordForKdf } from './local-auth-normalization';
+
 // =============================================================================
 // Types
 // =============================================================================
