@@ -322,6 +322,11 @@ were still being closed immediately before v1.0.0:
 | `1355eb7` | UniFFI | Added handle-based sealed-bundle support for reverse R5 parity. |
 | `3c5a322` | Parity | Added R7/R8/R9 and negative-parity round trips. |
 | `a44d20e` | Parity | Added property-based and non-ASCII corpus tests. |
+| `f97dcd6` | Docs | Caught up `docs/FEATURES.md` with the v1-stretch user-facing features. |
+| `266e485` | Release | Drafted this release notes file. |
+| `d5ae09b` | Lint | Migrated off deprecated `generic-array` paths; allowlisted two infallible expects with SAFETY comments. |
+| `f5d4448` | Refactor | `ShardEncryptionWorker` now reads `KEY_ALBUM_CONTENT_HASH_HEX` from WorkData instead of recomputing per-shard — closes Sweep A 4.2 at the code level. |
+| `e63a557` | Docs | Recorded upload content-hash dedup invariant in §11 register. |
 
 The pattern is intentional: late fixes were either user-visible correctness
 problems, zero-knowledge boundary tightening, or test/guard gaps that would make
