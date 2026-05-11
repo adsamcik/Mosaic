@@ -230,7 +230,8 @@ npx playwright test auth-modes.spec.ts --project=chromium
 | -------- | --------------------------------------------------------------------------------------------- |
 | Backend  | [Controllers/AlbumContentController.cs](../apps/backend/Mosaic.Backend/Controllers/AlbumContentController.cs) |
 | Backend  | [Data/Entities/AlbumContent.cs](../apps/backend/Mosaic.Backend/Data/Entities/AlbumContent.cs)  |
-| Crypto   | [libs/crypto/src/content.ts](../libs/crypto/src/content.ts) - deriveContentKey, encryptContent |
+| Crypto   | [crates/mosaic-crypto/src/content.rs](../crates/mosaic-crypto/src/content.rs) - encrypt_content |
+| Crypto   | [crates/mosaic-crypto/src/lib.rs](../crates/mosaic-crypto/src/lib.rs) - derive_content_key |
 | Frontend | [contexts/AlbumContentContext.tsx](../apps/web/src/contexts/AlbumContentContext.tsx)        |
 | Frontend | [lib/content-blocks.ts](../apps/web/src/lib/content-blocks.ts) - Zod schemas & types        |
 | Frontend | [components/Content/](../apps/web/src/components/Content/) - BlockRenderers, BlockEditor, SlashCommandMenu, PhotoPickerDialog |
@@ -304,6 +305,40 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 - Video file support (MP4, WebM, MOV, MKV) with automatic frame extraction
 - Legacy IndexedDB upload queue drain/reset path for pre-R-Cl1 records
 - PNG/WebP/AVIF/HEIC metadata-strip migration parity through Rust WASM
+
+---
+
+### Upload-Time Duplicate Detection
+
+**Purpose:** Skip re-uploading the same source photo or video within an album by detecting client-local duplicate content before conversion, encryption, or Tus upload begins.
+
+**Implementation:**
+| Layer    | Location                                                                                      |
+| -------- | --------------------------------------------------------------------------------------------- |
+| Spec     | [SPEC-UploadContentHash.md](./specs/SPEC-UploadContentHash.md)                                |
+| Frontend | [lib/content-hash.ts](../apps/web/src/lib/content-hash.ts)                                    |
+| Frontend | [lib/upload/upload-queue.ts](../apps/web/src/lib/upload/upload-queue.ts)                      |
+| Frontend | [lib/upload/tiered-upload-handler.ts](../apps/web/src/lib/upload/tiered-upload-handler.ts)    |
+| Frontend | [lib/upload/video-upload-handler.ts](../apps/web/src/lib/upload/video-upload-handler.ts)      |
+| Android  | [ContentHashDedup.kt](../apps/android-main/src/main/kotlin/org/mosaic/android/main/upload/ContentHashDedup.kt) |
+| Rust     | [crates/mosaic-wasm/src/lib.rs](../crates/mosaic-wasm/src/lib.rs)                             |
+| Rust     | [crates/mosaic-uniffi/src/lib.rs](../crates/mosaic-uniffi/src/lib.rs)                         |
+
+**Features:**
+- Computes SHA-256 over the original plaintext source bytes before any image conversion, tier generation, encryption, or upload.
+- Uses a client-local per-album dedup table to detect repeat uploads of the same source media.
+- Marks duplicate web upload tasks with `duplicate` status and records the existing local photo/task id instead of uploading bytes again.
+- Applies the same source-byte hash invariant across web, Android, WASM, UniFFI, and the cross-platform parity corpus.
+- Keeps dedup strictly client-local for v1; cross-device/server dedup is deferred to preserve zero-knowledge boundaries.
+
+**Tests:**
+- Frontend: `apps/web/src/lib/__tests__/content-hash.test.ts`
+- Frontend: `apps/web/src/lib/__tests__/content-hash-parity.test.ts`
+- Frontend: `apps/web/src/lib/upload/__tests__/tiered-upload-handler-metadata.test.ts`
+- Android JVM: `apps/android-main/src/test/kotlin/org/mosaic/android/main/upload/RustContentHasherTest.kt`
+- Android JVM: `apps/android-main/src/test/kotlin/org/mosaic/android/main/crypto/ShardEncryptionWorkerTest.kt`
+- Rust: `crates/mosaic-vectors/tests/differential.rs`
+- Rust: `crates/mosaic-parity-tests/tests/cross_platform_parity.rs`
 
 ---
 
@@ -545,8 +580,9 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 **Implementation:**
 | Purpose             | Location                                                         |
 | ------------------- | ---------------------------------------------------------------- |
-| Key derivation      | [libs/crypto/src/keychain.ts](../libs/crypto/src/keychain.ts)    |
-| Envelope encryption | [libs/crypto/src/envelope.ts](../libs/crypto/src/envelope.ts)    |
+| Key derivation      | [crates/mosaic-crypto/src/lib.rs](../crates/mosaic-crypto/src/lib.rs) |
+| Envelope encryption | [crates/mosaic-crypto/src/lib.rs](../crates/mosaic-crypto/src/lib.rs) |
+| Envelope headers    | [crates/mosaic-domain/src/lib.rs](../crates/mosaic-domain/src/lib.rs) |
 | Epoch keys          | [hooks/useEpochKeys.ts](../apps/web/src/hooks/useEpochKeys.ts) |
 
 ---
@@ -690,6 +726,29 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 | Layer         | Location                                                     |
 | ------------- | ------------------------------------------------------------ |
 | Frontend Hook | [hooks/useSession.ts](../apps/web/src/hooks/useSession.ts) |
+
+---
+
+### Idle-Timeout Suspension During Active Uploads
+
+**Purpose:** Keep authenticated sessions alive while uploads are actively running so long photo or video imports do not log users out mid-upload.
+
+**Implementation:**
+| Layer    | Location                                                                                      |
+| -------- | --------------------------------------------------------------------------------------------- |
+| Frontend | [contexts/UploadContext.tsx](../apps/web/src/contexts/UploadContext.tsx)                      |
+| Frontend | [lib/session.ts](../apps/web/src/lib/session.ts)                                              |
+| Android  | [UploadForegroundService.kt](../apps/android-main/src/main/kotlin/org/mosaic/android/main/service/UploadForegroundService.kt) |
+
+**Features:**
+- Upload context publishes active upload state through the `mosaic:upload-active` browser event.
+- The session idle timer defers automatic logout while active uploads are in progress and resumes once uploads finish.
+- Cleanup emits an inactive upload state when the upload provider unmounts to avoid leaving the session in a permanently deferred state.
+- Android foreground uploads mark the service as user-initiated data sync work so the platform treats active uploads correctly.
+
+**Tests:**
+- Frontend: `apps/web/src/lib/__tests__/session-hardening.test.ts`
+- Frontend: `apps/web/tests/lib/session.test.ts`
 
 ---
 
@@ -1011,6 +1070,12 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-05-10 | Content-hash upload-time dedup | Added | SHA-256 of source plaintext bytes; client-local dedup table; cross-device dedup explicitly deferred to v2 |
+| 2026-05-10 | Tus shard SHA-256 advisory-only | Modified | Tus shard checksums are client-supplied advisory metadata only; backend does not enforce plaintext-derived hashes |
+| 2026-05-10 | Manifest transcript Rust-canonical migration | Fixed | Web manifest sign/verify now routes through the Rust canonical transcript to prevent cross-client signature drift |
+| 2026-05-10 | NFKC password normalization | Fixed | Web and Android normalize passwords before Argon2 KDF to prevent silent lockout for canonically equivalent input |
+| 2026-05-10 | EXIF orientation handling | Fixed | Web thumbnail decoding uses `imageOrientation: 'none'` to prevent double-rotation |
+| 2026-05-09 | Idle-timeout suspension during active uploads | Added | Session no longer logs out user mid-upload |
 | 2026-05-06 | Deferred Ticket Bundle (P-W2, R-C8, R-M5.3) | Added | Added Rust-owned share-link URL assembly, video tier pipeline edge coverage, and privacy class forbidden-tag banner placeholder |
 | 2026-05-06 | Android Sync Confirmation and Photo Picker Staging | Added | Added album sync confirmation polling with jittered backoff/cancellation plus Photo Picker staging adapter preserving MIME types |
 | 2026-05-05 | Web Upload Queue Migration  | Added    | Added legacy IndexedDB upload task detection/drain/reset telemetry and PNG/WebP/AVIF/HEIC strip parity coverage |
