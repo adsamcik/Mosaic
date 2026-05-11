@@ -98,6 +98,27 @@ $PiiPatternSourceAllowList = @(
   'PrivacyAuditorTest.kt'
 )
 
+function Assert-PiiRegexFixtures {
+  if ('owner@example.org' -notmatch $PiiEmailRegex) {
+    throw 'kotlin-raw-input-ffi PII fixture failed to catch email regex'
+  }
+  if ('+420123456789' -notmatch $PiiPhoneRegex) {
+    throw 'kotlin-raw-input-ffi PII fixture failed to catch E.164 phone regex'
+  }
+  if ('IMG_20260509_secret.jpg' -notmatch $PiiCameraFileRegex) {
+    throw 'kotlin-raw-input-ffi PII fixture failed to catch camera filename regex'
+  }
+  if ('test@example.com' -notmatch $PiiEmailRegex) {
+    throw 'kotlin-raw-input-ffi PII allowlisted fixture no longer matches email regex'
+  }
+  if ($AllowedFixtureEmails -notcontains 'test@example.com') {
+    throw 'kotlin-raw-input-ffi PII allowlisted fixture is missing test@example.com'
+  }
+  Write-Host 'kotlin-raw-input-ffi PII regex self-test: OK (email, phone, camera, allowlisted fixture)'
+}
+
+Assert-PiiRegexFixtures
+
 foreach ($root in $PiiEmailRoots) {
   if (-not (Test-Path $root)) { continue }
   Get-ChildItem -Path $root -Recurse -Filter '*.kt' -ErrorAction SilentlyContinue | ForEach-Object {
