@@ -4,7 +4,7 @@ use mosaic_crypto::{
     ACCOUNT_DATA_AAD, ACCOUNT_KEY_WRAP_AAD, AuthSigningSecretKey, EPOCH_SEED_AAD,
     IdentitySigningSecretKey, LINK_TIER_KEY_AAD, ManifestSigningSecretKey, MosaicCryptoError,
     SecretKey, decrypt_envelope, decrypt_shard, derive_epoch_key_material, encrypt_shard,
-    get_tier_key, sha256_bytes, streaming_decrypt_init, streaming_encrypt_init,
+    get_tier_key, sha256_base64url, streaming_decrypt_init, streaming_encrypt_init,
     unwrap_secret_with_aad, wrap_secret_with_aad,
 };
 use mosaic_domain::{
@@ -115,7 +115,7 @@ fn shard_encryption_round_trips_with_header_aad_and_hash() {
         encrypted.bytes.len(),
         SHARD_ENVELOPE_HEADER_LEN + plaintext.len() + 16
     );
-    assert_eq!(encrypted.sha256, sha256_bytes(&encrypted.bytes));
+    assert_eq!(encrypted.sha256, sha256_base64url(&encrypted.bytes));
 
     let header = match ShardEnvelopeHeader::parse(&encrypted.bytes[..SHARD_ENVELOPE_HEADER_LEN]) {
         Ok(value) => value,
@@ -283,17 +283,17 @@ fn shard_decryption_classifies_structural_and_authenticated_tampering() {
 }
 
 #[test]
-fn sha256_bytes_matches_base64url_no_padding_vectors() {
+fn sha256_base64url_matches_no_padding_vectors() {
     assert_eq!(
-        sha256_bytes(b""),
+        sha256_base64url(b""),
         "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"
     );
     assert_eq!(
-        sha256_bytes(b"abc"),
+        sha256_base64url(b"abc"),
         "ungWv48Bz-pBQUDeXa4iI7ADYaOWF3qctBD_YfIAFa0"
     );
     assert_eq!(
-        sha256_bytes(b"mosaic"),
+        sha256_base64url(b"mosaic"),
         "GYGMAOJ6U4GaTOE0HuB5Q1NQERDr7NHJiE2xiIQ5iNA"
     );
 }

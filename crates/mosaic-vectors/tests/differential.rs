@@ -284,7 +284,7 @@ fn shard_envelope_vector_decrypt_matches_rust_xchacha20() {
 
         // Verify the captured sha256 matches what mosaic-crypto would compute.
         assert_eq!(
-            mosaic_crypto::sha256_bytes(&entry.expected_envelope),
+            mosaic_crypto::sha256_base64url(&entry.expected_envelope),
             entry.expected_sha256,
             "tier {} envelope sha256 mismatch",
             entry.tier

@@ -12,17 +12,12 @@ use std::{
     },
 };
 
-use blake2::{
-    Blake2bVar,
-    digest::{Update, VariableOutput},
-};
 use ciborium::value::{Integer, Value};
 use mosaic_domain::{
     EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, MetadataSidecar,
     MetadataSidecarError, MetadataSidecarField, ShardTier, ShardTier as DomainShardTier,
 };
 use self_cell::self_cell;
-use sha2::{Digest as ShaDigest, Sha256};
 use zeroize::Zeroizing;
 
 use mosaic_crypto::sidecar::{
@@ -36,28 +31,19 @@ type CryptoStreamingEncryptor<'a> = mosaic_crypto::StreamingEncryptor<'a>;
 type CryptoStreamingDecryptor<'a> = mosaic_crypto::StreamingDecryptor<'a>;
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    sha256_digest_bytes(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>()
+    mosaic_crypto::sha256_hex(bytes)
 }
 
 fn sha256_digest_bytes(bytes: &[u8]) -> Vec<u8> {
-    Sha256::digest(bytes).to_vec()
+    mosaic_crypto::sha256_bytes(bytes).to_vec()
 }
 
 fn blake2b_var(bytes: &[u8], out_len: usize) -> Vec<u8> {
+    let mut out = vec![0_u8; out_len];
     // SAFETY: All callers pass protocol constants 16 or 32; BLAKE2b accepts 1..=64 byte outputs.
     #[allow(clippy::expect_used)]
-    let mut hasher = Blake2bVar::new(out_len)
+    mosaic_crypto::blake2b_var(&mut out, bytes)
         .expect("protocol BLAKE2b output lengths are compile-time constants");
-    hasher.update(bytes);
-    let mut out = vec![0_u8; out_len];
-    // SAFETY: `out` is allocated to exactly the requested BLAKE2b output length.
-    #[allow(clippy::expect_used)]
-    hasher
-        .finalize_variable(&mut out)
-        .expect("BLAKE2b finalize cannot fail for allocated output");
     out
 }
 
@@ -5264,12 +5250,8 @@ fn download_snapshot_error_code(
 }
 
 fn download_checksum_body(body: &[u8]) -> Result<[u8; 32], mosaic_client::ClientErrorCode> {
-    let mut hasher =
-        Blake2bVar::new(32).map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)?;
-    hasher.update(body);
     let mut out = [0_u8; 32];
-    hasher
-        .finalize_variable(&mut out)
+    mosaic_crypto::blake2b_var(&mut out, body)
         .map_err(|_| mosaic_client::ClientErrorCode::DownloadSnapshotCorrupt)?;
     Ok(out)
 }

@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 
 use argon2::{Algorithm, Argon2, Block, Params, Version};
-use blake2::{Blake2b, Blake2bMac, digest::consts::U16};
+use blake2::{Blake2b, Blake2bMac, Blake2bVar, digest::consts::U16};
 use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
     aead::{Aead, KeyInit, Payload},
@@ -2082,7 +2082,7 @@ pub fn encrypt_shard(
     envelope.extend_from_slice(&header_bytes);
     envelope.extend_from_slice(&ciphertext_and_tag);
 
-    let sha256 = sha256_bytes(&envelope);
+    let sha256 = sha256_base64url(&envelope);
     Ok(EncryptedShard {
         bytes: envelope,
         sha256,
@@ -2384,10 +2384,39 @@ pub fn verify_shard_integrity(
     }
 }
 
+/// Returns the raw SHA-256 digest of `bytes`.
+#[must_use]
+pub fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
+    let digest = Sha256::digest(bytes);
+    let mut out = [0_u8; 32];
+    out.copy_from_slice(&digest);
+    out
+}
+
+/// Returns the lowercase hexadecimal SHA-256 digest of `bytes`.
+#[must_use]
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    sha256_bytes(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// Writes an unkeyed variable-length BLAKE2b digest of `data` into `out`.
+///
+/// `out` must be between 1 and 64 bytes, matching BLAKE2b's variable-output bounds.
+///
+/// # Errors
+/// Returns `InvalidInputLength` if `out` has an unsupported BLAKE2b output length.
+pub fn blake2b_var(out: &mut [u8], data: &[u8]) -> Result<(), MosaicCryptoError> {
+    <Blake2bVar as blake2::digest::VariableOutput>::digest_variable(data, out)
+        .map_err(|_| MosaicCryptoError::InvalidInputLength { actual: out.len() })
+}
+
 /// Returns the base64url no-padding SHA-256 digest of `bytes` as a `String`.
 #[must_use]
-pub fn sha256_bytes(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
+pub fn sha256_base64url(bytes: &[u8]) -> String {
+    let digest = sha256_bytes(bytes);
     base64url_no_pad(&digest)
 }
 

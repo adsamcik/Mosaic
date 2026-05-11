@@ -10,8 +10,8 @@ use mosaic_crypto::{
     IdentityKeypair, KdfProfile, MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, ManifestSigningPublicKey,
     ManifestSigningSecretKey, MosaicCryptoError, SecretKey, build_auth_challenge_transcript,
     crate_name, derive_auth_signing_keypair, derive_identity_keypair, encrypt_content,
-    encrypt_shard, generate_identity_seed, seal_and_sign_bundle, sha256_bytes, sign_auth_challenge,
-    verify_and_open_bundle, verify_auth_challenge, wrap_secret_with_aad,
+    encrypt_shard, generate_identity_seed, seal_and_sign_bundle, sha256_base64url,
+    sign_auth_challenge, verify_and_open_bundle, verify_auth_challenge, wrap_secret_with_aad,
 };
 use mosaic_domain::ShardTier;
 use zeroize::Zeroizing;
@@ -389,8 +389,8 @@ fn encrypt_content_rejects_one_byte_over_max_shard_bytes() {
 // length), so the post-encoding capacity is observably > 43.
 
 #[test]
-fn sha256_bytes_capacity_matches_exact_base64url_formula() {
-    let digest = sha256_bytes(b"mosaic mutation kill #8");
+fn sha256_base64url_capacity_matches_exact_base64url_formula() {
+    let digest = sha256_base64url(b"mosaic mutation kill #8");
 
     // Base64url without padding for 32 bytes is 43 ASCII characters
     // (10 full 3-byte chunks emit 4 chars each, plus a 2-byte tail
