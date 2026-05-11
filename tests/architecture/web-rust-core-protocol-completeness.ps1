@@ -157,6 +157,16 @@ $BannedPatterns = @(
     Name = 'libsodium KDF'
     Pattern = '\bsodium\s*\.\s*crypto_kdf_\w+\b'
     Message = 'protocol-class KDF derivation must use Rust core/WASM helpers'
+  },
+  @{
+    Name = 'libsodium primitive destructure'
+    Pattern = '(?:const|let|var)\s*\{[^}]*\b(crypto_pwhash|crypto_secretbox|crypto_aead|crypto_box|crypto_kx|crypto_kdf|crypto_auth|crypto_hash|crypto_sign|crypto_generichash)\b[^}]*\}\s*=\s*\w+'
+    Message = 'protocol-class libsodium primitives must not be destructured from imported sodium bindings'
+  },
+  @{
+    Name = 'libsodium bare primitive call'
+    Pattern = '(?:^|\W)(crypto_pwhash|crypto_secretbox|crypto_aead|crypto_box|crypto_kx|crypto_kdf|crypto_auth|crypto_hash|crypto_sign|crypto_generichash)\s*\('
+    Message = 'protocol-class libsodium primitive calls must use Rust core/WASM helpers'
   }
 )
 
@@ -223,6 +233,8 @@ Assert-NegativeFixtureCaught 'libsodium-kx' 'sodium.crypto_kx_client_session_key
 Assert-NegativeFixtureCaught 'libsodium-aead' 'sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(message, aad, null, nonce, key);' 'libsodium AEAD'
 Assert-NegativeFixtureCaught 'libsodium-auth' 'sodium.crypto_auth(message, key);' 'libsodium auth'
 Assert-NegativeFixtureCaught 'libsodium-kdf' 'sodium.crypto_kdf_derive_from_key(32, 1, "context1", key);' 'libsodium KDF'
+Assert-NegativeFixtureCaught 'libsodium-destructure-default' "import sodium from 'libsodium-wrappers-sumo'; const { crypto_pwhash } = sodium;" 'libsodium primitive destructure'
+Assert-NegativeFixtureCaught 'libsodium-aliased-bare-call' "import sodium from 'libsodium-wrappers-sumo'; const s2: typeof sodium = sodium; await s2.crypto_pwhash(32, password, salt, 2, 65536, 2);" 'libsodium bare primitive call'
 
 $violations = New-Object System.Collections.Generic.List[string]
 
