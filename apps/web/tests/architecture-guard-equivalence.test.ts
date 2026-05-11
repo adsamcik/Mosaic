@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -139,6 +139,24 @@ function psHighRiskTargets(source: string): string[] {
   );
 }
 
+// Guards with PowerShell-only implementations are documented here instead of
+// `guardPairs`. They use PowerShell-specific repository traversal and/or
+// runtime checks that do not have a maintained Bash counterpart.
+const ps1OnlyGuards = [
+  {
+    path: 'tests/architecture/rust-cutover-boundary.ps1',
+    reason: 'PowerShell-specific recursive source traversal and cutover-phase inventories; no maintained Bash sibling exists.',
+  },
+  {
+    path: 'tests/architecture/web-listener-cleanup.ps1',
+    reason: 'PowerShell-specific recursive TypeScript scanning for browser listener cleanup invariants; no maintained Bash sibling exists.',
+  },
+  {
+    path: 'tests/architecture/web-rust-core-protocol-completeness.ps1',
+    reason: 'PowerShell-specific multiline regex scanning for web protocol crypto completeness; no maintained Bash sibling exists.',
+  },
+] as const;
+
 const guardPairs: GuardPair[] = [
   {
     name: 'no-raw-secret-ffi-export',
@@ -221,5 +239,26 @@ describe.each(guardPairs)('$name architecture guard parity', ({ ps1, sh, checks 
     const psValues = ps(ps1Source);
     const shValues = extractSh(shSource);
     expect(symmetricDifference(psValues, shValues)).toEqual([]);
+  });
+});
+
+describe('PowerShell-only architecture guard inventory', () => {
+  it('documents every architecture guard without a Bash sibling', () => {
+    const architectureDir = resolve(repoRoot, 'tests', 'architecture');
+    const files = readdirSync(architectureDir);
+    const shGuards = new Set(files.filter((file) => file.endsWith('.sh')).map((file) => file.replace(/\.sh$/, '')));
+    const pairedPs1Guards = new Set(guardPairs.map((pair) => pair.ps1.replace(/^tests\/architecture\//, '').replace(/\.ps1$/, '')));
+    const documentedPs1Only = new Set(ps1OnlyGuards.map((guard) => guard.path.replace(/^tests\/architecture\//, '').replace(/\.ps1$/, '')));
+
+    const undocumented = uniqueSorted(
+      files
+        .filter((file) => file.endsWith('.ps1'))
+        .map((file) => file.replace(/\.ps1$/, ''))
+        .filter((name) => !shGuards.has(name))
+        .filter((name) => !pairedPs1Guards.has(name))
+        .filter((name) => !documentedPs1Only.has(name)),
+    );
+
+    expect(undocumented).toEqual([]);
   });
 });
