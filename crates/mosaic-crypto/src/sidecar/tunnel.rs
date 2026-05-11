@@ -152,10 +152,10 @@ impl SendTunnel {
         let nonce_bytes = build_nonce(counter);
         let aead = XChaCha20Poly1305::new_from_slice(self.key.as_slice())
             .map_err(|_| SidecarError::KdfFailure)?;
-        let nonce = XNonce::from_slice(&nonce_bytes);
+        let nonce = XNonce::from(nonce_bytes);
         let ct = aead
             .encrypt(
-                nonce,
+                &nonce,
                 Payload {
                     msg: plaintext,
                     aad: DOMAIN_TAG,
@@ -196,10 +196,10 @@ impl RecvTunnel {
         let nonce_bytes = build_nonce(counter);
         let aead = XChaCha20Poly1305::new_from_slice(self.key.as_slice())
             .map_err(|_| SidecarError::KdfFailure)?;
-        let nonce = XNonce::from_slice(&nonce_bytes);
+        let nonce = XNonce::from(nonce_bytes);
         let pt = aead
             .decrypt(
-                nonce,
+                &nonce,
                 Payload {
                     msg: &sealed[COUNTER_PREFIX_BYTES..],
                     aad: DOMAIN_TAG,

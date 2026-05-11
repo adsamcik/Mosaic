@@ -421,22 +421,22 @@ fn epoch_derive_vector_matches_ts_blake2b_keyed() {
     let content_sha = Sha256::digest(material.content_key().as_bytes());
 
     assert_eq!(
-        thumb_sha.as_slice(),
+        &thumb_sha[..],
         vector.expected_thumb_key_sha256.as_slice(),
         "thumb"
     );
     assert_eq!(
-        preview_sha.as_slice(),
+        &preview_sha[..],
         vector.expected_preview_key_sha256.as_slice(),
         "preview"
     );
     assert_eq!(
-        full_sha.as_slice(),
+        &full_sha[..],
         vector.expected_full_key_sha256.as_slice(),
         "full"
     );
     assert_eq!(
-        content_sha.as_slice(),
+        &content_sha[..],
         vector.expected_content_key_sha256.as_slice(),
         "content"
     );

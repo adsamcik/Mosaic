@@ -27,7 +27,10 @@
 
 use chacha20poly1305::{
     XChaCha20Poly1305,
-    aead::{KeyInit, Payload, generic_array::GenericArray, stream::DecryptorBE32},
+    aead::{
+        KeyInit, Payload,
+        stream::{DecryptorBE32, EncryptorBE32, Nonce as StreamNonce, StreamBE32},
+    },
 };
 use mosaic_domain::{SHARD_ENVELOPE_HEADER_LEN, ShardTier};
 use zeroize::Zeroizing;
@@ -55,6 +58,8 @@ pub const MAX_STREAMING_CHUNK_BYTES: u32 = 4 * 1024 * 1024;
 
 /// Streaming-AEAD seed nonce length (XChaCha20Poly1305 nonce 24 - StreamBE32 5 = 19).
 const STREAM_SEED_NONCE_LEN: usize = 19;
+
+type XChaCha20StreamNonce = StreamNonce<XChaCha20Poly1305, StreamBE32<XChaCha20Poly1305>>;
 
 /// Header reserved field offset (mirrors `mosaic-domain` private constant).
 const RESERVED_OFFSET: usize = 38;
@@ -185,8 +190,10 @@ pub fn open_streaming_shard(
         }
     })?;
 
-    let seed_nonce = GenericArray::from_slice(&envelope_header[13..13 + STREAM_SEED_NONCE_LEN]);
-    let decryptor = DecryptorBE32::from_aead(cipher, seed_nonce);
+    let mut seed_nonce_bytes = [0_u8; STREAM_SEED_NONCE_LEN];
+    seed_nonce_bytes.copy_from_slice(&envelope_header[13..13 + STREAM_SEED_NONCE_LEN]);
+    let seed_nonce = XChaCha20StreamNonce::from(seed_nonce_bytes);
+    let decryptor = DecryptorBE32::from_aead(cipher, &seed_nonce);
 
     Ok(StreamingShardDecryptor {
         decryptor: Some(decryptor),
@@ -241,9 +248,10 @@ pub fn encrypt_streaming_shard(
             actual: key.as_bytes().len(),
         }
     })?;
-    let seed_nonce = GenericArray::from_slice(&header[13..13 + STREAM_SEED_NONCE_LEN]);
-    let mut encryptor =
-        chacha20poly1305::aead::stream::EncryptorBE32::from_aead(cipher, seed_nonce);
+    let mut seed_nonce_bytes = [0_u8; STREAM_SEED_NONCE_LEN];
+    seed_nonce_bytes.copy_from_slice(&header[13..13 + STREAM_SEED_NONCE_LEN]);
+    let seed_nonce = XChaCha20StreamNonce::from(seed_nonce_bytes);
+    let mut encryptor = EncryptorBE32::from_aead(cipher, &seed_nonce);
 
     let chunk_size = chunk_size_bytes as usize;
     let mut envelope = Vec::with_capacity(

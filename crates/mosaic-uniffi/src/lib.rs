@@ -47,10 +47,14 @@ fn sha256_digest_bytes(bytes: &[u8]) -> Vec<u8> {
 }
 
 fn blake2b_var(bytes: &[u8], out_len: usize) -> Vec<u8> {
+    // SAFETY: All callers pass protocol constants 16 or 32; BLAKE2b accepts 1..=64 byte outputs.
+    #[allow(clippy::expect_used)]
     let mut hasher = Blake2bVar::new(out_len)
         .expect("protocol BLAKE2b output lengths are compile-time constants");
     hasher.update(bytes);
     let mut out = vec![0_u8; out_len];
+    // SAFETY: `out` is allocated to exactly the requested BLAKE2b output length.
+    #[allow(clippy::expect_used)]
     hasher
         .finalize_variable(&mut out)
         .expect("BLAKE2b finalize cannot fail for allocated output");

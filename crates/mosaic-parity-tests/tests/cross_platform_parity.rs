@@ -46,6 +46,13 @@ fn must<T, E: core::fmt::Debug>(result: Result<T, E>, context: &str) -> T {
     }
 }
 
+fn must_some<T>(option: Option<T>, context: &str) -> T {
+    match option {
+        Some(value) => value,
+        None => panic!("{context}"),
+    }
+}
+
 #[test]
 fn finalize_idempotency_key_parity() {
     let job_id = mosaic_client::Uuid::from_bytes([
@@ -958,7 +965,7 @@ fn decrypt_shard_with_tampered_ciphertext_returns_same_error_code_on_wasm_and_un
     );
     assert_ok(encrypted.code, "wasm encrypt tamper fixture");
     let mut tampered = encrypted.envelope_bytes;
-    let last = tampered.last_mut().expect("envelope has ciphertext tag");
+    let last = must_some(tampered.last_mut(), "envelope has ciphertext tag");
     *last ^= 0x80;
 
     let wasm = mosaic_wasm::decrypt_shard_with_epoch_handle(wasm_epoch.handle, tampered.clone());
@@ -1664,9 +1671,10 @@ fn streaming_aead_tampered_chunk_fails_on_opposite_facade() {
     };
     assert_eq!(first_plaintext, plaintext[..STREAMING_SHARD_FRAME_SIZE]);
     let mut tampered = second.bytes;
-    let last = tampered
-        .last_mut()
-        .expect("encrypted streaming frame carries a tag byte");
+    let last = must_some(
+        tampered.last_mut(),
+        "encrypted streaming frame carries a tag byte",
+    );
     *last ^= 0x80;
     assert!(
         uniffi_decryptor.decrypt_frame(tampered).is_err(),
@@ -1690,9 +1698,10 @@ fn streaming_aead_tampered_chunk_fails_on_opposite_facade() {
         Err(error) => panic!("uniffi reverse envelope should finalize: {error:?}"),
     };
     let mut tampered = frame.bytes;
-    let last = tampered
-        .last_mut()
-        .expect("encrypted streaming frame carries a tag byte");
+    let last = must_some(
+        tampered.last_mut(),
+        "encrypted streaming frame carries a tag byte",
+    );
     *last ^= 0x40;
     let mut wasm_decryptor = mosaic_wasm::StreamingShardDecryptor::new(wasm_epoch.handle, envelope);
     let tampered_result = wasm_decryptor.decrypt_frame_for_tests(tampered);
@@ -2756,7 +2765,10 @@ fn streaming_round_trip_case(name: &str, plaintext: Vec<u8>, chunk_sizes: &[usiz
     let mut wasm_encryptor = mosaic_wasm::StreamingShardEncryptor::new(
         wasm_epoch.handle,
         ShardTier::Original.to_byte(),
-        Some(u32::try_from(chunk_sizes.len()).expect("chunk count fits u32")),
+        Some(must(
+            u32::try_from(chunk_sizes.len()),
+            "chunk count fits u32",
+        )),
     );
     let mut offset = 0;
     let mut wasm_frames = Vec::new();
@@ -2766,7 +2778,7 @@ fn streaming_round_trip_case(name: &str, plaintext: Vec<u8>, chunk_sizes: &[usiz
         assert_ok(frame.code, name);
         assert_eq!(
             frame.frame_index,
-            u32::try_from(index).expect("frame index fits u32")
+            must(u32::try_from(index), "frame index fits u32")
         );
         wasm_frames.push(frame.bytes);
         offset += size;
@@ -2796,7 +2808,10 @@ fn streaming_round_trip_case(name: &str, plaintext: Vec<u8>, chunk_sizes: &[usiz
     let uniffi_encryptor = match mosaic_uniffi::StreamingEncryptor::new(
         uniffi_epoch.handle,
         ShardTier::Original.to_byte(),
-        Some(u32::try_from(chunk_sizes.len()).expect("chunk count fits u32")),
+        Some(must(
+            u32::try_from(chunk_sizes.len()),
+            "chunk count fits u32",
+        )),
     ) {
         Ok(value) => value,
         Err(error) => panic!("{name}: uniffi encryptor should initialize: {error:?}"),
@@ -2811,7 +2826,7 @@ fn streaming_round_trip_case(name: &str, plaintext: Vec<u8>, chunk_sizes: &[usiz
         };
         assert_eq!(
             frame.frame_index,
-            u32::try_from(index).expect("frame index fits u32")
+            must(u32::try_from(index), "frame index fits u32")
         );
         uniffi_frames.push(frame.bytes);
         offset += size;

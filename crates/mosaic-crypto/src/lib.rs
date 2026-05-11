@@ -980,6 +980,8 @@ pub fn derive_session_salt(
 /// `HMAC-SHA-256(key = user_salt, msg = "mosaic_account_salt")[0..16]`.
 #[must_use]
 pub fn derive_account_salt(user_salt: &[u8]) -> [u8; SESSION_SALT_BYTES] {
+    // SAFETY: HMAC accepts keys of any length per RFC 2104; this expect cannot fire.
+    #[allow(clippy::expect_used)]
     let mut mac =
         <Hmac<Sha256> as Mac>::new_from_slice(user_salt).expect("HMAC accepts any key length");
     mac.update(ACCOUNT_SALT_HMAC_INFO);
@@ -998,6 +1000,8 @@ pub fn derive_account_salt(user_salt: &[u8]) -> [u8; SESSION_SALT_BYTES] {
 pub fn derive_sidecar_room_id(msg1: &[u8]) -> [u8; SESSION_SALT_BYTES] {
     let hk = Hkdf::<Sha256>::new(None, msg1);
     let mut out = [0_u8; SESSION_SALT_BYTES];
+    // SAFETY: HKDF-Expand caps at 255*32=8160 bytes for SHA-256; 16 bytes is far below the cap.
+    #[allow(clippy::expect_used)]
     hk.expand(SIDECAR_ROOM_HKDF_INFO, &mut out)
         .expect("16 bytes is within HKDF cap");
     out
@@ -1958,9 +1962,10 @@ fn encrypt_streaming_frame(
         }
     })?;
     let aad = streaming_frame_aad(header_bytes, frame_index);
+    let nonce = XNonce::from(nonce_bytes);
     let encrypted = cipher
         .encrypt(
-            XNonce::from_slice(&nonce_bytes),
+            &nonce,
             Payload {
                 msg: plaintext,
                 aad: &aad,
@@ -1994,9 +1999,10 @@ fn decrypt_streaming_frame(
         }
     })?;
     let aad = streaming_frame_aad(header_bytes, frame_index);
+    let nonce = XNonce::from(expected_nonce);
     cipher
         .decrypt(
-            XNonce::from_slice(&frame[..STREAM_FRAME_NONCE_LEN]),
+            &nonce,
             Payload {
                 msg: &frame[STREAM_FRAME_NONCE_LEN..],
                 aad: &aad,
@@ -2060,11 +2066,11 @@ pub fn encrypt_shard(
             actual: key.as_bytes().len(),
         }
     })?;
-    let nonce = XNonce::from_slice(&nonce_bytes);
+    let nonce = XNonce::from(nonce_bytes);
 
     let ciphertext_and_tag = cipher
         .encrypt(
-            nonce,
+            &nonce,
             Payload {
                 msg: data,
                 aad: &header_bytes,
@@ -2111,11 +2117,11 @@ pub fn decrypt_shard(
             actual: key.as_bytes().len(),
         }
     })?;
-    let nonce = XNonce::from_slice(header.nonce());
+    let nonce = XNonce::from(*header.nonce());
 
     let plaintext = cipher
         .decrypt(
-            nonce,
+            &nonce,
             Payload {
                 msg: ciphertext_and_tag,
                 aad: header_bytes,
@@ -2237,11 +2243,11 @@ pub fn decrypt_shard_with_legacy_raw_key(
             actual: epoch_seed.as_bytes().len(),
         }
     })?;
-    let nonce = XNonce::from_slice(header.nonce());
+    let nonce = XNonce::from(*header.nonce());
 
     cipher
         .decrypt(
-            nonce,
+            &nonce,
             Payload {
                 msg: ciphertext_and_tag,
                 aad: header_bytes,
@@ -2279,11 +2285,11 @@ pub fn wrap_secret_with_aad(
             actual: key.as_bytes().len(),
         }
     })?;
-    let nonce = XNonce::from_slice(&nonce_bytes);
+    let nonce = XNonce::from(nonce_bytes);
 
     let ciphertext_and_tag = cipher
         .encrypt(
-            nonce,
+            &nonce,
             Payload {
                 msg: plaintext,
                 aad,
@@ -2314,7 +2320,9 @@ pub fn unwrap_secret_with_aad(
         });
     }
 
-    let nonce = XNonce::from_slice(&ciphertext[..24]);
+    let mut nonce_bytes = [0_u8; 24];
+    nonce_bytes.copy_from_slice(&ciphertext[..24]);
+    let nonce = XNonce::from(nonce_bytes);
     let ciphertext_and_tag = &ciphertext[24..];
 
     let cipher = XChaCha20Poly1305::new_from_slice(key.as_bytes()).map_err(|_| {
@@ -2325,7 +2333,7 @@ pub fn unwrap_secret_with_aad(
 
     let plaintext = cipher
         .decrypt(
-            nonce,
+            &nonce,
             Payload {
                 msg: ciphertext_and_tag,
                 aad,
@@ -2380,7 +2388,7 @@ pub fn verify_shard_integrity(
 #[must_use]
 pub fn sha256_bytes(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
-    base64url_no_pad(digest.as_slice())
+    base64url_no_pad(&digest)
 }
 
 /// Encodes `bytes` as base64url with no padding characters (RFC 4648 §5, no `=`).

@@ -119,14 +119,9 @@ pub fn derive_link_keys(link_secret: &[u8]) -> Result<LinkKeys, MosaicCryptoErro
         });
     }
 
-    let link_id = blake2_keyed::<U16>(link_secret, LINK_ID_CONTEXT)?;
-    let wrapping_key_bytes = blake2_keyed::<U32>(link_secret, LINK_WRAP_CONTEXT)?;
-
-    let mut link_id_arr = [0_u8; LINK_ID_BYTES];
-    link_id_arr.copy_from_slice(&link_id);
-
+    let link_id_arr = blake2_keyed_16(link_secret, LINK_ID_CONTEXT)?;
     let mut wrapping_key_buf = [0_u8; KEY_BYTES];
-    wrapping_key_buf.copy_from_slice(&wrapping_key_bytes);
+    wrapping_key_buf.copy_from_slice(&blake2_keyed_32(link_secret, LINK_WRAP_CONTEXT)?);
     let wrapping_key = SecretKey::from_bytes(&mut wrapping_key_buf)?;
 
     Ok(LinkKeys {
@@ -212,20 +207,24 @@ pub fn unwrap_tier_key_from_link(
 /// `Blake2bMac<OutSize>` accepts any key length up to 64 bytes (the BLAKE2b
 /// block size) and uses zero salt + zero personalisation, exactly the
 /// configuration libsodium picks for unparameterised `crypto_generichash`.
-fn blake2_keyed<OutSize>(
-    key: &[u8],
-    msg: &[u8],
-) -> Result<blake2::digest::Output<Blake2bMac<OutSize>>, MosaicCryptoError>
-where
-    OutSize: blake2::digest::generic_array::ArrayLength<u8>
-        + blake2::digest::typenum::IsLessOrEqual<blake2::digest::consts::U64>,
-    blake2::digest::typenum::LeEq<OutSize, blake2::digest::consts::U64>:
-        blake2::digest::typenum::NonZero,
-{
-    let mut mac = <Blake2bMac<OutSize> as KeyInit>::new_from_slice(key)
+fn blake2_keyed_16(key: &[u8], msg: &[u8]) -> Result<[u8; LINK_ID_BYTES], MosaicCryptoError> {
+    let mut mac = <Blake2bMac<U16> as KeyInit>::new_from_slice(key)
         .map_err(|_| MosaicCryptoError::InvalidKeyLength { actual: key.len() })?;
     Mac::update(&mut mac, msg);
-    Ok(mac.finalize().into_bytes())
+    let bytes = mac.finalize().into_bytes();
+    let mut out = [0_u8; LINK_ID_BYTES];
+    out.copy_from_slice(&bytes);
+    Ok(out)
+}
+
+fn blake2_keyed_32(key: &[u8], msg: &[u8]) -> Result<[u8; KEY_BYTES], MosaicCryptoError> {
+    let mut mac = <Blake2bMac<U32> as KeyInit>::new_from_slice(key)
+        .map_err(|_| MosaicCryptoError::InvalidKeyLength { actual: key.len() })?;
+    Mac::update(&mut mac, msg);
+    let bytes = mac.finalize().into_bytes();
+    let mut out = [0_u8; KEY_BYTES];
+    out.copy_from_slice(&bytes);
+    Ok(out)
 }
 
 #[cfg(test)]

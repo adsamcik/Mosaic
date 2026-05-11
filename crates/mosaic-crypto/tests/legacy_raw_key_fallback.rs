@@ -36,9 +36,10 @@ fn legacy_ciphertext(seed_bytes: [u8; 32], plaintext: &[u8], nonce: [u8; 24]) ->
     let header_bytes = header.to_bytes();
     let cipher = XChaCha20Poly1305::new_from_slice(&seed_bytes)
         .unwrap_or_else(|error| panic!("legacy seed should initialize cipher: {error:?}"));
+    let xnonce = XNonce::from(nonce);
     let ciphertext = cipher
         .encrypt(
-            XNonce::from_slice(&nonce),
+            &xnonce,
             Payload {
                 msg: plaintext,
                 aad: &header_bytes,

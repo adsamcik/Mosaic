@@ -79,12 +79,12 @@ pub fn encrypt_content(
             actual: content_key.as_bytes().len(),
         }
     })?;
-    let nonce = XNonce::from_slice(&nonce_bytes);
+    let nonce = XNonce::from(nonce_bytes);
     let aad = build_content_aad(epoch_id);
 
     let ciphertext = cipher
         .encrypt(
-            nonce,
+            &nonce,
             Payload {
                 msg: plaintext,
                 aad: &aad,
@@ -123,12 +123,12 @@ pub fn decrypt_content(
             actual: content_key.as_bytes().len(),
         }
     })?;
-    let xnonce = XNonce::from_slice(nonce);
+    let xnonce = XNonce::from(*nonce);
     let aad = build_content_aad(epoch_id);
 
     let plaintext = cipher
         .decrypt(
-            xnonce,
+            &xnonce,
             Payload {
                 msg: ciphertext,
                 aad: &aad,

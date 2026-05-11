@@ -20,13 +20,8 @@
 //! caller's scope.
 
 use blake2::Blake2b;
+use blake2::digest::consts::{U16, U32};
 use blake2::digest::{Digest, KeyInit as Blake2KeyInit, Mac as Blake2Mac};
-use blake2::digest::{
-    consts::{U16, U32},
-    typenum::IsLessOrEqual,
-    typenum::NonZero,
-    typenum::U64 as Blake2bMaxKey,
-};
 use crypto_secretbox::aead::Aead;
 use crypto_secretbox::{Nonce as SecretboxNonce, XSalsa20Poly1305};
 use zeroize::{Zeroize, Zeroizing};
@@ -63,21 +58,10 @@ const TS_ACCOUNT_KEY_CONTEXT: &[u8] = b"Mosaic_AccountKey_v1";
 /// Computes `BLAKE2b(out_len = 32, key = key, msg = msg)` matching libsodium's
 /// `crypto_generichash(out_len, msg, key)` exactly.
 fn blake2b_keyed_32(key: &[u8], msg: &[u8]) -> Result<[u8; BLAKE2B_OUT_BYTES], MosaicCryptoError> {
-    fn inner<OutSize>(
-        key: &[u8],
-        msg: &[u8],
-    ) -> Result<blake2::digest::Output<blake2::Blake2bMac<OutSize>>, MosaicCryptoError>
-    where
-        OutSize: blake2::digest::generic_array::ArrayLength<u8> + IsLessOrEqual<Blake2bMaxKey>,
-        blake2::digest::typenum::LeEq<OutSize, Blake2bMaxKey>: NonZero,
-    {
-        let mut mac = <blake2::Blake2bMac<OutSize> as Blake2KeyInit>::new_from_slice(key)
-            .map_err(|_| MosaicCryptoError::InvalidKeyLength { actual: key.len() })?;
-        Blake2Mac::update(&mut mac, msg);
-        Ok(mac.finalize().into_bytes())
-    }
-
-    let bytes = inner::<U32>(key, msg)?;
+    let mut mac = <blake2::Blake2bMac<U32> as Blake2KeyInit>::new_from_slice(key)
+        .map_err(|_| MosaicCryptoError::InvalidKeyLength { actual: key.len() })?;
+    Blake2Mac::update(&mut mac, msg);
+    let bytes = mac.finalize().into_bytes();
     let mut out = [0_u8; BLAKE2B_OUT_BYTES];
     out.copy_from_slice(&bytes);
     Ok(out)
@@ -231,9 +215,9 @@ pub fn wrap_key_secretbox(
             actual: wrapper.as_bytes().len(),
         }
     })?;
-    let nonce = SecretboxNonce::from_slice(&nonce_bytes);
+    let nonce = SecretboxNonce::from(nonce_bytes);
     let ciphertext = cipher
-        .encrypt(nonce, key_bytes)
+        .encrypt(&nonce, key_bytes)
         .map_err(|_| MosaicCryptoError::AuthenticationFailed)?;
 
     let mut output = Vec::with_capacity(SECRETBOX_NONCE_BYTES + ciphertext.len());
@@ -266,7 +250,9 @@ pub fn unwrap_key_secretbox(
         });
     }
 
-    let nonce = SecretboxNonce::from_slice(&wrapped[..SECRETBOX_NONCE_BYTES]);
+    let mut nonce_bytes = [0_u8; SECRETBOX_NONCE_BYTES];
+    nonce_bytes.copy_from_slice(&wrapped[..SECRETBOX_NONCE_BYTES]);
+    let nonce = SecretboxNonce::from(nonce_bytes);
     let ciphertext_and_tag = &wrapped[SECRETBOX_NONCE_BYTES..];
 
     let cipher = XSalsa20Poly1305::new_from_slice(wrapper.as_bytes()).map_err(|_| {
@@ -275,7 +261,7 @@ pub fn unwrap_key_secretbox(
         }
     })?;
     let plaintext = cipher
-        .decrypt(nonce, ciphertext_and_tag)
+        .decrypt(&nonce, ciphertext_and_tag)
         .map_err(|_| MosaicCryptoError::AuthenticationFailed)?;
 
     Ok(Zeroizing::new(plaintext))
