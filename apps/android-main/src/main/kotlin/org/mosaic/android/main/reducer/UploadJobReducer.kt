@@ -224,11 +224,12 @@ class WorkManagerEffectDispatcher(
           jobId = snapshot.jobId,
           stagingUri = input.stagingUri,
           epochHandleId = input.epochHandleId,
-            tier = effect.tier,
-            shardIndex = effect.shardIndex,
-            albumId = UploadJobSnapshotCodec.decode(snapshot.canonicalCborBytes).albumId,
-            photoId = snapshot.jobId,
-          ),
+          tier = effect.tier,
+          shardIndex = effect.shardIndex,
+          albumContentHashHex = input.albumContentHashHex,
+          albumId = UploadJobSnapshotCodec.decode(snapshot.canonicalCborBytes).albumId,
+          photoId = snapshot.jobId,
+        ),
       )
       observer.await(effect)
     }
@@ -265,6 +266,7 @@ interface EffectInputResolver {
 data class EncryptShardWorkInput(
   val stagingUri: String,
   val epochHandleId: Long,
+  val albumContentHashHex: String,
 )
 
 data class UploadShardWorkInput(

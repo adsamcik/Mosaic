@@ -8,7 +8,6 @@ import org.mosaic.android.main.db.UploadQueueDatabase
 import org.mosaic.android.main.upload.ContentHashDedup
 import org.mosaic.android.main.upload.NoOpContentHashDedup
 import org.mosaic.android.main.upload.RoomContentHashDedup
-import org.mosaic.android.main.upload.RustContentHasher
 
 class ShardEncryptionWorker internal constructor(
   appContext: Context,
@@ -35,21 +34,25 @@ class ShardEncryptionWorker internal constructor(
     val shardIndex = inputData.getInt(KEY_SHARD_INDEX, -1)
     val albumId = inputData.getString(KEY_ALBUM_ID)
     val photoId = inputData.getString(KEY_PHOTO_ID)
+    val plaintextSha256Hex = inputData.getString(KEY_ALBUM_CONTENT_HASH_HEX)
+      ?: return Result.failure(workDataOf("error" to "missing_album_content_hash"))
 
     if (epochHandleId == 0L || tier !in MIN_TIER..MAX_TIER || shardIndex < 0) {
       return Result.failure()
+    }
+    if (!ALBUM_CONTENT_HASH_HEX_REGEX.matches(plaintextSha256Hex)) {
+      return Result.failure(workDataOf("error" to "malformed_album_content_hash"))
     }
 
     return try {
       val store = envelopeStore
       val plaintextLength = store.stagingLength(stagingUri)
       val smallPlaintext = if (plaintextLength > STREAMING_THRESHOLD_BYTES) null else store.readStagingBytes(stagingUri)
-      // CONTRACT: see docs/specs/SPEC-UploadContentHash.md. The stream hashed here
-      // MUST contain the source-of-truth user file bytes (BEFORE any transformation).
-      // When MediaTierGenerator wires up, the stager will produce per-tier-encoded
-      // bytes; this worker MUST then accept an album-level content hash as a
-      // parameter instead of recomputing from the staging input.
-      val plaintextSha256Hex = RustContentHasher.sha256Hex(smallPlaintext ?: store.readStagingBytes(stagingUri))
+      // CONTRACT: see docs/specs/SPEC-UploadContentHash.md. This worker now consumes
+      // a precomputed source-of-truth content hash via KEY_ALBUM_CONTENT_HASH_HEX.
+      // The hash MUST be computed once per photo upstream of this worker (in
+      // ShardEncryptionScheduler or its caller). This worker MUST NOT recompute
+      // from the staging input — that input may be a tier-specific encoded JPEG.
       if (!albumId.isNullOrBlank() && !photoId.isNullOrBlank()) {
         val duplicate = contentHashDedup.lookup(albumId, plaintextSha256Hex)
         if (duplicate != null && duplicate.photoId != photoId) {
@@ -108,6 +111,7 @@ class ShardEncryptionWorker internal constructor(
     const val KEY_SHARD_INDEX: String = "shard_index"
     const val KEY_ALBUM_ID: String = "album_id"
     const val KEY_PHOTO_ID: String = "photo_id"
+    const val KEY_ALBUM_CONTENT_HASH_HEX: String = "album_content_hash_hex"
     const val KEY_ENVELOPE_URI: String = "envelope_uri"
     const val KEY_SHA256_HEX: String = "sha256_hex"
     const val KEY_CONTENT_HASH_HEX: String = "content_hash_hex"
@@ -126,5 +130,6 @@ class ShardEncryptionWorker internal constructor(
 
     private const val MIN_TIER: Int = 1
     private const val MAX_TIER: Int = 3
+    private val ALBUM_CONTENT_HASH_HEX_REGEX = Regex("^[0-9a-f]{64}$")
   }
 }

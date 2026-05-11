@@ -54,6 +54,7 @@ class PhotoPickerStagingAdapterTest {
     assertEquals(3, result.size)
     assertEquals(listOf("image/jpeg", "image/png", "image/heic"), result.map { it.mimeType })
     assertEquals(uris.map { it.toString() }, stagedFiles.map { it.displayName })
+    assertEquals(uris.map { "hash-${it.lastPathSegment}" }, result.map { it.albumContentHashHex })
   }
 
   @Test
@@ -99,6 +100,7 @@ class PhotoPickerStagingAdapterTest {
     unstageFile = { staged -> unstagedFiles += staged },
     contentResolver = context.contentResolver,
     ioDispatcher = Dispatchers.Unconfined,
+    albumContentHashFor = { source -> "hash-${source.lastPathSegment}" },
   )
 
   private fun stagedFile(source: Uri): StagedFile {

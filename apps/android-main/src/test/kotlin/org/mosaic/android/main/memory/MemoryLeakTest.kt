@@ -90,6 +90,7 @@ class MemoryLeakTest {
       .putLong(ShardEncryptionWorker.KEY_EPOCH_HANDLE_ID, 42L)
       .putInt(ShardEncryptionWorker.KEY_TIER, 1)
       .putInt(ShardEncryptionWorker.KEY_SHARD_INDEX, 7)
+      .putString(ShardEncryptionWorker.KEY_ALBUM_CONTENT_HASH_HEX, "0".repeat(64))
       .build()
     return TestListenableWorkerBuilder<ShardEncryptionWorker>(context)
       .setInputData(input)

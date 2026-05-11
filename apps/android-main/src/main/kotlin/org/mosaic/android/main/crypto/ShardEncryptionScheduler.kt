@@ -21,6 +21,7 @@ object ShardEncryptionScheduler {
     epochHandleId: Long,
     tier: Int,
     shardIndex: Int,
+    albumContentHashHex: String,
     albumId: String? = null,
     photoId: String? = null,
   ): OneTimeWorkRequest =
@@ -31,6 +32,7 @@ object ShardEncryptionScheduler {
           .putLong(ShardEncryptionWorker.KEY_EPOCH_HANDLE_ID, epochHandleId)
           .putInt(ShardEncryptionWorker.KEY_TIER, tier)
           .putInt(ShardEncryptionWorker.KEY_SHARD_INDEX, shardIndex)
+          .putString(ShardEncryptionWorker.KEY_ALBUM_CONTENT_HASH_HEX, albumContentHashHex)
           .apply {
             if (albumId != null) putString(ShardEncryptionWorker.KEY_ALBUM_ID, albumId)
             if (photoId != null) putString(ShardEncryptionWorker.KEY_PHOTO_ID, photoId)

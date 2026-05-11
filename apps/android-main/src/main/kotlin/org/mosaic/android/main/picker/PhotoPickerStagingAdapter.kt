@@ -7,12 +7,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.mosaic.android.main.staging.AppPrivateStagingManager
 import org.mosaic.android.main.staging.StagedFile
+import org.mosaic.android.main.upload.RustContentHasher
 
 class PhotoPickerStagingAdapter internal constructor(
   private val stageUri: (Uri) -> StagedFile,
   private val unstageFile: (StagedFile) -> Unit,
   private val contentResolver: ContentResolver,
   private val ioDispatcher: CoroutineDispatcher,
+  private val albumContentHashFor: (Uri) -> String,
 ) {
   constructor(
     staging: AppPrivateStagingManager,
@@ -22,6 +24,7 @@ class PhotoPickerStagingAdapter internal constructor(
     unstageFile = staging::unstage,
     contentResolver = contentResolver,
     ioDispatcher = Dispatchers.IO,
+    albumContentHashFor = { sourceUri -> computeAlbumContentHash(contentResolver, sourceUri) },
   )
 
   suspend fun stagePickedItems(
@@ -32,9 +35,11 @@ class PhotoPickerStagingAdapter internal constructor(
     try {
       uris.map { uri ->
         val mimeType = contentResolver.getType(uri) ?: DEFAULT_MIME_TYPE
+        val albumContentHashHex = albumContentHashFor(uri)
         val stagedItem = StagedItem(
           stagedFile = stageUri(uri),
           mimeType = mimeType,
+          albumContentHashHex = albumContentHashHex,
         )
         stagedItems += stagedItem
         stagedItem
@@ -50,10 +55,19 @@ class PhotoPickerStagingAdapter internal constructor(
 
   private companion object {
     const val DEFAULT_MIME_TYPE = "application/octet-stream"
+
+    fun computeAlbumContentHash(contentResolver: ContentResolver, sourceUri: Uri): String {
+      val sourceBytes = contentResolver.openInputStream(sourceUri).use { input ->
+        requireNotNull(input) { "Unable to open source URI for content hashing" }
+        input.readBytes()
+      }
+      return RustContentHasher.sha256Hex(sourceBytes)
+    }
   }
 }
 
 data class StagedItem(
   val stagedFile: StagedFile,
   val mimeType: String,
+  val albumContentHashHex: String,
 )

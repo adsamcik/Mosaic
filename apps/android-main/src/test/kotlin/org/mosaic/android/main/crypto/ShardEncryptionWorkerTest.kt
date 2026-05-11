@@ -157,6 +157,54 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
+  fun workerReadsAlbumContentHashFromInputDataInsteadOfRecomputingFromStager() = runBlocking {
+    val sourceOfTruthBytes = "source-of-truth-user-photo".toByteArray()
+    val tierEncodedBytes = "tier-specific-encoded-jpeg".toByteArray()
+    val staging = stageBytes(tierEncodedBytes)
+    val sourceOfTruthHash = sha256Hex(sourceOfTruthBytes)
+    val tierEncodedHash = sha256Hex(tierEncodedBytes)
+    val dedup = RecordingContentHashDedup()
+    val worker = workerFor(
+      staging,
+      albumId = "album-1",
+      photoId = "photo-transcoded",
+      albumContentHashHex = sourceOfTruthHash,
+      contentHashDedup = dedup,
+    )
+
+    val result = worker.doWork()
+
+    val success = assertSuccessResult(result, "precomputed source hash")
+    assertEquals(sourceOfTruthHash, success.outputData.getString(ShardEncryptionWorker.KEY_CONTENT_HASH_HEX))
+    assertEquals(listOf(Triple("album-1", sourceOfTruthHash, "photo-transcoded")), dedup.recorded)
+    assertTrue("dedup must not record the tier-encoded staging hash", dedup.recorded.none { it.second == tierEncodedHash })
+  }
+
+  @Test
+  fun workerFailsLoudlyOnMissingAlbumContentHash() = runBlocking {
+    val staging = stageBytes("missing-hash".toByteArray())
+    val worker = workerFor(staging, albumContentHashHex = null)
+
+    val result = worker.doWork()
+
+    assertTrue(result is ListenableWorker.Result.Failure)
+    val output = (result as ListenableWorker.Result.Failure).outputData
+    assertEquals("missing_album_content_hash", output.getString("error"))
+  }
+
+  @Test
+  fun workerFailsLoudlyOnMalformedAlbumContentHash() = runBlocking {
+    val staging = stageBytes("malformed-hash".toByteArray())
+    val worker = workerFor(staging, albumContentHashHex = "not-a-hash")
+
+    val result = worker.doWork()
+
+    assertTrue(result is ListenableWorker.Result.Failure)
+    val output = (result as ListenableWorker.Result.Failure).outputData
+    assertEquals("malformed_album_content_hash", output.getString("error"))
+  }
+
+  @Test
   fun recordsContentHashAfterSuccessfulEncryptionWhenAlbumAndPhotoAreProvided() = runBlocking {
     val plaintext = "record-me".toByteArray()
     val staging = stageBytes(plaintext)
@@ -248,6 +296,7 @@ class ShardEncryptionWorkerTest {
       epochHandleId = highBitHandle,
       tier = 2,
       shardIndex = 9,
+      albumContentHashHex = "0".repeat(64),
     )
 
     val storedHandle = request.workSpec.input.getLong(
@@ -266,6 +315,7 @@ class ShardEncryptionWorkerTest {
       epochHandleId = 42L,
       tier = 2,
       shardIndex = 9,
+      albumContentHashHex = "1".repeat(64),
     )
 
     assertTrue(request.tags.contains("upload-job-job-123"))
@@ -275,6 +325,7 @@ class ShardEncryptionWorkerTest {
     assertEquals(42L, request.workSpec.input.getLong(ShardEncryptionWorker.KEY_EPOCH_HANDLE_ID, 0L))
     assertEquals(2, request.workSpec.input.getInt(ShardEncryptionWorker.KEY_TIER, 0))
     assertEquals(9, request.workSpec.input.getInt(ShardEncryptionWorker.KEY_SHARD_INDEX, -1))
+    assertEquals("1".repeat(64), request.workSpec.input.getString(ShardEncryptionWorker.KEY_ALBUM_CONTENT_HASH_HEX))
   }
 
   private fun workerFor(
@@ -284,6 +335,7 @@ class ShardEncryptionWorkerTest {
     shardIndex: Int = 7,
     albumId: String? = null,
     photoId: String? = null,
+    albumContentHashHex: String? = sha256Hex(staging.readBytes()),
     runAttemptCount: Int = 0,
     crypto: ShardCryptoEngine = RecordingCryptoEngine(),
     contentHashDedup: ContentHashDedup = NoOpContentHashDedup,
@@ -295,6 +347,9 @@ class ShardEncryptionWorkerTest {
       .putInt(ShardEncryptionWorker.KEY_SHARD_INDEX, shardIndex)
     if (albumId != null) inputBuilder.putString(ShardEncryptionWorker.KEY_ALBUM_ID, albumId)
     if (photoId != null) inputBuilder.putString(ShardEncryptionWorker.KEY_PHOTO_ID, photoId)
+    if (albumContentHashHex != null) {
+      inputBuilder.putString(ShardEncryptionWorker.KEY_ALBUM_CONTENT_HASH_HEX, albumContentHashHex)
+    }
     val input = inputBuilder.build()
     return TestListenableWorkerBuilder<ShardEncryptionWorker>(context)
       .setInputData(input)

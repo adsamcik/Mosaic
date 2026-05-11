@@ -233,6 +233,7 @@ class ShardUploadWorkerTest {
       epochHandleId = 42L,
       tier = 2,
       shardIndex = 3,
+      albumContentHashHex = "2".repeat(64),
       shardId = "shard-3",
       tusEndpoint = "https://uploads.example.test/files",
     )

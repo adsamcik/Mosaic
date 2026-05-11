@@ -6,10 +6,11 @@
 upload-time content-hash invariant introduced in `b5b30f9` and guarded by the
 Rust/WASM/UniFFI parity surfaces added through `d3ea340`.
 
-This document does not refactor Android upload. The Android worker still hashes
-its staging input today. The lock exists so the future MediaTierGenerator /
-BitmapTierEncoder wiring either preserves the album-level source-byte hash or
-fails a parity test loudly.
+Android now enforces the lock at the worker boundary: shard encryption receives
+the album-level source-byte hash as WorkData instead of recomputing it from
+staging bytes. The lock exists so the future MediaTierGenerator /
+BitmapTierEncoder wiring preserves the album-level source-byte hash and fails
+loudly if callers omit or malform it.
 
 ## Purpose
 
@@ -96,22 +97,22 @@ encrypt shards, but those later bytes are not the album content-hash input.
 
 ## Android invocation
 
-Android currently obtains the same semantics by coincidence of the staging
-implementation:
+Android obtains the same semantics by computing the hash upstream of shard
+encryption and passing it through WorkData:
 
 | Path | Current evidence |
 | --- | --- |
-| `apps/android-main/src/main/kotlin/org/mosaic/android/main/staging/AppPrivateStagingManager.kt:34-43` | Opens the picked source URI and copies it verbatim into app-private staging. |
+| `apps/android-main/src/main/kotlin/org/mosaic/android/main/picker/PhotoPickerStagingAdapter.kt` | Opens the picked source URI and computes `albumContentHashHex` from source-of-truth bytes before staging output can become tier-specific. |
+| `apps/android-main/src/main/kotlin/org/mosaic/android/main/staging/AppPrivateStagingManager.kt:34-43` | Opens the picked source URI and copies it into app-private staging for the current copy-only stager. |
 | `apps/android-main/src/main/kotlin/org/mosaic/android/main/crypto/ShardEnvelopeStore.kt:14-25` | Reads the staged file or content URI bytes back as the encryption worker input. |
-| `apps/android-main/src/main/kotlin/org/mosaic/android/main/crypto/ShardEncryptionWorker.kt:43-52` | Reads staging bytes and computes `plaintextSha256Hex` with `RustContentHasher.sha256Hex(...)`. |
+| `apps/android-main/src/main/kotlin/org/mosaic/android/main/crypto/ShardEncryptionScheduler.kt` | Passes precomputed `KEY_ALBUM_CONTENT_HASH_HEX` into `ShardEncryptionWorker` WorkData. |
+| `apps/android-main/src/main/kotlin/org/mosaic/android/main/crypto/ShardEncryptionWorker.kt` | Reads and validates `KEY_ALBUM_CONTENT_HASH_HEX` and uses it for dedup lookup/recording without hashing staging input. |
 | `apps/android-main/src/main/kotlin/org/mosaic/android/main/upload/RustContentHasher.kt:13-18` | Calls the UniFFI Rust core `sha256OfBytes` export and lower-hex encodes the 32-byte digest. |
 | `crates/mosaic-uniffi/src/lib.rs:2451-2459` | Exposes `sha256_of_bytes` and `sha256_hex_of_bytes` to native clients. |
 | `crates/mosaic-uniffi/src/lib.rs:2476-2480` | Exposes `compute_plaintext_content_hash(bytes)` as SHA-256 lowercase hex. |
 
-Because the only production Android stager copies the source URI verbatim,
-the worker's staging-input hash is currently also a source-file hash. That
-relationship is not architectural; it depends on the stager continuing to be a
-copy-only stage.
+Because the worker no longer hashes staging input, Android's dedup key no
+longer depends on the stager remaining copy-only.
 
 ## Cross-platform parity assertion
 
@@ -181,10 +182,21 @@ Have I seen this encoded thumbnail/preview/original shard in this album?
 
 That is the Sweep A Finding 4.2 semantic divergence.
 
-## Required mitigation for the future refactor
+### Lock status update
 
-The future Android refactor must compute one album-level content hash over the
-source URI bytes before tier generation and pass it into shard encryption:
+The Android `ShardEncryptionWorker` no longer recomputes the content hash from
+the staging input. It now consumes a precomputed
+`KEY_ALBUM_CONTENT_HASH_HEX` parameter from WorkData (regex
+`^[0-9a-f]{64}$`). The hash is computed UPSTREAM of the worker by the
+scheduler (or its caller) over the source-of-truth user file bytes. This
+guarantees the contract holds even when `MediaTierGenerator` /
+`BitmapTierEncoder` lands and the staging output becomes tier-specific encoded
+bytes.
+
+## Implemented Android mitigation
+
+Android computes one album-level content hash over the source URI bytes before
+tier generation and passes it into shard encryption:
 
 ```text
 albumContentHashHex = SHA-256(source URI bytes)
@@ -196,13 +208,10 @@ ShardEncryptionWorker(
 )
 ```
 
-The worker must then use `albumContentHashHex` for dedup lookup/recording and
-use any per-shard hash only for envelope cache keys, local integrity, or shard
-diagnostics. Recomputing the dedup hash from per-tier staging input after tier
-generation violates this SPEC.
-
-That refactor is intentionally out of scope here and tracked separately as
-`portable-a-3-content-hash-semantic-divergence`.
+The worker uses `albumContentHashHex` for dedup lookup/recording. Any future
+per-shard hash may only be used for envelope cache keys, local integrity, or
+shard diagnostics. Recomputing the dedup hash from per-tier staging input after
+tier generation violates this SPEC.
 
 ## Dedup semantics
 

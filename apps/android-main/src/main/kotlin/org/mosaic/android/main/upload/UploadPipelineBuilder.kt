@@ -13,6 +13,7 @@ object UploadPipelineBuilder {
     epochHandleId: Long,
     tier: Int,
     shardIndex: Int,
+    albumContentHashHex: String,
     shardId: String,
     tusEndpoint: String,
     metadataSignature: String? = null,
@@ -25,6 +26,7 @@ object UploadPipelineBuilder {
       epochHandleId = epochHandleId,
       tier = tier,
       shardIndex = shardIndex,
+      albumContentHashHex = albumContentHashHex,
       albumId = albumId,
       photoId = photoId,
     )
