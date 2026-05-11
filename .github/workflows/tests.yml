@@ -203,6 +203,9 @@ jobs:
       - name: Run rust-no-secret-logs architecture guard
         run: bash ./tests/architecture/rust-no-secret-logs.sh
 
+      - name: Run rust-crypto-primitive-boundary architecture guard
+        run: bash ./tests/architecture/rust-crypto-primitive-boundary.sh
+
       - name: Run rust-cutover-boundary PowerShell architecture guard
         run: pwsh ./tests/architecture/rust-cutover-boundary.ps1
 

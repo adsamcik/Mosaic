@@ -28,7 +28,6 @@ use mosaic_crypto::{
     wrap_tier_key_for_link as crypto_wrap_tier_key_for_link,
 };
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader, ShardTier};
-use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -2317,8 +2316,8 @@ pub fn verify_shard_integrity_sha256(
     }
 
     let ciphertext = &envelope_bytes[mosaic_domain::SHARD_ENVELOPE_HEADER_LEN..];
-    let digest = Sha256::digest(ciphertext);
-    let digest_bytes: &[u8] = digest.as_ref();
+    let digest = mosaic_crypto::sha256_bytes(ciphertext);
+    let digest_bytes: &[u8] = &digest;
     Ok(bool::from(digest_bytes.ct_eq(expected_sha256)))
 }
 

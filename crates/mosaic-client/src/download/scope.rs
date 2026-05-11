@@ -15,11 +15,6 @@
 //! functions as a pseudonymous handle for storage partitioning; callers
 //! MUST treat it as opaque and MUST NOT log it.
 
-use blake2::{
-    Blake2bVar,
-    digest::{Update, VariableOutput},
-};
-
 use crate::download::snapshot::JobId;
 
 /// Domain-separation tag burnt into every scope-key derivation. Bumping the
@@ -37,12 +32,8 @@ pub enum ScopeError {
 /// Derive the authenticated-user scope key for the given non-secret account
 /// identifier (a UUID string in current usage).
 pub fn derive_auth_scope(account_id: &str) -> Result<String, ScopeError> {
-    let mut hasher = Blake2bVar::new(16).map_err(|_| ScopeError::DigestUnavailable)?;
-    hasher.update(account_id.as_bytes());
-    hasher.update(DOMAIN_TAG);
     let mut out = [0_u8; 16];
-    hasher
-        .finalize_variable(&mut out)
+    mosaic_crypto::blake2b_var_chunks(&mut out, &[account_id.as_bytes(), DOMAIN_TAG])
         .map_err(|_| ScopeError::DigestUnavailable)?;
     Ok(format!("auth:{}", to_hex(&out)))
 }
@@ -54,15 +45,17 @@ pub fn derive_visitor_scope(
     link_id: &str,
     grant_token: Option<&str>,
 ) -> Result<String, ScopeError> {
-    let mut hasher = Blake2bVar::new(16).map_err(|_| ScopeError::DigestUnavailable)?;
-    hasher.update(link_id.as_bytes());
-    hasher.update(&[0_u8]);
-    hasher.update(grant_token.unwrap_or("").as_bytes());
-    hasher.update(DOMAIN_TAG);
     let mut out = [0_u8; 16];
-    hasher
-        .finalize_variable(&mut out)
-        .map_err(|_| ScopeError::DigestUnavailable)?;
+    mosaic_crypto::blake2b_var_chunks(
+        &mut out,
+        &[
+            link_id.as_bytes(),
+            &[0_u8],
+            grant_token.unwrap_or("").as_bytes(),
+            DOMAIN_TAG,
+        ],
+    )
+    .map_err(|_| ScopeError::DigestUnavailable)?;
     Ok(format!("visitor:{}", to_hex(&out)))
 }
 

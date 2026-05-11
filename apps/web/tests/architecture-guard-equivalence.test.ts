@@ -118,6 +118,14 @@ function bashPatternRegexes(source: string): string[] {
   return match?.groups?.body ? uniqueSorted(quotedValues(match.groups.body).map(normalizeRegex)) : [];
 }
 
+function bashAssocKeys(variableName: string): (source: string) => string[] {
+  return (source: string): string[] => {
+    const match = new RegExp(`declare\\s+-A\\s+${variableName}\\s*=\\s*\\((?<body>[\\s\\S]*?)\\n\\)`).exec(source);
+    if (!match?.groups?.body) return [];
+    return uniqueSorted([...match.groups.body.matchAll(/\[\s*['"]([^'"]+)['"]\s*\]=/g)].map((entry) => entry[1]));
+  };
+}
+
 function psPatternNames(source: string): string[] {
   return uniqueSorted([...source.matchAll(/Name\s*=\s*'([^']+)'/g)].map((entry) => entry[1]));
 }
@@ -172,6 +180,17 @@ const guardPairs: GuardPair[] = [
     ps1: 'tests/architecture/rust-no-secret-logs.ps1',
     sh: 'tests/architecture/rust-no-secret-logs.sh',
     checks: [{ label: 'logging regexes', ps: psPatternRegexes, sh: bashCaseRegexes }],
+  },
+  {
+    name: 'rust-crypto-primitive-boundary',
+    ps1: 'tests/architecture/rust-crypto-primitive-boundary.ps1',
+    sh: 'tests/architecture/rust-crypto-primitive-boundary.sh',
+    checks: [
+      { label: 'crate roots', ps: psArray('CrateRoots'), sh: bashArray('CRATE_ROOTS') },
+      { label: 'allowlist keys', ps: psHashtableKeys('AllowedFiles'), sh: bashAssocKeys('ALLOWED_FILES') },
+      { label: 'pattern names', ps: psPatternNames, sh: bashArray('PATTERN_NAMES') },
+      { label: 'pattern regexes', ps: psPatternRegexes, sh: bashPatternRegexes },
+    ],
   },
   {
     name: 'web-no-direct-console',

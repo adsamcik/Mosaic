@@ -2409,7 +2409,22 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 /// # Errors
 /// Returns `InvalidInputLength` if `out` has an unsupported BLAKE2b output length.
 pub fn blake2b_var(out: &mut [u8], data: &[u8]) -> Result<(), MosaicCryptoError> {
-    <Blake2bVar as blake2::digest::VariableOutput>::digest_variable(data, out)
+    blake2b_var_chunks(out, &[data])
+}
+
+/// Writes an unkeyed variable-length BLAKE2b digest of concatenated `chunks` into `out`.
+///
+/// `out` must be between 1 and 64 bytes, matching BLAKE2b's variable-output bounds.
+///
+/// # Errors
+/// Returns `InvalidInputLength` if `out` has an unsupported BLAKE2b output length.
+pub fn blake2b_var_chunks(out: &mut [u8], chunks: &[&[u8]]) -> Result<(), MosaicCryptoError> {
+    let mut hasher = <Blake2bVar as blake2::digest::VariableOutput>::new(out.len())
+        .map_err(|_| MosaicCryptoError::InvalidInputLength { actual: out.len() })?;
+    for chunk in chunks {
+        blake2::digest::Update::update(&mut hasher, chunk);
+    }
+    <Blake2bVar as blake2::digest::VariableOutput>::finalize_variable(hasher, out)
         .map_err(|_| MosaicCryptoError::InvalidInputLength { actual: out.len() })
 }
 

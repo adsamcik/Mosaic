@@ -15,10 +15,6 @@
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use blake2::{
-    Blake2bVar,
-    digest::{Update, VariableOutput},
-};
 use ciborium::value::{Integer, Value};
 use mosaic_domain::ShardTier;
 
@@ -444,12 +440,8 @@ impl DownloadJobSnapshot {
 }
 
 fn checksum_body(body: &[u8]) -> Result<[u8; 32], DownloadSnapshotError> {
-    let mut hasher = Blake2bVar::new(32).map_err(|_| DownloadSnapshotError::SchemaCorrupt)?;
-    hasher.update(body);
     let mut out = [0_u8; 32];
-    hasher
-        .finalize_variable(&mut out)
-        .map_err(|_| DownloadSnapshotError::SchemaCorrupt)?;
+    mosaic_crypto::blake2b_var(&mut out, body).map_err(|_| DownloadSnapshotError::SchemaCorrupt)?;
     Ok(out)
 }
 
