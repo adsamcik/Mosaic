@@ -6,6 +6,7 @@ import type {
   UploadEvent,
   UploadInitInput,
   UploadJobSnapshot,
+  UploadPhase,
 } from '../upload-adapter-port';
 
 const initInput: UploadInitInput = {
@@ -16,7 +17,7 @@ const initInput: UploadInitInput = {
   maxRetryCount: 3,
 };
 
-function snapshot(phase: string, lastEffectId = ''): UploadJobSnapshot {
+function snapshot(phase: UploadPhase, lastEffectId = ''): UploadJobSnapshot {
   return {
     schemaVersion: 1,
     jobId: initInput.jobId,
@@ -108,7 +109,7 @@ describe('RustUploadAdapter', () => {
       if (current.lastEffectId === snapshotAfterA.lastEffectId && event.effectId === snapshotAfterAB.lastEffectId) {
         return snapshotAfterAB;
       }
-      return snapshot('Unexpected', event.effectId);
+      return snapshot('Failed', event.effectId);
     });
     const persistence = new TrackingUploadPersistence();
     const adapter = new RustUploadAdapter(port, persistence);
@@ -155,7 +156,7 @@ describe('RustUploadAdapter', () => {
       if (current.lastEffectId === snapshotAfterSlowA.lastEffectId && event.effectId === snapshotAfterSlowAB.lastEffectId) {
         return snapshotAfterSlowAB;
       }
-      return snapshot('Unexpected', event.effectId);
+      return snapshot('Failed', event.effectId);
     });
     const persistence = new TrackingUploadPersistence();
     const adapter = new RustUploadAdapter(port, persistence);
@@ -249,3 +250,4 @@ describe('RustUploadAdapter', () => {
     await expect(adapter.start(initInput)).rejects.toThrow('upload persistence failed');
   });
 });
+

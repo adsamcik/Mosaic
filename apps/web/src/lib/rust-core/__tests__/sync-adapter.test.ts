@@ -6,6 +6,7 @@ import type {
   SyncAdapterPort,
   SyncEffect,
   SyncEvent,
+  SyncPhase,
 } from '../upload-adapter-port';
 
 const initInput: AlbumSyncInitInput = {
@@ -16,7 +17,7 @@ const initInput: AlbumSyncInitInput = {
   maxRetryCount: 4,
 };
 
-function snapshot(phase: string, cursor = ''): AlbumSyncSnapshot {
+function snapshot(phase: SyncPhase, cursor = ''): AlbumSyncSnapshot {
   return {
     schemaVersion: 1,
     albumId: initInput.albumId,
@@ -102,7 +103,7 @@ describe('RustSyncAdapter', () => {
       if (current.activeCursor === snapshotAfterA.activeCursor && event.nextCursor === snapshotAfterAB.activeCursor) {
         return snapshotAfterAB;
       }
-      return snapshot('Unexpected', event.nextCursor ?? 'unexpected');
+      return snapshot('Failed', event.nextCursor ?? 'unexpected');
     });
     const persistence = new TrackingSyncPersistence();
     const adapter = new RustSyncAdapter(port, persistence);
@@ -143,7 +144,7 @@ describe('RustSyncAdapter', () => {
       if (current.activeCursor === snapshotAfterSlowA.activeCursor && event.nextCursor === snapshotAfterSlowAB.activeCursor) {
         return snapshotAfterSlowAB;
       }
-      return snapshot('Unexpected', event.nextCursor ?? 'unexpected');
+      return snapshot('Failed', event.nextCursor ?? 'unexpected');
     });
     const persistence = new TrackingSyncPersistence();
     const adapter = new RustSyncAdapter(port, persistence);
@@ -218,3 +219,4 @@ describe('RustSyncAdapter', () => {
     await expect(adapter.start(initInput)).rejects.toThrow('sync persistence failed');
   });
 });
+

@@ -1,6 +1,7 @@
 import type {
   AlbumSyncInitInput,
   AlbumSyncSnapshot,
+  SyncPhase,
   SyncAdapterPort,
   SyncEffect,
   SyncEvent,
@@ -9,6 +10,7 @@ import type {
   UploadEvent,
   UploadInitInput,
   UploadJobSnapshot,
+  UploadPhase,
   WasmAdvanceAlbumSyncBinding,
   WasmAdvanceUploadJobBinding,
   WasmClientCoreSurfaceBinding,
@@ -24,7 +26,7 @@ interface UploadSnapshotJson {
   readonly schemaVersion: number;
   readonly jobId: string;
   readonly albumId: string;
-  readonly phase: string;
+  readonly phase: UploadPhase;
   readonly shardRefCount: number;
 }
 
@@ -32,7 +34,7 @@ interface AlbumSyncSnapshotJson {
   readonly code: number;
   readonly schemaVersion: number;
   readonly albumId: string;
-  readonly phase: string;
+  readonly phase: SyncPhase;
   readonly rerunRequested: boolean;
 }
 
@@ -315,7 +317,7 @@ function isUploadSnapshotJson(value: unknown): value is UploadSnapshotJson {
     typeof candidate.schemaVersion === 'number' &&
     typeof candidate.jobId === 'string' &&
     typeof candidate.albumId === 'string' &&
-    typeof candidate.phase === 'string' &&
+    isUploadPhase(candidate.phase) &&
     typeof candidate.shardRefCount === 'number'
   );
 }
@@ -326,7 +328,37 @@ function isAlbumSyncSnapshotJson(value: unknown): value is AlbumSyncSnapshotJson
     typeof candidate.code === 'number' &&
     typeof candidate.schemaVersion === 'number' &&
     typeof candidate.albumId === 'string' &&
-    typeof candidate.phase === 'string' &&
+    isSyncPhase(candidate.phase) &&
     typeof candidate.rerunRequested === 'boolean'
   );
+}
+
+function isUploadPhase(value: unknown): value is UploadPhase {
+  return typeof value === 'string' && [
+    'Queued',
+    'AwaitingPreparedMedia',
+    'AwaitingEpochHandle',
+    'EncryptingShard',
+    'CreatingShardUpload',
+    'UploadingShard',
+    'CreatingManifest',
+    'ManifestCommitUnknown',
+    'AwaitingSyncConfirmation',
+    'RetryWaiting',
+    'Confirmed',
+    'Cancelled',
+    'Failed',
+  ].includes(value);
+}
+
+function isSyncPhase(value: unknown): value is SyncPhase {
+  return typeof value === 'string' && [
+    'Idle',
+    'FetchingPage',
+    'ApplyingPage',
+    'RetryWaiting',
+    'Completed',
+    'Cancelled',
+    'Failed',
+  ].includes(value);
 }
