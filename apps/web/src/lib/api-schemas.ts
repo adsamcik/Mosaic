@@ -55,6 +55,7 @@ const IsoDateTimeSchema = z.string().datetime({ offset: true });
  * blob.
  */
 const Base64Schema = z.string().base64();
+const Sha256HexSchema = z.string().regex(/^[0-9a-f]{64}$/);
 
 /**
  * AccessTier enum coming back as a numeric literal (1=THUMB, 2=PREVIEW,
@@ -226,6 +227,18 @@ export type CreateEpochKeyResponse = z.infer<
 // Manifests
 // =============================================================================
 
+export const ManifestShardProjectionSchema = z.object({
+  shardId: UuidSchema,
+  tier: AccessTierSchema,
+  shardIndex: z.number().int().nonnegative(),
+  sha256: Sha256HexSchema,
+  contentLength: z.number().int().nonnegative(),
+  envelopeVersion: z.number().int().positive(),
+});
+export type ManifestShardProjection = z.infer<
+  typeof ManifestShardProjectionSchema
+>;
+
 export const ManifestRecordSchema = z.object({
   id: UuidSchema,
   albumId: UuidSchema,
@@ -239,6 +252,7 @@ export const ManifestRecordSchema = z.object({
   // that at the schema level — the manifest signature already binds them
   // cryptographically).
   shardIds: z.array(z.string()),
+  shards: z.array(ManifestShardProjectionSchema).default([]),
   createdAt: IsoDateTimeSchema,
   updatedAt: IsoDateTimeSchema.nullish(),
 });
@@ -259,7 +273,7 @@ export const ManifestFinalizeResponseSchema = z.object({
     shardId: UuidSchema,
     tier: z.number().int().min(1).max(3),
     shardIndex: z.number().int().nonnegative(),
-    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    sha256: Sha256HexSchema,
     contentLength: z.number().int().positive(),
     envelopeVersion: z.number().int().min(3).max(4),
   }).strict()),
