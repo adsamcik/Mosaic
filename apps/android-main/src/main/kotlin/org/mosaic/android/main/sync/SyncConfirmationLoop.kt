@@ -34,6 +34,7 @@ class SyncConfirmationLoop internal constructor(
     maxDelayMs = maxDelayMs,
     timeoutMs = timeoutMs,
     randomDelayMs = { bound ->
+      // Equal Jitter (Calder taxonomy): sleep = base/2 + rand[0, base/2). Bounds sleep to [base/2, base).
       val baseDelay = bound / 2
       val jitterRange = bound - baseDelay
       baseDelay + Random.nextLong(jitterRange)

@@ -60,7 +60,7 @@ class SyncConfirmationLoopTest {
   }
 
   @Test
-  fun confirmUsesDecorrelatedJitterWithinUpperHalfOfCurrentBackoffRange() = runBlocking {
+  fun confirmUsesEqualJitterWithinUpperHalfOfCurrentBackoffRange() = runBlocking {
     val bounds = mutableListOf<Long>()
     val sleeps = mutableListOf<Long>()
     val loop = loopWithResponses(
