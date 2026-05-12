@@ -189,10 +189,11 @@ describe('UploadContext Rust-core upload rollout flag', () => {
         '018f0000-0000-7000-8000-000000000403',
         3,
       );
-      expect(mocks.advanceUploadJob).toHaveBeenCalledOnce();
+      expect(mocks.advanceUploadJob).toHaveBeenCalledTimes(2);
       expect(mocks.advanceUploadJob.mock.calls[0]?.[10]).toBe('StartRequested');
       expect(mocks.advanceUploadJob.mock.calls[0]?.[11]).toBe('018f0000-0000-7000-8000-000000000404');
       expect(mocks.advanceUploadJob.mock.calls[0]?.[11]).not.toBe(mocks.advanceUploadJob.mock.calls[0]?.[9]);
+      expect(mocks.advanceUploadJob.mock.calls[1]?.[10]).toBe('EpochHandleAcquired');
       expect(mocks.uploadQueueAdd).toHaveBeenCalledOnce();
     } finally {
       cleanup();

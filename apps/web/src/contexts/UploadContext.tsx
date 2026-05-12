@@ -375,6 +375,8 @@ export function UploadProvider({ children }: UploadProviderProps) {
             effectId: createUuidV7(),
           });
         } catch (rustErr) {
+          rustJobId = undefined;
+          rustAdapter = undefined;
           log.warn('Rust upload preflight failed; falling back to legacy upload executor:', {
             error: rustErr instanceof Error ? rustErr.message : String(rustErr),
           });
@@ -406,13 +408,20 @@ export function UploadProvider({ children }: UploadProviderProps) {
       log.info(
         `Adding file to upload queue: ${file.name}, albumId=${albumId}, epochId=${epochKey.epochId}`,
       );
-      const taskId = await uploadQueue.add(
-        file,
-        albumId,
-        epochKey.epochId,
-        epochKey.epochHandleId,
-        rustJobId,
-      );
+      const taskId = rustJobId
+        ? await uploadQueue.add(
+          file,
+          albumId,
+          epochKey.epochId,
+          epochKey.epochHandleId,
+          rustJobId,
+        )
+        : await uploadQueue.add(
+          file,
+          albumId,
+          epochKey.epochId,
+          epochKey.epochHandleId,
+        );
       if (rustAdapter) {
         rustAdaptersByTaskId.current.set(taskId, rustAdapter);
       }
