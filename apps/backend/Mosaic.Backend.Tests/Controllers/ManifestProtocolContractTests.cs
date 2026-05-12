@@ -61,7 +61,11 @@ public class ManifestProtocolContractTests
             currentVersion = document.RootElement.GetProperty("currentVersion"),
             manifestId = document.RootElement.GetProperty("manifestId"),
             manifestUrl = document.RootElement.GetProperty("manifestUrl"),
-            expectedSha256 = document.RootElement.GetProperty("expectedSha256")
+            expectedSha256 = document.RootElement.GetProperty("expectedSha256"),
+            manifests = document.RootElement.GetProperty("manifests"),
+            currentEpochId = document.RootElement.GetProperty("currentEpochId"),
+            albumVersion = document.RootElement.GetProperty("albumVersion"),
+            hasMore = document.RootElement.GetProperty("hasMore")
         };
         Assert.Equal(album.Id, syncShape.albumId.GetGuid());
         Assert.Equal(42, syncShape.currentVersion.GetInt64());

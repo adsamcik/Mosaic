@@ -3,5 +3,32 @@
   "currentVersion": "number",
   "manifestId": "string",
   "manifestUrl": "string",
-  "expectedSha256": "string"
+  "expectedSha256": "string",
+  "manifests": [
+    {
+      "id": "string",
+      "albumId": "string",
+      "versionCreated": "number",
+      "isDeleted": "boolean",
+      "encryptedMeta": "string",
+      "signature": "string",
+      "signerPubkey": "string",
+      "shardIds": [
+        "string"
+      ],
+      "shards": [
+        {
+          "shardId": "string",
+          "tier": "number",
+          "shardIndex": "number",
+          "sha256": "string",
+          "contentLength": "number",
+          "envelopeVersion": "number"
+        }
+      ]
+    }
+  ],
+  "currentEpochId": "number",
+  "albumVersion": "number",
+  "hasMore": "boolean"
 }
