@@ -46,9 +46,11 @@ builder.Services.AddScoped<IQuotaSettingsService, QuotaSettingsService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IEpochKeyRotationService, EpochKeyRotationService>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<IdempotencyOptions>(builder.Configuration.GetSection("Idempotency"));
 builder.Services.AddScoped<IAlbumExpirationService, AlbumExpirationService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHostedService<GarbageCollectionService>();
+builder.Services.AddHostedService<IdempotencyRecordCleanupHostedService>();
 builder.Services.AddExceptionHandler<DatabaseExceptionHandler>();
 builder.Services.AddProblemDetails();
 
