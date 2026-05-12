@@ -1,7 +1,8 @@
 /**
- * Tiny feature-flag module. Flags default OFF and are read once at module
- * load from `import.meta.env`. Production builds bake the value in; for
- * dev, set `VITE_FEATURE_<NAME>=1` in `.env.local`.
+ * Tiny feature-flag module. Sidecar flags are read once at module load from
+ * `import.meta.env` via `VITE_FEATURE_SIDECAR` and
+ * `VITE_FEATURE_SIDECAR_TELEMETRY`. Production builds bake those values in.
+ * The Rust upload rollout flag is localStorage/test-override only.
  *
  * To force a flag on at runtime in tests, use `__setFeatureFlagForTests`.
  */
@@ -12,8 +13,6 @@ interface FeatureFlagEnv {
 }
 
 export interface FeatureFlags {
-  readonly rustCoreFinalize: boolean;
-  readonly rustCoreSync: boolean;
   readonly rustCoreUpload: boolean;
   readonly sidecar: boolean;
   readonly sidecarTelemetry: boolean;
@@ -34,8 +33,6 @@ const env: FeatureFlagEnv =
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 const DEFAULT_FEATURE_FLAGS: FeatureFlags = Object.freeze({
-  rustCoreFinalize: false,
-  rustCoreSync: false,
   rustCoreUpload: false,
   /**
    * Sidecar Beacon — "Send to my phone" download output mode + /pair receive page.

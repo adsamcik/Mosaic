@@ -8,8 +8,6 @@ import {
 
 const STORAGE_KEY = 'mosaic.feature-flags';
 const DEFAULT_FLAGS = {
-  rustCoreFinalize: false,
-  rustCoreSync: false,
   rustCoreUpload: false,
   sidecar: false,
   sidecarTelemetry: false,
@@ -60,16 +58,12 @@ describe('FeatureFlagsManager', () => {
 
   it('saves and loads persisted flags', () => {
     FeatureFlagsManager.save({
-      rustCoreFinalize: true,
-      rustCoreSync: true,
       rustCoreUpload: true,
       sidecar: true,
       sidecarTelemetry: true,
     });
 
     expect(FeatureFlagsManager.load()).toEqual({
-      rustCoreFinalize: true,
-      rustCoreSync: true,
       rustCoreUpload: true,
       sidecar: true,
       sidecarTelemetry: true,
@@ -78,19 +72,15 @@ describe('FeatureFlagsManager', () => {
 
   it('toggles one flag while preserving the others', () => {
     FeatureFlagsManager.save({
-      rustCoreFinalize: false,
-      rustCoreSync: true,
       rustCoreUpload: true,
       sidecar: true,
       sidecarTelemetry: false,
     });
 
-    FeatureFlagsManager.save({ rustCoreSync: false });
+    FeatureFlagsManager.save({ rustCoreUpload: false });
 
     expect(FeatureFlagsManager.load()).toEqual({
-      rustCoreFinalize: false,
-      rustCoreSync: false,
-      rustCoreUpload: true,
+      rustCoreUpload: false,
       sidecar: true,
       sidecarTelemetry: false,
     });
