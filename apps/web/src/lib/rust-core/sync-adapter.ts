@@ -29,6 +29,14 @@ interface AlbumSyncSnapshotRecord {
   readonly rustCoreSnapshot: AlbumSyncSnapshot;
 }
 
+export interface RustCoreSyncSchemaVersionMismatchTelemetry {
+  warn(event: {
+    readonly warning: 'SchemaVersionMismatch';
+    readonly adapter: 'sync';
+    readonly expectedSchemaVersion: number;
+  }): void;
+}
+
 export interface AlbumSyncSnapshotPersistence {
   put(snapshot: AlbumSyncSnapshot): Promise<void>;
   get(snapshotId: string): Promise<AlbumSyncSnapshot | null>;
@@ -42,6 +50,8 @@ export interface RustSyncAdapterResult {
 export class IdbAlbumSyncSnapshotPersistence implements AlbumSyncSnapshotPersistence {
   private db: Promise<IDBPDatabase<AlbumSyncSnapshotDb>> | null = null;
 
+  constructor(private readonly telemetry?: RustCoreSyncSchemaVersionMismatchTelemetry) {}
+
   async put(snapshot: AlbumSyncSnapshot): Promise<void> {
     const db = await this.open();
     await db.put(ALBUM_SYNC_STORE_NAME, toAlbumSyncSnapshotRecord(snapshot));
@@ -51,6 +61,13 @@ export class IdbAlbumSyncSnapshotPersistence implements AlbumSyncSnapshotPersist
     const db = await this.open();
     const record = await db.get(ALBUM_SYNC_STORE_NAME, snapshotId);
     if (!isAlbumSyncSnapshotRecord(record)) {
+      if (isAlbumSyncSnapshotSchemaVersionMismatch(record)) {
+        this.telemetry?.warn({
+          warning: 'SchemaVersionMismatch',
+          adapter: 'sync',
+          expectedSchemaVersion: ALBUM_SYNC_SNAPSHOT_RECORD_VERSION,
+        });
+      }
       return null;
     }
     return cloneAlbumSyncSnapshot(record.rustCoreSnapshot);
@@ -69,15 +86,31 @@ export class IdbAlbumSyncSnapshotPersistence implements AlbumSyncSnapshotPersist
 }
 
 export class InMemoryAlbumSyncSnapshotPersistence implements AlbumSyncSnapshotPersistence {
-  private readonly snapshots = new Map<string, AlbumSyncSnapshot>();
+  private readonly snapshots = new Map<string, unknown>();
+
+  constructor(private readonly telemetry?: RustCoreSyncSchemaVersionMismatchTelemetry) {}
 
   async put(snapshot: AlbumSyncSnapshot): Promise<void> {
-    this.snapshots.set(snapshot.albumId, cloneAlbumSyncSnapshot(snapshot));
+    this.snapshots.set(snapshot.albumId, toAlbumSyncSnapshotRecord(snapshot));
   }
 
   async get(snapshotId: string): Promise<AlbumSyncSnapshot | null> {
-    const snapshot = this.snapshots.get(snapshotId);
-    return snapshot === undefined ? null : cloneAlbumSyncSnapshot(snapshot);
+    const record = this.snapshots.get(snapshotId);
+    if (!isAlbumSyncSnapshotRecord(record)) {
+      if (isAlbumSyncSnapshotSchemaVersionMismatch(record)) {
+        this.telemetry?.warn({
+          warning: 'SchemaVersionMismatch',
+          adapter: 'sync',
+          expectedSchemaVersion: ALBUM_SYNC_SNAPSHOT_RECORD_VERSION,
+        });
+      }
+      return null;
+    }
+    return cloneAlbumSyncSnapshot(record.rustCoreSnapshot);
+  }
+
+  putRawRecordForTests(snapshotId: string, record: unknown): void {
+    this.snapshots.set(snapshotId, record);
   }
 }
 
@@ -154,7 +187,19 @@ function isAlbumSyncSnapshotRecord(value: unknown): value is AlbumSyncSnapshotRe
   if (!isObject(value)) {
     return false;
   }
-  return value.rustCoreSnapshot !== undefined && isAlbumSyncSnapshot(value.rustCoreSnapshot);
+  return value.rustCoreSnapshot !== undefined
+    && isAlbumSyncSnapshot(value.rustCoreSnapshot)
+    && value.schemaVersion === ALBUM_SYNC_SNAPSHOT_RECORD_VERSION
+    && value.snapshotVersion === ALBUM_SYNC_SNAPSHOT_RECORD_VERSION;
+}
+
+function isAlbumSyncSnapshotSchemaVersionMismatch(value: unknown): boolean {
+  return isObject(value)
+    && (value.schemaVersion !== undefined || value.snapshotVersion !== undefined)
+    && (
+      value.schemaVersion !== ALBUM_SYNC_SNAPSHOT_RECORD_VERSION
+      || value.snapshotVersion !== ALBUM_SYNC_SNAPSHOT_RECORD_VERSION
+    );
 }
 
 function isAlbumSyncSnapshot(value: unknown): value is AlbumSyncSnapshot {

@@ -205,6 +205,35 @@ describe('RustUploadAdapter', () => {
     })).rejects.toThrow('Adapter not started');
   });
 
+  it('rejectsStaleSchemaVersion', async () => {
+    const telemetry = { warn: vi.fn() };
+    const persistence = new InMemoryUploadSnapshotPersistence(telemetry);
+    const stale = snapshot('RetryWaiting', '018f0000-0000-7000-8000-000000000212');
+    persistence.putRawRecordForTests(initInput.jobId, {
+      id: initInput.jobId,
+      schemaVersion: 1,
+      snapshotVersion: 1,
+      jobId: initInput.jobId,
+      albumId: initInput.albumId,
+      idempotencyKey: initInput.idempotencyKey,
+      status: stale.phase,
+      retryCount: stale.retryCount,
+      rustCoreSnapshot: stale,
+    });
+    const adapter = new RustUploadAdapter(new FakeUploadPort(), persistence);
+
+    await expect(adapter.resume(initInput.jobId)).resolves.toBeNull();
+    expect(telemetry.warn).toHaveBeenCalledWith({
+      warning: 'SchemaVersionMismatch',
+      adapter: 'upload',
+      expectedSchemaVersion: 4,
+    });
+    await expect(adapter.submit({
+      kind: 'StartRequested',
+      effectId: '018f0000-0000-7000-8000-000000000213',
+    })).rejects.toThrow('Adapter not started');
+  });
+
   it('submit() fails when adapter not started', async () => {
     const adapter = new RustUploadAdapter(new FakeUploadPort(), new InMemoryUploadSnapshotPersistence());
 

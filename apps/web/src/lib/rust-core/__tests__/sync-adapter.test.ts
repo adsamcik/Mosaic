@@ -182,6 +182,30 @@ describe('RustSyncAdapter', () => {
     await expect(adapter.submit({ kind: 'SyncRequested' })).rejects.toThrow('Adapter not started');
   });
 
+  it('rejectsStaleSchemaVersion', async () => {
+    const telemetry = { warn: vi.fn() };
+    const persistence = new InMemoryAlbumSyncSnapshotPersistence(telemetry);
+    const stale = snapshot('FetchingPage', 'cursor-stale');
+    persistence.putRawRecordForTests(initInput.albumId, {
+      id: initInput.albumId,
+      schemaVersion: 0,
+      snapshotVersion: 0,
+      albumId: initInput.albumId,
+      status: stale.phase,
+      retryCount: stale.retryCount,
+      rustCoreSnapshot: stale,
+    });
+    const adapter = new RustSyncAdapter(new FakeSyncPort(), persistence);
+
+    await expect(adapter.resume(initInput.albumId)).resolves.toBeNull();
+    expect(telemetry.warn).toHaveBeenCalledWith({
+      warning: 'SchemaVersionMismatch',
+      adapter: 'sync',
+      expectedSchemaVersion: 1,
+    });
+    await expect(adapter.submit({ kind: 'SyncRequested' })).rejects.toThrow('Adapter not started');
+  });
+
   it('submit() fails when adapter not started', async () => {
     const adapter = new RustSyncAdapter(new FakeSyncPort(), new InMemoryAlbumSyncSnapshotPersistence());
 

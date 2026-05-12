@@ -31,6 +31,14 @@ interface UploadSnapshotRecord {
   readonly rustCoreSnapshot: UploadJobSnapshot;
 }
 
+export interface RustCoreSchemaVersionMismatchTelemetry {
+  warn(event: {
+    readonly warning: 'SchemaVersionMismatch';
+    readonly adapter: 'upload';
+    readonly expectedSchemaVersion: number;
+  }): void;
+}
+
 export interface UploadSnapshotPersistence {
   put(snapshot: UploadJobSnapshot): Promise<void>;
   get(snapshotId: string): Promise<UploadJobSnapshot | null>;
@@ -44,6 +52,8 @@ export interface RustUploadAdapterResult {
 export class IdbUploadSnapshotPersistence implements UploadSnapshotPersistence {
   private db: Promise<IDBPDatabase<UploadSnapshotDb>> | null = null;
 
+  constructor(private readonly telemetry?: RustCoreSchemaVersionMismatchTelemetry) {}
+
   async put(snapshot: UploadJobSnapshot): Promise<void> {
     const db = await this.open();
     await db.put(UPLOAD_QUEUE_STORE_NAME, toUploadSnapshotRecord(snapshot));
@@ -53,6 +63,13 @@ export class IdbUploadSnapshotPersistence implements UploadSnapshotPersistence {
     const db = await this.open();
     const record = await db.get(UPLOAD_QUEUE_STORE_NAME, snapshotId);
     if (!isUploadSnapshotRecord(record)) {
+      if (isUploadSnapshotSchemaVersionMismatch(record)) {
+        this.telemetry?.warn({
+          warning: 'SchemaVersionMismatch',
+          adapter: 'upload',
+          expectedSchemaVersion: UPLOAD_SNAPSHOT_RECORD_VERSION,
+        });
+      }
       return null;
     }
     return cloneUploadSnapshot(record.rustCoreSnapshot);
@@ -71,15 +88,31 @@ export class IdbUploadSnapshotPersistence implements UploadSnapshotPersistence {
 }
 
 export class InMemoryUploadSnapshotPersistence implements UploadSnapshotPersistence {
-  private readonly snapshots = new Map<string, UploadJobSnapshot>();
+  private readonly snapshots = new Map<string, unknown>();
+
+  constructor(private readonly telemetry?: RustCoreSchemaVersionMismatchTelemetry) {}
 
   async put(snapshot: UploadJobSnapshot): Promise<void> {
-    this.snapshots.set(snapshot.jobId, cloneUploadSnapshot(snapshot));
+    this.snapshots.set(snapshot.jobId, toUploadSnapshotRecord(snapshot));
   }
 
   async get(snapshotId: string): Promise<UploadJobSnapshot | null> {
-    const snapshot = this.snapshots.get(snapshotId);
-    return snapshot === undefined ? null : cloneUploadSnapshot(snapshot);
+    const record = this.snapshots.get(snapshotId);
+    if (!isUploadSnapshotRecord(record)) {
+      if (isUploadSnapshotSchemaVersionMismatch(record)) {
+        this.telemetry?.warn({
+          warning: 'SchemaVersionMismatch',
+          adapter: 'upload',
+          expectedSchemaVersion: UPLOAD_SNAPSHOT_RECORD_VERSION,
+        });
+      }
+      return null;
+    }
+    return cloneUploadSnapshot(record.rustCoreSnapshot);
+  }
+
+  putRawRecordForTests(snapshotId: string, record: unknown): void {
+    this.snapshots.set(snapshotId, record);
   }
 }
 
@@ -158,7 +191,19 @@ function isUploadSnapshotRecord(value: unknown): value is UploadSnapshotRecord {
   if (!isObject(value)) {
     return false;
   }
-  return value.rustCoreSnapshot !== undefined && isUploadJobSnapshot(value.rustCoreSnapshot);
+  return value.rustCoreSnapshot !== undefined
+    && isUploadJobSnapshot(value.rustCoreSnapshot)
+    && value.schemaVersion === UPLOAD_SNAPSHOT_RECORD_VERSION
+    && value.snapshotVersion === UPLOAD_SNAPSHOT_RECORD_VERSION;
+}
+
+function isUploadSnapshotSchemaVersionMismatch(value: unknown): boolean {
+  return isObject(value)
+    && (value.schemaVersion !== undefined || value.snapshotVersion !== undefined)
+    && (
+      value.schemaVersion !== UPLOAD_SNAPSHOT_RECORD_VERSION
+      || value.snapshotVersion !== UPLOAD_SNAPSHOT_RECORD_VERSION
+    );
 }
 
 function isUploadJobSnapshot(value: unknown): value is UploadJobSnapshot {
