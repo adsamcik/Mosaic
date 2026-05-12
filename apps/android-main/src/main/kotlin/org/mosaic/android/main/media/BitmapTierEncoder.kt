@@ -10,6 +10,7 @@ import java.util.Base64
 import java.util.Collections
 import java.util.IdentityHashMap
 import org.mosaic.android.main.bridge.AndroidRustCoreLibraryLoader
+import org.mosaic.android.main.security.zeroize
 import uniffi.mosaic_uniffi.canonicalTierLayout as rustCanonicalTierLayout
 
 class BitmapTierEncoder(
@@ -59,9 +60,19 @@ class BitmapTierEncoder(
   }
 
   private fun Bitmap.encodeJpegWithoutMetadata(): ByteArray {
-    val output = ByteArrayOutputStream()
-    check(compress(Bitmap.CompressFormat.JPEG, 90, output)) { "JPEG encoding failed" }
-    return output.toByteArray()
+    val output = ZeroizingByteArrayOutputStream()
+    return try {
+      check(compress(Bitmap.CompressFormat.JPEG, 90, output)) { "JPEG encoding failed" }
+      output.toByteArray()
+    } finally {
+      output.zeroize()
+    }
+  }
+}
+
+private class ZeroizingByteArrayOutputStream : ByteArrayOutputStream() {
+  fun zeroize() {
+    buf.zeroize()
   }
 }
 

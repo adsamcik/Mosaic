@@ -5,6 +5,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import org.mosaic.android.main.db.UploadQueueDatabase
+import org.mosaic.android.main.security.zeroize
 import org.mosaic.android.main.upload.ContentHashDedup
 import org.mosaic.android.main.upload.NoOpContentHashDedup
 import org.mosaic.android.main.upload.RoomContentHashDedup
@@ -48,57 +49,61 @@ class ShardEncryptionWorker internal constructor(
       val store = envelopeStore
       val plaintextLength = store.stagingLength(stagingUri)
       val smallPlaintext = if (plaintextLength > STREAMING_THRESHOLD_BYTES) null else store.readStagingBytes(stagingUri)
-      // CONTRACT: see docs/specs/SPEC-UploadContentHash.md. This worker now consumes
-      // a precomputed source-of-truth content hash via KEY_ALBUM_CONTENT_HASH_HEX.
-      // The hash MUST be computed once per photo upstream of this worker (in
-      // ShardEncryptionScheduler or its caller). This worker MUST NOT recompute
-      // from the staging input — that input may be a tier-specific encoded JPEG.
-      if (!albumId.isNullOrBlank() && !photoId.isNullOrBlank()) {
-        val duplicate = contentHashDedup.lookup(albumId, plaintextSha256Hex)
-        if (duplicate != null && duplicate.photoId != photoId) {
-          return Result.failure(
-            workDataOf(
-              KEY_DUPLICATE_PHOTO_ID to duplicate.photoId,
-              KEY_DUPLICATE_DATE_ADDED to duplicate.dateAdded,
-              KEY_CONTENT_HASH_HEX to plaintextSha256Hex,
-              KEY_FAILURE_REASON to FAILURE_DUPLICATE,
-            ),
-          )
-        }
-      }
-      val input = ShardEnvelopeInput(
-        stagingUri = stagingUri,
-        epochHandleId = epochHandleId,
-        tier = tier,
-        shardIndex = shardIndex,
-        plaintextSha256Hex = plaintextSha256Hex,
-      )
-
-      val existingEnvelopeUri = store.existingEnvelopeUri(input)
-      val (envelopeUri, sha256) = if (existingEnvelopeUri != null) {
-        existingEnvelopeUri to store.sha256HexForUri(existingEnvelopeUri)
-      } else {
-        val engine = cryptoEngine
-        val envelope = if (plaintextLength > STREAMING_THRESHOLD_BYTES) {
-          store.openStagingInputStream(stagingUri).use { plaintext ->
-            engine.encryptStreamingShard(epochHandleId, plaintext, plaintextLength, tier, shardIndex)
-          }
-        } else {
-          engine.encryptShardWithEpochHandle(epochHandleId, requireNotNull(smallPlaintext), tier, shardIndex)
-        }
-        val persisted = store.persistEnvelope(input, envelope)
+      try {
+        // CONTRACT: see docs/specs/SPEC-UploadContentHash.md. This worker now consumes
+        // a precomputed source-of-truth content hash via KEY_ALBUM_CONTENT_HASH_HEX.
+        // The hash MUST be computed once per photo upstream of this worker (in
+        // ShardEncryptionScheduler or its caller). This worker MUST NOT recompute
+        // from the staging input — that input may be a tier-specific encoded JPEG.
         if (!albumId.isNullOrBlank() && !photoId.isNullOrBlank()) {
-          contentHashDedup.record(albumId, plaintextSha256Hex, photoId)
+          val duplicate = contentHashDedup.lookup(albumId, plaintextSha256Hex)
+          if (duplicate != null && duplicate.photoId != photoId) {
+            return Result.failure(
+              workDataOf(
+                KEY_DUPLICATE_PHOTO_ID to duplicate.photoId,
+                KEY_DUPLICATE_DATE_ADDED to duplicate.dateAdded,
+                KEY_CONTENT_HASH_HEX to plaintextSha256Hex,
+                KEY_FAILURE_REASON to FAILURE_DUPLICATE,
+              ),
+            )
+          }
         }
-        persisted.uri to persisted.sha256Hex
+        val input = ShardEnvelopeInput(
+          stagingUri = stagingUri,
+          epochHandleId = epochHandleId,
+          tier = tier,
+          shardIndex = shardIndex,
+          plaintextSha256Hex = plaintextSha256Hex,
+        )
+
+        val existingEnvelopeUri = store.existingEnvelopeUri(input)
+        val (envelopeUri, sha256) = if (existingEnvelopeUri != null) {
+          existingEnvelopeUri to store.sha256HexForUri(existingEnvelopeUri)
+        } else {
+          val engine = cryptoEngine
+          val envelope = if (plaintextLength > STREAMING_THRESHOLD_BYTES) {
+            store.openStagingInputStream(stagingUri).use { plaintext ->
+              engine.encryptStreamingShard(epochHandleId, plaintext, plaintextLength, tier, shardIndex)
+            }
+          } else {
+            engine.encryptShardWithEpochHandle(epochHandleId, requireNotNull(smallPlaintext), tier, shardIndex)
+          }
+          val persisted = store.persistEnvelope(input, envelope)
+          if (!albumId.isNullOrBlank() && !photoId.isNullOrBlank()) {
+            contentHashDedup.record(albumId, plaintextSha256Hex, photoId)
+          }
+          persisted.uri to persisted.sha256Hex
+        }
+        Result.success(
+          workDataOf(
+            KEY_ENVELOPE_URI to envelopeUri,
+            KEY_SHA256_HEX to sha256,
+            KEY_CONTENT_HASH_HEX to plaintextSha256Hex,
+          ),
+        )
+      } finally {
+        smallPlaintext?.zeroize()
       }
-      Result.success(
-        workDataOf(
-          KEY_ENVELOPE_URI to envelopeUri,
-          KEY_SHA256_HEX to sha256,
-          KEY_CONTENT_HASH_HEX to plaintextSha256Hex,
-        ),
-      )
     } catch (e: Exception) {
       if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.failure()
     }

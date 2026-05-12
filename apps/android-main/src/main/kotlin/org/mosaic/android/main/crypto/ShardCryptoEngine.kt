@@ -3,6 +3,8 @@ package org.mosaic.android.main.crypto
 import java.io.InputStream
 import org.mosaic.android.foundation.RustShardStableCode
 import org.mosaic.android.main.bridge.AndroidRustShardApi
+import org.mosaic.android.main.security.useZeroized
+import org.mosaic.android.main.security.zeroize
 import uniffi.mosaic_uniffi.StreamingEncryptor
 
 internal interface ShardCryptoEngine {
@@ -63,10 +65,16 @@ internal class AndroidShardCryptoEngine(
     )
     try {
       val buffer = ByteArray(ShardEncryptionWorker.STREAMING_FRAME_BYTES)
-      while (true) {
-        val read = plaintext.read(buffer)
-        if (read <= 0) break
-        encryptor.encryptFrame(buffer.copyOf(read))
+      try {
+        while (true) {
+          val read = plaintext.read(buffer)
+          if (read <= 0) break
+          buffer.copyOf(read).useZeroized { frame ->
+            encryptor.encryptFrame(frame)
+          }
+        }
+      } finally {
+        buffer.zeroize()
       }
       return encryptor.finalize()
     } finally {
