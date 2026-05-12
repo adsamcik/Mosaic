@@ -1,15 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   executeManifestFinalizationEffect,
+  MANIFEST_ALBUM_GONE,
   ManifestFinalizationError,
   type FinalizeManifestEffect,
   type ManifestFinalizationAdapter,
 } from '../manifest-finalization';
+import { purgeLocalAlbum } from '../local-purge';
 
 vi.mock('../crypto-client', () => ({
   getCryptoClient: () => Promise.resolve({
     finalizeIdempotencyKey: () => Promise.resolve('mosaic-finalize-test-job'),
   }),
+}));
+
+vi.mock('../local-purge', () => ({
+  purgeLocalAlbum: vi.fn(async () => ({
+    albumId: '018f0000-0000-7000-8000-000000000002',
+    purgedAlbum: true,
+    purgedPhotoIds: [],
+    removedUploadTasks: 0,
+    blockers: [],
+  })),
 }));
 
 describe('executeManifestFinalizationEffect error events', () => {
@@ -107,6 +119,29 @@ describe('executeManifestFinalizationEffect error events', () => {
       errorCode: 403,
       targetPhase: 'Failed',
     }]);
+  });
+
+  it('routes410ToPurgeLocalAlbum', async () => {
+    const events: unknown[] = [];
+    await expect(executeManifestFinalizationEffect(effect(), {
+      jobId: 'test-job',
+      adapter: adapterFor(events),
+      fetchImpl: async () => new Response('gone', { status: 410 }),
+    })).rejects.toMatchObject({
+      status: 410,
+      code: MANIFEST_ALBUM_GONE,
+    } satisfies Partial<ManifestFinalizationError>);
+
+    expect(events).toEqual([{
+      kind: 'NonRetryableFailure',
+      effectId: 'effect-1',
+      errorCode: 410,
+      targetPhase: 'Failed',
+    }]);
+    expect(purgeLocalAlbum).toHaveBeenCalledWith({
+      albumId: '018f0000-0000-7000-8000-000000000002',
+      reason: 'album-410',
+    });
   });
 
   it.each([500, 502, 503, 504])('submits RetryableFailure for server status %i', async (status) => {

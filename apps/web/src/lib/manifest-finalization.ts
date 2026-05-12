@@ -4,6 +4,7 @@ import type { PhotoMeta, TieredShardIds } from '../workers/types';
 import type { UploadTask } from './upload/types';
 import type { UploadEvent, UploadEffect } from './rust-core/upload-adapter-port';
 import { manifestTranscriptInputForFinalize } from './manifest-transcript';
+import { purgeLocalAlbum } from './local-purge';
 
 const API_BASE = '/api';
 const SHA256_BYTES = 32;
@@ -12,6 +13,7 @@ export const MANIFEST_INVALID_SIGNATURE = 400;
 export const MANIFEST_TRANSCRIPT_MISMATCH = 422;
 export const MANIFEST_AUTH_DENIED = 'AUTH_DENIED';
 export const MANIFEST_TRANSIENT_SERVER_ERROR = 'TRANSIENT_SERVER_ERROR';
+export const MANIFEST_ALBUM_GONE = 'ALBUM_GONE';
 
 export interface ManifestFinalizeTieredShard {
   readonly shardId: string;
@@ -69,7 +71,7 @@ export interface ExecuteManifestFinalizationOptions {
 export class ManifestFinalizationError extends Error {
   constructor(
     readonly status: number,
-    readonly code: number,
+    readonly code: number | string,
     message: string,
   ) {
     super(message);
@@ -257,6 +259,22 @@ export async function executeManifestFinalizationEffect(
       response.status,
       response.status,
       `Manifest finalization failed: authorization denied${detail ? `: ${detail}` : ''}`,
+    );
+  }
+
+  if (response.status === 410) {
+    const detail = await manifestFinalizeErrorDetailFromResponse(response);
+    await options.adapter?.submit({
+      kind: 'NonRetryableFailure',
+      effectId: effect.effectId,
+      errorCode: response.status,
+      targetPhase: 'Failed',
+    });
+    await purgeLocalAlbum({ albumId: effect.albumId, reason: 'album-410' });
+    throw new ManifestFinalizationError(
+      response.status,
+      MANIFEST_ALBUM_GONE,
+      `Manifest finalization failed: album is gone${detail ? `: ${detail}` : ''}`,
     );
   }
 
