@@ -1,3 +1,4 @@
+#if DEBUG
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -519,3 +520,5 @@ public class TestSeedController : ControllerBase
     }
 
 }
+
+#endif

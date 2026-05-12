@@ -26,7 +26,9 @@ public class LocalAuthMiddleware
         "/api/auth/verify",
         "/api/auth/register",
         "/api/dev-auth/",  // Development-only quick login
+#if DEBUG
         "/api/test-seed/",  // E2E test seeding (dev/test environments only)
+#endif
         "/api/s/",  // Anonymous share link access
         "/swagger",
         "/openapi"
