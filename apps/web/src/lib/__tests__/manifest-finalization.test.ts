@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   executeManifestFinalizationEffect,
   MANIFEST_ALBUM_GONE,
   ManifestFinalizationError,
+  ManifestFinalizationTimeoutError,
   type FinalizeManifestEffect,
   type ManifestFinalizationAdapter,
 } from '../manifest-finalization';
@@ -25,6 +26,10 @@ vi.mock('../local-purge', () => ({
 }));
 
 describe('executeManifestFinalizationEffect error events', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('emitsManifestCreatedOnSuccess', async () => {
     const events: unknown[] = [];
 
@@ -142,6 +147,34 @@ describe('executeManifestFinalizationEffect error events', () => {
       albumId: '018f0000-0000-7000-8000-000000000002',
       reason: 'album-410',
     });
+  });
+
+  it('emitsManifestOutcomeUnknownOnTimeout', async () => {
+    vi.useFakeTimers();
+    const events: unknown[] = [];
+    const fetchImpl = vi.fn<typeof fetch>(async (_input, init) => {
+      await new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('aborted', 'AbortError'));
+        });
+        setTimeout(() => reject(new TypeError('network timeout')), 60_000);
+      });
+      return new Response('{}', { status: 200 });
+    });
+
+    const promise = expect(executeManifestFinalizationEffect(effect(), {
+      jobId: 'test-job',
+      adapter: adapterFor(events),
+      fetchImpl,
+    })).rejects.toBeInstanceOf(ManifestFinalizationTimeoutError);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    await promise;
+
+    expect(events).toEqual([{
+      kind: 'ManifestOutcomeUnknown',
+      effectId: 'effect-1',
+    }]);
   });
 
   it.each([500, 502, 503, 504])('submits RetryableFailure for server status %i', async (status) => {

@@ -8,6 +8,7 @@ import { purgeLocalAlbum } from './local-purge';
 
 const API_BASE = '/api';
 const SHA256_BYTES = 32;
+const MANIFEST_FINALIZE_TIMEOUT_MS = 30_000;
 
 export const MANIFEST_INVALID_SIGNATURE = 400;
 export const MANIFEST_TRANSCRIPT_MISMATCH = 422;
@@ -76,6 +77,13 @@ export class ManifestFinalizationError extends Error {
   ) {
     super(message);
     this.name = 'ManifestFinalizationError';
+  }
+}
+
+export class ManifestFinalizationTimeoutError extends Error {
+  constructor(message = 'Manifest finalization outcome is unknown') {
+    super(message);
+    this.name = 'ManifestFinalizationTimeoutError';
   }
 }
 
@@ -184,18 +192,35 @@ export async function executeManifestFinalizationEffect(
 ): Promise<ManifestFinalizationResult> {
   const fetchFn = options.fetchImpl ?? fetch;
   const idempotencyKey = await finalizeIdempotencyKey(options.jobId);
-  const response = await fetchFn(
-    `${API_BASE}/manifests/${encodeURIComponent(effect.manifestId)}/finalize`,
-    {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        'Idempotency-Key': idempotencyKey,
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), MANIFEST_FINALIZE_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetchFn(
+      `${API_BASE}/manifests/${encodeURIComponent(effect.manifestId)}/finalize`,
+      {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify(toFinalizeRequestBody(effect)),
+        signal: controller.signal,
       },
-      body: JSON.stringify(toFinalizeRequestBody(effect)),
-    },
-  );
+    );
+  } catch (error) {
+    if (isManifestOutcomeUnknownError(error)) {
+      await options.adapter?.submit({
+        kind: 'ManifestOutcomeUnknown',
+        effectId: effect.effectId,
+      });
+      throw new ManifestFinalizationTimeoutError();
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (response.ok) {
     const finalized = await readFinalizeResponse(response, effect);
@@ -299,6 +324,12 @@ export async function executeManifestFinalizationEffect(
     response.status,
     `Manifest finalization failed with HTTP ${String(response.status)}${body ? `: ${body}` : ''}`,
   );
+}
+
+function isManifestOutcomeUnknownError(error: unknown): boolean {
+  return error instanceof TypeError
+    || (error instanceof DOMException && error.name === 'AbortError')
+    || (error instanceof Error && error.name === 'AbortError');
 }
 
 async function manifestFinalizeErrorDetailFromResponse(response: Response): Promise<string> {
