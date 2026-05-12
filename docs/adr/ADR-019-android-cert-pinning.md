@@ -4,7 +4,7 @@
 
 Accepted. Decision: **public-key pin to a managed root + backup pin for self-hosted deployments; document the operator-controlled rotation procedure; do not pin in development builds.** Gates A4 (shared OkHttp client) and A5b (Tus client adapter).
 
-Status note: Android now sources ADR-019 pins from the sealed asset `apps/android-main/src/main/assets/adr019-pins.txt`. The checked-in reference asset is intentionally a comment-only stub; production release builds MUST replace it with operator pins before v1 ship.
+Status note: Android now sources ADR-019 pins from the sealed asset `apps/android-main/src/main/assets/adr019-pins.txt`. The checked-in reference asset is intentionally a comment-only stub; production release builds MUST replace it with operator pins before v1.0.0 ships to users. Keeping the stub is acceptable only for the v1.0.0-rc build-time validation state, not for user-distributed release artifacts.
 
 ## Context
 

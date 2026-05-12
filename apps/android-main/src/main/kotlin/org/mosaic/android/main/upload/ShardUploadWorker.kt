@@ -8,7 +8,6 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import java.io.File
 import java.io.FileInputStream
-import java.net.URL
 import java.security.MessageDigest
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -197,7 +196,7 @@ internal class DefaultShardTusSessionFactory(
   private val context: Context,
 ) : ShardTusSessionFactory {
   override fun create(endpointUrl: String): ShardTusSession {
-    val client = TusClientFactory.create(endpointUrl, URL(endpointUrl).host)
+    val client = TusClientFactory.create(endpointUrl, context)
     val session = TusUploadSession(client, AppPrivateStagingManager(context))
     return ShardTusSession { staged, metadata, uploadJobId, shardId ->
       session.upload(staged, metadata, uploadJobId, shardId)

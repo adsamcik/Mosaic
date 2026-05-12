@@ -15,8 +15,8 @@ import okio.BufferedSink
 import org.mosaic.android.main.BuildConfig
 
 object MosaicHttpClient {
-  fun create(certPinner: CertificatePinner): OkHttpClient {
-    require(certPinner.pins.isNotEmpty()) {
+  fun create(certPinner: CertificatePinner, allowEmptyPins: Boolean = false): OkHttpClient {
+    require(allowEmptyPins || certPinner.pins.isNotEmpty()) {
       "Refusing to build OkHttpClient without pins. Use failClosed(hostname) factory."
     }
 

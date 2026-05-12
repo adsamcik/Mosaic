@@ -1,5 +1,6 @@
 package org.mosaic.android.main.tus
 
+import android.content.Context
 import java.net.URL
 import java.util.concurrent.TimeUnit
 import okhttp3.HttpUrl
@@ -8,16 +9,25 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.Response
+import org.mosaic.android.main.BuildConfig
 import org.mosaic.android.main.net.MosaicCertificatePinnerFactory
 import org.mosaic.android.main.net.MosaicHttpClient
 
 private const val TUS_VERSION = "1.0.0"
 
 object TusClientFactory {
-  fun create(endpointUrl: String, hostname: String): MosaicTusClient = create(
-    endpointUrl = endpointUrl.toHttpUrl(),
-    okHttpClient = MosaicHttpClient.create(MosaicCertificatePinnerFactory.failClosed(hostname)),
-  )
+  fun create(
+    endpointUrl: String,
+    context: Context,
+    releasePinsRequired: Boolean = !BuildConfig.DEBUG,
+  ): MosaicTusClient {
+    // Loads the sealed ADR-019 pins asset; callers run this from upload worker I/O paths.
+    val certPinner = MosaicCertificatePinnerFactory.fromAdr019Pins(context.applicationContext, releasePinsRequired)
+    return create(
+      endpointUrl = endpointUrl.toHttpUrl(),
+      okHttpClient = MosaicHttpClient.create(certPinner, allowEmptyPins = !releasePinsRequired),
+    )
+  }
 
   fun create(endpointUrl: URL, okHttpClient: OkHttpClient): MosaicTusClient = create(
     endpointUrl = endpointUrl.toString().toHttpUrl(),
