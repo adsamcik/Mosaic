@@ -227,6 +227,18 @@ class ShardUploadWorkerTest {
   }
 
   @Test
+  fun schedulerHonorsRetryDelayWithInitialDelay() {
+    val request = ShardUploadScheduler.buildRequest(
+      jobId = "job-123",
+      shardId = "shard-9",
+      tusEndpoint = "https://uploads.example.test/files",
+      initialDelayMs = 10_000L,
+    )
+
+    assertTrue("retry delay must be at least 9.5 seconds", request.workSpec.initialDelay >= 9_500L)
+  }
+
+  @Test
   fun uploadPipelineBuilderComposesEncryptionThenUploadWithCancellationTags() {
     val plan = UploadPipelineBuilder.buildShardPlan(
       jobId = "job-456",

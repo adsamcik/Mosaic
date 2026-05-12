@@ -16,6 +16,7 @@ object ShardUploadScheduler {
     shardId: String,
     tusEndpoint: String,
     metadataSignature: String? = null,
+    initialDelayMs: Long = 0L,
   ): OneTimeWorkRequest =
     OneTimeWorkRequestBuilder<ShardUploadWorker>()
       .setInputData(inputData(jobId, shardId, tusEndpoint, metadataSignature))
@@ -24,6 +25,7 @@ object ShardUploadScheduler {
           .setRequiredNetworkType(NetworkType.CONNECTED)
           .build(),
       )
+      .setInitialDelay(initialDelayMs.coerceIn(0L, MAX_BACKOFF_MS), TimeUnit.MILLISECONDS)
       .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, INITIAL_BACKOFF_SECONDS, TimeUnit.SECONDS)
       .addTag(ShardEncryptionScheduler.uploadJobTag(jobId))
       .addTag(SHARD_UPLOAD_TAG)
@@ -35,6 +37,7 @@ object ShardUploadScheduler {
   const val SHARD_UPLOAD_TAG: String = "shard-upload"
   const val MIN_BACKOFF_SECONDS: Long = 30L
   const val MAX_BACKOFF_MINUTES: Long = 30L
+  const val MAX_BACKOFF_MS: Long = MAX_BACKOFF_MINUTES * 60_000L
 
   private const val INITIAL_BACKOFF_SECONDS: Long = MIN_BACKOFF_SECONDS
 

@@ -210,6 +210,7 @@ class WorkManagerEffectDispatcher(
   private val observer: EffectCompletionObserver,
   private val manifestCommitter: ManifestCommitEffectHandler,
   private val syncConfirmation: SyncConfirmationEffectHandler,
+  private val clock: Clock = Clock.systemUTC(),
 ) : EffectDispatcher {
   override suspend fun dispatch(
     snapshot: UploadJobSnapshotRow,
@@ -243,6 +244,7 @@ class WorkManagerEffectDispatcher(
           shardId = input.shardId,
           tusEndpoint = input.tusEndpoint,
           metadataSignature = input.metadataSignature,
+          initialDelayMs = snapshot.retryInitialDelayMs(clock),
         ),
       )
       observer.await(effect)
@@ -256,6 +258,12 @@ class WorkManagerEffectDispatcher(
 
   private fun uniqueWorkName(jobId: String, effect: RustClientCoreUploadJobFfiEffect): String =
     "upload-job-$jobId-effect-${effect.effectId}-${effect.kind}-${effect.tier}-${effect.shardIndex}"
+
+  private fun UploadJobSnapshotRow.retryInitialDelayMs(clock: Clock): Long {
+    val nextRetryAt = UploadJobSnapshotCodec.decode(canonicalCborBytes).nextRetryNotBeforeMs
+    if (nextRetryAt <= 0L) return 0L
+    return (nextRetryAt - clock.millis()).coerceIn(0L, ShardUploadScheduler.MAX_BACKOFF_MS)
+  }
 }
 
 interface EffectInputResolver {
