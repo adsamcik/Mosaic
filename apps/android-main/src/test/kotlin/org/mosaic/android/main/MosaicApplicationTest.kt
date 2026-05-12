@@ -57,6 +57,21 @@ class MosaicApplicationTest {
     )
   }
 
+  @Test
+  fun onCreateInvokesPrivacyAuditDailyEnqueueHook() {
+    var invoked = false
+    MosaicApplication.rustCoreWarmUp = {}
+    MosaicApplication.installAutoImportRuntime = {}
+    MosaicApplication.registerUploadNotificationChannel = {}
+    MosaicApplication.enqueueAutoImportIfPolicyAllows = {}
+    MosaicApplication.enqueuePrivacyAuditDaily = { invoked = true }
+    ShellStubRecordMigration.sharedPreferencesOpener = { _, _ -> ThrowingApplySharedPreferences() }
+
+    MosaicApplication().onCreate()
+
+    assertTrue(invoked)
+  }
+
   private class ThrowingApplySharedPreferences(
     private val values: MutableMap<String, Any?> = mutableMapOf(),
   ) : SharedPreferences {

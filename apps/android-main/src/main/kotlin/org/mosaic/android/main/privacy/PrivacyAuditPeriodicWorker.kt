@@ -85,7 +85,8 @@ class PrivacyAuditPeriodicWorker(
           UNIQUE_WORK_NAME,
           ExistingPeriodicWorkPolicy.KEEP,
           request,
-        )
+        ).result.get()
+        true
       }.isSuccess
     }
   }

@@ -3,6 +3,7 @@ package org.mosaic.android.main
 import android.app.Application
 import androidx.work.Logger
 import org.mosaic.android.main.bridge.AndroidRustCoreLibraryLoader
+import org.mosaic.android.main.privacy.PrivacyAuditPeriodicWorker
 import org.mosaic.android.main.service.UploadForegroundService
 import org.mosaic.android.main.work.AutoImportRuntime
 import org.mosaic.android.main.work.AutoImportWorkScheduler
@@ -22,7 +23,7 @@ import org.mosaic.android.main.work.ShellStubRecordMigration
  *   enqueue is therefore *policy-conditional* — onCreate never eagerly enqueues
  *   work in the absence of explicit user opt-in.
  */
-class MosaicApplication : Application() {
+open class MosaicApplication : Application() {
   override fun onCreate() {
     super.onCreate()
     rustCoreWarmUp()
@@ -31,6 +32,7 @@ class MosaicApplication : Application() {
     installAutoImportRuntime(this)
     registerUploadNotificationChannel(this)
     enqueueAutoImportIfPolicyAllows(this)
+    enqueuePrivacyAuditDaily(this)
   }
 
   companion object {
@@ -46,6 +48,10 @@ class MosaicApplication : Application() {
     internal var enqueueAutoImportIfPolicyAllows: (MosaicApplication) -> Unit = { application ->
       AutoImportWorkScheduler.enqueueIfPolicyAllows(application)
     }
+    internal var enqueuePrivacyAuditDaily: (MosaicApplication) -> Unit = { application ->
+      runCatching { PrivacyAuditPeriodicWorker.enqueueDaily(application) }
+        .onFailure { Logger.get().warning(TAG, "Privacy audit daily enqueue failed", it) }
+    }
 
     internal fun resetTestHooks() {
       rustCoreWarmUp = AndroidRustCoreLibraryLoader::warmUp
@@ -57,6 +63,10 @@ class MosaicApplication : Application() {
       }
       enqueueAutoImportIfPolicyAllows = { application ->
         AutoImportWorkScheduler.enqueueIfPolicyAllows(application)
+      }
+      enqueuePrivacyAuditDaily = { application ->
+        runCatching { PrivacyAuditPeriodicWorker.enqueueDaily(application) }
+          .onFailure { Logger.get().warning(TAG, "Privacy audit daily enqueue failed", it) }
       }
     }
   }
