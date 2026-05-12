@@ -42,12 +42,25 @@ M0 makes browser upload metadata stripping use the same dependency-free Rust `mo
 |---|---|---|
 | eXIf | **STRIP** | EXIF metadata. |
 | iTXt/tEXt/zTXt | **STRIP** | Text annotations including XMP. |
+| tRNS | **STRIP** | Transparency metadata can encode non-pixel side channels; stripping is safer for the zero-knowledge contract. |
+| bKGD | **STRIP** | Background color hint and fingerprintable rendering metadata. |
+| hIST | **STRIP** | Palette histogram hint and fingerprintable rendering metadata. |
+| sBIT | **STRIP** | Significant-bits hint and fingerprintable rendering metadata. |
 | tIME | **STRIP** | Last-modified timestamp. |
-| iCCP, sRGB, cHRM, gAMA | **STRIP** | Color profile and rendering fingerprints. |
+| gAMA | **STRIP** | Gamma hint and fingerprintable rendering metadata. |
+| cHRM | **STRIP** | Chromaticity hint and fingerprintable rendering metadata. |
+| sRGB | **STRIP** | Color-space hint and fingerprintable rendering metadata. |
+| iCCP | **STRIP** | Embedded ICC color profile and fingerprintable rendering metadata. |
 | pHYs | **STRIP** | Physical pixel dimensions. |
 | sPLT | **STRIP** | Suggested palette fingerprint. |
-| bKGD, hIST | **STRIP** | Misc rendering/fingerprintable hints. |
-| IHDR, IDAT, IEND, other unlisted chunks | Preserve | Image data and non-listed container chunks. |
+| All ancillary chunks (lowercase-first per PNG ISO 15948-1:2003 §11.3.4) | **STRIP** | R-C5 intentionally strips every ancillary chunk, including unlisted chunks, so plaintext metadata and rendering fingerprints do not cross the upload boundary. |
+| IHDR, IDAT, IEND | Preserve | Critical image structure and pixel data. |
+
+**Rendering trade-offs**
+
+- Stripping `tRNS` will cause formerly-transparent paletted PNGs to render opaque. This is intentional under the zero-knowledge contract.
+- Stripping `sRGB`/`gAMA`/`cHRM` causes the decoder to fall back to the default color space (sRGB). For most photographic content this is invisible; for color-managed images it may shift hues.
+- If a future product decision wants to preserve transparency, it must (a) update this SPEC, (b) update `classify_png_metadata`, (c) update the `strip_parity_hardening.rs` fixture assertions, and (d) re-run R-C5 mutation testing.
 
 ### WebP
 
