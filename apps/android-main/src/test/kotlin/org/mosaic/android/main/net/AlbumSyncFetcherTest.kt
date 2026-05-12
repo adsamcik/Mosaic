@@ -58,6 +58,17 @@ class AlbumSyncFetcherTest {
   }
 
   @Test
+  fun returnsGoneOn410() = runBlocking {
+    server.enqueue(MockResponse().setResponseCode(410))
+    server.start()
+    val fetcher = AlbumSyncFetcher(OkHttpClient(), server.url("/"))
+
+    val result = fetcher.fetchSyncState(AlbumId(AlbumSyncFixtures.albumId))
+
+    assertEquals(AlbumSyncResult.Gone(AlbumId(AlbumSyncFixtures.albumId)), result)
+  }
+
+  @Test
   fun fetchSyncStateReturnsServerErrorFor5xx() = runBlocking {
     server.enqueue(MockResponse().setResponseCode(502))
     server.start()

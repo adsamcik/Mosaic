@@ -18,9 +18,11 @@ class SyncConfirmationLoop internal constructor(
   private val timeoutMs: Long,
   private val randomDelayMs: (Long) -> Long,
   private val sleep: suspend (Long) -> Unit,
+  private val purgeGoneAlbum: suspend (AlbumId) -> Unit = {},
 ) {
   constructor(
     fetcher: AlbumSyncFetcher,
+    albumPurger: AlbumPurger? = null,
     clock: Clock = Clock.systemUTC(),
     initialDelayMs: Long = 500,
     maxDelayMs: Long = 30_000,
@@ -37,6 +39,7 @@ class SyncConfirmationLoop internal constructor(
       baseDelay + Random.nextLong(jitterRange)
     },
     sleep = { delayMs -> coroutineDelay(delayMs) },
+    purgeGoneAlbum = { deletedAlbumId -> albumPurger?.purgeRemoteAlbumDeletion(deletedAlbumId) },
   )
 
   init {
@@ -63,6 +66,10 @@ class SyncConfirmationLoop internal constructor(
         }
         is AlbumSyncResult.NotFound -> return@coroutineScope SyncConfirmationResult.Failed(result.toString())
         is AlbumSyncResult.Forbidden -> return@coroutineScope SyncConfirmationResult.Failed(result.toString())
+        is AlbumSyncResult.Gone -> {
+          purgeGoneAlbum(result.albumId)
+          return@coroutineScope SyncConfirmationResult.Gone(result.albumId)
+        }
         is AlbumSyncResult.ServerError -> Unit
         is AlbumSyncResult.UnexpectedStatus -> return@coroutineScope SyncConfirmationResult.Failed(result.toString())
       }
@@ -80,5 +87,6 @@ class SyncConfirmationLoop internal constructor(
 sealed interface SyncConfirmationResult {
   data class Confirmed(val response: AlbumSyncResponse) : SyncConfirmationResult
   data class Failed(val reason: String) : SyncConfirmationResult
+  data class Gone(val albumId: AlbumId) : SyncConfirmationResult
   data object Timeout : SyncConfirmationResult
 }

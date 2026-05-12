@@ -105,6 +105,7 @@ class SyncConfirmationLoopTest {
         sleepEntered.complete(Unit)
         neverCompletes.await()
       },
+      purgeGoneAlbum = {},
     )
 
     val job = launch {
@@ -133,6 +134,7 @@ class SyncConfirmationLoopTest {
       timeoutMs = 25,
         randomDelayMs = { 5L },
       sleep = { delayMs -> clock.advance(delayMs) },
+      purgeGoneAlbum = {},
     )
 
     val result = loop.confirm(albumId, expectedVersion = 2)
@@ -169,6 +171,26 @@ class SyncConfirmationLoopTest {
     assertEquals(2, fetchCount)
   }
 
+  @Test
+  fun confirmPurgesAndReturnsGone() = runBlocking {
+    val purged = mutableListOf<AlbumId>()
+    val loop = SyncConfirmationLoop(
+      fetchSyncState = { AlbumSyncResult.Gone(albumId) },
+      clock = MutableClock(),
+      initialDelayMs = 500,
+      maxDelayMs = 1_000,
+      timeoutMs = 60_000,
+      randomDelayMs = { 250L },
+      sleep = {},
+      purgeGoneAlbum = { purged += it },
+    )
+
+    val result = loop.confirm(albumId, expectedVersion = 7)
+
+    assertEquals(SyncConfirmationResult.Gone(albumId), result)
+    assertEquals(listOf(albumId), purged)
+  }
+
   private fun loopWithResponses(
     vararg responses: AlbumSyncResult,
     initialDelayMs: Long = 500,
@@ -189,6 +211,7 @@ class SyncConfirmationLoopTest {
       timeoutMs = 60_000,
       randomDelayMs = randomDelayMs,
       sleep = sleep,
+      purgeGoneAlbum = {},
     )
   }
 

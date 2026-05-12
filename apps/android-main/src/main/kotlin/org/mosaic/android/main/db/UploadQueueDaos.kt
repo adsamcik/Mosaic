@@ -32,6 +32,12 @@ interface UploadQueueDao {
 
   @Query("SELECT COUNT(*) FROM upload_queue_records")
   fun count(): Int
+
+  @Query("SELECT job_id FROM upload_queue_records WHERE album_id = :albumId")
+  fun jobIdsForAlbum(albumId: String): List<String>
+
+  @Query("DELETE FROM upload_queue_records WHERE album_id = :albumId")
+  fun deleteForAlbum(albumId: String): Int
 }
 
 @Dao
@@ -109,6 +115,9 @@ interface UploadJobSnapshotDao {
 
   @Query("SELECT * FROM upload_job_snapshots WHERE job_id = :jobId")
   fun get(jobId: String): UploadJobSnapshotRow?
+
+  @Query("DELETE FROM upload_job_snapshots WHERE job_id IN (:jobIds)")
+  fun deleteForJobIds(jobIds: List<String>): Int
 }
 
 @Dao
@@ -124,6 +133,9 @@ interface AlbumSyncSnapshotDao {
 
   @Query("SELECT * FROM album_sync_snapshots WHERE album_id = :albumId")
   fun get(albumId: String): AlbumSyncSnapshotRow?
+
+  @Query("DELETE FROM album_sync_snapshots WHERE album_id = :albumId")
+  fun clear(albumId: String): Int
 }
 
 @Dao

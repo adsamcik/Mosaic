@@ -37,6 +37,7 @@ class AlbumSyncFetcher(
         200 -> AlbumSyncResult.Success(parseResponse(response))
         404 -> AlbumSyncResult.NotFound
         403 -> AlbumSyncResult.Forbidden
+        410 -> AlbumSyncResult.Gone(albumId)
         in 500..599 -> AlbumSyncResult.ServerError(response.code)
         else -> AlbumSyncResult.UnexpectedStatus(response.code)
       }
@@ -53,6 +54,7 @@ sealed interface AlbumSyncResult {
   data class Success(val response: AlbumSyncResponse) : AlbumSyncResult
   data object NotFound : AlbumSyncResult
   data object Forbidden : AlbumSyncResult
+  data class Gone(val albumId: AlbumId) : AlbumSyncResult
   data class ServerError(val statusCode: Int) : AlbumSyncResult
   data class UnexpectedStatus(val statusCode: Int) : AlbumSyncResult
 }
