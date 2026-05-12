@@ -112,10 +112,10 @@ Companion specs used by this release include
 
 - The parity suite covers default client behavior and feature-gated
   cross-client vector paths.
-- Release evidence includes 32 default parity checks and 42
-  `cross-client-vectors` checks, 74 cross-platform checks in total.
-- The Rust parity file currently contains 42 Rust `#[test]` blocks and 145
-  direct assertion calls across default and feature-gated coverage.
+- Release evidence: **42 `#[test]` functions** in
+  `crates/mosaic-parity-tests/tests/cross_platform_parity.rs` (32 default +
+  10 feature-gated under `cross-client-vectors`), making **145 direct
+  assertion calls** total (116 default + 29 feature-gated).
 - WASM ↔ UniFFI parity now covers manifest transcript bytes, manifest signing,
   auth challenge transcripts, account-salt KDFs, sidecar room IDs, upload and
   download snapshot CBOR, encrypted content, sealed bundles, sidecar tunnels,
@@ -186,10 +186,10 @@ parity tests, and protected by architecture guards.
 
 ### 📋 Test coverage
 
-- Cross-platform parity covers 32 default checks plus 42 feature-gated
-  `cross-client-vectors` checks.
-- The Rust parity file includes 42 `#[test]` functions and 145 direct
-  assertions.
+- Cross-platform parity: **42 `#[test]` functions** in
+  `crates/mosaic-parity-tests/tests/cross_platform_parity.rs` (32 default + 10
+  feature-gated under `cross-client-vectors`), making **145 direct assertion
+  calls** (116 default + 29 feature-gated).
 - Property-based parity uses small proptest corpora for deterministic byte
   invariants.
 - Negative tests check corrupted input and invalid domain behavior.
