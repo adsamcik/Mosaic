@@ -67,16 +67,16 @@
 
 | Class | API | Android version | v1 requirement |
 | --- | --- | --- | --- |
-| Legacy floor | API 26 | Android 8.0 | Required manual/device-lab lane until CI emulator coverage exists. |
-| Mid-tier baseline | API 30 | Android 11 | Required manual/device-lab lane; representative of older active devices. |
-| Current stable | API 34 | Android 14 | Required manual/device-lab lane and preferred emulator lane. |
-| Latest supplemental | API 35 | Android 15 | Supplemental lane when runner/device availability permits. |
+| Legacy floor | API 26 | Android 8.0 | Required manual/device-lab lane until CI emulator coverage exists; representative Snapdragon 660/665 class. |
+| Mid-tier baseline | API 30 | Android 11 | Required manual/device-lab lane; representative Snapdragon 765G / MediaTek Dimensity 700 class. |
+| Current stable | API 34 | Android 14 | Required manual/device-lab lane and preferred emulator lane; representative Tensor G2/G3 and Snapdragon 8 Gen 2 class. |
+| Latest supplemental | API 35 | Android 15 | Supplemental lane when runner/device availability permits; representative Tensor G4, Snapdragon 8 Gen 3, and MediaTek Dimensity 9300 class. |
 
 ## Coverage gaps and mitigations
 
 | Gap | Impact | Current mitigation | v1 disposition |
 | --- | --- | --- | --- |
-| Real-device Android lanes require manual provisioning until CI emulator lanes are configured. | Device-specific lifecycle failures can escape normal CI. | A18 documents the multi-API matrix; release evidence must record manual/API runs. | Accepted with manual proof for v1 freeze. |
+| Android instrumented lanes are not CI-automated today; API 26/30/34/35 are manual/device-lab lanes. | Device-specific lifecycle failures can escape normal CI. | A18 documents the multi-API matrix; release evidence must record manual API runs for all four lanes. | Accepted with manual proof for v1 freeze; CI emulator lane is deferred until runner capacity is allocated. |
 | W-A6-3/W-A6-4 had silent passes before Wave 14. | Concurrent upload/resume regressions could be hidden. | Strict assertions now require unique records, manifest version movement, and resume completion. | Closed for v1. |
 | WASM artifact parity was added as Wave 13 medium coverage (`js_shim_parity.rs`). | Generated JS/WASM shim drift could break web clients after Rust parity passes. | Keep artifact parity in release evidence alongside `mosaic-parity-tests`. | Closed for v1 evidence; keep in CI where currently wired. |
 

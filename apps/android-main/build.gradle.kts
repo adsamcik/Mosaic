@@ -173,6 +173,9 @@ android {
       )
       jniLibs.srcDirs(generatedJniLibsDir)
     }
+    getByName("androidTest") {
+      assets.srcDir(repoRoot.resolve("docs/specs"))
+    }
   }
 
   packaging {
