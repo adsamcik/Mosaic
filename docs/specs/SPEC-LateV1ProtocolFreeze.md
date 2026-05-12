@@ -6,7 +6,7 @@
 
 This document inventories the protocol surfaces that are candidates for v1.0.0. It is not a freeze declaration. The canonical freeze policy is [`SPEC-ReleaseTagFreezePolicy.md`](SPEC-ReleaseTagFreezePolicy.md): protocol surfaces become irreversible when the project owner cuts a release tag for a distributed build.
 
-The current v1 candidate tree is `be7c6da07fbe036beea114c785072c878bd4646d` (`origin/main`). Until `v1.0.0` is tagged, the surfaces below remain changeable through the standard review, parity, and architecture-guard processes.
+The current v1 candidate tree is `bd0cd7ba6650933ec5e88ad64c3a953621fdc6cb` (`origin/main`). Until `v1.0.0` is tagged, the surfaces below remain changeable through the standard review, parity, and architecture-guard processes.
 
 Final freeze occurs when the project owner runs `git tag v1.0.0 && git push --tags`; that commit's bytes become the v1 wire/AAD/schema.
 
@@ -18,8 +18,8 @@ Final freeze occurs when the project owner runs `git tag v1.0.0 && git push --ta
 
 ## Candidate source of truth
 
-- Candidate commit: `be7c6da07fbe036beea114c785072c878bd4646d`.
-- Candidate date: 2026-05-06.
+- Candidate commit: `bd0cd7ba6650933ec5e88ad64c3a953621fdc6cb`.
+- Candidate date: 2026-05-12.
 - Canonical freeze policy: [`SPEC-ReleaseTagFreezePolicy.md`](SPEC-ReleaseTagFreezePolicy.md).
 - Candidate inventory register: [`docs/IMPLEMENTATION_PLAN.md` §11](../IMPLEMENTATION_PLAN.md#11-late-v1-irreversibility-register), “Late-v1 Irreversibility Register”.
 - Finalization ADR: [`docs/adr/ADR-022-manifest-finalization-shape.md`](../adr/ADR-022-manifest-finalization-shape.md).

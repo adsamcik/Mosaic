@@ -4,13 +4,14 @@ A zero-knowledge encrypted photo gallery for personal use.
 
 ## Overview
 
-Mosaic is a self-hosted photo gallery where the server never sees your photos. All encryption and decryption happens in your browser using modern cryptographic primitives.
+Mosaic is a self-hosted photo gallery where the server never sees your photos. All encryption and decryption happens on the web or Android client using modern cryptographic primitives.
 
 **Target Scale:** ≤50 users
 
 ## Features
 
-- 🔐 **End-to-end encryption** - Photos encrypted before upload, decrypted in browser
+- 🔐 **End-to-end encryption** - Photos encrypted before upload, decrypted on the client
+- 📱 **Android client** - First-class v1 client using the shared Rust core for on-device decryption
 - 🖼️ **Gallery management** - Organize photos into albums
 - 👥 **Secure sharing** - Share albums with family using epoch-based keys
 - 🗺️ **Map view** - Browse photos by location (GPS metadata encrypted)
@@ -22,16 +23,19 @@ Mosaic is a self-hosted photo gallery where the server never sees your photos. A
 ## Architecture
 
 ```text
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Browser   │────▶│   Backend   │────▶│  PostgreSQL │
-│  (Encrypt)  │     │  (Storage)  │     │  (Metadata) │
-└─────────────┘     └─────────────┘     └─────────────┘
-      │                    │
-      │                    ▼
-      │             ┌─────────────┐
-      └────────────▶│ Blob Store  │
-                    │  (Shards)   │
-                    └─────────────┘
+┌─────────────┐
+│   Browser   │────┐
+│ Encrypt/Dec │    │
+└─────────────┘    │     ┌─────────────┐     ┌─────────────┐
+                   ├────▶│   Backend   │────▶│  PostgreSQL │
+┌─────────────┐    │     │  (Storage)  │     │  (Metadata) │
+│   Android   │────┘     └─────────────┘     └─────────────┘
+│ Encrypt/Dec │                │
+└─────────────┘                ▼
+                         ┌─────────────┐
+                         │ Blob Store  │
+                         │  (Shards)   │
+                         └─────────────┘
 ```
 
 ## Technology Stack

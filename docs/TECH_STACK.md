@@ -82,7 +82,9 @@ A shared TypeScript library providing all cryptographic primitives.
 | **XChaCha20-Poly1305** | Authenticated encryption for photo shards |
 | **Ed25519** | Digital signatures for manifests and identity |
 | **Argon2id** | Password-based key derivation (memory-hard) |
-| **HKDF-style BLAKE2b** | Deterministic key expansion with domain-separated context strings |
+| **HKDF-SHA-256** | L1 root material, auth signing material, database session keys, sidecar room IDs |
+| **BLAKE2b / BLAKE2b-MAC / BLAKE2b-Var** | Tier/content keys, link-share derivation, legacy migration routes |
+| **HMAC-SHA-256** | LocalAuth account salt derivation |
 | **X25519** | Key exchange for sharing (via Ed25519 conversion) |
 
 ### Key Hierarchy
