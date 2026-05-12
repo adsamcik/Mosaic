@@ -101,6 +101,8 @@ function submitRustProgressEvents(
   if (task.currentAction === 'encrypting' && !submitted.has('MediaPrepared')) {
     submitted.add('MediaPrepared');
     void adapter.submit({ kind: 'MediaPrepared', effectId: task.id });
+    submitted.add('EpochHandleAcquired');
+    void adapter.submit({ kind: 'EpochHandleAcquired', effectId: task.id });
   }
 
   for (const shard of task.completedShards) {
@@ -387,13 +389,7 @@ export function UploadProvider({ children }: UploadProviderProps) {
       // This caches the key in epoch-key-store for use in onComplete callback
       let epochKey: EpochKeyBundle;
       try {
-          epochKey = await getCurrentOrFetchEpochKey(albumId);
-          if (rustAdapter && rustJobId) {
-            await rustAdapter.submit({
-              kind: 'EpochHandleAcquired',
-              effectId: rustJobId,
-            });
-          }
+        epochKey = await getCurrentOrFetchEpochKey(albumId);
       } catch (err) {
         const uploadError = new UploadError(
           `Failed to get epoch key for album: ${err instanceof Error ? err.message : String(err)}`,

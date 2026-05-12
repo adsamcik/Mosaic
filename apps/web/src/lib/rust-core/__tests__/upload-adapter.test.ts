@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
-import { InMemoryUploadSnapshotPersistence, RustUploadAdapter } from '../upload-adapter';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  InMemoryUploadSnapshotPersistence,
+  RustUploadAdapter,
+  uploadAdapterTelemetry,
+} from '../upload-adapter';
 import type {
   UploadAdapterPort,
   UploadEffect,
@@ -65,6 +69,10 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 describe('RustUploadAdapter', () => {
+  beforeEach(() => {
+    uploadAdapterTelemetry.reset();
+  });
+
   it('start() persists initial snapshot', async () => {
     const port = new FakeUploadPort();
     const persistence = new InMemoryUploadSnapshotPersistence();
@@ -244,10 +252,36 @@ describe('RustUploadAdapter', () => {
     })).rejects.toThrow('Adapter not started');
   });
 
+  it('counts rejected transitions while keeping later submissions alive', async () => {
+    const port = new FakeUploadPort();
+    const acceptedEffectId = '018f0000-0000-7000-8000-000000000214';
+    const acceptedSnapshot = snapshot('AwaitingPreparedMedia', acceptedEffectId);
+    port.advanceJob
+      .mockRejectedValueOnce(new Error('invalid transition'))
+      .mockResolvedValueOnce(acceptedSnapshot);
+    const adapter = new RustUploadAdapter(port, new InMemoryUploadSnapshotPersistence());
+    await adapter.start(initInput);
+
+    await expect(adapter.submit({
+      kind: 'EpochHandleAcquired',
+      effectId: '018f0000-0000-7000-8000-000000000215',
+    })).rejects.toThrow('invalid transition');
+
+    const result = await adapter.submit({
+      kind: 'StartRequested',
+      effectId: acceptedEffectId,
+    });
+
+    expect(uploadAdapterTelemetry.snapshot()).toEqual([{
+      counter: 'upload_adapter_transition_rejected',
+      count: 1,
+    }]);
+    expect(result.snapshot).toEqual(acceptedSnapshot);
+  });
+
   it('persistence write failure surfaces correctly', async () => {
     const adapter = new RustUploadAdapter(new FakeUploadPort(), new FailingUploadPersistence());
 
     await expect(adapter.start(initInput)).rejects.toThrow('upload persistence failed');
   });
 });
-

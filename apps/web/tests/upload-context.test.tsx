@@ -17,6 +17,21 @@ import { getEpochKey } from '../src/lib/epoch-key-store';
 import { createManifestForUpload } from '../src/lib/manifest-service';
 import { FeatureFlagsManager } from '../src/lib/feature-flags';
 import { RustUploadAdapter } from '../src/lib/rust-core/upload-adapter';
+import type {
+  UploadEvent,
+  UploadEventKind,
+  UploadPhase,
+} from '../src/lib/rust-core/upload-adapter-port';
+
+interface TransitionValidatingAdapter {
+  readonly start: ReturnType<typeof vi.fn>;
+  readonly submit: ReturnType<typeof vi.fn>;
+  readonly submittedKinds: UploadEventKind[];
+}
+
+const rustAdapterTestState = vi.hoisted(() => ({
+  instances: [] as TransitionValidatingAdapter[],
+}));
 
 // Mock dependencies
 vi.mock('../src/lib/epoch-key-service', () => ({
@@ -52,10 +67,20 @@ vi.mock('../src/lib/feature-flags', () => ({
 
 vi.mock('../src/lib/rust-core/upload-adapter', () => ({
   RustUploadAdapter: vi.fn().mockImplementation(function RustUploadAdapterMock() {
-    return {
-    start: vi.fn(async () => ({ snapshot: {}, effects: [] })),
-    submit: vi.fn(async () => ({ snapshot: {}, effects: [] })),
+    let phase: UploadPhase = 'Queued';
+    const submittedKinds: UploadEventKind[] = [];
+    const submit = vi.fn(async (event: UploadEvent) => {
+      submittedKinds.push(event.kind);
+      phase = advanceValidUploadPhase(phase, event.kind);
+      return { snapshot: { phase }, effects: [] };
+    });
+    const adapter: TransitionValidatingAdapter = {
+      start: vi.fn(async () => ({ snapshot: { phase }, effects: [] })),
+      submit,
+      submittedKinds,
     };
+    rustAdapterTestState.instances.push(adapter);
+    return adapter;
   }),
 }));
 
@@ -73,6 +98,30 @@ vi.mock('../src/lib/upload-queue', () => ({
     onError: null,
   },
 }));
+
+function advanceValidUploadPhase(
+  phase: UploadPhase,
+  eventKind: UploadEventKind,
+): UploadPhase {
+  switch (`${phase}:${eventKind}`) {
+    case 'Queued:StartRequested':
+      return 'AwaitingPreparedMedia';
+    case 'AwaitingPreparedMedia:MediaPrepared':
+      return 'AwaitingEpochHandle';
+    case 'AwaitingEpochHandle:EpochHandleAcquired':
+      return 'EncryptingShard';
+    case 'EncryptingShard:ShardEncrypted':
+      return 'CreatingShardUpload';
+    case 'CreatingShardUpload:ShardUploadCreated':
+      return 'UploadingShard';
+    case 'UploadingShard:ShardUploaded':
+      return 'CreatingManifest';
+    case 'CreatingManifest:ManifestCreated':
+      return 'AwaitingSyncConfirmation';
+    default:
+      throw new Error(`Invalid Rust upload transition: ${phase} + ${eventKind}`);
+  }
+}
 
 vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(),
@@ -116,6 +165,7 @@ describe('UploadContext', () => {
     document.body.appendChild(container);
     root = createRoot(container);
     vi.clearAllMocks();
+    rustAdapterTestState.instances.length = 0;
     vi.mocked(uploadQueue.init).mockResolvedValue(undefined);
   });
 
@@ -225,9 +275,7 @@ describe('UploadContext', () => {
       );
     });
 
-    const adapter = vi.mocked(RustUploadAdapter).mock.results[0]!.value as {
-      submit: ReturnType<typeof vi.fn>;
-    };
+    const adapter = rustAdapterTestState.instances[0]!;
     const completedTask = {
       id: '018f0000-0000-7000-8000-000000000777',
       file: new File([new Uint8Array([1, 2, 3])], 'photo.jpg', { type: 'image/jpeg' }),
@@ -257,10 +305,85 @@ describe('UploadContext', () => {
 
     const finalizeOptions = vi.mocked(createManifestForUpload).mock.calls[0]![4];
     expect(finalizeOptions).toMatchObject({ adapter });
-    expect(adapter.submit.mock.calls.map(([event]) => event.kind)).toEqual([
+    expect(adapter.submittedKinds).toEqual([
       'StartRequested',
-      'EpochHandleAcquired',
       'MediaPrepared',
+      'EpochHandleAcquired',
+      'ShardEncrypted',
+      'ShardUploadCreated',
+      'ShardUploaded',
+      'ManifestCreated',
+    ]);
+  });
+
+  it('emits Rust upload events in state-machine order', async () => {
+    const epochKey = {
+      epochId: 7,
+      epochHandleId: 'epoch-handle-7',
+      signPublicKey: new Uint8Array(32),
+      signKeypair: {
+        publicKey: new Uint8Array(32),
+        secretKey: new Uint8Array(),
+      },
+    };
+    vi.mocked(FeatureFlagsManager.load).mockReturnValue({ rustCoreUpload: true });
+    vi.mocked(getCurrentOrFetchEpochKey).mockResolvedValue(epochKey);
+    vi.mocked(getEpochKey).mockReturnValue(epochKey);
+    vi.mocked(uploadQueue.add).mockResolvedValue('018f0000-0000-7000-8000-000000000777');
+
+    let contextValue: ReturnType<typeof useUploadContext> | null = null;
+    await act(async () => {
+      root.render(
+        createElement(
+          UploadProvider,
+          null,
+          createElement(TestConsumer, {
+            onContext: (ctx) => {
+              contextValue = ctx;
+            },
+          }),
+        ),
+      );
+    });
+
+    await act(async () => {
+      await contextValue!.upload(
+        new File([new Uint8Array([1, 2, 3])], 'photo.jpg', { type: 'image/jpeg' }),
+        '018f0000-0000-7000-8000-000000000123',
+      );
+    });
+
+    const completedTask = {
+      id: '018f0000-0000-7000-8000-000000000777',
+      file: new File([new Uint8Array([1, 2, 3])], 'photo.jpg', { type: 'image/jpeg' }),
+      albumId: '018f0000-0000-7000-8000-000000000123',
+      epochId: 7,
+      epochHandleId: 'epoch-handle-7',
+      status: 'complete',
+      currentAction: 'finalizing',
+      progress: 1,
+      completedShards: [{
+        index: 0,
+        shardId: '018f0000-0000-7000-8000-000000000999',
+        sha256: '00'.repeat(32),
+        tier: 3,
+        contentLength: 3,
+        envelopeVersion: 3,
+      }],
+      retryCount: 0,
+      lastAttemptAt: 0,
+    } as Parameters<NonNullable<typeof uploadQueue.onComplete>>[0];
+
+    await act(async () => {
+      uploadQueue.onProgress?.({ ...completedTask, currentAction: 'encrypting' });
+      uploadQueue.onProgress?.(completedTask);
+      await uploadQueue.onComplete?.(completedTask, [completedTask.completedShards[0]!.shardId], undefined);
+    });
+
+    expect(rustAdapterTestState.instances[0]!.submittedKinds).toEqual([
+      'StartRequested',
+      'MediaPrepared',
+      'EpochHandleAcquired',
       'ShardEncrypted',
       'ShardUploadCreated',
       'ShardUploaded',

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FeatureFlagsManager } from '../src/lib/feature-flags';
 import { UploadProvider, useUploadContext } from '../src/contexts/UploadContext';
+import { uploadQueue } from '../src/lib/upload-queue';
 
 const mocks = vi.hoisted(() => ({
   uploadQueueInit: vi.fn(async () => undefined),
@@ -189,12 +190,33 @@ describe('UploadContext Rust-core upload rollout flag', () => {
         '018f0000-0000-7000-8000-000000000403',
         3,
       );
-      expect(mocks.advanceUploadJob).toHaveBeenCalledTimes(2);
+      expect(mocks.advanceUploadJob).toHaveBeenCalledTimes(1);
       expect(mocks.advanceUploadJob.mock.calls[0]?.[10]).toBe('StartRequested');
       expect(mocks.advanceUploadJob.mock.calls[0]?.[11]).toBe('018f0000-0000-7000-8000-000000000404');
       expect(mocks.advanceUploadJob.mock.calls[0]?.[11]).not.toBe(mocks.advanceUploadJob.mock.calls[0]?.[9]);
-      expect(mocks.advanceUploadJob.mock.calls[1]?.[10]).toBe('EpochHandleAcquired');
       expect(mocks.uploadQueueAdd).toHaveBeenCalledOnce();
+
+      await act(async () => {
+        uploadQueue.onProgress?.({
+          id: 'legacy-task-id',
+          file: new File(['jpeg'], 'photo.jpg', { type: 'image/jpeg' }),
+          albumId: 'album-123',
+          epochId: 7,
+          epochHandleId: 'epoch-handle-7',
+          status: 'uploading',
+          currentAction: 'encrypting',
+          progress: 0.5,
+          completedShards: [],
+          retryCount: 0,
+          lastAttemptAt: 0,
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mocks.advanceUploadJob).toHaveBeenCalledTimes(3);
+      expect(mocks.advanceUploadJob.mock.calls[1]?.[10]).toBe('MediaPrepared');
+      expect(mocks.advanceUploadJob.mock.calls[2]?.[10]).toBe('EpochHandleAcquired');
     } finally {
       cleanup();
     }

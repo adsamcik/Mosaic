@@ -39,6 +39,31 @@ export interface RustCoreSchemaVersionMismatchTelemetry {
   }): void;
 }
 
+export type UploadAdapterTelemetryCounter = 'upload_adapter_transition_rejected';
+
+export interface UploadAdapterTelemetrySnapshot {
+  readonly counter: UploadAdapterTelemetryCounter;
+  readonly count: number;
+}
+
+class UploadAdapterTelemetry {
+  private readonly counters = new Map<UploadAdapterTelemetryCounter, number>();
+
+  increment(counter: UploadAdapterTelemetryCounter): void {
+    this.counters.set(counter, (this.counters.get(counter) ?? 0) + 1);
+  }
+
+  snapshot(): UploadAdapterTelemetrySnapshot[] {
+    return Array.from(this.counters.entries()).map(([counter, count]) => ({ counter, count }));
+  }
+
+  reset(): void {
+    this.counters.clear();
+  }
+}
+
+export const uploadAdapterTelemetry = new UploadAdapterTelemetry();
+
 export interface UploadSnapshotPersistence {
   put(snapshot: UploadJobSnapshot): Promise<void>;
   get(snapshotId: string): Promise<UploadJobSnapshot | null>;
@@ -143,7 +168,10 @@ export class RustUploadAdapter {
       this.snapshot = nextSnapshot;
       return nextSnapshot;
     });
-    this.pendingTransition = transition.catch(() => this.snapshot);
+    this.pendingTransition = transition.catch(() => {
+      uploadAdapterTelemetry.increment('upload_adapter_transition_rejected');
+      return this.snapshot;
+    });
     const nextSnapshot = await transition;
     return this.resultFor(nextSnapshot);
   }
