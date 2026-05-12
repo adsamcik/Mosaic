@@ -15,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import org.mosaic.android.main.crypto.ShardEncryptionWorker
+import org.mosaic.android.main.net.dto.ShardId
+import org.mosaic.android.main.net.dto.UploadJobId
 import org.mosaic.android.main.staging.AppPrivateStagingManager
 import org.mosaic.android.main.staging.StagedFile
 import org.mosaic.android.main.tus.ShardManifestEntry
@@ -45,6 +47,7 @@ class ShardUploadWorker internal constructor(
   override suspend fun doWork(): Result {
     val envelopeUri = inputData.getString(KEY_ENVELOPE_URI) ?: return failure(FAILURE_MISSING_INPUT)
     val expectedSha256 = inputData.getString(KEY_SHA256) ?: return failure(FAILURE_MISSING_INPUT)
+    val uploadJobId = inputData.getString(KEY_UPLOAD_JOB_ID) ?: return failure(FAILURE_MISSING_INPUT)
     val shardId = inputData.getString(KEY_SHARD_ID) ?: return failure(FAILURE_MISSING_INPUT)
     val tusEndpoint = inputData.getString(KEY_TUS_ENDPOINT) ?: return failure(FAILURE_MISSING_INPUT)
     val metadataSignature = inputData.getString(KEY_METADATA_SIGNATURE)
@@ -61,6 +64,8 @@ class ShardUploadWorker internal constructor(
         session.upload(
           stagedEnvelope,
           buildMetadata(shardId, expectedSha256, metadataSignature),
+          UploadJobId(uploadJobId),
+          ShardId(shardId),
         )
       }
       if (!uploadResult.sha256.equals(expectedSha256, ignoreCase = true)) {
@@ -157,6 +162,7 @@ class ShardUploadWorker internal constructor(
   companion object {
     const val KEY_ENVELOPE_URI: String = ShardEncryptionWorker.KEY_ENVELOPE_URI
     const val KEY_SHA256: String = ShardEncryptionWorker.KEY_SHA256_HEX
+    const val KEY_UPLOAD_JOB_ID: String = "upload_job_id"
     const val KEY_SHARD_ID: String = "shard_id"
     const val KEY_TUS_ENDPOINT: String = "tus_endpoint"
     const val KEY_METADATA_SIGNATURE: String = "metadata_signature"
@@ -175,7 +181,12 @@ class ShardUploadWorker internal constructor(
 }
 
 fun interface ShardTusSession {
-  fun upload(staged: StagedFile, metadata: Map<String, String>): ShardManifestEntry
+  fun upload(
+    staged: StagedFile,
+    metadata: Map<String, String>,
+    uploadJobId: UploadJobId,
+    shardId: ShardId,
+  ): ShardManifestEntry
 }
 
 interface ShardTusSessionFactory {
@@ -188,7 +199,9 @@ internal class DefaultShardTusSessionFactory(
   override fun create(endpointUrl: String): ShardTusSession {
     val client = TusClientFactory.create(endpointUrl, URL(endpointUrl).host)
     val session = TusUploadSession(client, AppPrivateStagingManager(context))
-    return ShardTusSession { staged, metadata -> session.upload(staged, metadata) }
+    return ShardTusSession { staged, metadata, uploadJobId, shardId ->
+      session.upload(staged, metadata, uploadJobId, shardId)
+    }
   }
 }
 

@@ -8,3 +8,6 @@ value class ManifestId(val value: String)
 
 @JvmInline
 value class UploadJobId(val value: String)
+
+@JvmInline
+value class ShardId(val value: String)

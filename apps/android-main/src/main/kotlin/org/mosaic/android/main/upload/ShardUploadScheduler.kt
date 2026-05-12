@@ -18,7 +18,7 @@ object ShardUploadScheduler {
     metadataSignature: String? = null,
   ): OneTimeWorkRequest =
     OneTimeWorkRequestBuilder<ShardUploadWorker>()
-      .setInputData(inputData(shardId, tusEndpoint, metadataSignature))
+      .setInputData(inputData(jobId, shardId, tusEndpoint, metadataSignature))
       .setConstraints(
         Constraints.Builder()
           .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -38,8 +38,9 @@ object ShardUploadScheduler {
 
   private const val INITIAL_BACKOFF_SECONDS: Long = MIN_BACKOFF_SECONDS
 
-  private fun inputData(shardId: String, tusEndpoint: String, metadataSignature: String?): Data {
+  private fun inputData(jobId: String, shardId: String, tusEndpoint: String, metadataSignature: String?): Data {
     val builder = Data.Builder()
+      .putString(ShardUploadWorker.KEY_UPLOAD_JOB_ID, jobId)
       .putString(ShardUploadWorker.KEY_SHARD_ID, shardId)
       .putString(ShardUploadWorker.KEY_TUS_ENDPOINT, tusEndpoint)
     if (metadataSignature != null) {

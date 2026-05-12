@@ -219,6 +219,7 @@ class ShardUploadWorkerTest {
     assertTrue(request.tags.contains("upload-job-job-123"))
     assertTrue(request.tags.contains(ShardUploadScheduler.SHARD_UPLOAD_TAG))
     assertEquals(NetworkType.CONNECTED, request.workSpec.constraints.requiredNetworkType)
+    assertEquals("job-123", request.workSpec.input.getString(ShardUploadWorker.KEY_UPLOAD_JOB_ID))
     assertEquals("shard-9", request.workSpec.input.getString(ShardUploadWorker.KEY_SHARD_ID))
     assertEquals("https://uploads.example.test/files", request.workSpec.input.getString(ShardUploadWorker.KEY_TUS_ENDPOINT))
     assertEquals("signature-abc", request.workSpec.input.getString(ShardUploadWorker.KEY_METADATA_SIGNATURE))
@@ -259,6 +260,7 @@ class ShardUploadWorkerTest {
     val input = Data.Builder()
       .putString(ShardUploadWorker.KEY_ENVELOPE_URI, envelope.toURI().toString())
       .putString(ShardUploadWorker.KEY_SHA256, expectedSha256)
+      .putString(ShardUploadWorker.KEY_UPLOAD_JOB_ID, "job-for-$shardId")
       .putString(ShardUploadWorker.KEY_SHARD_ID, shardId)
       .putString(ShardUploadWorker.KEY_TUS_ENDPOINT, tusEndpoint)
       .putString(ShardUploadWorker.KEY_METADATA_SIGNATURE, metadataSignature)
@@ -332,7 +334,9 @@ class ShardUploadWorkerTest {
   ) : ShardTusSessionFactory {
     override fun create(endpointUrl: String): ShardTusSession {
       val session = TusUploadSession(TusClientFactory.create(serverUrl(endpointUrl), OkHttpClient()), stagingManager, chunkSizeBytes = 64)
-      return ShardTusSession { staged, metadata -> session.upload(staged, metadata) }
+      return ShardTusSession { staged, metadata, uploadJobId, shardId ->
+        session.upload(staged, metadata, uploadJobId, shardId)
+      }
     }
 
     private fun serverUrl(endpointUrl: String): java.net.URL = java.net.URL(endpointUrl)
@@ -341,13 +345,13 @@ class ShardUploadWorkerTest {
   private class FixedTusSessionFactory(
     private val manifestEntry: ShardManifestEntry,
   ) : ShardTusSessionFactory {
-    override fun create(endpointUrl: String): ShardTusSession = ShardTusSession { _, _ -> manifestEntry }
+    override fun create(endpointUrl: String): ShardTusSession = ShardTusSession { _, _, _, _ -> manifestEntry }
   }
 
   private class ThrowingTusSessionFactory(
     private val exception: Exception,
   ) : ShardTusSessionFactory {
-    override fun create(endpointUrl: String): ShardTusSession = ShardTusSession { _, _ -> throw exception }
+    override fun create(endpointUrl: String): ShardTusSession = ShardTusSession { _, _, _, _ -> throw exception }
   }
 
   private object ThrowingStagingCleaner : ShardStagingCleaner {

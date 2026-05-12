@@ -45,11 +45,12 @@ class MosaicTusClient(
     .url(url)
     .header("Tus-Resumable", TUS_VERSION)
 
-  fun executePatch(uploadUrl: HttpUrl, offset: Long, body: RequestBody): Response {
+  fun executePatch(uploadUrl: HttpUrl, offset: Long, body: RequestBody, idempotencyKey: String): Response {
     val request = newRequestBuilder(uploadUrl)
       .patch(body)
       .header("Upload-Offset", offset.toString())
       .header("Content-Type", "application/offset+octet-stream")
+      .header("Idempotency-Key", idempotencyKey)
       .build()
     return okHttpClient.newCall(request).execute()
   }

@@ -7,6 +7,9 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.mosaic.android.main.net.dto.ShardId
+import org.mosaic.android.main.net.dto.UploadJobId
+import org.mosaic.android.main.net.manifest.MosaicIdempotencyKeys
 import org.mosaic.android.main.staging.AppPrivateStagingManager
 import org.mosaic.android.main.staging.StagedFile
 import org.mosaic.android.main.staging.StagedUploadState
@@ -20,7 +23,13 @@ class TusUploadSession(
     require(chunkSizeBytes > 0) { "chunk size must be positive" }
   }
 
-  fun upload(staged: StagedFile, metadata: Map<String, String> = emptyMap()): ShardManifestEntry {
+  fun upload(
+    staged: StagedFile,
+    metadata: Map<String, String> = emptyMap(),
+    uploadJobId: UploadJobId = UploadJobId(staged.id),
+    shardId: ShardId = ShardId(staged.id),
+  ): ShardManifestEntry {
+    val patchIdempotencyKey = MosaicIdempotencyKeys.forTusShardPatch(uploadJobId, shardId)
     val state = stagingManager.readUploadState(staged)
     var uploadUrl = state.uploadUrl?.toHttpUrl()
     var offset = 0L
@@ -54,7 +63,7 @@ class TusUploadSession(
         val bytesRead = input.read(buffer, 0, minOf(buffer.size.toLong(), staged.sizeBytes - offset).toInt())
         if (bytesRead <= 0) break
         digest.update(buffer, 0, bytesRead)
-        offset = patchWithRetry(uploadUrl, offset, buffer.copyOf(bytesRead))
+        offset = patchWithRetry(uploadUrl, offset, buffer.copyOf(bytesRead), patchIdempotencyKey)
         stagingManager.writeUploadState(staged, StagedUploadState(uploadUrl.toString(), offset, finalized = false))
       }
     }
@@ -91,13 +100,13 @@ class TusUploadSession(
     }
   }
 
-  private fun patchWithRetry(uploadUrl: HttpUrl, initialOffset: Long, chunk: ByteArray): Long {
+  private fun patchWithRetry(uploadUrl: HttpUrl, initialOffset: Long, chunk: ByteArray, idempotencyKey: String): Long {
     var attempt = 0
     var offset = initialOffset
     var body = chunk
     var lastFailure: TusUploadException.PatchFailed? = null
     while (attempt < client.maxPatchRetries) {
-      client.executePatch(uploadUrl, offset, body.toRequestBody("application/offset+octet-stream".toMediaType())).use { response ->
+      client.executePatch(uploadUrl, offset, body.toRequestBody("application/offset+octet-stream".toMediaType()), idempotencyKey).use { response ->
         if (response.code == 204) return offset + body.size
         lastFailure = TusUploadException.PatchFailed(response.code)
       }

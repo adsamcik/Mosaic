@@ -15,6 +15,8 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mosaic.android.main.net.dto.ShardId
+import org.mosaic.android.main.net.dto.UploadJobId
 import org.mosaic.android.main.staging.AppPrivateStagingManager
 import org.mosaic.android.main.staging.StagedFile
 import org.mosaic.android.main.staging.StagedUploadState
@@ -147,6 +149,31 @@ class TusUploadSessionTest {
     assertEquals("PATCH", secondPatch.method)
     assertEquals("3", secondPatch.getHeader("Upload-Offset"))
     assertEquals("def", secondPatch.body.readUtf8())
+  }
+
+  @Test
+  fun patchIncludesIdempotencyKey() {
+    server.enqueue(MockResponse().setResponseCode(201).setHeader("Location", "/uploads/idempotent"))
+    server.enqueue(MockResponse().setResponseCode(502))
+    server.enqueue(MockResponse().setResponseCode(200).setHeader("Upload-Offset", "0"))
+    server.enqueue(MockResponse().setResponseCode(204).setHeader("Upload-Offset", "6"))
+    server.start()
+    val staged = stageBytes("abcdef")
+    val session = TusUploadSession(TusClientFactory.create(server.url("/files"), OkHttpClient()), stagingManager, chunkSizeBytes = 6)
+    val jobId = UploadJobId("018f9f8d-99df-7b42-8f0d-333333333333")
+    val shardId = ShardId("018f9f8d-99df-7b42-8f0d-444444444444")
+
+    session.upload(staged, uploadJobId = jobId, shardId = shardId)
+
+    assertEquals("POST", server.takeRequest().method)
+    val firstPatch = server.takeRequest()
+    assertEquals("PATCH", firstPatch.method)
+    assertEquals("HEAD", server.takeRequest().method)
+    val retryPatch = server.takeRequest()
+    assertEquals("PATCH", retryPatch.method)
+    val firstKey = firstPatch.getHeader("Idempotency-Key")
+    assertTrue("PATCH idempotency key must be present", !firstKey.isNullOrBlank())
+    assertEquals(firstKey, retryPatch.getHeader("Idempotency-Key"))
   }
 
   @Test
