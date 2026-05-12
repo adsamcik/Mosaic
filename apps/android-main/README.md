@@ -21,7 +21,7 @@ apps/android-main/
   build.gradle.kts                      # AGP 8.7.3 application module
   proguard-rules.pro                    # JNA + uniffi.mosaic_uniffi.** keep rules
   src/main/
-    AndroidManifest.xml                 # allowBackup=false, no INTERNET, no media perms
+    AndroidManifest.xml                 # allowBackup=false, INTERNET for encrypted sync, no media perms
     kotlin/org/mosaic/android/main/
       MainActivity.kt                   # Smoke screen — protocolVersion() + bogus unlock
       MosaicApplication.kt              # Eager-loads native lib via warmUp()
@@ -94,8 +94,8 @@ command after Gradle and the Rust toolchain are installed.
 ## Privacy / security invariants
 
 - `android:allowBackup="false"` — no auto-backup of app-private state.
-- No `INTERNET` permission. No `READ_MEDIA_IMAGES`. No
-  `MANAGE_EXTERNAL_STORAGE`.
+- `INTERNET` + `ACCESS_NETWORK_STATE` are declared for encrypted upload/sync.
+  No `READ_MEDIA_IMAGES`. No `MANAGE_EXTERNAL_STORAGE`.
 - abiFilters restricted to `arm64-v8a` + `x86_64`.
 - The smoke `unlockAccountKey` call uses synthetic non-secret inputs that the
   Rust core rejects with stable code 208 (`KDF_PROFILE_TOO_WEAK`); no real
@@ -136,12 +136,12 @@ and `AutoImportWorkInstrumentedTest` (emulator).
   `ExistingWorkPolicy.KEEP`. The hash keeps account / album identifiers out of
   the WorkManager database in line with the privacy-redacted `<opaque>` /
   `<redacted>` patterns enforced by the shell foundation.
-- **Permissions.** The manifest declares only `FOREGROUND_SERVICE`,
+- **Permissions.** The manifest declares `INTERNET` and
+  `ACCESS_NETWORK_STATE` for encrypted upload/sync plus `FOREGROUND_SERVICE`,
   `FOREGROUND_SERVICE_DATA_SYNC`, and `POST_NOTIFICATIONS` — the minimum set
   required to run a `dataSync` foreground service on Android 14+ and post the
-  user-visible notification. No `INTERNET`, no `READ_MEDIA_*`, and no
-  `MANAGE_EXTERNAL_STORAGE` are added; the Photo Picker integration owns
-  picking, not background scanning.
+  user-visible notification. No `READ_MEDIA_*` or `MANAGE_EXTERNAL_STORAGE`
+  are added; the Photo Picker integration owns picking, not background scanning.
 - **No DI.** v1 ships no Hilt / Dagger graph, so the worker resolves runtime
   state through the process-scoped `AutoImportRuntime` registry instead of
   `HiltWorker`. Tests install a custom `AutoImportSettingsProvider` /

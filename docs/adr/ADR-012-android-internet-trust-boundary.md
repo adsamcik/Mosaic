@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Gates Lane A (Android upload pipeline) ticket A1 and downstream tickets that depend on network access (A4, A5b, A10, A11, A18*).
+Implemented. INTERNET + ACCESS_NETWORK_STATE granted in `apps/android-main`. `MergedManifestInvariantsTest.internetPermissionPresent` enforces the post-flip state. Companion guards `READ_MEDIA_*`/`MANAGE_EXTERNAL_*` remain absent.
 
 ## Context
 

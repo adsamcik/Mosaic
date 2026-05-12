@@ -51,8 +51,13 @@ class MergedManifestInvariantsTest {
   }
 
   @Test
-  fun forbiddenInternetPermissionAbsent() {
-    forbidPermission("android.permission.INTERNET")
+  fun internetPermissionPresent() {
+    requirePermission("android.permission.INTERNET")
+  }
+
+  @Test
+  fun accessNetworkStatePermissionPresent() {
+    requirePermission("android.permission.ACCESS_NETWORK_STATE")
   }
 
   @Test

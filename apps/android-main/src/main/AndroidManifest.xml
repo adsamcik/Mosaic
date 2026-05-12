@@ -5,10 +5,10 @@
   Privacy / security invariants enforced here:
     - android:allowBackup="false" (no auto-backup of app-private storage).
     - android:hasFragileUserData="true" (caution-on-uninstall confirms encrypted data loss intent).
-    - No INTERNET permission. This module does not contact a server.
+    - INTERNET + ACCESS_NETWORK_STATE are declared for encrypted upload/sync.
     - No READ_EXTERNAL_STORAGE / MANAGE_EXTERNAL_STORAGE / READ_MEDIA_IMAGES.
       The Photo Picker integration is handled by future android-shell pieces; this v1
-      slice is offline-only and only proves that the Rust core is wired.
+      slice uses Photo Picker grants rather than broad storage permissions.
     - Only one component is exported (the launcher activity, required by Android 12+).
     - android:requestLegacyExternalStorage is not declared (we never use it).
 
@@ -35,6 +35,8 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
   <application
       android:name=".MosaicApplication"
