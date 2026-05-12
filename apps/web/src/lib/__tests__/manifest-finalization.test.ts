@@ -56,6 +56,50 @@ describe('executeManifestFinalizationEffect error events', () => {
     }]);
   });
 
+  it.each([
+    ['extra field', {
+      protocolVersion: 1,
+      manifestId: '018f0000-0000-7000-8000-000000000001',
+      metadataVersion: 12,
+      createdAt: '2026-05-06T00:00:00.000Z',
+      tieredShards: effect().tieredShards,
+      unexpected: true,
+    }],
+    ['missing field', {
+      protocolVersion: 1,
+      manifestId: '018f0000-0000-7000-8000-000000000001',
+      createdAt: '2026-05-06T00:00:00.000Z',
+      tieredShards: effect().tieredShards,
+    }],
+    ['wrong tier value', {
+      protocolVersion: 1,
+      manifestId: '018f0000-0000-7000-8000-000000000001',
+      metadataVersion: 12,
+      createdAt: '2026-05-06T00:00:00.000Z',
+      tieredShards: [{ ...effect().tieredShards[0]!, tier: 4 }],
+    }],
+  ])('rejectsMalformedFinalizeResponse: %s', async (_name, body) => {
+    const events: unknown[] = [];
+
+    await expect(executeManifestFinalizationEffect(effect(), {
+      jobId: 'test-job',
+      adapter: adapterFor(events),
+      fetchImpl: async () => new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    })).rejects.toMatchObject({
+      code: 'MALFORMED_FINALIZE_RESPONSE',
+    } satisfies Partial<ManifestFinalizationError>);
+
+    expect(events).toEqual([{
+      kind: 'NonRetryableFailure',
+      effectId: 'effect-1',
+      errorCode: 0,
+      targetPhase: 'Failed',
+    }]);
+  });
+
   it('rejects malformed shard UUIDs before submitting the finalize request', async () => {
     const fetchImpl = vi.fn<typeof fetch>(
       async () => new Response('{}', { status: 200 }),

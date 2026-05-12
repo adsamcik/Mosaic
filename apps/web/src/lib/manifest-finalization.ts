@@ -5,6 +5,7 @@ import type { UploadTask } from './upload/types';
 import type { UploadEvent, UploadEffect } from './rust-core/upload-adapter-port';
 import { manifestTranscriptInputForFinalize } from './manifest-transcript';
 import { purgeLocalAlbum } from './local-purge';
+import { ManifestFinalizeResponseSchema } from './api-schemas';
 
 const API_BASE = '/api';
 const SHA256_BYTES = 32;
@@ -15,6 +16,7 @@ export const MANIFEST_TRANSCRIPT_MISMATCH = 422;
 export const MANIFEST_AUTH_DENIED = 'AUTH_DENIED';
 export const MANIFEST_TRANSIENT_SERVER_ERROR = 'TRANSIENT_SERVER_ERROR';
 export const MANIFEST_ALBUM_GONE = 'ALBUM_GONE';
+export const MANIFEST_MALFORMED_RESPONSE = 'MALFORMED_FINALIZE_RESPONSE';
 
 export interface ManifestFinalizeTieredShard {
   readonly shardId: string;
@@ -223,7 +225,7 @@ export async function executeManifestFinalizationEffect(
   }
 
   if (response.ok) {
-    const finalized = await readFinalizeResponse(response, effect);
+    const finalized = await readFinalizeResponseOrSubmitMalformed(response, effect, options.adapter);
     await options.adapter?.submit({
       kind: 'ManifestCreated',
       effectId: effect.effectId,
@@ -235,7 +237,7 @@ export async function executeManifestFinalizationEffect(
 
   if (response.status === 409) {
     if (response.headers.get('Idempotency-Replayed') === 'true') {
-      const finalized = await readFinalizeResponse(response, effect);
+      const finalized = await readFinalizeResponseOrSubmitMalformed(response, effect, options.adapter);
       await options.adapter?.submit({
         kind: 'ManifestCreated',
         effectId: effect.effectId,
@@ -387,29 +389,37 @@ function uploadJobIdForTask(task: UploadTask): string {
 
 async function readFinalizeResponse(
   response: Response,
-  effect: FinalizeManifestEffect,
 ): Promise<ManifestFinalizeResponse> {
   const json = await response.json().catch(() => undefined);
-  if (isManifestFinalizeResponse(json)) {
-    return json;
+  const parsed = ManifestFinalizeResponseSchema.safeParse(json);
+  if (parsed.success) {
+    return parsed.data;
   }
-  return {
-    protocolVersion: effect.protocolVersion,
-    manifestId: effect.manifestId,
-    metadataVersion: 0,
-    createdAt: new Date(0).toISOString(),
-    tieredShards: effect.tieredShards,
-  };
+  throw new ManifestFinalizationError(
+    response.status,
+    MANIFEST_MALFORMED_RESPONSE,
+    'Manifest finalization failed: malformed finalize response',
+  );
 }
 
-function isManifestFinalizeResponse(value: unknown): value is ManifestFinalizeResponse {
-  if (typeof value !== 'object' || value === null) return false;
-  const candidate = value as Record<string, unknown>;
-  return typeof candidate.protocolVersion === 'number'
-    && typeof candidate.manifestId === 'string'
-    && typeof candidate.metadataVersion === 'number'
-    && typeof candidate.createdAt === 'string'
-    && Array.isArray(candidate.tieredShards);
+async function readFinalizeResponseOrSubmitMalformed(
+  response: Response,
+  effect: FinalizeManifestEffect,
+  adapter: ManifestFinalizationAdapter | undefined,
+): Promise<ManifestFinalizeResponse> {
+  try {
+    return await readFinalizeResponse(response);
+  } catch (error) {
+    if (error instanceof ManifestFinalizationError && error.code === MANIFEST_MALFORMED_RESPONSE) {
+      await adapter?.submit({
+        kind: 'NonRetryableFailure',
+        effectId: effect.effectId,
+        errorCode: 0,
+        targetPhase: 'Failed',
+      });
+    }
+    throw error;
+  }
 }
 
 function manifestFinalizeErrorManifestId(value: unknown): string {
