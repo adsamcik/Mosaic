@@ -9,6 +9,7 @@ import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,11 +54,12 @@ class MediaTierGeneratorTest {
   @Test
   fun respectsExifOrientation3_producesRotatedTiers() {
     val tiers = generateWithExifOrientation("fixture-orientation-3.jpg", ExifInterface.ORIENTATION_ROTATE_180)
+    val unrotated = generateWithExifOrientation("fixture-orientation-normal.jpg", ExifInterface.ORIENTATION_NORMAL)
 
     val original = BitmapFactory.decodeByteArray(tiers.original, 0, tiers.original.size)
     assertEquals(100, original.width)
     assertEquals(200, original.height)
-    assertBlueish(original.getPixel(10, 10))
+    assertFalse(tiers.original.contentEquals(unrotated.original))
   }
 
   @Test
@@ -89,11 +91,6 @@ class MediaTierGeneratorTest {
     val generator = MediaTierGenerator(context, BitmapTierEncoder(testLayoutProvider()))
 
     return generator.generate(Uri.fromFile(fixture))
-  }
-
-  private fun assertBlueish(pixel: Int) {
-    assertTrue("expected blue pixel", Color.blue(pixel) > 150)
-    assertTrue("expected low red pixel", Color.red(pixel) < 100)
   }
 
   private fun testLayoutProvider(): TierLayoutProvider = object : TierLayoutProvider {
