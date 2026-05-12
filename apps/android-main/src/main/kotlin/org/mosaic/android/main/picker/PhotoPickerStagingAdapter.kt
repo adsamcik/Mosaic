@@ -7,14 +7,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.mosaic.android.main.staging.AppPrivateStagingManager
 import org.mosaic.android.main.staging.StagedFile
-import org.mosaic.android.main.upload.RustContentHasher
+import java.security.MessageDigest
 
 class PhotoPickerStagingAdapter internal constructor(
   private val stageUri: (Uri) -> StagedFile,
   private val unstageFile: (StagedFile) -> Unit,
   private val contentResolver: ContentResolver,
   private val ioDispatcher: CoroutineDispatcher,
-  private val albumContentHashFor: (Uri) -> String,
+  private val albumContentHashFor: (StagedFile) -> String,
 ) {
   constructor(
     staging: AppPrivateStagingManager,
@@ -24,7 +24,7 @@ class PhotoPickerStagingAdapter internal constructor(
     unstageFile = staging::unstage,
     contentResolver = contentResolver,
     ioDispatcher = Dispatchers.IO,
-    albumContentHashFor = { sourceUri -> computeAlbumContentHash(contentResolver, sourceUri) },
+    albumContentHashFor = { staged -> computeAlbumContentHash(staged) },
   )
 
   suspend fun stagePickedItems(
@@ -35,14 +35,21 @@ class PhotoPickerStagingAdapter internal constructor(
     try {
       uris.map { uri ->
         val mimeType = contentResolver.getType(uri) ?: DEFAULT_MIME_TYPE
-        val albumContentHashHex = albumContentHashFor(uri)
-        val stagedItem = StagedItem(
-          stagedFile = stageUri(uri),
-          mimeType = mimeType,
-          albumContentHashHex = albumContentHashHex,
-        )
-        stagedItems += stagedItem
-        stagedItem
+        val stagedFile = stageUri(uri)
+        try {
+          val albumContentHashHex = albumContentHashFor(stagedFile)
+          val stagedItem = StagedItem(
+            stagedFile = stagedFile,
+            mimeType = mimeType,
+            albumContentHashHex = albumContentHashHex,
+          )
+          stagedItems += stagedItem
+          stagedItem
+        } catch (failure: Throwable) {
+          runCatching { unstageFile(stagedFile) }
+            .onFailure { rollbackFailure -> failure.addSuppressed(rollbackFailure) }
+          throw failure
+        }
       }
     } catch (failure: Throwable) {
       stagedItems.forEach { item ->
@@ -53,16 +60,24 @@ class PhotoPickerStagingAdapter internal constructor(
     }
   }
 
-  private companion object {
+  internal companion object {
     const val DEFAULT_MIME_TYPE = "application/octet-stream"
+    private const val HASH_BUFFER_BYTES = 1024 * 1024
 
-    fun computeAlbumContentHash(contentResolver: ContentResolver, sourceUri: Uri): String {
-      val sourceBytes = contentResolver.openInputStream(sourceUri).use { input ->
-        requireNotNull(input) { "Unable to open source URI for content hashing" }
-        input.readBytes()
+    fun computeAlbumContentHash(stagedFile: StagedFile): String {
+      val digest = MessageDigest.getInstance("SHA-256")
+      stagedFile.file.inputStream().buffered().use { input ->
+        val buffer = ByteArray(HASH_BUFFER_BYTES)
+        while (true) {
+          val read = input.read(buffer)
+          if (read < 0) break
+          if (read > 0) digest.update(buffer, 0, read)
+        }
       }
-      return RustContentHasher.sha256Hex(sourceBytes)
+      return digest.digest().toHex()
     }
+
+    private fun ByteArray.toHex(): String = joinToString(separator = "") { byte -> "%02x".format(byte) }
   }
 }
 

@@ -6,6 +6,8 @@ import android.database.Cursor
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import java.io.InputStream
+import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -92,6 +94,44 @@ class PhotoPickerStagingAdapterTest {
     assertEquals(listOf("image/webp", "image/webp"), result.map { it.mimeType })
   }
 
+  @Test
+  fun computesHashWithoutFullBuffer() = runBlocking {
+    val byteCount = 50L * 1024L * 1024L
+    val expectedHash = sha256Hex(DeterministicInputStream(byteCount))
+    val adapter = PhotoPickerStagingAdapter(
+      stageUri = { source ->
+        val directory = File(context.filesDir, "picker-test").also { it.mkdirs() }
+        val file = File(directory, "large-video.blob")
+        DeterministicInputStream(byteCount).use { input ->
+          file.outputStream().use { output -> input.copyTo(output, bufferSize = 1024 * 1024) }
+        }
+        StagedFile(
+          id = "large-video",
+          uri = Uri.Builder().scheme("mosaic-staged").authority("large-video").build(),
+          file = file,
+          displayName = source.toString(),
+          sizeBytes = file.length(),
+          createdAtMs = 1L,
+          lastAccessMs = 1L,
+        ).also { stagedFiles += it }
+      },
+      unstageFile = { staged -> unstagedFiles += staged },
+      contentResolver = context.contentResolver,
+      ioDispatcher = Dispatchers.Unconfined,
+      albumContentHashFor = { staged -> PhotoPickerStagingAdapter.computeAlbumContentHash(staged) },
+    )
+    val runtime = Runtime.getRuntime()
+    runtime.gc()
+    val beforeBytes = runtime.totalMemory() - runtime.freeMemory()
+
+    val result = adapter.stagePickedItems(listOf(uri("large-video")))
+
+    runtime.gc()
+    val afterBytes = runtime.totalMemory() - runtime.freeMemory()
+    assertEquals(expectedHash, result.single().albumContentHashHex)
+    assertTrue("hashing should not retain the full 50 MiB input", afterBytes - beforeBytes < 10L * 1024L * 1024L)
+  }
+
   private fun adapter(failOn: Uri? = null): PhotoPickerStagingAdapter = PhotoPickerStagingAdapter(
     stageUri = { source ->
       if (source == failOn) error("staging failed")
@@ -100,8 +140,43 @@ class PhotoPickerStagingAdapterTest {
     unstageFile = { staged -> unstagedFiles += staged },
     contentResolver = context.contentResolver,
     ioDispatcher = Dispatchers.Unconfined,
-    albumContentHashFor = { source -> "hash-${source.lastPathSegment}" },
+    albumContentHashFor = { staged -> "hash-${staged.displayName?.substringAfterLast('/')}" },
   )
+
+  private fun sha256Hex(input: InputStream): String =
+    input.use { stream ->
+      val digest = MessageDigest.getInstance("SHA-256")
+      val buffer = ByteArray(1024 * 1024)
+      while (true) {
+        val read = stream.read(buffer)
+        if (read < 0) break
+        if (read > 0) digest.update(buffer, 0, read)
+      }
+      digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
+  private class DeterministicInputStream(
+    private val totalBytes: Long,
+  ) : InputStream() {
+    private var emitted = 0L
+
+    override fun read(): Int {
+      if (emitted >= totalBytes) return -1
+      val value = (emitted * 31L + 17L).toInt() and 0xFF
+      emitted += 1
+      return value
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+      if (emitted >= totalBytes) return -1
+      val count = minOf(length.toLong(), totalBytes - emitted).toInt()
+      for (index in 0 until count) {
+        buffer[offset + index] = ((emitted * 31L + 17L).toInt() and 0xFF).toByte()
+        emitted += 1
+      }
+      return count
+    }
+  }
 
   private fun stagedFile(source: Uri): StagedFile {
     val index = stagedFiles.size + 1
