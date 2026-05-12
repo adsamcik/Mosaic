@@ -1,6 +1,7 @@
 package org.mosaic.android.main.net
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -123,5 +124,22 @@ class ManifestCommitClientTest {
     val result = client.finalize(ManifestId(ManifestFinalizeFixtures.manifestId), ManifestFinalizeFixtures.request, "server-error")
 
     assertEquals(ManifestFinalizeResult.ServerError(503), result)
+  }
+
+  @Test
+  fun rejectsUnknownFieldOnFinalize() = runBlocking {
+    server.enqueue(
+      MockResponse()
+        .setResponseCode(200)
+        .setBody(ManifestFinalizeFixtures.responseJson.dropLast(1) + ""","unexpected_field":"abc"}"""),
+    )
+    server.start()
+    val client = ManifestCommitClient(OkHttpClient(), server.url("/"))
+
+    org.junit.Assert.assertThrows(SerializationException::class.java) {
+      runBlocking {
+        client.finalize(ManifestId(ManifestFinalizeFixtures.manifestId), ManifestFinalizeFixtures.request, "strict-key")
+      }
+    }
   }
 }

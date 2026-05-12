@@ -23,7 +23,7 @@ class AlbumSyncFetcher(
 ) {
   private val json = Json {
     explicitNulls = false
-    ignoreUnknownKeys = true
+    ignoreUnknownKeys = false
   }
 
   suspend fun fetchSyncState(albumId: AlbumId): AlbumSyncResult = withContext(Dispatchers.IO) {

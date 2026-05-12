@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 
 internal object ContractSnapshotTestSupport {
@@ -38,6 +39,7 @@ internal object ContractSnapshotTestSupport {
 
   private fun primitiveType(value: JsonPrimitive): String {
     if (value.isString) return "string"
+    if (value.booleanOrNull != null) return "boolean"
     val content = value.content
     return if (content.toDoubleOrNull() != null) "number" else "string"
   }
