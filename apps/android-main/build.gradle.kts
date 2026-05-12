@@ -191,6 +191,7 @@ dependencies {
   // maintained Android OkHttp-first artifact; keep OkHttp pinned for the A5a
   // spike and avoid adding a URLConnection-based Tus dependency.
   implementation("com.squareup.okhttp3:okhttp:4.12.0")
+  implementation("androidx.exifinterface:exifinterface:1.3.7")
   implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
   // WorkManager powers the auto-import foreground (`dataSync`) worker. See
