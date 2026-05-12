@@ -464,7 +464,15 @@ public class AlbumsController : ControllerBase
                 // New format with tier info
                 Shards = m.ManifestShards
                     .OrderBy(ms => ms.ChunkIndex)
-                    .Select(ms => new { ms.ShardId, ms.Tier })
+                    .Select(ms => new
+                    {
+                        ms.ShardId,
+                        ms.Tier,
+                        ms.ShardIndex,
+                        Sha256 = ms.Sha256.ToLower(),
+                        ms.ContentLength,
+                        ms.EnvelopeVersion
+                    })
             })
             .ToListAsync();
 

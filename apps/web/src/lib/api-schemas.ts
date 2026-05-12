@@ -250,6 +250,22 @@ export const ManifestCreatedSchema = z.object({
 });
 export type ManifestCreated = z.infer<typeof ManifestCreatedSchema>;
 
+export const ManifestFinalizeResponseSchema = z.object({
+  protocolVersion: z.literal(1),
+  manifestId: UuidSchema,
+  metadataVersion: z.number().int().nonnegative(),
+  createdAt: z.string(),
+  tieredShards: z.array(z.object({
+    shardId: UuidSchema,
+    tier: z.number().int().min(1).max(3),
+    shardIndex: z.number().int().nonnegative(),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    contentLength: z.number().int().positive(),
+    envelopeVersion: z.number().int().min(3).max(4),
+  }).strict()),
+}).strict();
+export type ManifestFinalizeResponse = z.infer<typeof ManifestFinalizeResponseSchema>;
+
 export const ManifestMetadataUpdatedSchema = z.object({
   id: UuidSchema,
   versionCreated: z.number().int().nonnegative(),
