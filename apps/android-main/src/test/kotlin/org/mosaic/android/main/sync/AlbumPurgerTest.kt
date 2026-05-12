@@ -1,11 +1,26 @@
 package org.mosaic.android.main.sync
 
+import android.content.Context
+import android.util.Log
 import androidx.test.core.app.ApplicationProvider
+import androidx.work.Configuration
+import androidx.work.Constraints
+import androidx.work.ListenableWorker
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import androidx.work.testing.SynchronousExecutor
+import androidx.work.testing.WorkManagerTestInitHelper
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mosaic.android.main.crypto.ShardEncryptionScheduler
 import org.mosaic.android.main.db.AlbumContentHashRecord
 import org.mosaic.android.main.db.AlbumSyncSnapshotRow
 import org.mosaic.android.main.db.RustSnapshotVersions
@@ -19,10 +34,24 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class AlbumPurgerTest {
-  private val db = UploadQueueDatabase.createInMemoryForTests(ApplicationProvider.getApplicationContext())
+  private val context = ApplicationProvider.getApplicationContext<Context>()
+  private val db = UploadQueueDatabase.createInMemoryForTests(context)
+
+  @Before
+  fun setUpWorkManager() {
+    WorkManagerTestInitHelper.initializeTestWorkManager(
+      context,
+      Configuration.Builder()
+        .setMinimumLoggingLevel(Log.DEBUG)
+        .setExecutor(SynchronousExecutor())
+        .build(),
+    )
+  }
 
   @After
   fun closeDb() {
+    WorkManager.getInstance(context).cancelAllWork().result.get()
+    WorkManager.getInstance(context).pruneWork().result.get()
     db.close()
   }
 
@@ -51,6 +80,37 @@ class AlbumPurgerTest {
     assertEquals(otherAlbum, db.albumSyncSnapshotDao().get(otherAlbum)?.albumId)
     assertEquals("photo-b", db.albumContentHashDao().lookup(otherAlbum, "b".repeat(64))?.photoId)
   }
+
+  @Test
+  fun cancelsUploadJobsForPurgedAlbum() = runBlocking {
+    val albumA = "018f9f8d-99df-7b42-8f0d-aaaaaaaaaaaa"
+    val albumB = "018f9f8d-99df-7b42-8f0d-bbbbbbbbbbbb"
+    val workManager = WorkManager.getInstance(context)
+    db.uploadQueueDao().insert(uploadQueueRecord("jobA1", albumA))
+    db.uploadQueueDao().insert(uploadQueueRecord("jobA2", albumA))
+    db.uploadQueueDao().insert(uploadQueueRecord("jobB1", albumB))
+    workManager.enqueue(taggedWork("jobA1")).result.get()
+    workManager.enqueue(taggedWork("jobA2")).result.get()
+    workManager.enqueue(taggedWork("jobB1")).result.get()
+
+    AlbumPurger(db, workManager).purgeRemoteAlbumDeletion(AlbumId(albumA))
+
+    assertEquals(null, db.uploadQueueDao().get("jobA1"))
+    assertEquals(null, db.uploadQueueDao().get("jobA2"))
+    assertEquals("jobB1", db.uploadQueueDao().get("jobB1")?.jobId)
+    assertEquals(WorkInfo.State.CANCELLED, workInfoForJob("jobA1").state)
+    assertEquals(WorkInfo.State.CANCELLED, workInfoForJob("jobA2").state)
+    assertEquals(WorkInfo.State.ENQUEUED, workInfoForJob("jobB1").state)
+  }
+
+  private fun taggedWork(jobId: String) = OneTimeWorkRequestBuilder<NoOpWorker>()
+    .setInitialDelay(1, TimeUnit.DAYS)
+    .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+    .addTag(ShardEncryptionScheduler.uploadJobTag(jobId))
+    .build()
+
+  private fun workInfoForJob(jobId: String): WorkInfo =
+    WorkManager.getInstance(context).getWorkInfosByTag(ShardEncryptionScheduler.uploadJobTag(jobId)).get().single()
 
   private fun uploadQueueRecord(jobId: String, albumId: String): UploadQueueRecord = UploadQueueRecord(
     jobId = jobId,
@@ -94,4 +154,8 @@ class AlbumPurgerTest {
     photoId = if (hash.startsWith("a")) "photo-a" else "photo-b",
     dateAdded = 1_700_000_000_000L,
   )
+
+  class NoOpWorker(context: Context, params: WorkerParameters) : ListenableWorker(context, params) {
+    override fun startWork() = com.google.common.util.concurrent.SettableFuture.create<Result>()
+  }
 }
