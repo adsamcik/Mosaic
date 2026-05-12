@@ -388,6 +388,7 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
 
         public Factory(Action<SidecarSignalingOptions>? configureSidecar = null, TimeProvider? timeProvider = null)
         {
+            Environment.SetEnvironmentVariable("Auth__ServerSecret", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
             _configureSidecar = configureSidecar;
             _timeProvider = timeProvider;
         }

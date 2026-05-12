@@ -28,6 +28,61 @@ public class AuthConfigurationResolverTests
     }
 
     [Fact]
+    public void ValidateForStartup_Throws_WhenStagingServerSecretMissing()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Auth:LocalAuthEnabled"] = "false",
+            ["Auth:ProxyAuthEnabled"] = "true"
+        });
+
+        var environment = CreateEnvironment("Staging");
+        var authConfiguration = AuthConfigurationResolver.Resolve(configuration);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => AuthConfigurationResolver.ValidateForStartup(configuration, environment, authConfiguration));
+
+        Assert.Contains("Auth:ServerSecret is required outside Development", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidateForStartup_AllowsDevelopmentServerSecretMissing()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Auth:LocalAuthEnabled"] = "false",
+            ["Auth:ProxyAuthEnabled"] = "true"
+        });
+
+        var environment = CreateEnvironment(Environments.Development);
+        var authConfiguration = AuthConfigurationResolver.Resolve(configuration);
+
+        var exception = Record.Exception(
+            () => AuthConfigurationResolver.ValidateForStartup(configuration, environment, authConfiguration));
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void ValidateForStartup_AllowsProductionServerSecretConfigured()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Auth:LocalAuthEnabled"] = "false",
+            ["Auth:ProxyAuthEnabled"] = "true",
+            ["Auth:ServerSecret"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+        });
+
+        var environment = CreateEnvironment(Environments.Production);
+        var authConfiguration = AuthConfigurationResolver.Resolve(configuration);
+
+        var exception = Record.Exception(
+            () => AuthConfigurationResolver.ValidateForStartup(configuration, environment, authConfiguration));
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
     public void ValidateForStartup_Throws_WhenDualModeEnabledWithoutExplicitOptIn()
     {
         var configuration = CreateConfiguration(new Dictionary<string, string?>

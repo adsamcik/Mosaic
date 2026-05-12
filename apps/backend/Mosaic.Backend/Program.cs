@@ -162,8 +162,8 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     }
 });
 
-// Ensure Auth:ServerSecret is set - generate random one if missing outside Production.
-// Production never reaches the fallback path because ValidateForStartup above fails fast.
+// Ensure Auth:ServerSecret is set - generate a random one only for Development.
+// Non-Development environments never reach the fallback path because ValidateForStartup fails fast.
 var serverSecretMissing = string.IsNullOrWhiteSpace(builder.Configuration["Auth:ServerSecret"]);
 if (serverSecretMissing)
 {

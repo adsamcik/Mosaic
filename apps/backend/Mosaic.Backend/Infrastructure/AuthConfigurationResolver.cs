@@ -56,12 +56,12 @@ internal static class AuthConfigurationResolver
                 "Set a single auth mode or explicitly opt in with Auth:AllowDualMode=true.");
         }
 
-        if (environment.IsProduction() &&
+        if (!environment.IsDevelopment() &&
             string.IsNullOrWhiteSpace(configuration["Auth:ServerSecret"]))
         {
             throw new InvalidOperationException(
-                "Auth:ServerSecret must be configured in Production. " +
-                "Refusing to start with an ephemeral fallback secret.");
+                "Auth:ServerSecret is required outside Development. Set the configuration value " +
+                "(e.g., via Auth__ServerSecret env var) to a stable secret of at least 32 random bytes.");
         }
     }
 
