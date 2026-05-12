@@ -289,7 +289,7 @@ Required features: SharedArrayBuffer, WASM, OPFS, Web Workers
 
 1. **Zero-Knowledge** - Server stores only encrypted blobs and metadata
 2. **Client-Side Crypto** - All encryption/decryption in the browser
-3. **Epoch-Based Keys** - Forward secrecy via key rotation
+3. **Epoch-Based Keys** - **Post-compromise security** (evicted members cannot decrypt content uploaded under future epochs; past content remains accessible to members who had it)
 4. **Offline-First** - Local SQLite database with sync
 5. **Resumable Uploads** - Tus protocol for large files
 6. **Virtualized UI** - Efficient rendering of thousands of photos

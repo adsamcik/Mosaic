@@ -195,8 +195,7 @@ if (!constantTimeEqual(actualHash, expectedHash)) {
 
 ### Epoch Keys
 
-- **Provides:** Backward secrecy (future keys don't expose past content)
-- **Does NOT provide:** Forward secrecy (past key compromise exposes past content)
+- **Does NOT provide:** Forward secrecy: an attacker who compromises L0 (the password-derived master) at time T can decrypt all photos uploaded BEFORE T given access to historical ciphertext. The system is intentionally password-derived, not session-key-based.
 - **Acceptable:** At small scale, key rotation on eviction is sufficient
 
 ### Identity Keys (Invite Encryption)
@@ -373,7 +372,7 @@ Multiple server-enforced controls limit share link access:
 | Property | Guarantee |
 |----------|-----------|
 | **Zero-knowledge** | Server never sees `linkSecret` or plaintext tier keys |
-| **Forward secrecy per link** | Each link has unique `wrappingKey`; compromise of one link doesn't affect others |
+| **Key isolation per link** | Each link has unique `wrappingKey`; compromise of one link's wrapping does not directly expose the album's tier_key (the underlying tier_key is, however, shared across links to the same album/tier) |
 | **Revocation** | Server-side enforcement; no need to contact or revoke keys from anonymous users |
 | **Tier isolation** | Access tier cryptographically enforced; higher-tier keys not available at lower tiers |
 | **Epoch independence** | Links survive epoch rotation via owner re-wrapping |

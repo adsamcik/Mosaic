@@ -322,7 +322,8 @@ paths:
       summary: Remove a member from the album
       description: |
         Revokes membership. A new epoch should be created after removal
-        to ensure forward secrecy.
+        to ensure post-compromise security — removed members cannot decrypt content
+        uploaded under epochs they were not a part of.
       tags: [Members]
       parameters:
         - $ref: '#/components/parameters/AlbumId'
