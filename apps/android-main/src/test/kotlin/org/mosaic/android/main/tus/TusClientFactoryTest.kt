@@ -23,13 +23,14 @@ class TusClientFactoryTest {
     server.start()
     val client = TusClientFactory.create(server.url("/uploads/1"), OkHttpClient())
 
-    client.executePatch(server.url("/uploads/1"), 0L, "abc".toRequestBody()).use { response ->
+    client.executePatch(server.url("/uploads/1"), 0L, "abc".toRequestBody(), "test-idempotency-key").use { response ->
       assertEquals(204, response.code)
     }
 
     val request = server.takeRequest()
     assertEquals("PATCH", request.method)
     assertEquals("1.0.0", request.getHeader("Tus-Resumable"))
+    assertEquals("test-idempotency-key", request.getHeader("Idempotency-Key"))
     assertEquals("0", request.getHeader("Upload-Offset"))
     assertEquals("abc", request.body.readUtf8())
   }

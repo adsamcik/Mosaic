@@ -1,5 +1,6 @@
 package org.mosaic.android.main.net
 
+import androidx.test.core.app.ApplicationProvider
 import java.security.cert.Certificate
 import javax.net.ssl.SSLPeerUnverifiedException
 import okhttp3.CertificatePinner
@@ -66,6 +67,18 @@ class MosaicHttpClientTest {
     val client = MosaicHttpClient.create(MosaicCertificatePinnerFactory.failClosed(hostname))
 
     assertTrue(client.certificatePinner.pins.any { pin -> pin.pattern == hostname })
+  }
+
+  @Test
+  fun fromAdr019PinsRejectsEmptyOnRelease() {
+    val exception = assertThrows(IllegalStateException::class.java) {
+      MosaicCertificatePinnerFactory.fromAdr019Pins(
+        context = ApplicationProvider.getApplicationContext(),
+        releasePinsRequired = true,
+      )
+    }
+
+    assertTrue(exception.message!!.isNotBlank())
   }
 
   @Test

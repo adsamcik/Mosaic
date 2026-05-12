@@ -127,18 +127,20 @@ class ManifestCommitClientTest {
   }
 
   @Test
-  fun rejectsUnknownFieldOnFinalize() = runBlocking {
-    server.enqueue(
-      MockResponse()
-        .setResponseCode(200)
-        .setBody(ManifestFinalizeFixtures.responseJson.dropLast(1) + ""","unexpected_field":"abc"}"""),
-    )
-    server.start()
-    val client = ManifestCommitClient(OkHttpClient(), server.url("/"))
+  fun rejectsUnknownFieldOnFinalize() {
+    runBlocking {
+      server.enqueue(
+        MockResponse()
+          .setResponseCode(200)
+          .setBody(ManifestFinalizeFixtures.responseJson.dropLast(1) + ""","unexpected_field":"abc"}"""),
+      )
+      server.start()
+      val client = ManifestCommitClient(OkHttpClient(), server.url("/"))
 
-    org.junit.Assert.assertThrows(SerializationException::class.java) {
-      runBlocking {
-        client.finalize(ManifestId(ManifestFinalizeFixtures.manifestId), ManifestFinalizeFixtures.request, "strict-key")
+      org.junit.Assert.assertThrows(SerializationException::class.java) {
+        runBlocking {
+          client.finalize(ManifestId(ManifestFinalizeFixtures.manifestId), ManifestFinalizeFixtures.request, "strict-key")
+        }
       }
     }
   }

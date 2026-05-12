@@ -4,6 +4,8 @@
 
 Accepted. Decision: **public-key pin to a managed root + backup pin for self-hosted deployments; document the operator-controlled rotation procedure; do not pin in development builds.** Gates A4 (shared OkHttp client) and A5b (Tus client adapter).
 
+Status note: Android now sources ADR-019 pins from the sealed asset `apps/android-main/src/main/assets/adr019-pins.txt`. The checked-in reference asset is intentionally a comment-only stub; production release builds MUST replace it with operator pins before v1 ship.
+
 ## Context
 
 Mosaic is self-hosted: each operator runs their own backend. Pinning posture is therefore not a single-server question (as it would be for a SaaS app) but a **policy** that the Android app exposes for operators to configure. The 3-reviewer pass (`files/reviews/R1-gpt55-workstreams.md`, `R3-opus47-coherence.md`) flagged that "optional pinning hook" is not a decided posture and asked for explicit production behavior.
@@ -57,7 +59,7 @@ The Mosaic-main reference build ships placeholder pins that fail-closed (pin set
 
 ### Pinning implementation
 
-OkHttp `CertificatePinner.Builder` builds the pinner from `operatorConfig` at app start. Failures yield a stable `ClientErrorCode = PinValidationFailed` and surface to the user as "Cannot reach Mosaic server (TLS pin mismatch). Contact your operator."
+OkHttp `CertificatePinner.Builder` builds the pinner from the sealed asset `assets/adr019-pins.txt` at app start. The file lists one pin per line as `<hostname>:<sha256-base64>`; comment-only or empty assets are accepted only for debug development builds. Failures yield a stable `ClientErrorCode = PinValidationFailed` and surface to the user as "Cannot reach Mosaic server (TLS pin mismatch). Contact your operator."
 
 Pin failures **never** retry blindly; the upload state machine (R-Cl1) treats `PinValidationFailed` as a `NonRetryableFailure` and routes the user to a help screen.
 

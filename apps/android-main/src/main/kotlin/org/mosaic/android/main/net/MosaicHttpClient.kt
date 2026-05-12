@@ -1,5 +1,6 @@
 package org.mosaic.android.main.net
 
+import android.content.Context
 import java.util.concurrent.TimeUnit
 import okhttp3.CertificatePinner
 import okhttp3.ConnectionSpec
@@ -11,6 +12,7 @@ import okhttp3.RequestBody
 import okhttp3.Response
 import okhttp3.TlsVersion
 import okio.BufferedSink
+import org.mosaic.android.main.BuildConfig
 
 object MosaicHttpClient {
   fun create(certPinner: CertificatePinner): OkHttpClient {
@@ -38,10 +40,35 @@ object MosaicHttpClient {
 
 object MosaicCertificatePinnerFactory {
   const val UNCONFIGURED_PIN: String = "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  private const val ADR019_PIN_ASSET: String = "adr019-pins.txt"
 
   fun failClosed(hostname: String): CertificatePinner = CertificatePinner.Builder()
     .add(hostname, UNCONFIGURED_PIN)
     .build()
+
+  fun fromAdr019Pins(
+    context: Context,
+    releasePinsRequired: Boolean = !BuildConfig.DEBUG,
+  ): CertificatePinner {
+    val pins = context.assets.open(ADR019_PIN_ASSET).bufferedReader().useLines { lines ->
+      lines.map(String::trim)
+        .filter { line -> line.isNotEmpty() && !line.startsWith("#") && !line.startsWith("//") }
+        .map { line ->
+          val parts = line.split(":", limit = 2)
+          require(parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) {
+            "ADR-019 pin lines must use <hostname>:<sha256-base64>"
+          }
+          parts[0] to parts[1].let { value -> if (value.startsWith("sha256/")) value else "sha256/$value" }
+        }
+        .toList()
+    }
+    check(pins.isNotEmpty() || !releasePinsRequired) {
+      "ADR-019 pins asset is empty; release builds require production certificate pins"
+    }
+    val builder = CertificatePinner.Builder()
+    pins.forEach { (hostname, pin) -> builder.add(hostname, pin) }
+    return builder.build()
+  }
 }
 
 class NoBodyLoggingInterceptor : Interceptor {

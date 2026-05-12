@@ -1,0 +1,1 @@
+// Production pins will be sourced before v1 ship — see ADR-019.
