@@ -12,13 +12,59 @@ import {
 } from '../src/contexts/UploadContext';
 import { UploadErrorToast } from '../src/components/Upload/UploadErrorToast';
 import { uploadQueue } from '../src/lib/upload-queue';
+import { getCurrentOrFetchEpochKey } from '../src/lib/epoch-key-service';
+import { getEpochKey } from '../src/lib/epoch-key-store';
+import { createManifestForUpload } from '../src/lib/manifest-service';
+import { FeatureFlagsManager } from '../src/lib/feature-flags';
+import { RustUploadAdapter } from '../src/lib/rust-core/upload-adapter';
 
 // Mock dependencies
 vi.mock('../src/lib/epoch-key-service', () => ({
   getCurrentOrFetchEpochKey: vi.fn(),
 }));
 
+vi.mock('../src/lib/epoch-key-store', () => ({
+  getEpochKey: vi.fn(),
+}));
+
+vi.mock('../src/lib/manifest-service', () => ({
+  createManifestForUpload: vi.fn(async (
+    _task: unknown,
+    _shardIds: unknown,
+    _epochKey: unknown,
+    _tieredShards: unknown,
+    options?: { adapter?: { submit: (event: unknown) => Promise<unknown> } },
+  ) => {
+    await options?.adapter?.submit({
+      kind: 'ManifestCreated',
+      effectId: 'task-id',
+      assetId: 'task-id',
+      sinceMetadataVersion: 1n,
+    });
+  }),
+}));
+
+vi.mock('../src/lib/feature-flags', () => ({
+  FeatureFlagsManager: {
+    load: vi.fn(() => ({ rustCoreUpload: false })),
+  },
+}));
+
+vi.mock('../src/lib/rust-core/upload-adapter', () => ({
+  RustUploadAdapter: vi.fn().mockImplementation(function RustUploadAdapterMock() {
+    return {
+    start: vi.fn(async () => ({ snapshot: {}, effects: [] })),
+    submit: vi.fn(async () => ({ snapshot: {}, effects: [] })),
+    };
+  }),
+}));
+
+vi.mock('../src/lib/rust-core/wasm-upload-adapter-port', () => ({
+  WasmUploadAdapterPort: vi.fn(),
+}));
+
 vi.mock('../src/lib/upload-queue', () => ({
+  createUuidV7: vi.fn(() => '018f0000-0000-7000-8000-000000000777'),
   uploadQueue: {
     init: vi.fn().mockResolvedValue(undefined),
     add: vi.fn().mockResolvedValue('task-id'),
@@ -140,6 +186,86 @@ describe('UploadContext', () => {
     expect(uploadQueue.init).toHaveBeenCalledTimes(1);
     expect(contextValue).not.toBeNull();
     expect(contextValue!.error).toBeNull();
+  });
+
+  it('passesAdapterToFinalize', async () => {
+    const epochKey = {
+      epochId: 7,
+      epochHandleId: 'epoch-handle-7',
+      signPublicKey: new Uint8Array(32),
+      signKeypair: {
+        publicKey: new Uint8Array(32),
+        secretKey: new Uint8Array(),
+      },
+    };
+    vi.mocked(FeatureFlagsManager.load).mockReturnValue({ rustCoreUpload: true });
+    vi.mocked(getCurrentOrFetchEpochKey).mockResolvedValue(epochKey);
+    vi.mocked(getEpochKey).mockReturnValue(epochKey);
+    vi.mocked(uploadQueue.add).mockResolvedValue('018f0000-0000-7000-8000-000000000777');
+
+    let contextValue: ReturnType<typeof useUploadContext> | null = null;
+    await act(async () => {
+      root.render(
+        createElement(
+          UploadProvider,
+          null,
+          createElement(TestConsumer, {
+            onContext: (ctx) => {
+              contextValue = ctx;
+            },
+          }),
+        ),
+      );
+    });
+
+    await act(async () => {
+      await contextValue!.upload(
+        new File([new Uint8Array([1, 2, 3])], 'photo.jpg', { type: 'image/jpeg' }),
+        '018f0000-0000-7000-8000-000000000123',
+      );
+    });
+
+    const adapter = vi.mocked(RustUploadAdapter).mock.results[0]!.value as {
+      submit: ReturnType<typeof vi.fn>;
+    };
+    const completedTask = {
+      id: '018f0000-0000-7000-8000-000000000777',
+      file: new File([new Uint8Array([1, 2, 3])], 'photo.jpg', { type: 'image/jpeg' }),
+      albumId: '018f0000-0000-7000-8000-000000000123',
+      epochId: 7,
+      epochHandleId: 'epoch-handle-7',
+      status: 'complete',
+      currentAction: 'finalizing',
+      progress: 1,
+      completedShards: [{
+        index: 0,
+        shardId: '018f0000-0000-7000-8000-000000000999',
+        sha256: '00'.repeat(32),
+        tier: 3,
+        contentLength: 3,
+        envelopeVersion: 3,
+      }],
+      retryCount: 0,
+      lastAttemptAt: 0,
+    } as Parameters<NonNullable<typeof uploadQueue.onComplete>>[0];
+
+    await act(async () => {
+      uploadQueue.onProgress?.({ ...completedTask, currentAction: 'encrypting' });
+      uploadQueue.onProgress?.(completedTask);
+      await uploadQueue.onComplete?.(completedTask, [completedTask.completedShards[0]!.shardId], undefined);
+    });
+
+    const finalizeOptions = vi.mocked(createManifestForUpload).mock.calls[0]![4];
+    expect(finalizeOptions).toMatchObject({ adapter });
+    expect(adapter.submit.mock.calls.map(([event]) => event.kind)).toEqual([
+      'StartRequested',
+      'EpochHandleAcquired',
+      'MediaPrepared',
+      'ShardEncrypted',
+      'ShardUploadCreated',
+      'ShardUploaded',
+      'ManifestCreated',
+    ]);
   });
 
   it('throws error when used outside provider', () => {

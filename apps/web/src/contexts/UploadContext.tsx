@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -87,6 +88,67 @@ function getRustWasmBindings(): WasmUploadAdapterBindings {
   return rustWasmBindings;
 }
 
+function submitRustProgressEvents(
+  task: UploadTask,
+  adapter: RustUploadAdapter | undefined,
+  submittedByTaskId: Map<string, Set<string>>,
+): void {
+  if (!adapter) return;
+
+  const submitted = submittedByTaskId.get(task.id) ?? new Set<string>();
+  submittedByTaskId.set(task.id, submitted);
+
+  if (task.currentAction === 'encrypting' && !submitted.has('MediaPrepared')) {
+    submitted.add('MediaPrepared');
+    void adapter.submit({ kind: 'MediaPrepared', effectId: task.id });
+  }
+
+  for (const shard of task.completedShards) {
+    const key = `${shard.tier ?? 3}:${shard.index}:${shard.shardId}`;
+    if (submitted.has(key)) continue;
+    submitted.add(key);
+    submitRustShardEvents(adapter, task.id, shard);
+  }
+}
+
+function submitRustShardEvents(
+  adapter: RustUploadAdapter,
+  effectId: string,
+  shard: UploadTask['completedShards'][number],
+): void {
+  const event = {
+    effectId,
+    tier: shard.tier ?? 3,
+    shardIndex: shard.index,
+    shardId: shard.shardId,
+    sha256: sha256BytesForRustEvent(shard.sha256),
+    contentLength: BigInt(shard.contentLength ?? 0),
+    envelopeVersion: shard.envelopeVersion ?? 3,
+  };
+  void adapter.submit({ kind: 'ShardEncrypted', ...event });
+  void adapter.submit({ kind: 'ShardUploadCreated', ...event });
+  void adapter.submit({ kind: 'ShardUploaded', ...event });
+}
+
+function sha256BytesForRustEvent(value: string): Uint8Array {
+  const trimmed = value.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
+    const bytes = new Uint8Array(32);
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = Number.parseInt(trimmed.slice(i * 2, i * 2 + 2), 16);
+    }
+    return bytes;
+  }
+  try {
+    const normalized = trimmed.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), '=');
+    const binary = atob(padded);
+    return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  } catch {
+    return new Uint8Array();
+  }
+}
+
 /**
  * Provider component for upload functionality.
  * Wraps components that need access to upload state and actions.
@@ -96,6 +158,8 @@ export function UploadProvider({ children }: UploadProviderProps) {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<UploadError | null>(null);
   const [, setActiveTasks] = useState<UploadTask[]>([]);
+  const rustAdaptersByTaskId = useRef(new Map<string, RustUploadAdapter>());
+  const rustSubmittedTaskEvents = useRef(new Map<string, Set<string>>());
   const isUploading = activeUploadCount > 0;
   const getRustUploadAdapter = useMemo(() => {
     let adapter: RustUploadAdapter | null = null;
@@ -150,6 +214,11 @@ export function UploadProvider({ children }: UploadProviderProps) {
     uploadQueue.onProgress = (task) => {
       // Call bridge handler first (adds to PhotoStore)
       bridgeOnProgress?.(task);
+      submitRustProgressEvents(
+        task,
+        rustAdaptersByTaskId.current.get(task.id),
+        rustSubmittedTaskEvents.current,
+      );
       // Then update local UI state
       setProgress(Math.round(task.progress * 100));
       setActiveTasks((prev) => {
@@ -179,7 +248,10 @@ export function UploadProvider({ children }: UploadProviderProps) {
             );
           }
 
-          await createManifestForUpload(task, shardIds, epochKey, tieredShards);
+          const adapter = rustAdaptersByTaskId.current.get(task.id);
+          await createManifestForUpload(task, shardIds, epochKey, tieredShards, {
+            ...(adapter ? { adapter } : {}),
+          });
 
           // Sync to pull the newly created manifest into local DB
           log.info(`Upload complete, syncing album ${task.albumId}`);
@@ -205,6 +277,8 @@ export function UploadProvider({ children }: UploadProviderProps) {
           );
         }
       } finally {
+        rustAdaptersByTaskId.current.delete(task.id);
+        rustSubmittedTaskEvents.current.delete(task.id);
         decrementActiveUploadCount();
       }
     };
@@ -219,6 +293,13 @@ export function UploadProvider({ children }: UploadProviderProps) {
         setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
 
         log.error('Upload failed:', uploadErr);
+        const adapter = rustAdaptersByTaskId.current.get(task.id);
+        void adapter?.submit({
+          kind: 'RetryableFailure',
+          effectId: task.id,
+          errorCode: 0,
+          targetPhase: 'RetryWaiting',
+        });
         setError(
           new UploadError(
             uploadErr.message,
@@ -227,6 +308,8 @@ export function UploadProvider({ children }: UploadProviderProps) {
           ),
         );
       } finally {
+        rustAdaptersByTaskId.current.delete(task.id);
+        rustSubmittedTaskEvents.current.delete(task.id);
         decrementActiveUploadCount();
       }
     };
@@ -271,21 +354,23 @@ export function UploadProvider({ children }: UploadProviderProps) {
       // Initialize upload queue if needed
       await uploadQueue.init();
 
+      let rustJobId: string | undefined;
+      let rustAdapter: RustUploadAdapter | undefined;
       if (FeatureFlagsManager.load().rustCoreUpload) {
         // During the staged rollout both paths intentionally coexist: Rust core
         // owns the upload state-machine preflight while the legacy queue still
         // executes media preparation, encryption, Tus upload, and manifest work.
         try {
-          const adapter = getRustUploadAdapter();
-          const rustJobId = createUuidV7();
-          await adapter.start({
+          rustAdapter = getRustUploadAdapter();
+          rustJobId = createUuidV7();
+          await rustAdapter.start({
             jobId: rustJobId,
             albumId,
             assetId: createUuidV7(),
             idempotencyKey: createUuidV7(),
             maxRetryCount: RUST_UPLOAD_MAX_RETRY_COUNT,
           });
-          await adapter.submit({
+          await rustAdapter.submit({
             kind: 'StartRequested',
             effectId: createUuidV7(),
           });
@@ -300,7 +385,13 @@ export function UploadProvider({ children }: UploadProviderProps) {
       // This caches the key in epoch-key-store for use in onComplete callback
       let epochKey: EpochKeyBundle;
       try {
-        epochKey = await getCurrentOrFetchEpochKey(albumId);
+          epochKey = await getCurrentOrFetchEpochKey(albumId);
+          if (rustAdapter && rustJobId) {
+            await rustAdapter.submit({
+              kind: 'EpochHandleAcquired',
+              effectId: rustJobId,
+            });
+          }
       } catch (err) {
         const uploadError = new UploadError(
           `Failed to get epoch key for album: ${err instanceof Error ? err.message : String(err)}`,
@@ -315,12 +406,16 @@ export function UploadProvider({ children }: UploadProviderProps) {
       log.info(
         `Adding file to upload queue: ${file.name}, albumId=${albumId}, epochId=${epochKey.epochId}`,
       );
-      await uploadQueue.add(
+      const taskId = await uploadQueue.add(
         file,
         albumId,
         epochKey.epochId,
         epochKey.epochHandleId,
+        rustJobId,
       );
+      if (rustAdapter) {
+        rustAdaptersByTaskId.current.set(taskId, rustAdapter);
+      }
       enqueued = true;
       log.info(`File added to upload queue: ${file.name}`);
     } catch (err) {

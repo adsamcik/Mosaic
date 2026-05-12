@@ -115,6 +115,7 @@ class UploadQueue {
     albumId: string,
     epochId: number,
     epochHandleId: EpochHandleId,
+    taskIdOverride?: string,
   ): Promise<string> {
     log.info('UploadQueue.add called', {
       ...fileIdentity(file),
@@ -126,7 +127,7 @@ class UploadQueue {
       throw new Error('Upload queue not initialized');
     }
 
-    const taskId = createUuidV7();
+    const taskId = taskIdOverride ?? createUuidV7();
     log.info('Created task ID', { taskId });
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
