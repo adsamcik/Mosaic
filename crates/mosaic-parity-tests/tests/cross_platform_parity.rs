@@ -1432,13 +1432,13 @@ fn metadata_strip_outputs_match_wasm_and_uniffi() {
                 wasm_strip_result(mosaic_wasm::strip_webp_metadata_js(case.input.clone()))
             }
             StripFormat::Avif => {
-                strip_result_from_media(mosaic_media::strip_avif_metadata(&case.input))
+                wasm_strip_result(mosaic_wasm::strip_avif_metadata_js(case.input.clone()))
             }
             StripFormat::Heic => {
-                strip_result_from_media(mosaic_media::strip_heic_metadata(&case.input))
+                wasm_strip_result(mosaic_wasm::strip_heic_metadata_js(case.input.clone()))
             }
             StripFormat::Mp4 => {
-                strip_result_from_media(mosaic_media::strip_video_metadata(&case.input))
+                wasm_strip_result(mosaic_wasm::strip_video_metadata_js(case.input.clone()))
             }
         };
         assert_ok(wasm.code, case.name);
@@ -1465,6 +1465,25 @@ fn metadata_strip_outputs_match_wasm_and_uniffi() {
             case.name
         );
         assert_eq!(wasm.stripped_bytes, uniffi.stripped_bytes, "{}", case.name);
+        if matches!(
+            case.format,
+            StripFormat::Avif | StripFormat::Heic | StripFormat::Mp4
+        ) {
+            let direct = match case.format {
+                StripFormat::Avif => {
+                    strip_result_from_media(mosaic_media::strip_avif_metadata(&case.input))
+                }
+                StripFormat::Heic => {
+                    strip_result_from_media(mosaic_media::strip_heic_metadata(&case.input))
+                }
+                StripFormat::Mp4 => {
+                    strip_result_from_media(mosaic_media::strip_video_metadata(&case.input))
+                }
+                StripFormat::Jpeg | StripFormat::Png | StripFormat::WebP => unreachable!(),
+            };
+            assert_ok(direct.code, case.name);
+            assert_eq!(wasm, direct, "{} facade drift from media core", case.name);
+        }
         if let Some(expected) = case.expected {
             assert_eq!(wasm.stripped_bytes, expected, "{}", case.name);
         }
@@ -2247,6 +2266,7 @@ fn strip_result_from_media(
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct SimpleStripResult {
     code: u16,
     stripped_bytes: Vec<u8>,
