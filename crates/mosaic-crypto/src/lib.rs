@@ -16,6 +16,7 @@ use mosaic_domain::{
     SHARD_ENVELOPE_VERSION_V04, STREAMING_SHARD_ENVELOPE_HEADER_LEN, STREAMING_SHARD_FRAME_SIZE,
     STREAMING_SHARD_SALT_LEN, ShardEnvelopeHeader, ShardTier, StreamingShardEnvelopeHeader,
 };
+pub use mosaic_domain::streaming_frame_nonce;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use unicode_normalization::UnicodeNormalization;
@@ -1934,17 +1935,6 @@ fn streaming_frame_key(
         .expand(&info, &mut key[..])
         .map_err(|_| MosaicCryptoError::KdfFailure)?;
     Ok(key)
-}
-
-fn streaming_frame_nonce(
-    stream_salt: &[u8; STREAMING_SHARD_SALT_LEN],
-    frame_index: u32,
-) -> [u8; STREAM_FRAME_NONCE_LEN] {
-    let mut nonce = [0_u8; STREAM_FRAME_NONCE_LEN];
-    nonce[0..16].copy_from_slice(stream_salt);
-    nonce[16..20].copy_from_slice(&frame_index.to_le_bytes());
-    nonce[20..24].copy_from_slice(&[SHARD_ENVELOPE_VERSION_V04, 0, 0, 0]);
-    nonce
 }
 
 fn encrypt_streaming_frame(

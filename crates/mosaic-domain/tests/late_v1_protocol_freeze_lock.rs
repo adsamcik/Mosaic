@@ -18,7 +18,7 @@ use mosaic_domain::{
     METADATA_SIDECAR_VERSION, MosaicDomainError, SHARD_ENVELOPE_HEADER_LEN, SHARD_ENVELOPE_MAGIC,
     SHARD_ENVELOPE_VERSION, SHARD_ENVELOPE_VERSION_V04, STREAMING_SHARD_ENVELOPE_HEADER_LEN,
     STREAMING_SHARD_FRAME_SIZE, STREAMING_SHARD_SALT_LEN, ShardEnvelopeHeader, ShardTier,
-    StreamingShardEnvelopeHeader,
+    StreamingShardEnvelopeHeader, streaming_frame_nonce,
 };
 
 const FREEZE_HINT: &str = "Late-v1 protocol freeze byte-format change — bump \
@@ -200,6 +200,23 @@ fn streaming_shard_stream_salt_is_frozen_at_16_bytes() {
 #[test]
 fn streaming_shard_frame_size_is_frozen_at_64_kib() {
     assert_eq!(STREAMING_SHARD_FRAME_SIZE, 64 * 1024, "{FREEZE_HINT}");
+}
+
+#[test]
+fn streaming_frame_nonce_byte_layout_is_frozen() {
+    let stream_salt = [0x11_u8; STREAMING_SHARD_SALT_LEN];
+    let frame_index = 0x3344_5566_u32;
+    let nonce = streaming_frame_nonce(&stream_salt, frame_index);
+
+    let mut expected = [0_u8; 24];
+    expected[0..16].fill(0x11);
+    expected[16..20].copy_from_slice(&[0x66, 0x55, 0x44, 0x33]);
+    expected[20..24].copy_from_slice(&[0x04, 0x00, 0x00, 0x00]);
+
+    assert_eq!(
+        nonce, expected,
+        "v0x04 frame nonce must be stream_salt_16 || frame_index_4_le || 0x04_00_00_00. {FREEZE_HINT}"
+    );
 }
 
 #[test]

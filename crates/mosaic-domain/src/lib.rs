@@ -30,6 +30,9 @@ pub const STREAMING_SHARD_FRAME_SIZE: usize = 64 * 1024;
 /// Byte length of the v0x04 per-stream public salt.
 pub const STREAMING_SHARD_SALT_LEN: usize = 16;
 
+/// Byte length of each serialized v0x04 streaming frame nonce.
+pub const STREAMING_SHARD_FRAME_NONCE_LEN: usize = 24;
+
 const STREAMING_SHARD_RESERVED_OFFSET: usize = 30;
 const STREAMING_SHARD_RESERVED_LEN: usize = 34;
 
@@ -47,6 +50,19 @@ pub const METADATA_SIDECAR_CONTEXT: &[u8] = b"Mosaic_Metadata_v1";
 
 /// Current canonical metadata sidecar format version.
 pub const METADATA_SIDECAR_VERSION: u8 = 1;
+
+/// Reconstruct the deterministic v0x04 streaming frame nonce.
+#[must_use]
+pub fn streaming_frame_nonce(
+    stream_salt: &[u8; STREAMING_SHARD_SALT_LEN],
+    frame_index: u32,
+) -> [u8; STREAMING_SHARD_FRAME_NONCE_LEN] {
+    let mut nonce = [0_u8; STREAMING_SHARD_FRAME_NONCE_LEN];
+    nonce[0..16].copy_from_slice(stream_salt);
+    nonce[16..20].copy_from_slice(&frame_index.to_le_bytes());
+    nonce[20..24].copy_from_slice(&[SHARD_ENVELOPE_VERSION_V04, 0, 0, 0]);
+    nonce
+}
 
 /// Maximum total encoded byte length of a canonical metadata sidecar.
 ///
