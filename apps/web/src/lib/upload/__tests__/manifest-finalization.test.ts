@@ -186,7 +186,7 @@ describe('manifest finalization cutover', () => {
     });
 
     expect(result).toMatchObject({
-      kind: 'ManifestFinalized',
+      kind: 'ManifestCreated',
       response: { manifestId: JOB_ID },
     });
     expect(fetchImpl).toHaveBeenCalledWith(
@@ -200,7 +200,7 @@ describe('manifest finalization cutover', () => {
       }),
     );
     expect(rustAdapter.submit).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'ManifestFinalized',
+      kind: 'ManifestCreated',
       effectId: JOB_ID,
       assetId: JOB_ID,
       sinceMetadataVersion: 12n,
@@ -220,12 +220,12 @@ describe('manifest finalization cutover', () => {
       adapter: rustAdapter,
       fetchImpl,
     })).resolves.toMatchObject({
-      kind: 'ManifestFinalized',
+      kind: 'ManifestCreated',
       response: { manifestId: JOB_ID, metadataVersion: 12 },
     });
 
     expect(rustAdapter.submit).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'ManifestFinalized',
+      kind: 'ManifestCreated',
       assetId: JOB_ID,
     }));
   });
@@ -266,7 +266,7 @@ describe('manifest finalization cutover', () => {
     } satisfies Partial<ManifestFinalizationError>);
 
     expect(rustAdapter.submit).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'ManifestFailed',
+      kind: 'NonRetryableFailure',
       errorCode: MANIFEST_INVALID_SIGNATURE,
       targetPhase: 'Failed',
     }));
@@ -286,7 +286,7 @@ describe('manifest finalization cutover', () => {
     } satisfies Partial<ManifestFinalizationError>);
 
     expect(rustAdapter.submit).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'ManifestFailed',
+      kind: 'NonRetryableFailure',
       errorCode: MANIFEST_TRANSCRIPT_MISMATCH,
     }));
   });
@@ -362,3 +362,5 @@ describe('manifest finalization cutover', () => {
     expect(matches).toEqual(['src/lib/manifest-finalization.ts']);
   });
 });
+
+

@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   executeManifestFinalizationEffect,
-  MANIFEST_AUTH_DENIED,
-  MANIFEST_TRANSIENT_SERVER_ERROR,
   ManifestFinalizationError,
   type FinalizeManifestEffect,
   type ManifestFinalizationAdapter,
@@ -15,6 +13,32 @@ vi.mock('../crypto-client', () => ({
 }));
 
 describe('executeManifestFinalizationEffect error events', () => {
+  it('emitsManifestCreatedOnSuccess', async () => {
+    const events: unknown[] = [];
+
+    await expect(executeManifestFinalizationEffect(effect(), {
+      jobId: 'test-job',
+      adapter: adapterFor(events),
+      fetchImpl: async () => new Response(JSON.stringify({
+        protocolVersion: 1,
+        manifestId: '018f0000-0000-7000-8000-000000000001',
+        metadataVersion: 12,
+        createdAt: '2026-05-06T00:00:00.000Z',
+        tieredShards: effect().tieredShards,
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    })).resolves.toMatchObject({ kind: 'ManifestCreated' });
+
+    expect(events).toEqual([{
+      kind: 'ManifestCreated',
+      effectId: 'effect-1',
+      assetId: '018f0000-0000-7000-8000-000000000001',
+      sinceMetadataVersion: 12n,
+    }]);
+  });
+
   it('rejects malformed shard UUIDs before submitting the finalize request', async () => {
     const fetchImpl = vi.fn<typeof fetch>(
       async () => new Response('{}', { status: 200 }),
@@ -53,7 +77,7 @@ describe('executeManifestFinalizationEffect error events', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it.each([401, 403])('submits ManifestFailed for auth status %i', async (status) => {
+  it.each([401, 403])('submits NonRetryableFailure for auth status %i', async (status) => {
     const events: unknown[] = [];
     await expect(executeManifestFinalizationEffect(effect(), {
       jobId: 'test-job',
@@ -62,15 +86,30 @@ describe('executeManifestFinalizationEffect error events', () => {
     })).rejects.toBeInstanceOf(ManifestFinalizationError);
 
     expect(events).toEqual([{
-      kind: 'ManifestFailed',
+      kind: 'NonRetryableFailure',
       effectId: 'effect-1',
-      errorCode: MANIFEST_AUTH_DENIED,
-      detail: 'denied',
+      errorCode: status,
       targetPhase: 'Failed',
     }]);
   });
 
-  it.each([500, 502, 503, 504])('submits retriable ManifestFailed for server status %i', async (status) => {
+  it('emitsNonRetryableFailureOn403', async () => {
+    const events: unknown[] = [];
+    await expect(executeManifestFinalizationEffect(effect(), {
+      jobId: 'test-job',
+      adapter: adapterFor(events),
+      fetchImpl: async () => new Response('denied', { status: 403 }),
+    })).rejects.toBeInstanceOf(ManifestFinalizationError);
+
+    expect(events).toEqual([{
+      kind: 'NonRetryableFailure',
+      effectId: 'effect-1',
+      errorCode: 403,
+      targetPhase: 'Failed',
+    }]);
+  });
+
+  it.each([500, 502, 503, 504])('submits RetryableFailure for server status %i', async (status) => {
     const events: unknown[] = [];
     await expect(executeManifestFinalizationEffect(effect(), {
       jobId: 'test-job',
@@ -79,11 +118,25 @@ describe('executeManifestFinalizationEffect error events', () => {
     })).rejects.toBeInstanceOf(ManifestFinalizationError);
 
     expect(events).toEqual([{
-      kind: 'ManifestFailed',
+      kind: 'RetryableFailure',
       effectId: 'effect-1',
-      errorCode: MANIFEST_TRANSIENT_SERVER_ERROR,
-      detail: 'temporarily unavailable',
-      retriable: true,
+      errorCode: status,
+      targetPhase: 'Failed',
+    }]);
+  });
+
+  it('emitsRetryableFailureOn5xx', async () => {
+    const events: unknown[] = [];
+    await expect(executeManifestFinalizationEffect(effect(), {
+      jobId: 'test-job',
+      adapter: adapterFor(events),
+      fetchImpl: async () => new Response('temporarily unavailable', { status: 503 }),
+    })).rejects.toBeInstanceOf(ManifestFinalizationError);
+
+    expect(events).toEqual([{
+      kind: 'RetryableFailure',
+      effectId: 'effect-1',
+      errorCode: 503,
       targetPhase: 'Failed',
     }]);
   });
@@ -118,3 +171,5 @@ function effect(): FinalizeManifestEffect {
     }],
   };
 }
+
+

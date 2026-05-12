@@ -30,8 +30,8 @@ export interface ManifestFinalizeResponse {
   readonly tieredShards: readonly ManifestFinalizeTieredShard[];
 }
 
-export interface ManifestFinalized {
-  readonly kind: 'ManifestFinalized';
+export interface ManifestCreated {
+  readonly kind: 'ManifestCreated';
   readonly response: ManifestFinalizeResponse;
 }
 
@@ -41,7 +41,7 @@ export interface ManifestAlreadyFinalized {
   readonly detail: string;
 }
 
-export type ManifestFinalizationResult = ManifestFinalized | ManifestAlreadyFinalized;
+export type ManifestFinalizationResult = ManifestCreated | ManifestAlreadyFinalized;
 
 export interface FinalizeManifestEffect extends UploadEffect {
   readonly kind: 'FinalizeManifest' | 'FinalizeManifestEffect';
@@ -57,16 +57,7 @@ export interface FinalizeManifestEffect extends UploadEffect {
 }
 
 export interface ManifestFinalizationAdapter {
-  submit(event: UploadEvent | ManifestFinalizationFailureEvent): Promise<unknown>;
-}
-
-export interface ManifestFinalizationFailureEvent {
-  readonly kind: 'ManifestFailed';
-  readonly effectId: string;
-  readonly errorCode: typeof MANIFEST_AUTH_DENIED | typeof MANIFEST_TRANSIENT_SERVER_ERROR;
-  readonly detail: string;
-  readonly retriable?: boolean;
-  readonly targetPhase: 'Failed';
+  submit(event: UploadEvent): Promise<unknown>;
 }
 
 export interface ExecuteManifestFinalizationOptions {
@@ -207,24 +198,24 @@ export async function executeManifestFinalizationEffect(
   if (response.ok) {
     const finalized = await readFinalizeResponse(response, effect);
     await options.adapter?.submit({
-      kind: 'ManifestFinalized',
+      kind: 'ManifestCreated',
       effectId: effect.effectId,
       assetId: finalized.manifestId,
       sinceMetadataVersion: BigInt(finalized.metadataVersion),
     });
-    return { kind: 'ManifestFinalized', response: finalized };
+    return { kind: 'ManifestCreated', response: finalized };
   }
 
   if (response.status === 409) {
     if (response.headers.get('Idempotency-Replayed') === 'true') {
       const finalized = await readFinalizeResponse(response, effect);
       await options.adapter?.submit({
-        kind: 'ManifestFinalized',
+        kind: 'ManifestCreated',
         effectId: effect.effectId,
         assetId: finalized.manifestId,
         sinceMetadataVersion: BigInt(finalized.metadataVersion),
       });
-      return { kind: 'ManifestFinalized', response: finalized };
+      return { kind: 'ManifestCreated', response: finalized };
     }
 
     const errorBody = await response.json().catch(() => ({}));
@@ -240,7 +231,7 @@ export async function executeManifestFinalizationEffect(
       ? MANIFEST_INVALID_SIGNATURE
       : MANIFEST_TRANSCRIPT_MISMATCH;
     await options.adapter?.submit({
-      kind: 'ManifestFailed',
+      kind: 'NonRetryableFailure',
       effectId: effect.effectId,
       errorCode,
       targetPhase: 'Failed',
@@ -257,10 +248,9 @@ export async function executeManifestFinalizationEffect(
   if (response.status === 401 || response.status === 403) {
     const detail = await manifestFinalizeErrorDetailFromResponse(response);
     await options.adapter?.submit({
-      kind: 'ManifestFailed',
+      kind: 'NonRetryableFailure',
       effectId: effect.effectId,
-      errorCode: MANIFEST_AUTH_DENIED,
-      detail,
+      errorCode: response.status,
       targetPhase: 'Failed',
     });
     throw new ManifestFinalizationError(
@@ -273,11 +263,9 @@ export async function executeManifestFinalizationEffect(
   if ([500, 502, 503, 504].includes(response.status)) {
     const detail = await manifestFinalizeErrorDetailFromResponse(response);
     await options.adapter?.submit({
-      kind: 'ManifestFailed',
+      kind: 'RetryableFailure',
       effectId: effect.effectId,
-      errorCode: MANIFEST_TRANSIENT_SERVER_ERROR,
-      detail,
-      retriable: true,
+      errorCode: response.status,
       targetPhase: 'Failed',
     });
     throw new ManifestFinalizationError(

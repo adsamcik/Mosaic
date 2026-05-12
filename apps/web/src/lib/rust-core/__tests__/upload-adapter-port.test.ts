@@ -108,7 +108,7 @@ describe('WasmUploadAdapterPort', () => {
 
     await expect(
       port.advanceJob(queued, {
-        kind: 'NotARealEvent',
+        kind: 'NonRetryableFailure',
         effectId: '018f0000-0000-7000-8000-000000000006',
       }),
     ).rejects.toMatchObject({

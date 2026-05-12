@@ -377,3 +377,4 @@ describe('UploadErrorCode', () => {
     expect(UploadErrorCode.MANIFEST_FAILED).toBe('MANIFEST_FAILED');
   });
 });
+

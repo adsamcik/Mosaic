@@ -53,7 +53,7 @@ export function useUpload() {
       uploadQueue.onComplete = async (task, shardIds, tieredShards) => {
         try {
           const result = await createManifestForUpload(task, shardIds, epochKey, tieredShards);
-          if (result.kind === 'ManifestFinalized' || result.kind === 'AlreadyFinalized') {
+          if (result.kind === 'ManifestCreated' || result.kind === 'AlreadyFinalized') {
             try {
               await syncEngine.sync(task.albumId, epochKey.epochHandleId);
             } catch (syncErr) {

@@ -16,8 +16,7 @@ export type UploadPhase =
   | 'RetryWaiting'
   | 'Confirmed'
   | 'Cancelled'
-  | 'Failed'
-  | (string & {});
+  | 'Failed';
 
 export type SyncPhase =
   | 'Idle'
@@ -26,8 +25,7 @@ export type SyncPhase =
   | 'RetryWaiting'
   | 'Completed'
   | 'Cancelled'
-  | 'Failed'
-  | (string & {});
+  | 'Failed';
 
 export type UploadEventKind =
   | 'StartRequested'
@@ -49,8 +47,7 @@ export type UploadEventKind =
   | 'CancelRequested'
   | 'AlbumDeleted'
   | 'NonRetryableFailure'
-  | 'IdempotencyExpired'
-  | (string & {});
+  | 'IdempotencyExpired';
 
 export type SyncEventKind =
   | 'SyncRequested'
@@ -61,8 +58,7 @@ export type SyncEventKind =
   | 'RetryableFailure'
   | 'RetryTimerElapsed'
   | 'CancelRequested'
-  | 'NonRetryableFailure'
-  | (string & {});
+  | 'NonRetryableFailure';
 
 export interface UploadInitInput {
   readonly jobId: UploadJobId;
