@@ -5,15 +5,28 @@ use mosaic_domain::{
     SHARD_ENVELOPE_VERSION_V04, STREAMING_SHARD_FRAME_SIZE, ShardTier, metadata_field_tags,
 };
 use mosaic_uniffi::{
-    AccountUnlockRequest as UniAccountUnlockRequest, ClientCoreManifestShardRef,
-    ClientCoreManifestTranscriptInputs, ClientCoreUploadJobSnapshot as UniUploadJobSnapshot,
+    AccountUnlockRequest as UniAccountUnlockRequest,
+    ClientCoreAlbumSyncEffect as UniAlbumSyncEffect, ClientCoreAlbumSyncEvent as UniAlbumSyncEvent,
+    ClientCoreAlbumSyncSnapshot as UniAlbumSyncSnapshot,
+    ClientCoreAlbumSyncTransition as UniAlbumSyncTransition, ClientCoreManifestShardRef,
+    ClientCoreManifestTranscriptInputs, ClientCoreUploadJobEffect as UniUploadJobEffect,
+    ClientCoreUploadJobEvent as UniUploadJobEvent,
+    ClientCoreUploadJobSnapshot as UniUploadJobSnapshot,
+    ClientCoreUploadJobTransition as UniUploadJobTransition,
     ClientCoreUploadShardRef as UniUploadShardRef, DownloadInitInput, DownloadPlanEntryInput,
     DownloadPlanInput, DownloadPlanShardInput, MediaFormat as UniMediaFormat,
 };
 use mosaic_vectors::{default_corpus_dir, load_vector, vectors::ContentHashVector};
 use mosaic_wasm::{
     AccountUnlockRequest as WasmAccountUnlockRequest,
+    ClientCoreAlbumSyncEffect as WasmAlbumSyncEffect,
+    ClientCoreAlbumSyncEvent as WasmAlbumSyncEvent,
+    ClientCoreAlbumSyncSnapshot as WasmAlbumSyncSnapshot,
+    ClientCoreAlbumSyncTransition as WasmAlbumSyncTransition,
+    ClientCoreUploadJobEffect as WasmUploadJobEffect,
+    ClientCoreUploadJobEvent as WasmUploadJobEvent,
     ClientCoreUploadJobSnapshot as WasmUploadJobSnapshot,
+    ClientCoreUploadJobTransition as WasmUploadJobTransition,
     ClientCoreUploadShardRef as WasmUploadShardRef,
 };
 use proptest::prelude::*;
@@ -38,6 +51,7 @@ const ALBUM_ID: &str = "018f0000-0000-7000-8000-000000000002";
 const IDEMPOTENCY_KEY: &str = "018f0000-0000-7000-8000-000000000004";
 const EFFECT_ID: &str = "018f0000-0000-7000-8000-000000000005";
 const SHARD_ID: &str = "018f0000-0000-7000-8000-000000000006";
+const ASSET_ID: &str = "018f0000-0000-7000-8000-000000000007";
 
 fn must<T, E: core::fmt::Debug>(result: Result<T, E>, context: &str) -> T {
     match result {
@@ -1341,6 +1355,93 @@ fn canonical_upload_snapshot_cbor_matches_wasm_and_uniffi_facades() {
 }
 
 #[test]
+fn upload_reducer_outputs_match_wasm_and_uniffi() {
+    for case in [
+        UploadReducerCase {
+            name: "successful shard upload",
+            phase: "UploadingShard",
+            shard_uploaded: false,
+            event_kind: "ShardUploaded",
+            error_code: 0,
+        },
+        UploadReducerCase {
+            name: "retryable failure",
+            phase: "AwaitingPreparedMedia",
+            shard_uploaded: false,
+            event_kind: "RetryableFailure",
+            error_code: ClientErrorCode::InvalidInputLength.as_u16(),
+        },
+        UploadReducerCase {
+            name: "non-retryable failure",
+            phase: "AwaitingPreparedMedia",
+            shard_uploaded: false,
+            event_kind: "NonRetryableFailure",
+            error_code: ClientErrorCode::InvalidInputLength.as_u16(),
+        },
+    ] {
+        let wasm = mosaic_wasm::advance_upload_job(
+            wasm_upload_snapshot_for_phase(case.phase, case.shard_uploaded),
+            wasm_upload_event(case.event_kind, case.error_code),
+        );
+        let uniffi = mosaic_uniffi::advance_upload_job(
+            uniffi_upload_snapshot_for_phase(case.phase, case.shard_uploaded),
+            uniffi_upload_event(case.event_kind, case.error_code),
+        );
+
+        assert_eq!(wasm.code, uniffi.code, "{}", case.name);
+        assert_ok(wasm.code, case.name);
+        assert_eq!(
+            canonical_wasm_upload_transition_bytes(&wasm.transition),
+            canonical_uniffi_upload_transition_bytes(&uniffi.transition),
+            "{} snapshot/effects drift",
+            case.name
+        );
+    }
+}
+
+#[test]
+fn album_sync_reducer_outputs_match_wasm_and_uniffi() {
+    for case in [
+        AlbumSyncReducerCase {
+            name: "successful sync request",
+            phase: "Idle",
+            event_kind: "SyncRequested",
+            error_code: 0,
+        },
+        AlbumSyncReducerCase {
+            name: "retryable failure",
+            phase: "FetchingPage",
+            event_kind: "RetryableFailure",
+            error_code: ClientErrorCode::InvalidInputLength.as_u16(),
+        },
+        AlbumSyncReducerCase {
+            name: "non-retryable failure",
+            phase: "FetchingPage",
+            event_kind: "NonRetryableFailure",
+            error_code: ClientErrorCode::InvalidInputLength.as_u16(),
+        },
+    ] {
+        let wasm = mosaic_wasm::advance_album_sync(
+            wasm_album_sync_snapshot_for_phase(case.phase),
+            wasm_album_sync_event(case.event_kind, case.error_code),
+        );
+        let uniffi = mosaic_uniffi::advance_album_sync(
+            uniffi_album_sync_snapshot_for_phase(case.phase),
+            uniffi_album_sync_event(case.event_kind, case.error_code),
+        );
+
+        assert_eq!(wasm.code, uniffi.code, "{}", case.name);
+        assert_ok(wasm.code, case.name);
+        assert_eq!(
+            canonical_wasm_album_sync_transition_bytes(&wasm.transition),
+            canonical_uniffi_album_sync_transition_bytes(&uniffi.transition),
+            "{} snapshot/effects drift",
+            case.name
+        );
+    }
+}
+
+#[test]
 fn canonical_download_snapshot_cbor_matches_wasm_and_uniffi() {
     let wasm_plan = mosaic_wasm::download_build_plan_v1(&download_plan_builder_input_cbor());
     assert_ok_u32(wasm_plan.code, "wasm download build plan");
@@ -1987,6 +2088,173 @@ fn uniffi_upload_snapshot() -> UniUploadJobSnapshot {
     }
 }
 
+struct UploadReducerCase {
+    name: &'static str,
+    phase: &'static str,
+    shard_uploaded: bool,
+    event_kind: &'static str,
+    error_code: u16,
+}
+
+struct AlbumSyncReducerCase {
+    name: &'static str,
+    phase: &'static str,
+    event_kind: &'static str,
+    error_code: u16,
+}
+
+fn wasm_upload_snapshot_for_phase(phase: &str, shard_uploaded: bool) -> WasmUploadJobSnapshot {
+    WasmUploadJobSnapshot {
+        phase: phase.to_owned(),
+        tiered_shards: vec![WasmUploadShardRef {
+            tier: ShardTier::Original.to_byte(),
+            shard_index: 0,
+            shard_id: SHARD_ID.to_owned(),
+            sha256: vec![0x11; 32],
+            content_length: 1024,
+            envelope_version: 3,
+            uploaded: shard_uploaded,
+        }],
+        snapshot_revision: 0,
+        last_effect_id: String::new(),
+        last_acknowledged_effect_id: String::new(),
+        last_applied_event_id: String::new(),
+        ..wasm_upload_snapshot()
+    }
+}
+
+fn uniffi_upload_snapshot_for_phase(phase: &str, shard_uploaded: bool) -> UniUploadJobSnapshot {
+    UniUploadJobSnapshot {
+        phase: phase.to_owned(),
+        tiered_shards: vec![UniUploadShardRef {
+            tier: ShardTier::Original.to_byte(),
+            shard_index: 0,
+            shard_id: SHARD_ID.to_owned(),
+            sha256: vec![0x11; 32],
+            content_length: 1024,
+            envelope_version: 3,
+            uploaded: shard_uploaded,
+        }],
+        snapshot_revision: 0,
+        last_effect_id: String::new(),
+        last_acknowledged_effect_id: String::new(),
+        last_applied_event_id: String::new(),
+        ..uniffi_upload_snapshot()
+    }
+}
+
+fn wasm_upload_event(kind: &str, error_code: u16) -> WasmUploadJobEvent {
+    WasmUploadJobEvent {
+        kind: kind.to_owned(),
+        effect_id: EFFECT_ID.to_owned(),
+        tier: ShardTier::Original.to_byte(),
+        shard_index: 0,
+        shard_id: SHARD_ID.to_owned(),
+        sha256: vec![0x11; 32],
+        content_length: 1024,
+        envelope_version: 3,
+        uploaded: kind == "ShardUploaded",
+        tiered_shards: Vec::new(),
+        shard_set_hash: vec![0x22; 32],
+        asset_id: ASSET_ID.to_owned(),
+        since_metadata_version: 0,
+        recovery_outcome: "Match".to_owned(),
+        now_ms: 1_700_000_020_000,
+        base_backoff_ms: 1_000,
+        server_retry_after_ms: 0,
+        has_server_retry_after_ms: false,
+        has_error_code: error_code != 0,
+        error_code,
+        target_phase: "CreatingShardUpload".to_owned(),
+    }
+}
+
+fn uniffi_upload_event(kind: &str, error_code: u16) -> UniUploadJobEvent {
+    UniUploadJobEvent {
+        kind: kind.to_owned(),
+        effect_id: EFFECT_ID.to_owned(),
+        tier: ShardTier::Original.to_byte(),
+        shard_index: 0,
+        shard_id: SHARD_ID.to_owned(),
+        sha256: vec![0x11; 32],
+        content_length: 1024,
+        envelope_version: 3,
+        uploaded: kind == "ShardUploaded",
+        tiered_shards: Vec::new(),
+        shard_set_hash: vec![0x22; 32],
+        asset_id: ASSET_ID.to_owned(),
+        since_metadata_version: 0,
+        recovery_outcome: "Match".to_owned(),
+        now_ms: 1_700_000_020_000,
+        base_backoff_ms: 1_000,
+        server_retry_after_ms: 0,
+        has_server_retry_after_ms: false,
+        has_error_code: error_code != 0,
+        error_code,
+        target_phase: "CreatingShardUpload".to_owned(),
+    }
+}
+
+fn wasm_album_sync_snapshot_for_phase(phase: &str) -> WasmAlbumSyncSnapshot {
+    WasmAlbumSyncSnapshot {
+        schema_version: 1,
+        album_id: ALBUM_ID.to_owned(),
+        phase: phase.to_owned(),
+        active_cursor: "cursor-a".to_owned(),
+        pending_cursor: String::new(),
+        rerun_requested: false,
+        retry_count: 0,
+        max_retry_count: 5,
+        next_retry_unix_ms: 0,
+        last_error_code: 0,
+        last_error_stage: String::new(),
+        updated_at_unix_ms: 1_700_000_020_000,
+    }
+}
+
+fn uniffi_album_sync_snapshot_for_phase(phase: &str) -> UniAlbumSyncSnapshot {
+    UniAlbumSyncSnapshot {
+        schema_version: 1,
+        album_id: ALBUM_ID.to_owned(),
+        phase: phase.to_owned(),
+        active_cursor: "cursor-a".to_owned(),
+        pending_cursor: String::new(),
+        rerun_requested: false,
+        retry_count: 0,
+        max_retry_count: 5,
+        next_retry_unix_ms: 0,
+        last_error_code: 0,
+        last_error_stage: String::new(),
+        updated_at_unix_ms: 1_700_000_020_000,
+    }
+}
+
+fn wasm_album_sync_event(kind: &str, error_code: u16) -> WasmAlbumSyncEvent {
+    WasmAlbumSyncEvent {
+        kind: kind.to_owned(),
+        fetched_cursor: "sync-request-id".to_owned(),
+        next_cursor: "cursor-b".to_owned(),
+        applied_count: 2,
+        observed_asset_ids: vec![ASSET_ID.to_owned()],
+        retry_after_unix_ms: 1_500,
+        has_error_code: error_code != 0,
+        error_code,
+    }
+}
+
+fn uniffi_album_sync_event(kind: &str, error_code: u16) -> UniAlbumSyncEvent {
+    UniAlbumSyncEvent {
+        kind: kind.to_owned(),
+        fetched_cursor: "sync-request-id".to_owned(),
+        next_cursor: "cursor-b".to_owned(),
+        applied_count: 2,
+        observed_asset_ids: vec![ASSET_ID.to_owned()],
+        retry_after_unix_ms: 1_500,
+        has_error_code: error_code != 0,
+        error_code,
+    }
+}
+
 fn canonical_wasm_snapshot_bytes(snapshot: &WasmUploadJobSnapshot) -> Vec<u8> {
     canonical_snapshot_bytes(
         snapshot.schema_version,
@@ -2049,6 +2317,225 @@ fn canonical_uniffi_snapshot_bytes(snapshot: &UniUploadJobSnapshot) -> Vec<u8> {
         &snapshot.last_applied_event_id,
         snapshot.failure_code,
     )
+}
+
+fn canonical_wasm_upload_transition_bytes(transition: &WasmUploadJobTransition) -> Vec<u8> {
+    canonical_upload_transition_bytes(
+        canonical_wasm_snapshot_bytes(&transition.next_snapshot),
+        transition
+            .effects
+            .iter()
+            .map(canonical_wasm_upload_effect_value)
+            .collect(),
+    )
+}
+
+fn canonical_uniffi_upload_transition_bytes(transition: &UniUploadJobTransition) -> Vec<u8> {
+    canonical_upload_transition_bytes(
+        canonical_uniffi_snapshot_bytes(&transition.next_snapshot),
+        transition
+            .effects
+            .iter()
+            .map(canonical_uniffi_upload_effect_value)
+            .collect(),
+    )
+}
+
+fn canonical_upload_transition_bytes(snapshot: Vec<u8>, effects: Vec<Value>) -> Vec<u8> {
+    cbor_value_to_bytes(Value::Map(vec![
+        cbor_pair(0, Value::Bytes(snapshot)),
+        cbor_pair(1, Value::Array(effects)),
+    ]))
+}
+
+fn canonical_wasm_upload_effect_value(effect: &WasmUploadJobEffect) -> Value {
+    canonical_upload_effect_value(
+        &effect.kind,
+        &effect.effect_id,
+        effect.tier,
+        effect.shard_index,
+        &effect.shard_id,
+        &effect.sha256,
+        effect.content_length,
+        effect.envelope_version,
+        effect.attempt,
+        effect.not_before_ms,
+        &effect.target_phase,
+        &effect.reason,
+        &effect.asset_id,
+        effect.since_metadata_version,
+        &effect.idempotency_key,
+        &effect.shard_set_hash,
+    )
+}
+
+fn canonical_uniffi_upload_effect_value(effect: &UniUploadJobEffect) -> Value {
+    canonical_upload_effect_value(
+        &effect.kind,
+        &effect.effect_id,
+        effect.tier,
+        effect.shard_index,
+        &effect.shard_id,
+        &effect.sha256,
+        effect.content_length,
+        effect.envelope_version,
+        effect.attempt,
+        effect.not_before_ms,
+        &effect.target_phase,
+        &effect.reason,
+        &effect.asset_id,
+        effect.since_metadata_version,
+        &effect.idempotency_key,
+        &effect.shard_set_hash,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn canonical_upload_effect_value(
+    kind: &str,
+    effect_id: &str,
+    tier: u8,
+    shard_index: u32,
+    shard_id: &str,
+    sha256: &[u8],
+    content_length: u64,
+    envelope_version: u8,
+    attempt: u32,
+    not_before_ms: i64,
+    target_phase: &str,
+    reason: &str,
+    asset_id: &str,
+    since_metadata_version: u64,
+    idempotency_key: &str,
+    shard_set_hash: &[u8],
+) -> Value {
+    Value::Map(vec![
+        cbor_pair(0, Value::Text(kind.to_owned())),
+        cbor_pair(1, optional_uuid_value(effect_id)),
+        cbor_pair(2, Value::Integer(tier.into())),
+        cbor_pair(3, Value::Integer(shard_index.into())),
+        cbor_pair(4, optional_uuid_value(shard_id)),
+        cbor_pair(5, Value::Bytes(sha256.to_vec())),
+        cbor_pair(6, Value::Integer(content_length.into())),
+        cbor_pair(7, Value::Integer(envelope_version.into())),
+        cbor_pair(8, Value::Integer(attempt.into())),
+        cbor_pair(9, Value::Integer(not_before_ms.into())),
+        cbor_pair(10, Value::Text(target_phase.to_owned())),
+        cbor_pair(11, Value::Text(reason.to_owned())),
+        cbor_pair(12, optional_uuid_value(asset_id)),
+        cbor_pair(13, Value::Integer(since_metadata_version.into())),
+        cbor_pair(14, optional_uuid_value(idempotency_key)),
+        cbor_pair(15, Value::Bytes(shard_set_hash.to_vec())),
+    ])
+}
+
+fn canonical_wasm_album_sync_transition_bytes(transition: &WasmAlbumSyncTransition) -> Vec<u8> {
+    canonical_album_sync_transition_bytes(
+        canonical_wasm_album_sync_snapshot_value(&transition.snapshot),
+        transition
+            .effects
+            .iter()
+            .map(canonical_wasm_album_sync_effect_value)
+            .collect(),
+    )
+}
+
+fn canonical_uniffi_album_sync_transition_bytes(transition: &UniAlbumSyncTransition) -> Vec<u8> {
+    canonical_album_sync_transition_bytes(
+        canonical_uniffi_album_sync_snapshot_value(&transition.snapshot),
+        transition
+            .effects
+            .iter()
+            .map(canonical_uniffi_album_sync_effect_value)
+            .collect(),
+    )
+}
+
+fn canonical_album_sync_transition_bytes(snapshot: Value, effects: Vec<Value>) -> Vec<u8> {
+    cbor_value_to_bytes(Value::Map(vec![
+        cbor_pair(0, snapshot),
+        cbor_pair(1, Value::Array(effects)),
+    ]))
+}
+
+fn canonical_wasm_album_sync_snapshot_value(snapshot: &WasmAlbumSyncSnapshot) -> Value {
+    canonical_album_sync_snapshot_value(
+        snapshot.schema_version,
+        &snapshot.album_id,
+        &snapshot.phase,
+        &snapshot.active_cursor,
+        &snapshot.pending_cursor,
+        snapshot.rerun_requested,
+        snapshot.retry_count,
+        snapshot.max_retry_count,
+        snapshot.next_retry_unix_ms,
+        snapshot.last_error_code,
+        &snapshot.last_error_stage,
+        snapshot.updated_at_unix_ms,
+    )
+}
+
+fn canonical_uniffi_album_sync_snapshot_value(snapshot: &UniAlbumSyncSnapshot) -> Value {
+    canonical_album_sync_snapshot_value(
+        snapshot.schema_version,
+        &snapshot.album_id,
+        &snapshot.phase,
+        &snapshot.active_cursor,
+        &snapshot.pending_cursor,
+        snapshot.rerun_requested,
+        snapshot.retry_count,
+        snapshot.max_retry_count,
+        snapshot.next_retry_unix_ms,
+        snapshot.last_error_code,
+        &snapshot.last_error_stage,
+        snapshot.updated_at_unix_ms,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn canonical_album_sync_snapshot_value(
+    schema_version: u32,
+    album_id: &str,
+    phase: &str,
+    active_cursor: &str,
+    pending_cursor: &str,
+    rerun_requested: bool,
+    retry_count: u32,
+    max_retry_count: u32,
+    next_retry_unix_ms: u64,
+    last_error_code: u16,
+    last_error_stage: &str,
+    updated_at_unix_ms: u64,
+) -> Value {
+    Value::Map(vec![
+        cbor_pair(0, Value::Integer(schema_version.into())),
+        cbor_pair(1, Value::Text(album_id.to_owned())),
+        cbor_pair(2, Value::Text(phase.to_owned())),
+        cbor_pair(3, Value::Text(active_cursor.to_owned())),
+        cbor_pair(4, Value::Text(pending_cursor.to_owned())),
+        cbor_pair(5, Value::Bool(rerun_requested)),
+        cbor_pair(6, Value::Integer(retry_count.into())),
+        cbor_pair(7, Value::Integer(max_retry_count.into())),
+        cbor_pair(8, Value::Integer(next_retry_unix_ms.into())),
+        cbor_pair(9, Value::Integer(last_error_code.into())),
+        cbor_pair(10, Value::Text(last_error_stage.to_owned())),
+        cbor_pair(11, Value::Integer(updated_at_unix_ms.into())),
+    ])
+}
+
+fn canonical_wasm_album_sync_effect_value(effect: &WasmAlbumSyncEffect) -> Value {
+    canonical_album_sync_effect_value(&effect.kind, &effect.cursor)
+}
+
+fn canonical_uniffi_album_sync_effect_value(effect: &UniAlbumSyncEffect) -> Value {
+    canonical_album_sync_effect_value(&effect.kind, &effect.cursor)
+}
+
+fn canonical_album_sync_effect_value(kind: &str, cursor: &str) -> Value {
+    Value::Map(vec![
+        cbor_pair(0, Value::Text(kind.to_owned())),
+        cbor_pair(1, Value::Text(cursor.to_owned())),
+    ])
 }
 
 struct CanonicalShard<'a> {
@@ -2117,9 +2604,13 @@ fn canonical_snapshot_bytes(
             },
         ),
     ]);
+    cbor_value_to_bytes(value)
+}
+
+fn cbor_value_to_bytes(value: Value) -> Vec<u8> {
     let mut bytes = Vec::new();
     if let Err(error) = ciborium::ser::into_writer(&value, &mut bytes) {
-        panic!("snapshot CBOR should encode: {error:?}");
+        panic!("canonical CBOR should encode: {error:?}");
     }
     bytes
 }
