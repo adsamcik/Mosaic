@@ -24,8 +24,6 @@ import { CRYPTO_TIMEOUT, NETWORK_TIMEOUT } from '../framework/timeouts';
 
 type FeatureFlags = {
   rustCoreUpload: boolean;
-  rustCoreSync: boolean;
-  rustCoreFinalize: boolean;
 };
 
 type UploadQueueRecord = {
@@ -51,14 +49,10 @@ type UiUser = {
 
 const RUST_CORE_FLAGS: FeatureFlags = {
   rustCoreUpload: true,
-  rustCoreSync: true,
-  rustCoreFinalize: true,
 };
 
 const LEGACY_FLAGS: FeatureFlags = {
   rustCoreUpload: false,
-  rustCoreSync: false,
-  rustCoreFinalize: false,
 };
 
 const photoFixtureUrls = [1, 2, 3, 4, 5].map(
@@ -296,7 +290,10 @@ async function expectPhotosPersistAfterRefresh(
 
   if (!photosVisibleAfterNavigation) {
     const serverVersion = await getAlbumContentVersion(page, albumId);
-    expect(serverVersion).toBeGreaterThanOrEqual(0);
+    expect(
+      photosVisibleAfterNavigation,
+      `Expected at least ${expectedCount} photos to persist after refresh; server content version is ${serverVersion}`,
+    ).toBe(true);
   }
 }
 
@@ -434,6 +431,7 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     const recordKeys = records
       .map((record) => record.id ?? record.jobId ?? record.rustCoreSnapshot?.jobId)
       .filter((value): value is string => typeof value === 'string' && value.length > 0);
+    expect(recordKeys.length).toBeGreaterThan(0);
     expect(new Set(recordKeys).size).toBe(recordKeys.length);
 
     const versionAfter = await getAlbumContentVersion(user.page, albumId);
@@ -491,10 +489,20 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     );
 
     try {
-      const syncResponses: string[] = [];
+      const syncResponses: Array<{ readonly url: string; readonly manifestId?: string }> = [];
       secondPage.on('response', (response) => {
         if (/\/api\/albums\/[^/?]+\/sync\?/.test(response.url()) && response.ok()) {
-          syncResponses.push(response.url());
+          void response.json().then((body: unknown) => {
+            const record = body as { manifests?: Array<{ id?: unknown }>; manifestId?: unknown };
+            const manifestId = typeof record.manifestId === 'string'
+              ? record.manifestId
+              : typeof record.manifests?.[0]?.id === 'string'
+                ? record.manifests[0].id
+                : undefined;
+            syncResponses.push({ url: response.url(), ...(manifestId ? { manifestId } : {}) });
+          }).catch(() => {
+            syncResponses.push({ url: response.url() });
+          });
         }
       });
 
@@ -510,7 +518,8 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
       if (!synced) {
         await expect(secondPage.getByTestId('app-shell')).toBeVisible();
       }
-      expect(syncResponses.length).toBeGreaterThanOrEqual(0);
+      await expect.poll(() => syncResponses.length).toBeGreaterThan(0);
+      expect(syncResponses.some((response) => response.manifestId)).toBe(true);
     } finally {
       await secondContext.close();
     }
@@ -535,10 +544,7 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     await dialog.waitForOpen();
     await dialog.selectExpiry('7 days');
     const shareUrl = await tryGenerateShareUrl(dialog);
-    if (!shareUrl) {
-      await expect(dialog.dialog).toBeVisible();
-      return;
-    }
+    expect(shareUrl, 'Share URL generation must succeed before anonymous download').toBeTruthy();
     await dialog.done();
 
     const anonymousContext = await browser.newContext({ acceptDownloads: true });
@@ -546,7 +552,7 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     const anonymousPage = await anonymousContext.newPage();
 
     try {
-      await anonymousPage.goto(shareUrl);
+      await anonymousPage.goto(shareUrl!);
       await expect(anonymousPage.getByTestId('shared-album-viewer')).toBeVisible({
         timeout: NETWORK_TIMEOUT.NAVIGATION,
       });
@@ -589,8 +595,7 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     await uploadFilesAndWait(gallery, await loadJpegFixtures(1), 1);
 
     await expect(gallery.gallery).toBeVisible();
-    const galleryScreenshot = await gallery.gallery.screenshot({ animations: 'disabled' });
-    expect(galleryScreenshot.length).toBeGreaterThan(1000);
+    await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
 
     await gallery.openShareLinks();
     const panel = new ShareLinksPanel(user.page);
@@ -600,24 +605,20 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     await dialog.waitForOpen();
     await dialog.selectExpiry('7 days');
     const shareUrl = await tryGenerateShareUrl(dialog);
-    if (!shareUrl) {
-      await expect(dialog.dialog).toBeVisible();
-      return;
-    }
+    expect(shareUrl, 'Share URL generation must succeed before visual-state checks').toBeTruthy();
     await dialog.done();
 
     const shareContext = await browser.newContext();
     registerContext(shareContext);
     const sharePage = await shareContext.newPage();
     try {
-      await sharePage.goto(shareUrl);
+      await sharePage.goto(shareUrl!);
       await expect(sharePage.getByTestId('shared-album-viewer')).toBeVisible({
         timeout: NETWORK_TIMEOUT.NAVIGATION,
       });
-      const shareScreenshot = await sharePage
-        .getByTestId('shared-album-viewer')
-        .screenshot({ animations: 'disabled' });
-      expect(shareScreenshot.length).toBeGreaterThan(1000);
+      await expect(sharePage.getByTestId('shared-photo-thumbnail').first()).toBeVisible({
+        timeout: CRYPTO_TIMEOUT.BATCH,
+      });
     } finally {
       await shareContext.close().catch(() => undefined);
     }
@@ -625,7 +626,9 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     await gallery.openPhotoInLightbox(0);
     const lightbox = new Lightbox(user.page);
     await lightbox.waitForOpen();
-    const lightboxScreenshot = await lightbox.container.screenshot({ animations: 'disabled' });
-    expect(lightboxScreenshot.length).toBeGreaterThan(1000);
+    await expect(lightbox.container).toBeVisible();
+    await expect(user.page.getByTestId('lightbox-image')).toBeVisible({
+      timeout: CRYPTO_TIMEOUT.BATCH,
+    });
   });
 });
