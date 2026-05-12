@@ -34,7 +34,7 @@ L0 (Master Key)
 │   └─ NEVER stored, derived on login
 │
 └── L1 (Root Key)
-    │   └─ HKDF-SHA256(L0, account_salt, "SafeGallery_Root_v1")
+    │   └─ HKDF-SHA256(L0, account_salt, "mosaic:root-key:v1")
     │   └─ NEVER stored, derived from L0
     │
     └── L2 (Account Key)
@@ -109,7 +109,8 @@ Offset  Size  Field
 5       4     Epoch ID (LE u32)
 9       4     Shard Index (LE u32)
 13      24    Nonce
-37      27    Reserved (MUST be zero)
+37      1     ShardTier (1=thumb, 2=preview, 3=full)
+38      26    Reserved (MUST be zero)
 ```
 
 - **AAD:** Entire 64-byte header

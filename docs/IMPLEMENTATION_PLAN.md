@@ -79,7 +79,7 @@ libs/crypto/
 L0 = Argon2id(password, salt, getArgon2Params())
 
 // L1: Root Key (never stored) - ADD per-account salt
-L1 = HKDF_SHA256(L0, salt: account_salt, info: "SafeGallery_Root_v1")
+L1 = HKDF_SHA256(L0, salt: account_salt, info: "mosaic:root-key:v1")
 
 // L2: Account Key (stored wrapped by L1)
 L2 = random(32 bytes)
@@ -222,10 +222,10 @@ assert(bytesEqual(bundle.recipient_pubkey, myEd25519Public));
 
 ```
 Header (64 bytes):
-┌────────────┬─────────┬──────────┬──────────┬───────────────┬──────────┐
-│ Magic (4B) │ Ver (1) │ Epoch(4) │ Shard(4) │ Nonce (24B)   │ Rsv (27) │
-│ "SGzk"     │ 0x03    │ LE u32   │ LE u32   │ Random        │ Zero     │
-└────────────┴─────────┴──────────┴──────────┴───────────────┴──────────┘
+┌────────────┬─────────┬──────────┬──────────┬───────────────┬─────────┬──────────┐
+│ Magic (4B) │ Ver (1) │ Epoch(4) │ Shard(4) │ Nonce (24B)   │ Tier(1) │ Rsv (26) │
+│ "SGzk"     │ 0x03    │ LE u32   │ LE u32   │ Random        │ 1/2/3   │ Zero     │
+└────────────┴─────────┴──────────┴──────────┴───────────────┴─────────┴──────────┘
 
 Encryption:
 - Algorithm: XChaCha20-Poly1305

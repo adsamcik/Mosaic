@@ -128,7 +128,7 @@ export async function deriveKeys(
   // Alternative: use crypto_generichash with key
   const rootKey = sodium.crypto_generichash(
     32,
-    sodium.from_string('SafeGallery_Root_v1'),
+    sodium.from_string('mosaic:root-key:v1'),
     masterKey
   );
   // Mix in account salt for domain separation
