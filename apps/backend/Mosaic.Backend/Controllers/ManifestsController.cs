@@ -262,6 +262,7 @@ public class ManifestsController : ControllerBase
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
 
+            SetManifestETag(manifest);
             return Created($"/api/manifests/{manifest.Id}", ToFinalizeResponse(manifest, shardInfoList));
         }
         catch
@@ -445,6 +446,12 @@ public class ManifestsController : ControllerBase
                 return StatusCode(StatusCodes.Status410Gone);
             }
 
+            var ifMatchError = ValidateIfMatchOrWarn(manifest, "metadata");
+            if (ifMatchError != null)
+            {
+                return ifMatchError;
+            }
+
             if (!TryDecodeBase64(request.EncryptedMeta, out var encryptedMeta) || encryptedMeta.Length < 16)
             {
                 return Problem(
@@ -494,6 +501,7 @@ public class ManifestsController : ControllerBase
 
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
+            SetManifestETag(manifest);
 
             _logger.LogInformation(
                 "Manifest {ManifestId} metadata updated by {UserId}, new version {Version}",
@@ -540,6 +548,12 @@ public class ManifestsController : ControllerBase
             return StatusCode(StatusCodes.Status410Gone);
         }
 
+        var ifMatchError = ValidateIfMatchOrWarn(manifest, "expiration");
+        if (ifMatchError != null)
+        {
+            return ifMatchError;
+        }
+
         if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
             return Problem(
@@ -555,6 +569,7 @@ public class ManifestsController : ControllerBase
         manifest.VersionCreated = manifest.Album.CurrentVersion;
 
         await _db.SaveChangesAsync();
+        SetManifestETag(manifest);
 
         return Ok(new
         {
@@ -596,6 +611,7 @@ public class ManifestsController : ControllerBase
             return StatusCode(StatusCodes.Status410Gone);
         }
 
+        SetManifestETag(manifest);
         return Ok(new
         {
             ProtocolVersion = manifest.ProtocolVersion,
@@ -729,5 +745,54 @@ public class ManifestsController : ControllerBase
         {
             return false;
         }
+    }
+
+    private void SetManifestETag(Manifest manifest)
+        => Response.Headers["ETag"] = $"\"{manifest.MetadataVersion}\"";
+
+    private IActionResult? ValidateIfMatchOrWarn(Manifest manifest, string endpointName)
+    {
+        var ifMatchValues = Request.Headers.IfMatch;
+        if (ifMatchValues.Count == 0)
+        {
+            _logger.LogWarning(
+                "Manifest {ManifestId} {EndpointName} update accepted without If-Match header",
+                manifest.Id,
+                endpointName);
+            Response.Headers["Deprecation"] = "true";
+            return null;
+        }
+
+        if (ifMatchValues.Any(value => MatchesMetadataVersionETag(value, manifest.MetadataVersion)))
+        {
+            return null;
+        }
+
+        SetManifestETag(manifest);
+        return StatusCode(StatusCodes.Status412PreconditionFailed, new
+        {
+            error = "Precondition failed",
+            detail = "If-Match does not match the current manifest metadata version.",
+            currentMetadataVersion = manifest.MetadataVersion
+        });
+    }
+
+    private static bool MatchesMetadataVersionETag(string? headerValue, long metadataVersion)
+    {
+        if (string.IsNullOrWhiteSpace(headerValue))
+        {
+            return false;
+        }
+
+        if (headerValue.Trim() == "*")
+        {
+            return true;
+        }
+
+        var expected = metadataVersion.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return headerValue
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(candidate =>
+                string.Equals(candidate.Trim('"'), expected, StringComparison.Ordinal));
     }
 }
