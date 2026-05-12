@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented in R-C4. Decision: ship the Rust domain/crypto implementation and lock tests for streaming shard AEAD envelope `v0x04`; production callers remain on `v0x03` until a later activation ticket wires this path through client surfaces.
+Implemented and active. v0x03 envelope is the default; v0x04 streaming envelope is the active production path for shards >256 KiB on Android (`ShardEncryptionWorker.kt:82`). Both wire formats are frozen by `late_v1_protocol_freeze_lock.rs`.
 
 ## Context
 
@@ -22,7 +22,7 @@ The plan also requires a **panic firewall** posture: a Rust panic inside the str
 
 ## Decision
 
-The Rust core completion programme **freezes the design** of the streaming shard AEAD and ships **only the framing, golden vectors, and rejection tests**. Production callers continue to use the single-shot envelope (`v0x03`) for the duration of this programme; the streaming envelope (`v0x04`) is only exercised by tests and by an explicit future-flag that no production caller sets.
+The Rust core completion programme **freezes the design** of the streaming shard AEAD and ships the framing, golden vectors, rejection tests, and Android production dispatch. Production callers use the single-shot envelope (`v0x03`) by default; Android routes shards larger than 256 KiB through the streaming envelope (`v0x04`) via `ShardEncryptionWorker.kt`.
 
 ### Streaming envelope framing (frozen by this ADR)
 
@@ -52,6 +52,14 @@ This final-frame AAD binds the stream length without a separate footer tag. If a
 | 24 | `plaintext_len + 16` | `ciphertext` | XChaCha20-Poly1305 output (ciphertext + tag). Non-final plaintext frames are exactly 64 KiB; the final frame length is `final_frame_size`. |
 
 The serialized nonce is also checked against the deterministic reconstruction so copied/reordered frames fail before or during AEAD authentication.
+
+### Streaming activation threshold
+
+Android dispatches shards larger than 256 KiB through the v0x04 streaming
+envelope in `ShardEncryptionWorker.kt`. That threshold is a Mosaic-internal
+memory-safety boundary, not a wire-format field: it does not appear in the
+serialized envelope and it does not alter the frozen frame size, nonce layout,
+AAD labels, or HKDF labels above.
 
 ### Per-chunk nonce derivation (frozen by this ADR — RFC 5869 conventional usage)
 
@@ -127,7 +135,7 @@ Stream handles drop wipe internal state via `ZeroizeOnDrop`. Panic-firewall: eve
 R-C4 ships:
 
 - the framing and KDF spec frozen above,
-- pure-Rust implementation behind `#[cfg(feature = "shard_streaming")]`. The CI guard `no-streaming-export-without-feature` rejects any WASM/UniFFI export of streaming symbols when the feature is off; fuzz/test entry points use a separate `[dev-dependencies]` test feature.
+- pure-Rust implementation and Android production dispatch for shards larger than the 256 KiB threshold,
 - `SPEC-StreamingShardAEAD.md` documenting the byte layout, rejection rules, and final-frame commitment verification,
 - golden vectors for: known plaintexts, multi-chunk streams, single-chunk streams (`total_chunks = 1`), last-byte truncation, mid-stream truncation, header mutation plus tail truncation, duplicate chunk, swapped chunks, replay across streams (cross-`stream_salt`), mutated `total_chunks`, mismatched `chunk_size_class`, old-reader-rejection (a v3-only reader given a v4 envelope must produce `InvalidEnvelope`),
 - `cargo fuzz` corpora,
@@ -136,11 +144,8 @@ R-C4 ships:
 
 R-C4 **does not** ship:
 
-- production caller routing originals through the streaming path,
-- WASM/UniFFI exports beyond test-only entry points (P-W5 / P-U5 are *conditional* tickets gated by a future "ship streaming" decision in v1.x); the `envelopeVersion = 4` byte in `tieredShards` (per ADR-022) is reserved but never written by v1 production callers,
+- WASM/UniFFI exports beyond test-only entry points (P-W5 / P-U5 are *conditional* tickets gated by a future cross-surface streaming decision); Android may write `envelopeVersion = 4` for shards above the 256 KiB threshold,
 - Android 4 GiB upload integration (defers to v1.x; v1 caps original tier at the largest size that the single-shot path can handle on the Q-final-4 device matrix). This cap is documented in ADR-014's `Q-final-4` budget.
-
-A future ADR-NNN will activate streaming for production callers in v1.x, after this programme's foundations land and the fuzz/golden-vector corpora are mature.
 
 ## Options Considered
 
@@ -162,10 +167,10 @@ A future ADR-NNN will activate streaming for production callers in v1.x, after t
 - Cons: v1.x cannot land streaming without a fresh design pass; Android 4 GiB originals remain unsupported; risk of pressure-driven shortcut decisions later.
 - Conviction: 3/10.
 
-### Ship design + vectors, defer production wiring (this decision)
+### Ship design + vectors, defer production wiring (superseded)
 
-- Pros: locks the irreversible bytes (magic, version, KDF, AAD layout) in v1 with full test coverage; allows v1.x to flip on production wiring without redesigning protocol; production callers continue on `v0x03` for known-safe single-shot path; Android 4 GiB defers to v1.x.
-- Cons: Android 4 GiB originals not supported in v1; programme ships dead-but-tested code.
+- Pros: locks the irreversible bytes (magic, version, KDF, AAD layout) in v1 with full test coverage.
+- Cons: no longer matches Android's active >256 KiB production dispatch gate.
 - Conviction: 9/10.
 
 ## Consequences
@@ -173,11 +178,10 @@ A future ADR-NNN will activate streaming for production callers in v1.x, after t
 - **`v0x04` envelope magic and KDF context are frozen** by this ADR. Any change requires a new envelope version *and* a new ADR.
 - New SPEC `docs/specs/SPEC-StreamingShardAEAD.md` documents the framing.
 - `crates/mosaic-domain/tests/sidecar_tag_table.rs` (per ADR-017) and a parallel `streaming_envelope_lock.rs` lock-test pin the byte layout.
-- `mosaic-crypto/Cargo.toml` adds `shard_streaming` feature; default off.
 - The Rust crypto crate maps v0x04 stream-state failures onto its existing `MosaicCryptoError` surface to preserve downstream exhaustive matches in `mosaic-client`; future FFI activation can map those to the pre-allocated client error codes without changing the wire bytes.
 - Panic firewall: every streaming entry point calls `std::panic::catch_unwind` and zeroes any plaintext-bearing temporary on panic.
-- Q-final-4 budgets cap originals at the size that single-shot AEAD can handle without OOM on the device matrix; programme documents this cap and ties Android 4 GiB to v1.x.
-- A future "activate streaming for production" decision lands as a separate ADR + a feature-flag flip; no protocol bytes change.
+- Q-final-4 budgets may still cap end-to-end originals below 4 GiB for non-crypto pipeline reasons; the Android crypto dispatch gate itself routes >256 KiB shards through v0x04.
+- Future cross-surface activation decisions do not change protocol bytes.
 
 ## Reversibility
 
