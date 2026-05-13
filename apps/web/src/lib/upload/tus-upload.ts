@@ -7,6 +7,26 @@ const SHA256_HEX_BYTES = 32;
 const LOWERCASE_SHA256_HEX = /^[0-9a-f]{64}$/;
 const SHA256_HEX = /^[0-9a-fA-F]{64}$/;
 
+export class UploadAuthRequiredError extends Error {
+  readonly status = 401;
+
+  constructor(message = 'Authentication required to continue upload') {
+    super(message);
+    this.name = 'UploadAuthRequiredError';
+  }
+}
+
+export function isUploadAuthRequiredError(error: unknown): error is UploadAuthRequiredError {
+  return error instanceof UploadAuthRequiredError;
+}
+
+function isTusUnauthorizedError(error: Error | tus.DetailedError): boolean {
+  const status = 'originalResponse' in error
+    ? error.originalResponse?.getStatus()
+    : undefined;
+  return status === 401 || /\b401\b|unauthori[sz]ed/i.test(error.message);
+}
+
 /**
  * Upload data via Tus resumable protocol
  * @param albumId - Album to upload to
@@ -51,10 +71,15 @@ export async function tusUpload(
           `TUS progress: ${bytesUploaded}/${bytesTotal} (${percentage}%)`,
         );
       },
+      onShouldRetry: (error) => !isTusUnauthorizedError(error),
       onError: (error) => {
         log.error(
           `TUS upload failed: albumId=${albumId}, shardIndex=${shardIndex}, error=${error.message}`,
         );
+        if (isTusUnauthorizedError(error)) {
+          reject(new UploadAuthRequiredError());
+          return;
+        }
         reject(new Error(`Upload failed: ${error.message}`));
       },
       onSuccess: () => {

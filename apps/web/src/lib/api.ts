@@ -320,7 +320,10 @@ async function apiRequest<T>(
   const response = await fetch(`${API_BASE}${path}`, init);
 
   if (!response.ok) {
-    await throwApiErrorForResponse(response, { path, clientCorrelationId });
+    await throwApiErrorForResponse(response, {
+      path,
+      ...(clientCorrelationId !== undefined ? { clientCorrelationId } : {}),
+    });
   }
 
   // Handle 204 No Content

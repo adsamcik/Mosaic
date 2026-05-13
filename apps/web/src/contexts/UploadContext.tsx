@@ -26,6 +26,8 @@ import {
   type UploadTask,
 } from '../lib/upload-queue';
 import { initUploadStoreBridge } from '../lib/upload-store-bridge';
+import { session, subscribeToSessionExpired } from '../lib/session';
+import { useToast } from './ToastContext';
 
 // Re-export for consumers
 export { UploadError, UploadErrorCode } from '../lib/upload-errors';
@@ -160,8 +162,10 @@ export function UploadProvider({ children }: UploadProviderProps) {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<UploadError | null>(null);
   const [, setActiveTasks] = useState<UploadTask[]>([]);
+  const { addToast, removeToast } = useToast();
   const rustAdaptersByTaskId = useRef(new Map<string, RustUploadAdapter>());
   const rustSubmittedTaskEvents = useRef(new Map<string, Set<string>>());
+  const sessionExpiredToastId = useRef<string | null>(null);
   const isUploading = activeUploadCount > 0;
   const getRustUploadAdapter = useMemo(() => {
     let adapter: RustUploadAdapter | null = null;
@@ -176,6 +180,29 @@ export function UploadProvider({ children }: UploadProviderProps) {
   const decrementActiveUploadCount = useCallback(() => {
     setActiveUploadCount((count) => Math.max(0, count - 1));
   }, []);
+  const dismissSessionExpiredToast = useCallback(() => {
+    if (sessionExpiredToastId.current !== null) {
+      removeToast(sessionExpiredToastId.current);
+      sessionExpiredToastId.current = null;
+    }
+  }, [removeToast]);
+  const showSessionExpiredToast = useCallback(() => {
+    if (sessionExpiredToastId.current !== null) {
+      return;
+    }
+    sessionExpiredToastId.current = addToast({
+      type: 'error',
+      duration: 0,
+      message: 'Your session expired. Sign in again to resume your upload(s).',
+      action: {
+        label: 'Sign in',
+        onClick: () => {
+          window.history.replaceState(null, '', '/');
+          document.getElementById('main-content')?.scrollIntoView();
+        },
+      },
+    });
+  }, [addToast]);
 
   useEffect(() => {
     window.dispatchEvent(
@@ -316,6 +343,12 @@ export function UploadProvider({ children }: UploadProviderProps) {
       }
     };
 
+    uploadQueue.onAuthRequired = (task) => {
+      setActiveTasks((prev) => prev.filter((t) => t.id !== task.id));
+      showSessionExpiredToast();
+      decrementActiveUploadCount();
+    };
+
     let cancelled = false;
     void uploadQueue.init().catch((err: unknown) => {
       if (cancelled) return;
@@ -327,9 +360,26 @@ export function UploadProvider({ children }: UploadProviderProps) {
     // Cleanup: bridge cleanup will restore original callbacks
     return () => {
       cancelled = true;
+      uploadQueue.onAuthRequired = undefined;
       bridgeCleanup();
     };
-  }, [decrementActiveUploadCount]);
+  }, [decrementActiveUploadCount, showSessionExpiredToast]);
+
+  useEffect(() => {
+    return subscribeToSessionExpired(() => {
+      void uploadQueue.pauseForAuthRequired();
+      showSessionExpiredToast();
+    });
+  }, [showSessionExpiredToast]);
+
+  useEffect(() => {
+    return session.subscribe(() => {
+      if (session.isLoggedIn) {
+        dismissSessionExpiredToast();
+        void uploadQueue.resumeAuthRequiredTasks();
+      }
+    });
+  }, [dismissSessionExpiredToast]);
 
   // Warn user before leaving page during upload
   useEffect(() => {

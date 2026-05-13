@@ -663,6 +663,16 @@ class SessionManager {
       }
     }
 
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(
+          new CustomEvent('mosaic:session-expired', { detail: { reason } }),
+        );
+      } catch {
+        // Non-browser test environments may not support CustomEvent.
+      }
+    }
+
     this.clearSessionExpiredState();
     this.notify();
   }

@@ -41,6 +41,7 @@ export type UploadStatus =
   | 'complete'
   | 'duplicate'
   | 'error'
+  | 'paused_auth_required'
   | 'permanently_failed';
 export type UploadAction =
   | 'pending'
@@ -213,6 +214,7 @@ export type CompleteCallback = (
   tieredShards?: TieredShardIds,
 ) => void | Promise<void>;
 export type ErrorCallback = (task: UploadTask, error: Error) => void;
+export type AuthRequiredCallback = (task: UploadTask) => void;
 
 /** Context passed to upload handlers for callbacks and shared operations */
 export interface UploadHandlerContext {

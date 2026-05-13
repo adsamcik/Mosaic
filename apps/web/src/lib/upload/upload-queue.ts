@@ -11,7 +11,10 @@ import {
 } from './legacy-drainer';
 import { UploadPersistence } from './upload-persistence';
 import { ContentHashDedup, DuplicateUploadError } from '../content-hash';
-import { tusUpload as tusUploadFn } from './tus-upload';
+import {
+  isUploadAuthRequiredError,
+  tusUpload as tusUploadFn,
+} from './tus-upload';
 import { processTieredUpload } from './tiered-upload-handler';
 import { processVideoUpload } from './video-upload-handler';
 import { processLegacyUpload } from './legacy-upload-handler';
@@ -21,6 +24,7 @@ import type {
   ProgressCallback,
   CompleteCallback,
   ErrorCallback,
+  AuthRequiredCallback,
   UploadHandlerContext,
 } from './types';
 import type { EpochHandleId } from '../../workers/types';
@@ -37,8 +41,11 @@ const log = createLogger('UploadQueue');
  * Upload Queue Manager
  * Handles chunked, encrypted, resumable file uploads
  */
-class UploadQueue {
+export class UploadQueue {
   private queue: UploadTask[] = [];
+  private activeTasks = new Set<UploadTask>();
+  private authPausedTasks = new Map<string, UploadTask>();
+  private authPaused = false;
   private processing = false;
   private maxConcurrent = 2;
   private activeCount = 0;
@@ -55,6 +62,17 @@ class UploadQueue {
 
   /** Called when upload fails */
   onError?: ErrorCallback;
+
+  /** Called when uploads pause because the browser session expired */
+  onAuthRequired?: AuthRequiredCallback | undefined;
+
+  constructor() {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('mosaic:session-expired', () => {
+        void this.pauseForAuthRequired();
+      });
+    }
+  }
 
   /**
    * Initialize the upload queue (call once on app start)
@@ -228,19 +246,25 @@ class UploadQueue {
       log.info('processQueue: already processing, returning');
       return;
     }
+    if (this.authPaused) {
+      log.info('processQueue: auth required, queue is paused');
+      return;
+    }
     this.processing = true;
 
-    while (this.queue.length > 0 && this.activeCount < this.maxConcurrent) {
+    while (!this.authPaused && this.queue.length > 0 && this.activeCount < this.maxConcurrent) {
       const task = this.queue.shift();
       if (!task) break;
 
       log.info(`processQueue: starting task ${task.id}`);
       this.activeCount++;
+      this.activeTasks.add(task);
       this.processTask(task)
         .catch((err) => {
           log.error('Upload task failed:', err);
         })
         .finally(() => {
+          this.activeTasks.delete(task);
           this.activeCount--;
           void this.processQueue();
         });
@@ -329,6 +353,12 @@ class UploadQueue {
       }
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
+
+      if (isUploadAuthRequiredError(error)) {
+        await this.pauseTaskForAuthRequired(task, errorMessage);
+        return;
+      }
+
       const now = Date.now();
 
       task.retryCount++;
@@ -407,6 +437,62 @@ class UploadQueue {
    */
   async resetLegacyUploadQueue(): Promise<number> {
     return legacyUploadQueueDrainer.reset();
+  }
+
+  async pauseForAuthRequired(): Promise<void> {
+    this.authPaused = true;
+    const tasks = [...this.queue, ...this.activeTasks.values()];
+    this.queue = [];
+    for (const task of tasks) {
+      await this.pauseTaskForAuthRequired(
+        task,
+        'Authentication required to continue upload',
+      );
+    }
+  }
+
+  async resumeAuthRequiredTasks(): Promise<void> {
+    this.authPaused = false;
+    const tasks = [...this.authPausedTasks.values()];
+    this.authPausedTasks.clear();
+
+    for (const task of tasks) {
+      if (this.activeTasks.has(task)) {
+        continue;
+      }
+      task.status = 'queued';
+      task.currentAction = 'pending';
+      delete task.error;
+      await this.persistence.updateTask(task.id, { status: 'queued' });
+      this.queue.push(task);
+    }
+
+    const persistedPaused = (await this.persistence.getPendingTasks())
+      .filter((task) => task.status === 'paused_auth_required');
+    for (const task of persistedPaused) {
+      await this.persistence.updateTask(task.id, { status: 'queued' });
+    }
+
+    void this.processQueue();
+  }
+
+  private async pauseTaskForAuthRequired(
+    task: UploadTask,
+    errorMessage: string,
+  ): Promise<void> {
+    const wasAlreadyPaused = task.status === 'paused_auth_required';
+    this.authPaused = true;
+    task.status = 'paused_auth_required';
+    task.currentAction = 'pending';
+    task.error = errorMessage;
+    this.authPausedTasks.set(task.id, task);
+    await this.persistence.updateTask(task.id, {
+      status: 'paused_auth_required',
+    });
+    this.onProgress?.(task);
+    if (!wasAlreadyPaused) {
+      this.onAuthRequired?.(task);
+    }
   }
 
   async retryPermanentlyFailed(
