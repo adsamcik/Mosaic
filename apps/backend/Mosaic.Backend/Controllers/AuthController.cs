@@ -133,7 +133,10 @@ public partial class AuthController : ControllerBase
             if (recentChallenges >= 10)
             {
                 _logger.AuthRateLimited(request.Username);
-                return StatusCode(429, new { error = "Too many requests. Please wait." });
+                return Problem(
+                    statusCode: StatusCodes.Status429TooManyRequests,
+                    title: "Too many requests",
+                    detail: "Too many requests. Please wait.");
             }
         }
 
@@ -222,7 +225,10 @@ public partial class AuthController : ControllerBase
             if (recentChallenges >= 10)
             {
                 _logger.AuthRateLimited(request.Username);
-                return StatusCode(429, new { error = "Too many attempts. Please wait." });
+                return Problem(
+                    statusCode: StatusCodes.Status429TooManyRequests,
+                    title: "Too many requests",
+                    detail: "Too many attempts. Please wait.");
             }
         }
 
@@ -408,7 +414,10 @@ public partial class AuthController : ControllerBase
             if (attempts >= 5)
             {
                 _logger.LogWarning("Registration rate limited for IP {IpAddress}", ipAddress);
-                return StatusCode(429, new { error = "Too many registration attempts. Please try again later." });
+                return Problem(
+                    statusCode: StatusCodes.Status429TooManyRequests,
+                    title: "Too many requests",
+                    detail: "Too many registration attempts. Please try again later.");
             }
 
             _cache.Set(cacheKey, attempts + 1, TimeSpan.FromHours(1));

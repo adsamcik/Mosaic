@@ -2,6 +2,7 @@ using System.Net.WebSockets;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -73,7 +74,13 @@ public static partial class SidecarSignalingEndpoint
         if (!roomExists && !rateLimiter.TryAcquire(ip))
         {
             httpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-            await httpContext.Response.WriteAsync("Too many sidecar rooms from this address");
+            httpContext.Response.ContentType = "application/problem+json";
+            await httpContext.Response.WriteAsJsonAsync(new ProblemDetails
+            {
+                Status = StatusCodes.Status429TooManyRequests,
+                Title = "Too many requests",
+                Detail = "Too many sidecar rooms from this address"
+            });
             return;
         }
 

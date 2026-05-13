@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Logging;
 
 namespace Mosaic.Backend.Middleware;
@@ -52,15 +53,19 @@ public class GlobalExceptionMiddleware
 
         // Return generic error to client - never expose exception details
         context.Response.StatusCode = (int)statusCode;
-        context.Response.ContentType = "application/json";
+        context.Response.ContentType = "application/problem+json";
 
-        var response = new
+        var response = new ProblemDetails
         {
-            error = statusCode == HttpStatusCode.Unauthorized
+            Status = (int)statusCode,
+            Title = statusCode == HttpStatusCode.Unauthorized
                 ? "Authentication required"
                 : "An unexpected error occurred",
-            correlationId = correlationId
+            Detail = statusCode == HttpStatusCode.Unauthorized
+                ? "Authentication required"
+                : "An unexpected error occurred"
         };
+        response.Extensions["correlationId"] = correlationId;
 
         var json = JsonSerializer.Serialize(response, new JsonSerializerOptions
         {

@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Infrastructure;
 
@@ -77,7 +78,13 @@ public partial class CombinedAuthMiddleware
             !_localAuthEnabled)
         {
             context.Response.StatusCode = 404;
-            await context.Response.WriteAsJsonAsync(new { error = "Not found" });
+            context.Response.ContentType = "application/problem+json";
+            await context.Response.WriteAsJsonAsync(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "Not found",
+                Detail = "Not found"
+            });
             return;
         }
 
@@ -115,7 +122,13 @@ public partial class CombinedAuthMiddleware
 
         // No valid authentication found
         context.Response.StatusCode = 401;
-        await context.Response.WriteAsJsonAsync(new { error = "Authentication required" });
+        context.Response.ContentType = "application/problem+json";
+        await context.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            Status = StatusCodes.Status401Unauthorized,
+            Title = "Authentication required",
+            Detail = "Authentication required"
+        });
     }
 
     private async Task<bool> TryLocalAuthAsync(HttpContext context, MosaicDbContext db)

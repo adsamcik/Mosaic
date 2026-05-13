@@ -14,6 +14,7 @@ using tusdotnet.Stores;
 using System.Data.Common;
 using System.Security.Cryptography;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -112,8 +113,13 @@ builder.Services.AddRateLimiter(options =>
     options.OnRejected = async (context, token) =>
     {
         context.HttpContext.Response.StatusCode = 429;
-        await context.HttpContext.Response.WriteAsync(
-            "Too many requests. Please try again later.", token);
+        context.HttpContext.Response.ContentType = "application/problem+json";
+        await context.HttpContext.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = "Too many requests",
+            Detail = "Too many requests. Please try again later."
+        }, cancellationToken: token);
     };
 });
 
