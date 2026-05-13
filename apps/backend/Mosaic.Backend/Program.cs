@@ -115,12 +115,14 @@ builder.Services.AddRateLimiter(options =>
         context.HttpContext.Response.StatusCode = 429;
         context.HttpContext.Response.Headers.RetryAfter = "60";
         context.HttpContext.Response.ContentType = "application/problem+json";
-        await context.HttpContext.Response.WriteAsJsonAsync(new ProblemDetails
+        var problem = new ProblemDetails
         {
             Status = StatusCodes.Status429TooManyRequests,
             Title = "Too many requests",
             Detail = "Too many requests. Please try again later."
-        }, cancellationToken: token);
+        };
+        problem.Extensions["correlationId"] = context.HttpContext.GetCorrelationId() ?? context.HttpContext.TraceIdentifier;
+        await context.HttpContext.Response.WriteAsJsonAsync(problem, cancellationToken: token);
     };
 });
 

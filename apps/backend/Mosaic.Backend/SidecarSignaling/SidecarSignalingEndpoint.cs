@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Mosaic.Backend.Middleware;
 
 namespace Mosaic.Backend.SidecarSignaling;
 
@@ -76,12 +77,14 @@ public static partial class SidecarSignalingEndpoint
             httpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
             httpContext.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(options.RateLimitWindow.TotalSeconds)).ToString();
             httpContext.Response.ContentType = "application/problem+json";
-            await httpContext.Response.WriteAsJsonAsync(new ProblemDetails
+            var problem = new ProblemDetails
             {
                 Status = StatusCodes.Status429TooManyRequests,
                 Title = "Too many requests",
                 Detail = "Too many sidecar rooms from this address"
-            });
+            };
+            problem.Extensions["correlationId"] = httpContext.GetCorrelationId() ?? httpContext.TraceIdentifier;
+            await httpContext.Response.WriteAsJsonAsync(problem);
             return;
         }
 

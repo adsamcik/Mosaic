@@ -32,13 +32,15 @@ public class DatabaseExceptionHandler : IExceptionHandler
                 httpContext.GetCorrelationId());
 
             httpContext.Response.StatusCode = StatusCodes.Status409Conflict;
-            await httpContext.Response.WriteAsJsonAsync(new ProblemDetails
+            var problem = new ProblemDetails
             {
                 Status = StatusCodes.Status409Conflict,
                 Title = "Conflict",
                 Detail = "The resource was modified by another request. Please reload and try again.",
                 Instance = httpContext.Request.Path
-            }, cancellationToken);
+            };
+            problem.Extensions["correlationId"] = httpContext.GetCorrelationId() ?? httpContext.TraceIdentifier;
+            await httpContext.Response.WriteAsJsonAsync(problem, cancellationToken);
 
             return true;
         }
@@ -58,13 +60,15 @@ public class DatabaseExceptionHandler : IExceptionHandler
                     httpContext.GetCorrelationId());
 
                 httpContext.Response.StatusCode = StatusCodes.Status409Conflict;
-                await httpContext.Response.WriteAsJsonAsync(new ProblemDetails
+                var problem = new ProblemDetails
                 {
                     Status = StatusCodes.Status409Conflict,
                     Title = "Conflict",
                     Detail = "A resource with these values already exists.",
                     Instance = httpContext.Request.Path
-                }, cancellationToken);
+                };
+                problem.Extensions["correlationId"] = httpContext.GetCorrelationId() ?? httpContext.TraceIdentifier;
+                await httpContext.Response.WriteAsJsonAsync(problem, cancellationToken);
 
                 return true;
             }
