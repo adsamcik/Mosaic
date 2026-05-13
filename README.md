@@ -302,9 +302,9 @@ docker pull ghcr.io/adsamcik/mosaic-frontend:0.0.1
 | ----------- | --------------- |
 | Chrome/Edge | 102+            |
 | Firefox     | 111+            |
-| Safari      | 16.4+           |
+| Safari      | 17.4+           |
 
-Requires `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy` headers for SharedArrayBuffer support.
+Requires `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy` headers for SharedArrayBuffer support. Safari 17.4+ is required because earlier Safari versions do not support `Cross-Origin-Embedder-Policy: credentialless`.
 
 ## License
 

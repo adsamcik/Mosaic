@@ -281,9 +281,9 @@ Modern browsers only (no polyfills):
 |---------|-----------------|
 | Chrome/Edge | 102+ |
 | Firefox | 111+ |
-| Safari | 16.4+ |
+| Safari | 17.4+ |
 
-Required features: SharedArrayBuffer, WASM, OPFS, Web Workers
+Required features: SharedArrayBuffer, WASM, OPFS, Web Workers, and `Cross-Origin-Embedder-Policy: credentialless` support.
 
 ---
 
