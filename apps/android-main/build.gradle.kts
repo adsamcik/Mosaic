@@ -261,8 +261,6 @@ val buildRustUniffiArtifacts by tasks.registering(Exec::class) {
   inputs.file(repoRoot.resolve("Cargo.toml"))
   inputs.file(repoRoot.resolve("Cargo.lock"))
   inputs.file(repoRoot.resolve("rust-toolchain.toml"))
-  outputs.upToDateWhen { false }
-
   outputs.dir(rustAndroidArtifactsDir)
   outputs.file(rustAndroidArtifactsDir.resolve("kotlin/uniffi/mosaic_uniffi/mosaic_uniffi.kt"))
   outputs.file(rustAndroidArtifactsDir.resolve("arm64-v8a/libmosaic_uniffi.so"))
