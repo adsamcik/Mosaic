@@ -39,6 +39,11 @@ if [[ "${#abis[@]}" -eq 0 ]]; then
 fi
 
 cargo_ndk_targets=()
+rust_feature_args=()
+if [[ -n "${MOSAIC_UNIFFI_CARGO_FEATURES:-}" ]]; then
+  rust_feature_args+=("--features" "$MOSAIC_UNIFFI_CARGO_FEATURES")
+fi
+
 for abi in "${abis[@]}"; do
   valid=false
   for valid_abi in "${VALID_ABIS[@]}"; do
@@ -59,9 +64,9 @@ done
 cargo ndk \
   "${cargo_ndk_targets[@]}" \
   --output-dir "$PROJECT_ROOT/target/android" \
-  build -p mosaic-uniffi --release --locked
+  build -p mosaic-uniffi --release --locked "${rust_feature_args[@]}"
 
-cargo build -p mosaic-uniffi --release --locked
+cargo build -p mosaic-uniffi --release --locked "${rust_feature_args[@]}"
 
 # UniFFI 0.31 can exit successfully without emitting Kotlin when probing the
 # Linux cdylib. The rlib contains the same setup_scaffolding! metadata and is

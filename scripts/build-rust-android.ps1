@@ -40,6 +40,12 @@ Push-Location $ProjectRoot
 
 try {
     $cargoNdkTargets = @()
+    $rustFeatureArgs = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:MOSAIC_UNIFFI_CARGO_FEATURES)) {
+        $rustFeatureArgs += "--features"
+        $rustFeatureArgs += $env:MOSAIC_UNIFFI_CARGO_FEATURES
+    }
+
     foreach ($targetAbi in $Abi) {
         $cargoNdkTargets += "--target"
         $cargoNdkTargets += $targetAbi
@@ -48,19 +54,14 @@ try {
     cargo ndk `
         @cargoNdkTargets `
         --output-dir "$ProjectRoot/target/android" `
-        build -p mosaic-uniffi --release --locked
+        build -p mosaic-uniffi --release --locked @rustFeatureArgs
 
-    cargo build -p mosaic-uniffi --release --locked
+    cargo build -p mosaic-uniffi --release --locked @rustFeatureArgs
 
-    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
-        $hostLibraryPath = Join-Path $ProjectRoot "target/release/mosaic_uniffi.dll"
-    }
-    elseif ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)) {
-        $hostLibraryPath = Join-Path $ProjectRoot "target/release/libmosaic_uniffi.dylib"
-    }
-    else {
-        $hostLibraryPath = Join-Path $ProjectRoot "target/release/libmosaic_uniffi.so"
-    }
+    # UniFFI 0.31 can exit successfully without emitting Kotlin when probing
+    # some cdylibs. The rlib contains the same setup_scaffolding! metadata and
+    # is consistently discoverable by --library mode across host platforms.
+    $hostLibraryPath = Join-Path $ProjectRoot "target/release/libmosaic_uniffi.rlib"
 
     $kotlinOutDir = Join-Path $ProjectRoot "target/android/kotlin"
     Remove-Item -Recurse -Force -Path $kotlinOutDir -ErrorAction SilentlyContinue
