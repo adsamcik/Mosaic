@@ -42,6 +42,7 @@ public class ManifestExpirationControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
         var shard = await builder.CreateShardAsync(owner, ShardStatus.PENDING);
+        await builder.CreateEpochKeyAsync(album, owner);
 
         var controller = CreateController(db, config, OwnerAuthSub, new FakeTimeProvider(now));
         var request = new CreateManifestRequest(
@@ -70,6 +71,7 @@ public class ManifestExpirationControllerTests
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
         var album = await builder.CreateAlbumAsync(owner);
         var shard = await builder.CreateShardAsync(owner, ShardStatus.PENDING);
+        await builder.CreateEpochKeyAsync(album, owner);
 
         var controller = CreateController(db, config, OwnerAuthSub, new FakeTimeProvider(now));
         var request = new CreateManifestRequest(

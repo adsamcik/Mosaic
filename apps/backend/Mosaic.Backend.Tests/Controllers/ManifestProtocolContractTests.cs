@@ -101,6 +101,7 @@ public class ManifestProtocolContractTests
                 ToTieredShard(preview, ShardTier.Preview),
                 ToTieredShard(original, ShardTier.Original)
             ]);
+        await builder.CreateEpochKeyAsync(album, owner, signPubkey: Convert.FromBase64String(request.SignerPubkey));
 
         var controller = CreateManifestsController(db);
 
@@ -125,11 +126,15 @@ public class ManifestProtocolContractTests
         var controller = CreateManifestsController(db);
 
         var firstShard = await builder.CreateShardAsync(owner, ShardStatus.PENDING, sizeBytes: 11);
-        var first = await controller.Finalize(Guid.CreateVersion7(), CreateFinalizeRequest(album.Id, firstShard));
+        var firstRequest = CreateFinalizeRequest(album.Id, firstShard);
+        await builder.CreateEpochKeyAsync(album, owner, signPubkey: Convert.FromBase64String(firstRequest.SignerPubkey));
+        var first = await controller.Finalize(Guid.CreateVersion7(), firstRequest);
         Assert.IsType<CreatedResult>(first);
 
         var secondShard = await builder.CreateShardAsync(owner, ShardStatus.PENDING, sizeBytes: 12);
-        var second = await controller.Finalize(Guid.CreateVersion7(), CreateFinalizeRequest(album.Id, secondShard));
+        var secondRequest = CreateFinalizeRequest(album.Id, secondShard);
+        await builder.CreateEpochKeyAsync(album, owner, signPubkey: Convert.FromBase64String(secondRequest.SignerPubkey));
+        var second = await controller.Finalize(Guid.CreateVersion7(), secondRequest);
         Assert.IsType<CreatedResult>(second);
 
         var versions = db.Manifests.OrderBy(m => m.VersionCreated).Select(m => m.VersionCreated).ToArray();

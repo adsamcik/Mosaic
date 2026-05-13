@@ -49,6 +49,7 @@ public class ManifestsControllerTests
         var encryptedMeta = Encoding.UTF8.GetBytes(plaintextSentinel);
         var signature = Convert.ToBase64String(Encoding.UTF8.GetBytes("android-signature-opaque-contract"));
         var signerPubkey = Convert.ToBase64String(TestDataBuilder.GenerateRandomBytes(32));
+        await builder.CreateEpochKeyAsync(album, owner, signPubkey: Convert.FromBase64String(signerPubkey));
         var encryptedMetaBase64 = Convert.ToBase64String(encryptedMeta);
         var request = new CreateManifestRequest(
             AlbumId: album.Id,
@@ -103,14 +104,15 @@ public class ManifestsControllerTests
         var shardIds = tieredShards.Select(shard => shard.ShardId).ToList();
 
         var owner = await builder.CreateUserAsync(OwnerAuthSub);
-        db.Albums.Add(new Album
+        var album = new Album
         {
             Id = albumId,
             OwnerId = owner.Id,
             CurrentEpochId = FixtureInt(clientCore, "epochId"),
             CurrentVersion = FixtureLong(clientCore.GetProperty("manifestReceipt"), "version") - 1,
             EncryptedName = "opaque-album-name"
-        });
+        };
+        db.Albums.Add(album);
         db.AlbumMembers.Add(new AlbumMember
         {
             AlbumId = albumId,
@@ -136,6 +138,11 @@ public class ManifestsControllerTests
             });
         }
         await db.SaveChangesAsync();
+        await builder.CreateEpochKeyAsync(
+            album,
+            owner,
+            epochId: album.CurrentEpochId,
+            signPubkey: Convert.FromBase64String(signerPubkey));
 
         var request = new CreateManifestRequest(
             AlbumId: albumId,
@@ -198,6 +205,7 @@ public class ManifestsControllerTests
         var encryptedMetaBase64 = Convert.ToBase64String(encryptedMeta);
         var signature = Convert.ToBase64String(Encoding.UTF8.GetBytes("android-error-signature-opaque-contract"));
         var signerPubkey = Convert.ToBase64String(TestDataBuilder.GenerateRandomBytes(32));
+        await builder.CreateEpochKeyAsync(album, owner, signPubkey: Convert.FromBase64String(signerPubkey));
         var request = new CreateManifestRequest(
             AlbumId: album.Id,
             EncryptedMeta: encryptedMeta,
@@ -280,6 +288,7 @@ public class ManifestsControllerTests
         {
             0xff, 0x00, 0x7b, 0x22, 0x67, 0x70, 0x73, 0x22, 0x3a, 0x22, 0x6e, 0x6f, 0x74, 0x2d, 0x70, 0x6c, 0x61, 0x69, 0x6e, 0x22, 0x7d
         };
+        await builder.CreateEpochKeyAsync(album, owner);
         var request = new CreateManifestRequest(
             AlbumId: album.Id,
             EncryptedMeta: encryptedMeta,
