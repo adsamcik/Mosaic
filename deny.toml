@@ -29,6 +29,8 @@ wildcards = "deny"
 [bans.build]
 allow-build-scripts = [
   "anyhow",
+  # Dev-only via `(dev) mosaic-uniffi` pulled by mosaic-parity-tests.
+  "blake3",
   "camino",
   # `crunchy` is pulled by `half` via `ciborium` for client-core CBOR
   # snapshot serialization; its build script emits constant-evaluation cfgs.
@@ -37,7 +39,13 @@ allow-build-scripts = [
   "fs-err",
   "generic-array",
   "getrandom",
+  # Dev-only via `num-traits`, pulled by proptest and wasm-bindgen-test.
+  "libm",
   "libc",
+  # Dev-only via `wasm-bindgen-test` in `(dev) mosaic-wasm`.
+  "minicov",
+  # Dev-only via proptest and wasm-bindgen-test.
+  "num-traits",
   "proc-macro2",
   "quote",
   "rustix",
