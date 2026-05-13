@@ -1114,6 +1114,13 @@ components:
       description: |
         User identity from trusted reverse proxy.
         Only accepted from configured trusted IP ranges.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: mosaic_session
+      description: |
+        LocalAuth session cookie. The backend sets this cookie as HttpOnly with Path=/api,
+        SameSite=Lax for development/testing HTTP, and Secure + SameSite=Strict in production.
 
   # ===========================================================================
   # Parameters
