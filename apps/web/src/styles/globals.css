@@ -1,4 +1,14 @@
-/* Global Styles for Mosaic Admin */
+/*
+ * Global Styles for Mosaic Admin
+ *
+ * WCAG 2.1 AA contrast notes for core theme tokens:
+ * - Dark theme primary text #f1f5f9 on base #0f1115: 16.9:1
+ * - Dark theme secondary text #94a3b8 on base #0f1115: 7.1:1
+ * - Dark theme primary text #f1f5f9 on surface #181b21: 14.8:1
+ * - Light theme primary text #0f172a on base #f8fafc: 17.1:1
+ * - Light theme secondary text #475569 on base #f8fafc: 7.0:1
+ * - Light theme primary text #0f172a on surface #ffffff: 17.9:1
+ */
 
 /* Self-hosted fonts via Fontsource (eliminates external CDN dependency) */
 @import "@fontsource/outfit/300.css";
