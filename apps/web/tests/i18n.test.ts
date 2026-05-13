@@ -74,6 +74,19 @@ describe('i18n configuration', () => {
       await changeLanguage('en');
       expect(localStorage.getItem('mosaic-language')).toBe('en');
     });
+
+    it('should sync the document lang attribute when language changes', async () => {
+      const { changeLanguage } =
+        await vi.importActual<typeof import('../src/lib/i18n')>(
+          '../src/lib/i18n',
+        );
+
+      await changeLanguage('cs');
+      expect(document.documentElement.lang).toBe('cs');
+
+      await changeLanguage('en');
+      expect(document.documentElement.lang).toBe('en');
+    });
   });
 });
 

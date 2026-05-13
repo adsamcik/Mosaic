@@ -39,6 +39,17 @@ i18n
     },
   });
 
+function syncDocumentLanguage(lang: string | undefined): void {
+  if (typeof document === 'undefined' || !lang) {
+    return;
+  }
+
+  document.documentElement.lang = lang.split('-')[0] || 'en';
+}
+
+i18n.on('languageChanged', syncDocumentLanguage);
+syncDocumentLanguage(i18n.language);
+
 export default i18n;
 
 /**
@@ -46,6 +57,7 @@ export default i18n;
  */
 export function changeLanguage(lang: SupportedLanguage): Promise<void> {
   return i18n.changeLanguage(lang).then(() => {
+    syncDocumentLanguage(lang);
     localStorage.setItem('mosaic-language', lang);
   });
 }
