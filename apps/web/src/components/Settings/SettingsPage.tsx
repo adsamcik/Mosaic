@@ -612,7 +612,7 @@ export function SettingsPage() {
                 {t('settings.about.documentation')}
               </span>
               <a
-                href="https://github.com/mosaic/mosaic"
+                href="https://github.com/adsamcik/Mosaic"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="info-link"
