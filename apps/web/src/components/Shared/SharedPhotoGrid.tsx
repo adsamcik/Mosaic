@@ -7,6 +7,7 @@
 
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { NavigationDirection } from '../../hooks/useLightbox';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import {
@@ -70,6 +71,7 @@ export function SharedPhotoGrid({
   getTierKey,
   isLoadingKeys = false,
 }: SharedPhotoGridProps) {
+  const { t } = useTranslation();
   const parentRef = useRef<HTMLDivElement | null>(null);
 
   // Store ResizeObserver instance so we can clean it up
@@ -122,7 +124,7 @@ export function SharedPhotoGrid({
       // Add Header
       items.push({
         type: 'header',
-        date: formatDateHeader(dateString),
+        date: formatDateHeader(dateString, t),
         top: currentTop,
         height: HEADER_HEIGHT,
         id: `header-${dateString}`,

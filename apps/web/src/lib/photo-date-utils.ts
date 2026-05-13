@@ -1,3 +1,4 @@
+import i18n from 'i18next';
 import type { PhotoMeta } from '../workers/types';
 
 /** A translation function matching i18next's `t()` signature. */
@@ -39,24 +40,25 @@ export function groupPhotosByDate(photos: PhotoMeta[]): DateGroup[] {
  * date like "Monday, Jan 6" (with year appended when not the current year).
  *
  * Pass a `t` function (from i18next) to get translated labels for
- * today/yesterday/unknown; without it, English defaults are used.
+ * today/yesterday/unknown. If omitted, the active i18next instance is used.
  */
 export function formatDateHeader(dateString: string, t?: TFunction): string {
+  const translate = t ?? i18n.t.bind(i18n);
   const date = new Date(dateString);
-  if (isNaN(date.getTime())) return t ? t('gallery.date.unknown') : 'Unknown Date';
+  if (isNaN(date.getTime())) return translate('gallery.date.unknown');
 
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
 
   if (date.toDateString() === today.toDateString()) {
-    return t ? t('gallery.date.today') : 'Today';
+    return translate('gallery.date.today');
   }
   if (date.toDateString() === yesterday.toDateString()) {
-    return t ? t('gallery.date.yesterday') : 'Yesterday';
+    return translate('gallery.date.yesterday');
   }
 
-  return new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat(i18n.resolvedLanguage ?? i18n.language, {
     weekday: 'long',
     month: 'short',
     day: 'numeric',

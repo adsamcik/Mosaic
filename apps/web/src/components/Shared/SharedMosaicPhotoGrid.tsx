@@ -1,5 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
 import { computeMosaicLayout, type MosaicItem } from '../../lib/mosaic-layout';
 import { useLightboxPreload } from '../../hooks/useLightboxPreload';
@@ -49,6 +50,7 @@ export function SharedMosaicPhotoGrid({
   getTierKey,
   isLoadingKeys = false,
 }: SharedMosaicPhotoGridProps) {
+  const { t } = useTranslation();
   const parentRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
@@ -81,7 +83,7 @@ export function SharedMosaicPhotoGrid({
     for (const [dateString, groupPhotos] of grouped) {
       rows.push({
         type: 'header',
-        date: formatDateHeader(dateString),
+        date: formatDateHeader(dateString, t),
         id: `header-${dateString}`,
         height: HEADER_HEIGHT,
       });

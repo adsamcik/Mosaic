@@ -1,5 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import { useAnimatedItems } from '../../hooks/useAnimatedItems';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
@@ -64,6 +65,7 @@ export function MosaicPhotoGrid({
   onPhotosDeleted,
   selection,
 }: MosaicPhotoGridProps) {
+  const { t } = useTranslation();
   const parentRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
 
@@ -187,7 +189,7 @@ export function MosaicPhotoGrid({
     for (const [dateString, groupPhotos] of grouped) {
       rows.push({
         type: 'header',
-        date: formatDateHeader(dateString),
+        date: formatDateHeader(dateString, t),
         id: `header-${dateString}`,
         height: HEADER_HEIGHT,
       });
