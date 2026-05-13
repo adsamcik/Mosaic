@@ -594,10 +594,10 @@ class SessionManager {
    * currently logged in — otherwise the 401 is from a login attempt
    * (wrong credentials) and must NOT be treated as expiry.
    *
-   * On real expiry we run the standard logout teardown so all decrypted
-   * keys, OPFS DB, IndexedDB caches, and worker pools are torn down
-   * before the App router re-renders the login form. The
-   * BroadcastChannel pulse propagates the same teardown to peer tabs.
+   * On real expiry we tear down only volatile client auth state. We must
+   * not call logout here: the backend has already returned 401, so another
+   * API call would recurse into the same failure while upload progress
+   * persisted in IndexedDB should remain resumable after re-login.
    */
   private initSessionExpiryListener(): void {
     if (typeof window === 'undefined') {
@@ -608,9 +608,7 @@ class SessionManager {
         return;
       }
       log.warn('Server returned 401 mid-session; tearing down local state');
-      this.logout().catch((error: unknown) => {
-        log.warn('Session-expiry logout teardown failed', { error });
-      });
+      this.handleSessionExpired('cookie-expired');
     });
   }
 
