@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getGeoClient } from '../../lib/geo-client';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
+import { getActiveLocale } from '../../lib/i18n-locale';
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('MapView');
@@ -425,7 +426,7 @@ export function MapView({
           ? createTooltipContent(
               photo.filename,
               photo.takenAt
-                ? new Date(photo.takenAt).toLocaleDateString()
+                ? new Date(photo.takenAt).toLocaleDateString(getActiveLocale())
                 : undefined,
             )
           : createTooltipContent(photoId);

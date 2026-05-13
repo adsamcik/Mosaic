@@ -16,6 +16,7 @@ import type { LinkDecryptionKey, PhotoMeta } from '../../workers/types';
 import { downloadShardViaShareLink } from '../../lib/shard-service';
 import { getCryptoClient } from '../../lib/crypto-client';
 import { createDisplayableUrl } from '../../lib/image-decoder';
+import { getActiveLocale } from '../../lib/i18n-locale';
 
 const log = createLogger('SharedPhotoLightbox');
 
@@ -704,7 +705,7 @@ export function SharedPhotoLightbox({
           <span className="lightbox-filename">{photo.filename}</span>
           {photo.takenAt && (
             <span className="lightbox-date">
-              {new Date(photo.takenAt).toLocaleDateString()}
+              {new Date(photo.takenAt).toLocaleDateString(getActiveLocale())}
             </span>
           )}
         </div>

@@ -6,6 +6,7 @@
  */
 
 import { useTranslation } from 'react-i18next';
+import { getActiveLocale } from '../../lib/i18n-locale';
 import type { PhotoMeta } from '../../workers/types';
 import { Dialog } from '../Shared/Dialog';
 
@@ -126,7 +127,7 @@ export function DeletePhotoDialog({
               </span>
               {singlePhoto.takenAt && (
                 <span className="delete-preview-date">
-                  {new Date(singlePhoto.takenAt).toLocaleDateString()}
+                  {new Date(singlePhoto.takenAt).toLocaleDateString(getActiveLocale())}
                 </span>
               )}
             </div>

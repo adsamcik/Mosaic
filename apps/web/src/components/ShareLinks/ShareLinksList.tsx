@@ -6,6 +6,7 @@
 
 import { useState } from 'react';
 import type { ShareLinkInfo } from '../../hooks/useShareLinks';
+import { getActiveLocale } from '../../lib/i18n-locale';
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('ShareLinksList');
@@ -187,7 +188,7 @@ export function ShareLinksList({
                         <span className="stat" data-testid="created-date">
                           Created:{' '}
                           {new Date(link.createdAt).toLocaleDateString(
-                            undefined,
+                            getActiveLocale(),
                             {
                               month: 'short',
                               day: 'numeric',
@@ -281,7 +282,7 @@ export function ShareLinksList({
                         <span className="revoked-stat">
                           Created{' '}
                           {new Date(link.createdAt).toLocaleDateString(
-                            undefined,
+                            getActiveLocale(),
                             {
                               month: 'short',
                               day: 'numeric',

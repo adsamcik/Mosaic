@@ -21,6 +21,7 @@ import {
   type PhotoLoadResult,
 } from '../../lib/photo-service';
 import { isVideoMimeType } from '../../lib/image-decoder';
+import { getActiveLocale } from '../../lib/i18n-locale';
 import { createLogger } from '../../lib/logger';
 import { rotatePhoto, updatePhotoDescription } from '../../lib/photo-edit-service';
 import type { EpochHandleId, PhotoMeta } from '../../workers/types';
@@ -96,7 +97,7 @@ function formatFileSize(bytes: number): string {
  */
 function formatDate(isoString: string): string {
   const date = new Date(isoString);
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(getActiveLocale(), {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -713,7 +714,8 @@ export function PhotoLightbox({
           <>
             <dt>{t('lightbox.metadata.dimensions')}</dt>
             <dd>
-              {photo.width.toLocaleString()} × {photo.height.toLocaleString()}
+              {photo.width.toLocaleString(getActiveLocale())} ×{' '}
+              {photo.height.toLocaleString(getActiveLocale())}
             </dd>
           </>
         )}

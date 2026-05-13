@@ -8,6 +8,7 @@
 
 import { useState } from 'react';
 import type { ShareLinkInfo } from '../../hooks/useShareLinks';
+import { getActiveLocale } from '../../lib/i18n-locale';
 import { EXPIRY_PRESETS, type ExpiryPreset } from './ShareLinkDialog';
 
 export interface EditShareLinkViewProps {
@@ -143,7 +144,7 @@ export function EditShareLinkView({
           <div className="info-item">
             <span className="info-label">Created</span>
             <span className="info-value">
-              {new Date(link.createdAt).toLocaleDateString(undefined, {
+              {new Date(link.createdAt).toLocaleDateString(getActiveLocale(), {
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',

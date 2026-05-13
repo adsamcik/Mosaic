@@ -21,6 +21,7 @@ import {
 import type { EpochHandleId, PhotoMeta } from '../../workers/types';
 import { formatDuration } from '../../lib/video-frame-extractor';
 import { useThumbnailShard } from '../../hooks/useThumbnailShard';
+import { getActiveLocale } from '../../lib/i18n-locale';
 
 interface JustifiedPhotoThumbnailProps {
   photo: PhotoMeta;
@@ -585,7 +586,7 @@ export const JustifiedPhotoThumbnail = memo(function JustifiedPhotoThumbnail({
           <span className="justified-photo-filename">{photo.filename}</span>
           {photo.takenAt && (
             <span className="justified-photo-date">
-              {new Date(photo.takenAt).toLocaleDateString()}
+              {new Date(photo.takenAt).toLocaleDateString(getActiveLocale())}
             </span>
           )}
         </div>

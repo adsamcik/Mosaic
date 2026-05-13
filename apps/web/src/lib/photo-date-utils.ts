@@ -1,5 +1,6 @@
 import i18n from 'i18next';
 import type { PhotoMeta } from '../workers/types';
+import { getActiveLocale } from './i18n-locale';
 
 /** A translation function matching i18next's `t()` signature. */
 export type TFunction = (key: string) => string;
@@ -58,7 +59,7 @@ export function formatDateHeader(dateString: string, t?: TFunction): string {
     return translate('gallery.date.yesterday');
   }
 
-  return new Intl.DateTimeFormat(i18n.resolvedLanguage ?? i18n.language, {
+  return new Intl.DateTimeFormat(getActiveLocale(), {
     weekday: 'long',
     month: 'short',
     day: 'numeric',

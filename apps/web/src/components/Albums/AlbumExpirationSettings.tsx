@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getApi } from '../../lib/api';
 import type { Album } from '../../lib/api-types';
+import { getActiveLocale } from '../../lib/i18n-locale';
 
 interface AlbumExpirationSettingsProps {
   /** The album to configure expiration for */
@@ -49,7 +50,7 @@ function formatDateForInput(dateStr: string | null | undefined): string {
 function formatDateForDisplay(dateStr: string): string {
   try {
     const date = new Date(dateStr);
-    return date.toLocaleDateString(undefined, {
+    return date.toLocaleDateString(getActiveLocale(), {
       year: 'numeric',
       month: 'long',
       day: 'numeric',

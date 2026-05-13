@@ -1,3 +1,5 @@
+import { getActiveLocale } from '../../lib/i18n-locale';
+
 /** Format bytes to human-readable string */
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -10,7 +12,7 @@ export function formatBytes(bytes: number): string {
 /** Format date to readable string */
 export function formatDate(dateStr: string): string {
   try {
-    return new Date(dateStr).toLocaleDateString(undefined, {
+    return new Date(dateStr).toLocaleDateString(getActiveLocale(), {
       year: 'numeric',
       month: 'short',
       day: 'numeric',

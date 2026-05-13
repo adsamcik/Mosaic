@@ -24,6 +24,7 @@ import {
   supportedLanguages,
   type SupportedLanguage,
 } from '../../lib/i18n';
+import { getActiveLocale } from '../../lib/i18n-locale';
 import { session } from '../../lib/session';
 import {
   getDefaultSettings,
@@ -84,7 +85,7 @@ function truncate(str: string, maxLen: number): string {
 // =============================================================================
 
 export function SettingsPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
 
   // Language state
   const [currentLanguage, setCurrentLanguage] =
@@ -289,7 +290,7 @@ export function SettingsPage() {
                     {t('settings.account.createdAt')}
                   </span>
                   <span className="info-value">
-                    {formatDate(user.createdAt, i18n.language)}
+                    {formatDate(user.createdAt, getActiveLocale())}
                   </span>
                 </div>
               </div>

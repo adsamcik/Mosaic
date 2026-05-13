@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { getActiveLocale } from '../../lib/i18n-locale';
 import type { MosaicItem } from '../../lib/mosaic-layout';
 import type { PhotoMeta } from '../../workers/types';
 
@@ -83,7 +84,7 @@ export const MosaicTile = memo(function MosaicTile({
               color: 'var(--text-primary)',
             }}
           >
-            {new Date(photo.createdAt).toLocaleDateString(undefined, {
+            {new Date(photo.createdAt).toLocaleDateString(getActiveLocale(), {
               dateStyle: 'long',
             })}
           </h3>

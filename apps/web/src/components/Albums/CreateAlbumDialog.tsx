@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getActiveLocale } from '../../lib/i18n-locale';
 import { Dialog } from '../Shared/Dialog';
 
 type ExpirationMode = '7d' | '30d' | '90d' | 'custom';
@@ -87,8 +88,8 @@ export function CreateAlbumDialog({
   // Human-readable preview of expiration date
   const expirationPreview = useMemo(() => {
     if (!expiresAt) return null;
-    return formatDate(expiresAt, i18n.language);
-  }, [expiresAt, i18n.language]);
+    return formatDate(expiresAt, getActiveLocale());
+  }, [expiresAt, i18n.language, i18n.resolvedLanguage]);
 
   // Focus input when dialog opens
   useEffect(() => {

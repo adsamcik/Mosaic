@@ -6,6 +6,7 @@ import {
 import type { EpochHandleId, PhotoMeta } from '../../workers/types';
 import { formatDuration } from '../../lib/video-frame-extractor';
 import { useThumbnailShard } from '../../hooks/useThumbnailShard';
+import { getActiveLocale } from '../../lib/i18n-locale';
 
 interface PhotoThumbnailProps {
   photo: PhotoMeta;
@@ -412,7 +413,7 @@ export const PhotoThumbnail = memo(function PhotoThumbnail({
         </span>
         {photo.takenAt && (
           <span className="photo-date">
-            {new Date(photo.takenAt).toLocaleDateString()}
+            {new Date(photo.takenAt).toLocaleDateString(getActiveLocale())}
           </span>
         )}
       </div>

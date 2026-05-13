@@ -17,6 +17,7 @@ import type {
 import { getApi, paginateAll, toBase64 } from '../lib/api';
 import { getCryptoClient } from '../lib/crypto-client';
 import { fetchAndUnwrapEpochKeys } from '../lib/epoch-key-service';
+import { getActiveLocale } from '../lib/i18n-locale';
 import { getCachedEpochIds, getEpochKey } from '../lib/epoch-key-store';
 import { encodeLinkId, encodeLinkSecret } from '../lib/link-encoding';
 import { buildShareLinkUrl } from '../lib/share-link-url';
@@ -141,7 +142,7 @@ function toShareLinkInfo(link: ShareLinkResponse): ShareLinkInfo {
   const isExpired = expiresAt ? expiresAt < now : false;
 
   const expiryDisplay = expiresAt
-    ? expiresAt.toLocaleDateString(undefined, {
+    ? expiresAt.toLocaleDateString(getActiveLocale(), {
         year: 'numeric',
         month: 'short',
         day: 'numeric',

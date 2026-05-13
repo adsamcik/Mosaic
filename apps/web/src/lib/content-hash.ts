@@ -3,6 +3,7 @@ import initRustWasm, {
   computePlaintextContentHash,
 } from '../generated/mosaic-wasm/mosaic_wasm.js';
 import type { AlbumContentHashRecord, UploadQueueDB } from './upload/types';
+import { getActiveLocale } from './i18n-locale';
 
 export const UPLOAD_QUEUE_DB_NAME = 'mosaic-upload-queue';
 export const UPLOAD_QUEUE_DB_VERSION = 2;
@@ -116,7 +117,9 @@ export class DuplicateUploadError extends Error {
     readonly photoId: string,
     readonly dateAdded: number,
   ) {
-    super(`This photo is already in this album (added ${new Date(dateAdded).toLocaleString()}).`);
+    super(
+      `This photo is already in this album (added ${new Date(dateAdded).toLocaleString(getActiveLocale())}).`,
+    );
     this.name = 'DuplicateUploadError';
   }
 }
