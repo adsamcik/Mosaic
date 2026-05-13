@@ -10,6 +10,8 @@ public class GarbageCollectionService : BackgroundService
 {
     internal static readonly TimeSpan ExpiredShareLinkRetention = TimeSpan.FromDays(30);
     internal static readonly TimeSpan ExpiredShareLinkGrantRetentionBuffer = TimeSpan.FromMinutes(10);
+    internal const int CleanupBatchSize = 100;
+    internal const int MaxRowsPerCleanupRun = 10_000;
 
     private readonly IServiceProvider _services;
     private readonly ILogger<GarbageCollectionService> _logger;
@@ -37,7 +39,7 @@ public class GarbageCollectionService : BackgroundService
                 _logger.GarbageCollectionStarted();
 
                 var orphanedBlobs = 0;
-                var expiredSessions = 0;
+                var expiredSessions = await CleanExpiredSessionsAsync(stoppingToken);
                 var expiredLinks = 0;
                 var expiredAlbums = 0;
                 var expiredUploadReservations = 0;
@@ -199,6 +201,69 @@ public class GarbageCollectionService : BackgroundService
         return deletedCount;
     }
 
+    internal async Task<int> CleanExpiredSessionsAsync(CancellationToken cancellationToken = default)
+    {
+        using var scope = _services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+        var cutoff = _timeProvider.GetUtcNow().UtcDateTime;
+        var totalDeleted = 0;
+
+        while (!cancellationToken.IsCancellationRequested && totalDeleted < MaxRowsPerCleanupRun)
+        {
+            var batchLimit = Math.Min(CleanupBatchSize, MaxRowsPerCleanupRun - totalDeleted);
+
+            if (db.Database.IsRelational())
+            {
+                var expiredSessionIds = await db.Sessions
+                    .Where(session => session.ExpiresAt <= cutoff)
+                    .OrderBy(session => session.ExpiresAt)
+                    .Select(session => session.Id)
+                    .Take(batchLimit)
+                    .ToListAsync(cancellationToken);
+
+                if (expiredSessionIds.Count == 0)
+                {
+                    break;
+                }
+
+                var deleted = await db.Sessions
+                    .Where(session => expiredSessionIds.Contains(session.Id))
+                    .ExecuteDeleteAsync(cancellationToken);
+
+                totalDeleted += deleted;
+
+                if (deleted < batchLimit)
+                {
+                    break;
+                }
+            }
+            else
+            {
+                var expiredSessions = await db.Sessions
+                    .Where(session => session.ExpiresAt <= cutoff)
+                    .OrderBy(session => session.ExpiresAt)
+                    .Take(batchLimit)
+                    .ToListAsync(cancellationToken);
+
+                if (expiredSessions.Count == 0)
+                {
+                    break;
+                }
+
+                db.Sessions.RemoveRange(expiredSessions);
+                await db.SaveChangesAsync(cancellationToken);
+                totalDeleted += expiredSessions.Count;
+
+                if (expiredSessions.Count < batchLimit)
+                {
+                    break;
+                }
+            }
+        }
+
+        return totalDeleted;
+    }
+
     internal async Task<int> CleanExpiredManifestsAsync(CancellationToken cancellationToken = default)
     {
         using var scope = _services.CreateScope();
@@ -226,7 +291,7 @@ public class GarbageCollectionService : BackgroundService
                     .ToListAsync())
                     .Where(sl => sl.ExpiresAt <= expirationCutoff)
                     .OrderBy(sl => sl.ExpiresAt)
-                    .Take(100)
+                    .Take(CleanupBatchSize)
                     .ToList();
             }
             else
@@ -234,7 +299,7 @@ public class GarbageCollectionService : BackgroundService
                 longExpiredLinks = await db.ShareLinks
                     .Where(sl => sl.ExpiresAt != null && sl.ExpiresAt <= expirationCutoff)
                     .OrderBy(sl => sl.ExpiresAt)
-                    .Take(100)
+                    .Take(CleanupBatchSize)
                     .ToListAsync();
             }
 
@@ -270,7 +335,7 @@ public class GarbageCollectionService : BackgroundService
                 expiredGrants = (await db.ShareLinkGrants.ToListAsync())
                     .Where(grant => grant.ExpiresAt <= expirationCutoff)
                     .OrderBy(grant => grant.ExpiresAt)
-                    .Take(100)
+                    .Take(CleanupBatchSize)
                     .ToList();
             }
             else
@@ -278,7 +343,7 @@ public class GarbageCollectionService : BackgroundService
                 expiredGrants = await db.ShareLinkGrants
                     .Where(grant => grant.ExpiresAt <= expirationCutoff)
                     .OrderBy(grant => grant.ExpiresAt)
-                    .Take(100)
+                    .Take(CleanupBatchSize)
                     .ToListAsync();
             }
 
