@@ -37,6 +37,7 @@ class UploadQueueDatabaseSchemaTest {
         "upload_job_snapshots",
         "album_sync_snapshots",
         "album_content_hashes",
+        "album_epoch_keys",
       ),
       tables.toSet(),
     )
