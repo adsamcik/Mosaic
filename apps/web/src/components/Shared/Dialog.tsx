@@ -34,18 +34,22 @@ export function Dialog({
   closeOnBackdropClick = true,
 }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const handledEscapeRef = useRef(false);
 
-  // Handle escape key
+  // Handle Escape and prevent body scroll when dialog is open.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape') {
+        handledEscapeRef.current = true;
         onClose();
+        setTimeout(() => {
+          handledEscapeRef.current = false;
+        }, 0);
       }
     };
 
     if (isOpen) {
       document.addEventListener('keydown', handleKeyDown);
-      // Prevent body scroll when dialog is open
       document.body.style.overflow = 'hidden';
     }
 
@@ -55,19 +59,51 @@ export function Dialog({
     };
   }, [isOpen, onClose]);
 
-  // Focus management
+  // Native modal dialog provides focus trapping and inert background content.
   useEffect(() => {
-    if (isOpen) {
-      // Small timeout to allow render
-      const timer = setTimeout(() => {
-        dialogRef.current?.focus();
-      }, 50);
-      return () => clearTimeout(timer);
+    const dialog = dialogRef.current;
+    if (!isOpen || !dialog) {
+      return;
     }
+
+    if (!dialog.open) {
+      if (typeof dialog.showModal === 'function') {
+        dialog.showModal();
+      } else {
+        dialog.setAttribute('open', '');
+      }
+    }
+
+    const timer = setTimeout(() => {
+      dialog.focus();
+    }, 50);
+
+    return () => {
+      clearTimeout(timer);
+      if (dialog.open && typeof dialog.close === 'function') {
+        dialog.close();
+      } else {
+        dialog.removeAttribute('open');
+      }
+    };
   }, [isOpen]);
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (closeOnBackdropClick && e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  const handleCancel = (e: React.SyntheticEvent<HTMLDialogElement>) => {
+    e.preventDefault();
+    if (handledEscapeRef.current) {
+      return;
+    }
+    onClose();
+  };
+
+  const handleDialogKeyDown = (e: React.KeyboardEvent<HTMLDialogElement>) => {
+    if (e.key === 'Escape' && typeof dialogRef.current?.showModal !== 'function') {
       onClose();
     }
   };
@@ -84,10 +120,11 @@ export function Dialog({
       <dialog
         ref={dialogRef}
         className={`dialog ${className}`}
-        open
         aria-labelledby={`${testId}-title`}
         aria-modal="true"
         data-testid={testId}
+        onCancel={handleCancel}
+        onKeyDown={handleDialogKeyDown}
       >
         <div className="dialog-header">
           <h2 id={`${testId}-title`} className="dialog-title">
