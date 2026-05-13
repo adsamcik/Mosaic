@@ -36,6 +36,10 @@ tags:
     description: Photo manifest operations
   - name: Shards
     description: Encrypted blob storage
+  - name: Uploads
+    description: |
+      Tus 1.0.0 resumable upload endpoint for encrypted shard bytes.
+      See https://tus.io/protocols/resumable-upload.
   - name: Share Links
     description: Shareable album links (authenticated)
   - name: Anonymous Access
@@ -734,6 +738,148 @@ paths:
           description: Shard too large (max 6MB)
 
   # ===========================================================================
+  # Uploads (Tus 1.0.0)
+  # ===========================================================================
+  /files:
+    options:
+      operationId: tusOptions
+      summary: Discover Tus upload capabilities
+      description: |
+        Tus 1.0.0 capability discovery for encrypted shard uploads. Mosaic stores
+        only opaque encrypted bytes; clients must include Tus-Resumable: 1.0.0 on
+        Tus requests. Uploads are capped at 100 MiB and must include the
+        `content-sha256` Upload-Metadata key as a 64-character lowercase hex digest.
+        The tusdotnet disk store provides creation and termination support; Mosaic
+        maintains a 24-hour reservation expiration for pending uploads.
+      tags: [Uploads]
+      parameters:
+        - $ref: '#/components/parameters/TusResumableHeader'
+      responses:
+        '204':
+          description: Tus capabilities
+          headers:
+            Tus-Resumable:
+              schema: { type: string, example: "1.0.0" }
+            Tus-Version:
+              schema: { type: string, example: "1.0.0" }
+            Tus-Extension:
+              description: Supported Tus extensions such as creation and termination.
+              schema: { type: string }
+            Tus-Max-Size:
+              description: Maximum upload size in bytes (100 MiB).
+              schema: { type: integer, example: 104857600 }
+
+    post:
+      operationId: tusCreateUpload
+      summary: Create Tus upload
+      description: |
+        Creates a resumable upload for one encrypted shard. Required metadata:
+        `content-sha256` (64 lowercase hex characters). Optional metadata may include
+        album identifiers used for server-side authorization and quota reservation;
+        metadata values remain opaque and must not contain plaintext photo data.
+      tags: [Uploads]
+      parameters:
+        - $ref: '#/components/parameters/TusResumableHeader'
+        - name: Upload-Length
+          in: header
+          required: true
+          schema: { type: integer, minimum: 0, maximum: 104857600 }
+        - name: Upload-Metadata
+          in: header
+          required: true
+          description: Comma-separated Tus metadata including `content-sha256 <base64-value>`.
+          schema: { type: string }
+      responses:
+        '201':
+          description: Upload created
+          headers:
+            Location:
+              description: Upload resource URL.
+              schema: { type: string }
+            Tus-Resumable:
+              schema: { type: string, example: "1.0.0" }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413':
+          description: Upload exceeds 100 MiB cap.
+
+  /files/{fileId}:
+    head:
+      operationId: tusHeadUpload
+      summary: Get Tus upload offset
+      description: Returns the current Upload-Offset for a resumable encrypted shard upload.
+      tags: [Uploads]
+      parameters:
+        - $ref: '#/components/parameters/TusFileId'
+        - $ref: '#/components/parameters/TusResumableHeader'
+      responses:
+        '200':
+          description: Upload offset
+          headers:
+            Upload-Offset:
+              schema: { type: integer, minimum: 0 }
+            Upload-Length:
+              schema: { type: integer, minimum: 0, maximum: 104857600 }
+            Tus-Resumable:
+              schema: { type: string, example: "1.0.0" }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+    patch:
+      operationId: tusPatchUpload
+      summary: Append Tus upload bytes
+      description: Appends opaque encrypted shard bytes at the supplied Upload-Offset.
+      tags: [Uploads]
+      parameters:
+        - $ref: '#/components/parameters/TusFileId'
+        - $ref: '#/components/parameters/TusResumableHeader'
+        - name: Upload-Offset
+          in: header
+          required: true
+          schema: { type: integer, minimum: 0 }
+        - name: Upload-Checksum
+          in: header
+          required: false
+          description: Tus checksum extension header when negotiated by the client and server.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/offset+octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '204':
+          description: Chunk accepted
+          headers:
+            Upload-Offset:
+              schema: { type: integer, minimum: 0 }
+            Tus-Resumable:
+              schema: { type: string, example: "1.0.0" }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Upload-Offset mismatch.
+        '460':
+          description: Checksum mismatch.
+
+    delete:
+      operationId: tusTerminateUpload
+      summary: Terminate Tus upload
+      description: Terminates a pending upload and releases its reserved quota.
+      tags: [Uploads]
+      parameters:
+        - $ref: '#/components/parameters/TusFileId'
+        - $ref: '#/components/parameters/TusResumableHeader'
+      responses:
+        '204':
+          description: Upload terminated
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ===========================================================================
   # Share Links (Authenticated)
   # ===========================================================================
   /albums/{albumId}/share-links:
@@ -1332,6 +1478,23 @@ components:
         minimum: 1
         maximum: 100
         default: 50
+
+    TusResumableHeader:
+      name: Tus-Resumable
+      in: header
+      required: true
+      description: Tus protocol version. Mosaic supports Tus 1.0.0.
+      schema:
+        type: string
+        enum: ["1.0.0"]
+
+    TusFileId:
+      name: fileId
+      in: path
+      required: true
+      description: Tus upload resource identifier.
+      schema:
+        type: string
 
   headers:
     PaginationSkip:
