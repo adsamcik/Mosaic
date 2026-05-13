@@ -66,6 +66,14 @@ export interface User {
   accountSalt?: string;
   /** Base64-encoded wrapped account key for identity persistence */
   wrappedAccountKey?: string;
+  /** Argon2id memory cost in KiB pinned at registration */
+  kdfMemoryKib: number;
+  /** Argon2id time cost pinned at registration */
+  kdfIterations: number;
+  /** Argon2id parallelism pinned at registration */
+  kdfParallelism: number;
+  /** Argon2 algorithm version, 0x13 for Argon2id v1.3 */
+  kdfAlgVersion: number;
 }
 
 export interface UserPublic {

@@ -33,6 +33,8 @@ import {
 } from './crypto-worker-harness';
 import { WorkerCryptoErrorCode } from '../../src/workers/types';
 
+const TEST_KDF_PARAMS = { memoryKib: 8 * 1024, iterations: 1, parallelism: 1 } as const;
+
 let harness: CryptoWorkerHarness | null = null;
 
 afterEach(async () => {
@@ -53,7 +55,12 @@ describe('handle-lifecycle: worker termination mid-operation', () => {
       // even in weak-keys E2E mode takes long enough to interrupt.
       const userSalt = new Uint8Array(16).fill(0xab);
       const accountSalt = new Uint8Array(16).fill(0xcd);
-      const initPromise = harness.api.init('mid-op-pw', userSalt, accountSalt);
+      const initPromise = harness.api.init(
+        'mid-op-pw',
+        userSalt,
+        accountSalt,
+        TEST_KDF_PARAMS,
+      );
 
       // Yield once so the worker actually picks up the message before we
       // kill it. 25ms is well below Argon2 even at weak-keys.
@@ -148,14 +155,19 @@ describe('handle-lifecycle: React Strict Mode double-mount simulation', () => {
       // *call pattern* mimics the double-mount:
       const userSalt = new Uint8Array(16).fill(0x33);
       const accountSalt = new Uint8Array(16).fill(0x44);
-      await harness.api.init('strict-mode', userSalt, accountSalt);
+      await harness.api.init('strict-mode', userSalt, accountSalt, TEST_KDF_PARAMS);
 
       // Second init: legacy contract just overwrites — assert it does not
       // throw. Slice 1 may decide to fail-fast instead; either is
       // observable, never panic.
       let secondInitFailed = false;
       try {
-        await harness.api.init('strict-mode-second', userSalt, accountSalt);
+        await harness.api.init(
+          'strict-mode-second',
+          userSalt,
+          accountSalt,
+          TEST_KDF_PARAMS,
+        );
       } catch {
         secondInitFailed = true;
       }

@@ -1,6 +1,9 @@
 import * as Comlink from 'comlink';
 import sodium from 'libsodium-wrappers-sumo';
-import { getArgon2Params } from '@mosaic/crypto';
+import {
+  parseServerArgon2Params,
+  type Argon2Params,
+} from '@mosaic/crypto';
 import initRustWasm, {
   consumeMasterKeyHandleForAesGcm,
   deriveMasterKeyFromPassword,
@@ -20,6 +23,7 @@ import { clearPhotoCache } from './photo-service';
 import type { User } from './api-types';
 import { closeCryptoClient, getCryptoClient } from './crypto-client';
 import { closeDbClient, getDbClient } from './db-client';
+import type { WorkerKdfParams } from '../workers/types';
 import { clearAllEpochKeys } from './epoch-key-store';
 import { closeGeoClient } from './geo-client';
 import {
@@ -155,6 +159,23 @@ function resolveAccountSalt(user: User): Uint8Array {
   return accountSalt;
 }
 
+function resolveKdfProfile(user: User): Argon2Params {
+  return parseServerArgon2Params({
+    memoryKib: user.kdfMemoryKib,
+    iterations: user.kdfIterations,
+    parallelism: user.kdfParallelism,
+    algVersion: user.kdfAlgVersion,
+  });
+}
+
+function toWorkerKdfParams(params: Argon2Params): WorkerKdfParams {
+  return {
+    memoryKib: params.memory,
+    iterations: params.iterations,
+    parallelism: params.parallelism,
+  };
+}
+
 /**
  * Error thrown when salt decryption fails (wrong password on new device)
  */
@@ -218,10 +239,10 @@ async function deriveArgon2SaltForUser(username: string): Promise<Uint8Array> {
 async function deriveSaltEncryptionKeyV2(
   password: string,
   username: string,
+  argon2Params: Argon2Params,
 ): Promise<CryptoKey> {
   await sodium.ready;
   await ensureRustWasmInitialized();
-  const argon2Params = getArgon2Params();
   const argonSalt = await deriveArgon2SaltForUser(username);
   const passwordBytes = normalizePasswordForKdf(password);
 
@@ -364,12 +385,14 @@ async function migrateLegacySaltToV2(
   salt: Uint8Array,
   password: string,
   username: string,
+  argon2Params: Argon2Params,
 ): Promise<void> {
   try {
     const { encryptedSalt, saltNonce } = await encryptSalt(
       salt,
       password,
       username,
+      argon2Params,
     );
     await getApi().updateCurrentUser({ encryptedSalt, saltNonce });
     log.info('Migrated salt encryption from PBKDF2 v1 to Argon2id v2');
@@ -390,8 +413,9 @@ export async function encryptSalt(
   salt: Uint8Array,
   password: string,
   username: string,
+  argon2Params: Argon2Params,
 ): Promise<{ encryptedSalt: string; saltNonce: string }> {
-  const key = await deriveSaltEncryptionKeyV2(password, username);
+  const key = await deriveSaltEncryptionKeyV2(password, username, argon2Params);
 
   const nonce = crypto.getRandomValues(new Uint8Array(12));
 
@@ -426,6 +450,7 @@ export async function decryptSalt(
   saltNonceBase64: string,
   password: string,
   username: string,
+  argon2Params: Argon2Params,
 ): Promise<Uint8Array> {
   const envelope = fromBase64(encryptedSaltBase64);
   const nonce = fromBase64(saltNonceBase64);
@@ -433,7 +458,7 @@ export async function decryptSalt(
   // --- Try v2 first ---
   if (envelope.length > 1 && envelope[0] === SALT_ENCRYPTION_VERSION_V2) {
     try {
-      const key = await deriveSaltEncryptionKeyV2(password, username);
+      const key = await deriveSaltEncryptionKeyV2(password, username, argon2Params);
       const ciphertext = envelope.subarray(1);
       const decrypted = await crypto.subtle.decrypt(
         { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
@@ -471,7 +496,7 @@ export async function decryptSalt(
 
   // v1 succeeded — transparently upgrade the server-stored payload to v2.
   // This MUST NOT throw: a failed migration upload still allows login.
-  await migrateLegacySaltToV2(salt, password, username);
+  await migrateLegacySaltToV2(salt, password, username, argon2Params);
 
   return salt;
 }
@@ -522,6 +547,7 @@ class SessionManager {
     this.boundResetIdleTimer = this.resetIdleTimer.bind(this);
     this.boundUploadActiveListener = this.handleUploadActiveEvent.bind(this);
     this.initBroadcastChannel();
+    this.initSessionExpiryListener();
   }
 
   /**
@@ -560,6 +586,32 @@ class SessionManager {
       log.warn('Failed to initialise session BroadcastChannel', { error });
       this.broadcast = null;
     }
+  }
+
+  /**
+   * C4: subscribe to the global `mosaic:session-expired` event emitted by
+   * `apiRequest` when the backend returns 401. We only react if we are
+   * currently logged in — otherwise the 401 is from a login attempt
+   * (wrong credentials) and must NOT be treated as expiry.
+   *
+   * On real expiry we run the standard logout teardown so all decrypted
+   * keys, OPFS DB, IndexedDB caches, and worker pools are torn down
+   * before the App router re-renders the login form. The
+   * BroadcastChannel pulse propagates the same teardown to peer tabs.
+   */
+  private initSessionExpiryListener(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.addEventListener('mosaic:session-expired', () => {
+      if (!this._isLoggedIn) {
+        return;
+      }
+      log.warn('Server returned 401 mid-session; tearing down local state');
+      this.logout().catch((error: unknown) => {
+        log.warn('Session-expiry logout teardown failed', { error });
+      });
+    });
   }
 
   /**
@@ -888,6 +940,8 @@ class SessionManager {
       // Get user salt - server should have it if user logged in before
       let userSalt: Uint8Array;
       const username = this._currentUser.authSub;
+      const kdfParams = resolveKdfProfile(this._currentUser);
+      const workerKdfParams = toWorkerKdfParams(kdfParams);
 
       if (this._currentUser.encryptedSalt && this._currentUser.saltNonce) {
         // Server has salt - decrypt it with password
@@ -897,6 +951,7 @@ class SessionManager {
           this._currentUser.saltNonce,
           password,
           username,
+          kdfParams,
         );
         // Store locally for faster subsequent operations
         localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
@@ -921,12 +976,13 @@ class SessionManager {
           userSalt,
           accountSalt,
           wrappedKey,
+          workerKdfParams,
         );
       } else {
         log.warn(
           'Session restore without wrapped account key - identity may differ!',
         );
-        await cryptoClient.init(password, userSalt, accountSalt);
+        await cryptoClient.init(password, userSalt, accountSalt, workerKdfParams);
       }
 
       // Derive identity keypair for epoch key operations
@@ -983,6 +1039,8 @@ class SessionManager {
       // 3. If no: use local salt or generate new, encrypt and upload to server
       let userSalt: Uint8Array;
       const username = this._currentUser.authSub;
+      const kdfParams = resolveKdfProfile(this._currentUser);
+      const workerKdfParams = toWorkerKdfParams(kdfParams);
 
       if (this._currentUser.encryptedSalt && this._currentUser.saltNonce) {
         // Server has salt - decrypt it (new device or returning user)
@@ -992,6 +1050,7 @@ class SessionManager {
           this._currentUser.saltNonce,
           password,
           username,
+          kdfParams,
         );
         // Store locally for faster subsequent logins
         localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
@@ -1012,6 +1071,7 @@ class SessionManager {
           userSalt,
           password,
           username,
+          kdfParams,
         );
         await api.updateCurrentUser({ encryptedSalt, saltNonce });
       }
@@ -1028,10 +1088,11 @@ class SessionManager {
           userSalt,
           accountSalt,
           wrappedKey,
+          workerKdfParams,
         );
       } else {
         // First login - generate new key and store it
-        await cryptoClient.init(password, userSalt, accountSalt);
+        await cryptoClient.init(password, userSalt, accountSalt, workerKdfParams);
 
         // Derive identity to get public key
         await cryptoClient.deriveIdentity();
@@ -1118,8 +1179,16 @@ class SessionManager {
       }
 
       // Perform LocalAuth login (registers if user doesn't exist)
-      const { userId, userSalt, accountSalt, isNewUser, wrappedAccountKey } =
+      const {
+        userId,
+        userSalt,
+        accountSalt,
+        isNewUser,
+        wrappedAccountKey,
+        kdfParams,
+      } =
         await localAuthLogin(username, password);
+      const workerKdfParams = toWorkerKdfParams(kdfParams);
 
       // Now fetch the current user (we have a session cookie)
       const api = getApi();
@@ -1139,6 +1208,7 @@ class SessionManager {
           userSalt,
           accountSalt,
           wrappedAccountKey,
+          workerKdfParams,
         );
       } else if (!isNewUser) {
         // Returning user but no wrapped key on server - this is a problem!
@@ -1146,7 +1216,7 @@ class SessionManager {
         log.warn(
           'Returning user without wrapped account key - identity will differ!',
         );
-        await cryptoClient.init(password, userSalt, accountSalt);
+        await cryptoClient.init(password, userSalt, accountSalt, workerKdfParams);
       }
       // For new users, localAuthLogin already called init() with correct key
       await cryptoClient.deriveIdentity();
@@ -1199,8 +1269,9 @@ class SessionManager {
       }
 
       // Perform LocalAuth registration (will fail if user exists)
-      const { userId, userSalt, accountSalt, wrappedAccountKey } =
+      const { userId, userSalt, accountSalt, wrappedAccountKey, kdfParams } =
         await localAuthRegister(username, password);
+      const workerKdfParams = toWorkerKdfParams(kdfParams);
 
       // Now fetch the current user (we have a session cookie)
       const api = getApi();
@@ -1220,6 +1291,7 @@ class SessionManager {
           userSalt,
           accountSalt,
           wrappedAccountKey,
+          workerKdfParams,
         );
       }
       await cryptoClient.deriveIdentity();

@@ -104,7 +104,6 @@ vi.mock('../sync-coordinator', () => ({
 // Imports must come after the mocks are registered.
 import { fromBase64, toBase64 } from '../api';
 import { decryptSalt, encryptSalt, SaltDecryptionError } from '../session';
-import { getArgon2Params } from '@mosaic/crypto';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -113,6 +112,12 @@ import { getArgon2Params } from '@mosaic/crypto';
 const SALT_VERSION_V2 = 0x02;
 const LEGACY_PBKDF2_ITERATIONS = 100000;
 const SALT_ENCRYPTION_DOMAIN_V2 = 'mosaic-salt-encryption-v2|';
+const TEST_KDF_PARAMS = {
+  memory: 8 * 1024,
+  iterations: 1,
+  parallelism: 1,
+  algVersion: 0x13,
+} as const;
 const WASM_BYTES_PATH = resolve(
   process.cwd(),
   'src',
@@ -194,6 +199,7 @@ describe('encryptSalt / decryptSalt - v2 round trip', () => {
       TEST_SALT,
       TEST_PASSWORD,
       TEST_USERNAME,
+      TEST_KDF_PARAMS,
     );
 
     const decoded = fromBase64(encryptedSalt);
@@ -205,6 +211,7 @@ describe('encryptSalt / decryptSalt - v2 round trip', () => {
       saltNonce,
       TEST_PASSWORD,
       TEST_USERNAME,
+      TEST_KDF_PARAMS,
     );
     expect(decrypted).toEqual(TEST_SALT);
     expect(updateCurrentUserMock).not.toHaveBeenCalled();
@@ -215,10 +222,17 @@ describe('encryptSalt / decryptSalt - v2 round trip', () => {
       TEST_SALT,
       TEST_PASSWORD,
       TEST_USERNAME,
+      TEST_KDF_PARAMS,
     );
 
     await expect(
-      decryptSalt(encryptedSalt, saltNonce, 'wrong-password', TEST_USERNAME),
+      decryptSalt(
+        encryptedSalt,
+        saltNonce,
+        'wrong-password',
+        TEST_USERNAME,
+        TEST_KDF_PARAMS,
+      ),
     ).rejects.toBeInstanceOf(SaltDecryptionError);
   });
 
@@ -227,6 +241,7 @@ describe('encryptSalt / decryptSalt - v2 round trip', () => {
       TEST_SALT,
       TEST_PASSWORD,
       TEST_USERNAME,
+      TEST_KDF_PARAMS,
     );
 
     const bytes = fromBase64(encryptedSalt);
@@ -236,7 +251,13 @@ describe('encryptSalt / decryptSalt - v2 round trip', () => {
     const tamperedB64 = toBase64(bytes);
 
     await expect(
-      decryptSalt(tamperedB64, saltNonce, TEST_PASSWORD, TEST_USERNAME),
+      decryptSalt(
+        tamperedB64,
+        saltNonce,
+        TEST_PASSWORD,
+        TEST_USERNAME,
+        TEST_KDF_PARAMS,
+      ),
     ).rejects.toBeInstanceOf(SaltDecryptionError);
   });
 });
@@ -258,6 +279,7 @@ describe('decryptSalt - legacy v1 → v2 migration', () => {
       legacy.saltNonce,
       TEST_PASSWORD,
       TEST_USERNAME,
+      TEST_KDF_PARAMS,
     );
     expect(decrypted).toEqual(TEST_SALT);
 
@@ -281,6 +303,7 @@ describe('decryptSalt - legacy v1 → v2 migration', () => {
       callArg.saltNonce,
       TEST_PASSWORD,
       TEST_USERNAME,
+      TEST_KDF_PARAMS,
     );
     expect(re).toEqual(TEST_SALT);
     expect(updateCurrentUserMock).not.toHaveBeenCalled();
@@ -299,6 +322,7 @@ describe('decryptSalt - legacy v1 → v2 migration', () => {
       legacy.saltNonce,
       rawNfdPassword,
       TEST_USERNAME,
+      TEST_KDF_PARAMS,
     );
     expect(decrypted).toEqual(TEST_SALT);
 
@@ -318,6 +342,7 @@ describe('decryptSalt - legacy v1 → v2 migration', () => {
       callArg.saltNonce,
       rawNfdPassword,
       TEST_USERNAME,
+      TEST_KDF_PARAMS,
     );
     expect(v2Decrypted).toEqual(TEST_SALT);
     expect(updateCurrentUserMock).not.toHaveBeenCalled();
@@ -339,6 +364,7 @@ describe('decryptSalt - legacy v1 → v2 migration', () => {
       legacy.saltNonce,
       TEST_PASSWORD,
       TEST_USERNAME,
+      TEST_KDF_PARAMS,
     );
 
     // Migration error MUST NOT propagate; login must still succeed.
@@ -359,6 +385,7 @@ describe('decryptSalt - legacy v1 → v2 migration', () => {
         legacy.saltNonce,
         'wrong-password',
         TEST_USERNAME,
+        TEST_KDF_PARAMS,
       ),
     ).rejects.toBeInstanceOf(SaltDecryptionError);
 
@@ -370,7 +397,7 @@ describe('decryptSalt - legacy v1 → v2 migration', () => {
 describe('Rust-core Argon2id KDF parameters', () => {
   it('matches libsodium BLAKE2b salt and Argon2id master-key reference bytes', async () => {
     await sodium.ready;
-    const params = getArgon2Params();
+    const params = TEST_KDF_PARAMS;
     const encodedDomainUsername = new TextEncoder().encode(
       SALT_ENCRYPTION_DOMAIN_V2 + TEST_USERNAME,
     );
@@ -412,6 +439,64 @@ describe('Rust-core Argon2id KDF parameters', () => {
       sodium.memzero(rustSalt);
       if (rustMasterKey) sodium.memzero(rustMasterKey);
       if (sodiumMasterKey) sodium.memzero(sodiumMasterKey);
+    }
+  });
+
+  it('derives deterministic master-key bytes for pinned params regardless of UA', async () => {
+    const salt = new Uint8Array(16).fill(4);
+    const passwordA = new TextEncoder().encode(TEST_PASSWORD);
+    const passwordB = new TextEncoder().encode(TEST_PASSWORD);
+    let masterA: Uint8Array | null = null;
+    let masterB: Uint8Array | null = null;
+    try {
+      masterA = consumeMasterKeyHandleForAesGcm(
+        deriveMasterKeyFromPassword(
+          passwordA,
+          salt,
+          TEST_KDF_PARAMS.iterations,
+          TEST_KDF_PARAMS.memory,
+        ),
+      );
+      masterB = consumeMasterKeyHandleForAesGcm(
+        deriveMasterKeyFromPassword(
+          passwordB,
+          salt,
+          TEST_KDF_PARAMS.iterations,
+          TEST_KDF_PARAMS.memory,
+        ),
+      );
+
+      expect(masterA).toEqual(masterB);
+    } finally {
+      sodium.memzero(passwordA);
+      sodium.memzero(passwordB);
+      sodium.memzero(salt);
+      if (masterA) sodium.memzero(masterA);
+      if (masterB) sodium.memzero(masterB);
+    }
+  });
+
+  it('derives different master-key bytes when pinned params differ', async () => {
+    const salt = new Uint8Array(16).fill(5);
+    const passwordA = new TextEncoder().encode(TEST_PASSWORD);
+    const passwordB = new TextEncoder().encode(TEST_PASSWORD);
+    let masterA: Uint8Array | null = null;
+    let masterB: Uint8Array | null = null;
+    try {
+      masterA = consumeMasterKeyHandleForAesGcm(
+        deriveMasterKeyFromPassword(passwordA, salt, 1, 8 * 1024),
+      );
+      masterB = consumeMasterKeyHandleForAesGcm(
+        deriveMasterKeyFromPassword(passwordB, salt, 2, 8 * 1024),
+      );
+
+      expect(masterA).not.toEqual(masterB);
+    } finally {
+      sodium.memzero(passwordA);
+      sodium.memzero(passwordB);
+      sodium.memzero(salt);
+      if (masterA) sodium.memzero(masterA);
+      if (masterB) sodium.memzero(masterB);
     }
   });
 });

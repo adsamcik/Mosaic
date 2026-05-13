@@ -22,11 +22,12 @@ describe('public TypeScript crypto compatibility surface', () => {
       'constantTimeEqual',
       'fromBase64',
       'fromBytes',
-      'getArgon2Params',
       'isLowMemoryDevice',
       'isMobileDevice',
       'memzero',
+      'parseServerArgon2Params',
       'randomBytes',
+      'selectRegistrationArgon2Params',
       'toBase64',
       'toBytes',
     ]);

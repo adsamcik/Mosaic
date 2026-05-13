@@ -8,9 +8,15 @@
 
 import { fromBase64, toBase64 } from './api';
 import { getCryptoClient } from './crypto-client';
+import {
+  parseServerArgon2Params,
+  selectRegistrationArgon2Params,
+  type Argon2Params,
+} from '@mosaic/crypto';
 import initRustWasm, {
   deriveAccountSalt,
 } from '../generated/mosaic-wasm/mosaic_wasm.js';
+import type { WorkerKdfParams } from '../workers/types';
 
 export { normalizePasswordForKdf } from './local-auth-normalization';
 
@@ -24,6 +30,10 @@ export interface AuthInitResponse {
   challenge: string; // base64
   userSalt: string; // base64
   timestamp: number;
+  kdfMemoryKib: number;
+  kdfIterations: number;
+  kdfParallelism: number;
+  kdfAlgVersion: number;
 }
 
 /** Response from /api/auth/verify */
@@ -34,6 +44,10 @@ export interface AuthVerifyResponse {
   wrappedAccountKey: string | null;
   wrappedIdentitySeed: string | null;
   identityPubkey: string | null;
+  kdfMemoryKib: number;
+  kdfIterations: number;
+  kdfParallelism: number;
+  kdfAlgVersion: number;
 }
 
 /** Response from /api/auth/register */
@@ -66,6 +80,28 @@ function firstNonEmptyString(...values: unknown[]): string | undefined {
   }
 
   return undefined;
+}
+
+function toWorkerKdfParams(params: Argon2Params): WorkerKdfParams {
+  return {
+    memoryKib: params.memory,
+    iterations: params.iterations,
+    parallelism: params.parallelism,
+  };
+}
+
+function parseAuthKdfProfile(payload: {
+  kdfMemoryKib: number;
+  kdfIterations: number;
+  kdfParallelism: number;
+  kdfAlgVersion: number;
+}): Argon2Params {
+  return parseServerArgon2Params({
+    memoryKib: payload.kdfMemoryKib,
+    iterations: payload.kdfIterations,
+    parallelism: payload.kdfParallelism,
+    algVersion: payload.kdfAlgVersion,
+  });
 }
 
 export async function parseProblemDetails(response: Response): Promise<string> {
@@ -169,6 +205,10 @@ export async function registerUser(params: {
   accountSalt: string; // base64
   wrappedAccountKey?: string; // base64
   wrappedIdentitySeed?: string; // base64
+  kdfMemoryKib: number;
+  kdfIterations: number;
+  kdfParallelism: number;
+  kdfAlgVersion: number;
 }): Promise<AuthRegisterResponse> {
   const response = await fetch('/api/auth/register', {
     method: 'POST',
@@ -221,18 +261,20 @@ export async function localAuthLogin(
   accountSalt: Uint8Array;
   isNewUser: boolean;
   wrappedAccountKey: Uint8Array | null;
+  kdfParams: Argon2Params;
 }> {
   // Step 1: Get challenge from server
-  const { challengeId, challenge, userSalt, timestamp } =
-    await initAuth(username);
+  const initResponse = await initAuth(username);
+  const { challengeId, challenge, userSalt, timestamp } = initResponse;
 
   const userSaltBytes = fromBase64(userSalt);
+  const kdfParams = parseAuthKdfProfile(initResponse);
 
   // Step 2: Derive the deterministic auth keypair from password + userSalt
   // This is separate from the random account key - it's derived directly from password+salt
   // so we can authenticate before getting the wrapped account key from the server
   const cryptoClient = await getCryptoClient();
-  await cryptoClient.deriveAuthKey(password, userSaltBytes);
+  await cryptoClient.deriveAuthKey(password, userSaltBytes, toWorkerKdfParams(kdfParams));
 
   // Step 3: Sign challenge with the derived auth key
   const challengeBytes = fromBase64(challenge);
@@ -262,6 +304,7 @@ export async function localAuthLogin(
     signatureBase64,
     timestamp,
   );
+  const verifiedKdfParams = parseAuthKdfProfile(verifyResult);
 
   // If server has a wrapped account key, we need to re-init with it
   // to get the correct identity for epoch key operations
@@ -279,6 +322,7 @@ export async function localAuthLogin(
     userSalt: userSaltBytes,
     accountSalt: serverAccountSalt,
     wrappedAccountKey,
+    kdfParams: verifiedKdfParams,
     isNewUser: false,
   };
 }
@@ -300,6 +344,7 @@ export async function localAuthRegister(
   accountSalt: Uint8Array;
   isNewUser: boolean;
   wrappedAccountKey: Uint8Array | null;
+  kdfParams: Argon2Params;
 }> {
   // Step 1: Get a challenge to derive the user salt
   // (server returns deterministic fake salt for non-existent users)
@@ -325,16 +370,19 @@ async function registerNewUser(
   accountSalt: Uint8Array;
   isNewUser: boolean;
   wrappedAccountKey: Uint8Array | null;
+  kdfParams: Argon2Params;
 }> {
   // Generate account salt
   await ensureLocalAuthRustWasmInitialized();
   const accountSalt = await deriveAccountSalt(userSalt);
 
   const cryptoClient = await getCryptoClient();
+  const kdfParams = selectRegistrationArgon2Params();
+  const workerKdfParams = toWorkerKdfParams(kdfParams);
 
   // Step 1: Derive the deterministic auth keypair from password + userSalt
   // This is used for challenge-response authentication
-  await cryptoClient.deriveAuthKey(password, userSalt);
+  await cryptoClient.deriveAuthKey(password, userSalt, workerKdfParams);
 
   // Get the auth public key (deterministically derived from password+salt)
   const authPubkey = await cryptoClient.getAuthPublicKey();
@@ -343,7 +391,7 @@ async function registerNewUser(
   }
 
   // Step 2: Initialize crypto with random account key for identity operations
-  await cryptoClient.init(password, userSalt, accountSalt);
+  await cryptoClient.init(password, userSalt, accountSalt, workerKdfParams);
   await cryptoClient.deriveIdentity();
 
   // Get identity public key (derived from random account key, used for epoch key encryption)
@@ -366,6 +414,10 @@ async function registerNewUser(
     userSalt: toBase64(userSalt),
     accountSalt: toBase64(accountSalt),
     wrappedAccountKey: toBase64(wrappedAccountKey),
+    kdfMemoryKib: kdfParams.memory,
+    kdfIterations: kdfParams.iterations,
+    kdfParallelism: kdfParams.parallelism,
+    kdfAlgVersion: kdfParams.algVersion,
   });
 
   // Now login to get session cookie (user exists now)
@@ -394,6 +446,7 @@ async function registerNewUser(
     accountSalt,
     isNewUser: true,
     wrappedAccountKey: null, // New user already has correct keys loaded
+    kdfParams: parseAuthKdfProfile(verifyResult),
   };
 }
 

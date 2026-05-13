@@ -35,7 +35,14 @@ vi.mock('libsodium-wrappers-sumo', () => ({
     base64_variants: { URLSAFE_NO_PADDING: 7 },
   },
 }));
-vi.mock('@mosaic/crypto', () => ({ getArgon2Params: vi.fn(() => ({ memoryKib: 8, iterations: 1, parallelism: 1 })) }));
+vi.mock('@mosaic/crypto', () => ({
+  parseServerArgon2Params: vi.fn((payload) => ({
+    memory: payload.memoryKib,
+    iterations: payload.iterations,
+    parallelism: payload.parallelism,
+    algVersion: 0x13,
+  })),
+}));
 vi.mock('../../workers/rust-crypto-core', () => ({
   getRustFacade: vi.fn(async () => facadeMocks.facade),
   parseEnvelopeHeaderFromRust: vi.fn(),

@@ -27,7 +27,7 @@ import {
   encryptShard,
   generateEpochKey,
   generateLinkSecret,
-  getArgon2Params,
+  selectRegistrationArgon2Params,
   signManifest,
   wrapTierKeyForLink,
 } from '@mosaic/crypto';
@@ -72,7 +72,7 @@ describe('crypto baseline (TS reference)', () => {
   bench(
     'argon2id login (deriveKeys / account unlock)',
     async () => {
-      await deriveKeys(PASSWORD, USER_SALT, ACCOUNT_SALT, getArgon2Params());
+      await deriveKeys(PASSWORD, USER_SALT, ACCOUNT_SALT, selectRegistrationArgon2Params());
     },
     { iterations: 5, warmupIterations: 1, time: 0 },
   );

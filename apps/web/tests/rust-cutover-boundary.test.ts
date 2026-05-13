@@ -61,8 +61,20 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
     'lib/session.ts',
     {
       rationale:
-        'Argon2id salt-encryption KDF runs on main thread before crypto worker is initialized (security fix H1/H2)',
-      allowedSymbols: ['getArgon2Params'],
+        'Argon2id salt-encryption KDF consumes the server-pinned profile before crypto worker initialization',
+      allowedSymbols: ['parseServerArgon2Params', 'Argon2Params'],
+    },
+  ],
+  [
+    'lib/local-auth.ts',
+    {
+      rationale:
+        'LocalAuth registration selects the initial KDF profile and login parses the server-pinned profile',
+      allowedSymbols: [
+        'parseServerArgon2Params',
+        'selectRegistrationArgon2Params',
+        'Argon2Params',
+      ],
     },
   ],
   [
@@ -565,8 +577,8 @@ interface RetiredModuleAssertion {
 
 const CUTOVER_RETIRED_MODULES: readonly RetiredModuleAssertion[] = [
   // Slice 2 ÔÇö account/session bootstrap migrated to Rust account-handle contract.
-  // lib/session.ts retains a single shell-class import (getArgon2Params for the
-  // pre-worker Argon2id KDF). The retirement check below pins the protocol-class
+  // lib/session.ts retains a single shell-class import (parseServerArgon2Params for
+  // the pre-worker Argon2id KDF profile). The retirement check below pins the protocol-class
   // surface closed; the per-symbol allowlist pins the shell-class surface.
   { slice: 'Slice 2 (account/session bootstrap)', relativePath: 'lib/session.ts', forbidLibsodium: false },
   // Slice 3 ÔÇö epoch key lifecycle uses Rust epoch handles end-to-end.
@@ -632,5 +644,4 @@ describe('Rust cutover slice retirement guards', () => {
     });
   }
 });
-
 

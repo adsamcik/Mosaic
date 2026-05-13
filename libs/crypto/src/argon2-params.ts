@@ -1,7 +1,7 @@
 /**
  * Mosaic Crypto Library - Argon2id Parameters
  *
- * Device-adaptive parameters for password hashing.
+ * Registration-time parameters for password hashing.
  * Target: 500-1000ms derivation time across device types.
  */
 
@@ -91,7 +91,7 @@ function isE2EWeakKeysMode(): boolean {
 }
 
 /**
- * Get optimal Argon2id parameters for current device.
+ * Select optimal Argon2id parameters for registering an account on the current device.
  *
  * Parameters are tuned to achieve ~500-1000ms derivation time:
  * - Desktop: 64MB memory, 3 iterations
@@ -100,10 +100,13 @@ function isE2EWeakKeysMode(): boolean {
  * Parallelism is set to 1 for consistent behavior across devices
  * and simpler implementation (WebAssembly limitations).
  *
+ * ONLY for registration. Login/unlock paths must consume the server-pinned
+ * profile from the User row so every device derives the same password-rooted keys.
+ *
  * @security When VITE_E2E_WEAK_KEYS=true, returns minimal parameters
  *           for fast E2E testing. NEVER enable in production.
  */
-export function getArgon2Params(): Argon2Params {
+export function selectRegistrationArgon2Params(): Argon2Params {
   // Check for E2E weak keys mode first
   if (isE2EWeakKeysMode()) {
     // Log warning to ensure visibility
@@ -117,6 +120,7 @@ export function getArgon2Params(): Argon2Params {
       memory: 8 * 1024, // 8 MiB - minimum practical value
       iterations: 1, // Minimum iterations
       parallelism: 1,
+      algVersion: 0x13,
     };
   }
 
@@ -125,6 +129,7 @@ export function getArgon2Params(): Argon2Params {
       memory: 32 * 1024, // 32 MiB in KiB
       iterations: 4,
       parallelism: 1,
+      algVersion: 0x13,
     };
   }
 
@@ -132,6 +137,40 @@ export function getArgon2Params(): Argon2Params {
     memory: 64 * 1024, // 64 MiB in KiB
     iterations: 3,
     parallelism: 1,
+    algVersion: 0x13,
+  };
+}
+
+export interface ServerArgon2ParamsPayload {
+  readonly memoryKib: number;
+  readonly iterations: number;
+  readonly parallelism: number;
+  readonly algVersion: number;
+}
+
+/**
+ * Parse and validate the server-pinned Argon2id profile stored on the User row.
+ * Login/unlock callers must use this instead of device-adaptive selection.
+ */
+export function parseServerArgon2Params(payload: ServerArgon2ParamsPayload): Argon2Params {
+  if (!Number.isInteger(payload.memoryKib) || payload.memoryKib < 8 * 1024) {
+    throw new Error('Invalid Argon2 memory cost');
+  }
+  if (!Number.isInteger(payload.iterations) || payload.iterations < 1) {
+    throw new Error('Invalid Argon2 iteration count');
+  }
+  if (!Number.isInteger(payload.parallelism) || payload.parallelism < 1) {
+    throw new Error('Invalid Argon2 parallelism');
+  }
+  if (payload.algVersion !== 0x13) {
+    throw new Error('Unsupported Argon2 algorithm version');
+  }
+
+  return {
+    memory: payload.memoryKib,
+    iterations: payload.iterations,
+    parallelism: payload.parallelism,
+    algVersion: 0x13,
   };
 }
 
@@ -144,6 +183,7 @@ export const ARGON2_PRESETS = {
     memory: 64 * 1024,
     iterations: 3,
     parallelism: 1,
+    algVersion: 0x13,
   },
 
   /** High-end desktop */
@@ -151,6 +191,7 @@ export const ARGON2_PRESETS = {
     memory: 128 * 1024,
     iterations: 3,
     parallelism: 1,
+    algVersion: 0x13,
   },
 
   /** Mobile or low-memory device */
@@ -158,6 +199,7 @@ export const ARGON2_PRESETS = {
     memory: 32 * 1024,
     iterations: 4,
     parallelism: 1,
+    algVersion: 0x13,
   },
 
   /** Very constrained device */
@@ -165,6 +207,7 @@ export const ARGON2_PRESETS = {
     memory: 16 * 1024,
     iterations: 6,
     parallelism: 1,
+    algVersion: 0x13,
   },
 
   /**
@@ -177,5 +220,6 @@ export const ARGON2_PRESETS = {
     memory: 8 * 1024, // 8 MiB - minimum practical value
     iterations: 1, // Minimum iterations
     parallelism: 1,
+    algVersion: 0x13,
   },
 } as const satisfies Record<string, Argon2Params>;

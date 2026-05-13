@@ -30,8 +30,10 @@
 
 ```
 L0 (Master Key)
-│   └─ Argon2id(password, salt)
+│   └─ Argon2id(password, salt, server-pinned per-account KDF profile)
 │   └─ NEVER stored, derived on login
+│   └─ KDF profile is selected only at registration, persisted by the server,
+│      and returned during auth bootstrap to prevent cross-device drift
 │
 └── L1 (Root Key)
     │   └─ HKDF-SHA256(L0, account_salt, "mosaic:root-key:v1")

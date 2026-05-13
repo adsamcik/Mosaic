@@ -197,6 +197,10 @@ const baseUser: User = {
   authSub: 'testuser@example.com',
   identityPubkey: 'mock-pubkey',
   createdAt: '2024-01-01T00:00:00Z',
+  kdfMemoryKib: 65536,
+  kdfIterations: 3,
+  kdfParallelism: 1,
+  kdfAlgVersion: 0x13,
 };
 
 function makeCryptoClientMock() {
@@ -312,6 +316,12 @@ describe('M3: login re-entrancy guard', () => {
         accountSalt: new Uint8Array(16).fill(8),
         isNewUser: false,
         wrappedAccountKey: new Uint8Array(72),
+        kdfParams: {
+          memory: 65536,
+          iterations: 3,
+          parallelism: 1,
+          algVersion: 0x13,
+        },
       });
 
       // Pre-seed salt for restoreSession

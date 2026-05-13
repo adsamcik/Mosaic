@@ -39,9 +39,11 @@ export {
 
 export {
   ARGON2_PRESETS,
-  getArgon2Params,
   isLowMemoryDevice,
   isMobileDevice,
+  parseServerArgon2Params,
+  selectRegistrationArgon2Params,
+  type ServerArgon2ParamsPayload,
 } from './argon2-params';
 
 export {

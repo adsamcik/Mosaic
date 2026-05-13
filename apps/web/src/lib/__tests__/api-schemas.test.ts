@@ -35,6 +35,10 @@ describe('UserSchema', () => {
     identityPubkey: VALID_BASE64,
     createdAt: VALID_DATETIME,
     isAdmin: false,
+    kdfMemoryKib: 65536,
+    kdfIterations: 3,
+    kdfParallelism: 1,
+    kdfAlgVersion: 0x13,
   };
 
   it('parses a valid User payload', () => {
@@ -47,6 +51,10 @@ describe('UserSchema', () => {
       id: VALID_UUID,
       authSub: 'oidc-subject-123',
       createdAt: VALID_DATETIME,
+      kdfMemoryKib: 65536,
+      kdfIterations: 3,
+      kdfParallelism: 1,
+      kdfAlgVersion: 0x13,
     };
     const parsed = UserSchema.parse(minimal);
     expect(parsed.id).toBe(VALID_UUID);

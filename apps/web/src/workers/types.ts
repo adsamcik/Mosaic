@@ -400,6 +400,7 @@ export interface CryptoWorkerApi {
     password: string,
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
+    kdfParams: WorkerKdfParams,
   ): Promise<void>;
 
   /**
@@ -414,6 +415,7 @@ export interface CryptoWorkerApi {
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
     wrappedAccountKey: Uint8Array,
+    kdfParams: WorkerKdfParams,
     wrappedIdentitySeed?: Uint8Array,
   ): Promise<void>;
 
@@ -508,6 +510,7 @@ export interface CryptoWorkerApi {
     password: string,
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
+    kdfParams: WorkerKdfParams,
   ): Promise<void>;
 
   /**
@@ -726,7 +729,11 @@ export interface CryptoWorkerApi {
    * @param userSalt - 16-byte per-user salt
    * @returns The 32-byte Ed25519 auth public key
    */
-  deriveAuthKey(password: string, userSalt: Uint8Array): Promise<Uint8Array>;
+  deriveAuthKey(
+    password: string,
+    userSalt: Uint8Array,
+    kdfParams: WorkerKdfParams,
+  ): Promise<Uint8Array>;
 
   /**
    * Sign an authentication challenge for LocalAuth login.

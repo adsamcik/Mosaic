@@ -291,6 +291,8 @@ export interface Argon2Params {
   iterations: number;
   /** Degree of parallelism */
   parallelism: number;
+  /** Argon2 algorithm version. 0x13 is Argon2id v1.3. */
+  algVersion: 0x13;
 }
 
 // =============================================================================

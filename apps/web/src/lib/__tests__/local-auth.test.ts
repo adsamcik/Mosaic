@@ -91,6 +91,10 @@ describe('local-auth ProblemDetails parsing', () => {
         identityPubkey: 'identity-pubkey',
         userSalt: 'user-salt',
         accountSalt: 'account-salt',
+        kdfMemoryKib: 65536,
+        kdfIterations: 3,
+        kdfParallelism: 1,
+        kdfAlgVersion: 0x13,
       }),
     ).rejects.toThrow(/Authentication required/);
   });

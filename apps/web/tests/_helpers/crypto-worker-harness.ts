@@ -465,7 +465,7 @@ function buildLifecycleHarness(
     async bringToInitialized(password = 'lifecycle-test-pw', userSalt, accountSalt) {
       const us = userSalt ?? makeFixedSalt(0x11);
       const as = accountSalt ?? makeFixedSalt(0x22);
-      await api.init(password, us, as);
+      await api.init(password, us, as, DEFAULT_TEST_KDF);
       // Slice 8 readiness probe: a wrapDbBlob round-trip exercises the
       // account-handle-derived DB key path that Slice 8 introduced
       // (replacing the legacy `getDbSessionKey()` byte-emitting probe).
@@ -602,7 +602,7 @@ export interface ClaimedEpochHandle {
 
 /**
  * Default Argon2 params for tests. With `VITE_E2E_WEAK_KEYS=true` the
- * worker's `getArgon2Params()` already returns these or weaker, but the
+ * worker's pinned test KDF profile already returns these or weaker, but the
  * Slice 1 handle methods accept the params explicitly so tests can stay
  * deterministic across config changes.
  */

@@ -37,9 +37,10 @@
 
 **Flow:**
 1. Client requests challenge with username
-2. Server returns random challenge bytes
-3. Client signs challenge with Ed25519 private key
+2. Server returns random challenge bytes and the account's pinned Argon2id KDF profile
+3. Client derives password-rooted keys with that server-pinned profile and signs the challenge with Ed25519 private key
 4. Server verifies signature against stored public key
+5. Registration chooses the initial device profile once and persists it with the user row, so later desktop/mobile logins use identical KDF parameters
 
 **Configuration:**
 ```bash
@@ -48,8 +49,8 @@ Auth__ProxyAuthEnabled=false  # Disable ProxyAuth
 ```
 
 **Tests:**
-- Backend: `Mosaic.Backend.Tests/AuthTests/`
-- Frontend: `apps/web/tests/local-auth.test.ts`
+- Backend: `apps/backend/Mosaic.Backend.Tests/Controllers/AuthControllerTests.cs`
+- Frontend: `apps/web/src/lib/__tests__/local-auth.test.ts`, `apps/web/src/lib/__tests__/argon2-params.test.ts`
 
 ---
 
@@ -1092,6 +1093,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-05-13 | LocalAuth server-pinned KDF profile | Fixed | Backend stores per-account Argon2id parameters and web login/unlock consumes the server profile to prevent cross-device key-derivation drift |
 | 2026-05-13 | Cross-Origin Isolation Guard | Added | Web startup now blocks unsupported non-isolated browsers before loading WASM/workers and shows Safari 17.4+/Chrome 102+/Firefox 111+/Edge 102+ guidance |
 | 2026-05-13 | Web production-readiness blockers (B1-B5) | Fixed | (B1) Drop plaintext album name from log in `SharedAlbumViewer` (ZK leak); (B2) Wire `DownloadResumePrompt` to a real `CurrentAlbumManifest` projected from local DB via new `lib/album-manifest-source.ts` with 6 unit tests, replaces placeholder empty manifest; (B3) Remove 5 dead `as any` casts at the `EpochHandleId` crypto boundary in `useShareLinks`/`epoch-key-store`/`epoch-rotation-service`; (B4) Re-encode mojibake in `cs.json` + `en.json` `download.modePicker` strings to proper UTF-8; (B5) Install & configure ESLint flat config (`eslint.config.js`) with TypeScript + react-hooks v7 + retired-`@mosaic/crypto`-imports ban; clean up 6 unused eslint-disable directives, useless try/catch in `local-auth.ts`, `this`-aliasing in `coordinator.worker.ts`, irregular-whitespace bug in `VisitorDownloadDisclosure.tsx`, unused `PhotoMeta` import in `crypto.worker.ts` |
 | 2026-05-10 | Content-hash upload-time dedup | Added | SHA-256 of source plaintext bytes; client-local dedup table; cross-device dedup explicitly deferred to v2 |

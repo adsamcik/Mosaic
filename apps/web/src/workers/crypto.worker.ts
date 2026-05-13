@@ -32,9 +32,6 @@ import {
 // The remaining symbols belong to slices 5/7's territory and stay until
 // their callers are migrated.
 import {
-  getArgon2Params,
-} from '@mosaic/crypto';
-import {
   getRustFacade,
   type RustHandleFacade,
 } from './rust-crypto-core';
@@ -743,10 +740,9 @@ class CryptoWorker implements CryptoWorkerApi {
     return handle.id as IdentityHandleId;
   }
 
-  private kdfFromSodiumParams(): WorkerKdfParams {
-    const params = getArgon2Params();
+  private kdfFromArgon2Params(params: WorkerKdfParams): WorkerKdfParams {
     return {
-      memoryKib: params.memory,
+      memoryKib: params.memoryKib,
       iterations: params.iterations,
       parallelism: params.parallelism,
     };
@@ -763,9 +759,10 @@ class CryptoWorker implements CryptoWorkerApi {
     password: string,
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
+    kdfParams: WorkerKdfParams,
   ): Promise<void> {
     await this.ensureSodiumReady();
-    const kdf = this.kdfFromSodiumParams();
+    const kdf = this.kdfFromArgon2Params(kdfParams);
     const out = await this.createNewAccount({
       password,
       userSalt,
@@ -791,9 +788,10 @@ class CryptoWorker implements CryptoWorkerApi {
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
     wrappedAccountKey: Uint8Array,
+    kdfParams: WorkerKdfParams,
     wrappedIdentitySeed?: Uint8Array,
   ): Promise<void> {
-    const kdf = this.kdfFromSodiumParams();
+    const kdf = this.kdfFromArgon2Params(kdfParams);
     const out = await this.unlockAccount({
       password,
       userSalt,
@@ -994,6 +992,7 @@ class CryptoWorker implements CryptoWorkerApi {
     password: string,
     userSalt: Uint8Array,
     accountSalt: Uint8Array,
+    kdfParams: WorkerKdfParams,
   ): Promise<void> {
     // Decode the OPAQUE outer envelope: it was wrapped under an account
     // handle, but at this point no handle is open yet, so we have to
@@ -1009,7 +1008,7 @@ class CryptoWorker implements CryptoWorkerApi {
     // key-cache wrap it under its in-memory Web Crypto AES-GCM key. This
     // restoreSessionState method therefore parses the (non-encrypted)
     // bundle directly.
-    const kdf = this.kdfFromSodiumParams();
+    const kdf = this.kdfFromArgon2Params(kdfParams);
     const parsed = this.parseSessionStateBundle(blob);
 
     const out = await this.unlockAccount({
@@ -1422,8 +1421,9 @@ class CryptoWorker implements CryptoWorkerApi {
   async deriveAuthKey(
     password: string,
     userSalt: Uint8Array,
+    kdfParams: WorkerKdfParams,
   ): Promise<Uint8Array> {
-    const kdf = this.kdfFromSodiumParams();
+    const kdf = this.kdfFromArgon2Params(kdfParams);
     const passwordBytes = normalizePasswordForKdf(password);
     const passwordCopy = new Uint8Array(passwordBytes);
     const userSaltCopy = new Uint8Array(userSalt);

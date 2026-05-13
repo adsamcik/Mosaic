@@ -79,6 +79,10 @@ function createMockStore(): MockStore {
     authSub: 'user@example.com',
     identityPubkey: btoa(String.fromCharCode(...new Uint8Array(32).fill(1))),
     createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    kdfMemoryKib: 65536,
+    kdfIterations: 3,
+    kdfParallelism: 1,
+    kdfAlgVersion: 0x13,
   };
 
   const users = new Map<string, User>([
@@ -94,6 +98,10 @@ function createMockStore(): MockStore {
         createdAt: new Date(
           Date.now() - 60 * 24 * 60 * 60 * 1000,
         ).toISOString(),
+        kdfMemoryKib: 65536,
+        kdfIterations: 3,
+        kdfParallelism: 1,
+        kdfAlgVersion: 0x13,
       },
     ],
     [
@@ -107,6 +115,10 @@ function createMockStore(): MockStore {
         createdAt: new Date(
           Date.now() - 45 * 24 * 60 * 60 * 1000,
         ).toISOString(),
+        kdfMemoryKib: 65536,
+        kdfIterations: 3,
+        kdfParallelism: 1,
+        kdfAlgVersion: 0x13,
       },
     ],
   ]);
