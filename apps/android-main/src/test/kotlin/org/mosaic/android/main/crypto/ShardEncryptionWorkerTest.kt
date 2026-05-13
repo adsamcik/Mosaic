@@ -515,6 +515,15 @@ class ShardEncryptionWorkerTest {
       )
     }
 
+    override fun deleteByContentHash(albumId: String, contentHash: String): Int =
+      if (rows.remove(albumId to contentHash) != null) 1 else 0
+
+    override fun deleteByPhotoId(albumId: String, photoId: String): Int {
+      val keys = rows.filter { (key, value) -> key.first == albumId && value.photoId == photoId }.keys
+      keys.forEach { key -> rows.remove(key) }
+      return keys.size
+    }
+
     override fun clear(albumId: String): Int = 0
   }
 }

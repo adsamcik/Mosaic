@@ -6,6 +6,8 @@ import org.mosaic.android.main.db.AlbumContentHashRecord
 interface ContentHashDedup {
   fun lookup(albumId: String, contentHash: String): DuplicateContent?
   fun record(albumId: String, contentHash: String, photoId: String)
+  fun deleteByContentHash(albumId: String, contentHash: String): Int
+  fun deleteByPhotoId(albumId: String, photoId: String): Int
   fun clear(albumId: String): Int
 }
 
@@ -33,10 +35,18 @@ class RoomContentHashDedup(
   }
 
   override fun clear(albumId: String): Int = dao.clear(albumId)
+
+  override fun deleteByContentHash(albumId: String, contentHash: String): Int =
+    dao.deleteByContentHash(albumId, contentHash)
+
+  override fun deleteByPhotoId(albumId: String, photoId: String): Int =
+    dao.deleteByPhotoId(albumId, photoId)
 }
 
 object NoOpContentHashDedup : ContentHashDedup {
   override fun lookup(albumId: String, contentHash: String): DuplicateContent? = null
   override fun record(albumId: String, contentHash: String, photoId: String) = Unit
+  override fun deleteByContentHash(albumId: String, contentHash: String): Int = 0
+  override fun deleteByPhotoId(albumId: String, photoId: String): Int = 0
   override fun clear(albumId: String): Int = 0
 }

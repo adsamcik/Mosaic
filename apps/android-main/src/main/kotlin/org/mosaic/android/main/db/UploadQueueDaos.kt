@@ -146,6 +146,12 @@ interface AlbumContentHashDao {
   @Query("SELECT * FROM album_content_hashes WHERE album_id = :albumId AND content_hash = :contentHash")
   fun lookup(albumId: String, contentHash: String): AlbumContentHashRecord?
 
+  @Query("DELETE FROM album_content_hashes WHERE album_id = :albumId AND content_hash = :contentHash")
+  fun deleteByContentHash(albumId: String, contentHash: String): Int
+
+  @Query("DELETE FROM album_content_hashes WHERE album_id = :albumId AND photo_id = :photoId")
+  fun deleteByPhotoId(albumId: String, photoId: String): Int
+
   @Query("DELETE FROM album_content_hashes WHERE album_id = :albumId")
   fun clear(albumId: String): Int
 }
