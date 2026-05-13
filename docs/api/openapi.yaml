@@ -20,6 +20,8 @@ security:
   - RemoteUser: []
 
 tags:
+  - name: Auth
+    description: LocalAuth challenge-response and session management
   - name: Health
     description: Service health endpoints
   - name: Users
@@ -58,6 +60,192 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+
+
+  # ===========================================================================
+  # Auth (LocalAuth)
+  # ===========================================================================
+  /auth/config:
+    get:
+      operationId: getAuthConfig
+      summary: Get authentication configuration
+      description: Returns which authentication modes are enabled so clients can choose LocalAuth or trusted-proxy flows.
+      tags: [Auth]
+      security: []
+      responses:
+        '200':
+          description: Authentication mode flags
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthConfigResponse'
+
+  /auth/init:
+    post:
+      operationId: initAuth
+      summary: Start LocalAuth challenge
+      description: Issues an Ed25519 challenge and returns either the real user salt or a deterministic fake salt to avoid account enumeration.
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthInitRequest'
+      responses:
+        '200':
+          description: Challenge created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthInitResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/verify:
+    post:
+      operationId: verifyAuth
+      summary: Verify LocalAuth challenge
+      description: Verifies the Ed25519 signature over the challenge and creates a scoped HttpOnly session cookie on success.
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthVerifyRequest'
+      responses:
+        '200':
+          description: Authentication succeeded; session cookie is set.
+          headers:
+            Set-Cookie:
+              description: mosaic_session HttpOnly cookie scoped to Path=/api.
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthVerifyResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/register:
+    post:
+      operationId: registerAuthUser
+      summary: Register LocalAuth user
+      description: Creates a LocalAuth user with public identity/auth keys and client-wrapped account secrets; after bootstrap this requires an admin session.
+      tags: [Auth]
+      security:
+        - cookieAuth: []
+        - RemoteUser: []
+        - {}
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Recommended for retry-safe registration requests.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRegisterRequest'
+      responses:
+        '201':
+          description: User registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthRegisterResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: Revoke current LocalAuth session
+      description: Revokes the current session token if present and clears the mosaic_session cookie.
+      tags: [Auth]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Logout result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /auth/sessions:
+    get:
+      operationId: listAuthSessions
+      summary: List active sessions
+      description: Returns active LocalAuth sessions for the current user and marks the current session without exposing token material.
+      tags: [Auth]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Active sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuthSession'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /auth/sessions/{sessionId}:
+    delete:
+      operationId: revokeAuthSession
+      summary: Revoke a session
+      description: Revokes one active LocalAuth session belonging to the current user.
+      tags: [Auth]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /auth/sessions/revoke-others:
+    post:
+      operationId: revokeOtherAuthSessions
+      summary: Revoke all other sessions
+      description: Revokes every LocalAuth session for the current user except the token used for this request.
+      tags: [Auth]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Other sessions revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeOtherSessionsResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # ===========================================================================
   # Users
@@ -1170,30 +1358,49 @@ components:
     BadRequest:
       description: Invalid request
       content:
-        application/json:
+        application/problem+json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: '#/components/schemas/ProblemDetails'
 
     Unauthorized:
       description: Authentication required
       content:
-        application/json:
+        application/problem+json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: '#/components/schemas/ProblemDetails'
 
     Forbidden:
       description: Insufficient permissions
       content:
-        application/json:
+        application/problem+json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: '#/components/schemas/ProblemDetails'
 
     NotFound:
       description: Resource not found
       content:
-        application/json:
+        application/problem+json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: '#/components/schemas/ProblemDetails'
+
+    Conflict:
+      description: Resource conflict
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
 
   # ===========================================================================
   # Schemas
@@ -1319,6 +1526,106 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/AlbumWithLimits'
+
+
+    AuthConfigResponse:
+      type: object
+      required: [localAuthEnabled, proxyAuthEnabled]
+      properties:
+        localAuthEnabled: { type: boolean }
+        proxyAuthEnabled: { type: boolean }
+
+    AuthInitRequest:
+      type: object
+      required: [username]
+      properties:
+        username:
+          type: string
+          maxLength: 256
+
+    AuthInitResponse:
+      type: object
+      required: [challengeId, challenge, userSalt, timestamp]
+      properties:
+        challengeId: { type: string, format: uuid }
+        challenge:
+          type: string
+          description: Base64-encoded 32-byte challenge.
+        userSalt:
+          type: string
+          description: Base64-encoded real or fake user salt.
+        timestamp:
+          type: integer
+          format: int64
+
+    AuthVerifyRequest:
+      type: object
+      required: [username, challengeId, signature]
+      properties:
+        username: { type: string, maxLength: 256 }
+        challengeId: { type: string, format: uuid }
+        signature:
+          type: string
+          maxLength: 256
+          description: Base64-encoded Ed25519 signature.
+        timestamp:
+          type: integer
+          format: int64
+          nullable: true
+
+    AuthVerifyResponse:
+      type: object
+      required: [success, userId]
+      properties:
+        success: { type: boolean }
+        userId: { type: string, format: uuid }
+        accountSalt: { type: string, nullable: true }
+        wrappedAccountKey: { type: string, nullable: true }
+        wrappedIdentitySeed: { type: string, nullable: true }
+        identityPubkey: { type: string, nullable: true }
+
+    AuthRegisterRequest:
+      type: object
+      required: [username, authPubkey, identityPubkey, userSalt, accountSalt]
+      properties:
+        username: { type: string, maxLength: 256 }
+        authPubkey: { type: string, maxLength: 128 }
+        identityPubkey: { type: string, maxLength: 128 }
+        userSalt: { type: string, maxLength: 128 }
+        accountSalt: { type: string, maxLength: 128 }
+        wrappedAccountKey: { type: string, maxLength: 2048, nullable: true }
+        wrappedIdentitySeed: { type: string, maxLength: 2048, nullable: true }
+
+    AuthRegisterResponse:
+      type: object
+      required: [id, username, isAdmin]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        isAdmin: { type: boolean }
+
+    AuthSession:
+      type: object
+      required: [id, createdAt, lastSeenAt, isCurrent]
+      properties:
+        id: { type: string, format: uuid }
+        deviceName: { type: string, nullable: true }
+        ipAddress: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        isCurrent: { type: boolean }
+
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+
+    RevokeOtherSessionsResponse:
+      type: object
+      required: [revokedCount]
+      properties:
+        revokedCount: { type: integer, minimum: 0 }
 
     HealthResponse:
       type: object
