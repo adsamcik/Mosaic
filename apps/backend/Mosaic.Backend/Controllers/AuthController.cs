@@ -133,6 +133,7 @@ public partial class AuthController : ControllerBase
             if (recentChallenges >= 10)
             {
                 _logger.AuthRateLimited(request.Username);
+                Response.Headers.RetryAfter = "60";
                 return Problem(
                     statusCode: StatusCodes.Status429TooManyRequests,
                     title: "Too many requests",
@@ -225,6 +226,7 @@ public partial class AuthController : ControllerBase
             if (recentChallenges >= 10)
             {
                 _logger.AuthRateLimited(request.Username);
+                Response.Headers.RetryAfter = "60";
                 return Problem(
                     statusCode: StatusCodes.Status429TooManyRequests,
                     title: "Too many requests",
@@ -414,6 +416,7 @@ public partial class AuthController : ControllerBase
             if (attempts >= 5)
             {
                 _logger.LogWarning("Registration rate limited for IP {IpAddress}", ipAddress);
+                Response.Headers.RetryAfter = "3600";
                 return Problem(
                     statusCode: StatusCodes.Status429TooManyRequests,
                     title: "Too many requests",

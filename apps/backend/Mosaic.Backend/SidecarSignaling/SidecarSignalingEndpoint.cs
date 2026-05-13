@@ -74,6 +74,7 @@ public static partial class SidecarSignalingEndpoint
         if (!roomExists && !rateLimiter.TryAcquire(ip))
         {
             httpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            httpContext.Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(options.RateLimitWindow.TotalSeconds)).ToString();
             httpContext.Response.ContentType = "application/problem+json";
             await httpContext.Response.WriteAsJsonAsync(new ProblemDetails
             {
