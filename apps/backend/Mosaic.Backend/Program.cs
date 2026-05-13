@@ -15,6 +15,7 @@ using System.Data.Common;
 using System.Security.Cryptography;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -47,7 +48,10 @@ builder.Services.AddScoped<IQuotaSettingsService, QuotaSettingsService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IEpochKeyRotationService, EpochKeyRotationService>();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.Configure<IdempotencyOptions>(builder.Configuration.GetSection("Idempotency"));
+builder.Services.AddOptions<IdempotencyOptions>()
+    .Bind(builder.Configuration.GetSection("Idempotency"))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<IdempotencyOptions>, IdempotencyOptionsValidator>();
 builder.Services.AddScoped<IAlbumExpirationService, AlbumExpirationService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHostedService<GarbageCollectionService>();
