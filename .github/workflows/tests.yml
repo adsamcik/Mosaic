@@ -274,6 +274,35 @@ jobs:
       - name: Run web-no-direct-console architecture guard
         run: bash ./tests/architecture/web-no-direct-console.sh
 
+  wasm-rebuild-invariance:
+    name: WASM Rebuild Invariance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Rust
+        run: |
+          rustup toolchain install 1.93.1 --profile minimal --target wasm32-unknown-unknown
+          rustup default 1.93.1
+
+      - name: Install wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.118 --locked
+
+      - name: Rebuild Rust WASM package
+        run: bash ./scripts/build-rust-wasm.sh
+
+      - name: Assert committed WASM artifacts match rebuild
+        run: |
+          status="$(git status --porcelain apps/web/src/generated/mosaic-wasm/)"
+          if [ -n "$status" ]; then
+            echo "::error::Committed WASM artifact differs from rebuild output. Run scripts/build-rust-wasm.sh and commit the result."
+            echo "$status"
+            git diff --stat apps/web/src/generated/mosaic-wasm/
+            exit 1
+          fi
+
   android-shell:
     name: Android Shell (JVM)
     runs-on: ubuntu-latest
