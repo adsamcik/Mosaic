@@ -12,6 +12,14 @@ vi.mock('../../lib/save-target-bridge', () => ({
   defaultSaveTargetProvider: vi.fn(),
 }));
 vi.mock('../../lib/epoch-key-service', () => ({
+  EpochKeyErrorCode: {
+    FETCH_FAILED: 'FETCH_FAILED',
+    NO_KEYS_AVAILABLE: 'NO_KEYS_AVAILABLE',
+    IDENTITY_NOT_DERIVED: 'IDENTITY_NOT_DERIVED',
+    SIGNATURE_INVALID: 'SIGNATURE_INVALID',
+    DECRYPTION_FAILED: 'DECRYPTION_FAILED',
+    CONTEXT_MISMATCH: 'CONTEXT_MISMATCH',
+  },
   getOrFetchEpochKey: vi.fn(async () => ({ epochSeed: new Uint8Array(32), epochHandleId: 'h1' })),
 }));
 vi.mock('../useWakeLock', () => ({

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { runZipFinalizer, type ZipFinalizerDeps } from '../zip-finalizer';
+import { PartialExportError, runZipFinalizer, type ZipFinalizerDeps } from '../zip-finalizer';
 
 function streamFromBytes(bytes: Uint8Array): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
@@ -86,7 +86,7 @@ describe('runZipFinalizer', () => {
   it('skips photos missing from staging without aborting the archive', async () => {
     const target = makeTarget();
     const photos = [{ id: 'p1', bytes: new Uint8Array([1, 2, 3, 4]) }];
-    await runZipFinalizer(
+    await expect(runZipFinalizer(
       { jobId: 'j', entries: [
         { photoId: 'p1', filename: 'one.jpg' },
         { photoId: 'p2', filename: 'missing.jpg' },
@@ -94,7 +94,7 @@ describe('runZipFinalizer', () => {
       'a.zip',
       deps(target, photos),
       new AbortController().signal,
-    );
+    )).rejects.toBeInstanceOf(PartialExportError);
     expect(target.closed.value).toBe(true);
     const archive = concatChunks(target.written);
     expect(findSubsequence(archive, ZIP_EOCD_SIGNATURE)).toBeGreaterThan(0);

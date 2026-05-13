@@ -27,7 +27,7 @@ import {
 } from '../lib/upload-queue';
 import { initUploadStoreBridge } from '../lib/upload-store-bridge';
 import { session, subscribeToSessionExpired } from '../lib/session';
-import { useToast } from './ToastContext';
+import { useOptionalToast } from './ToastContext';
 
 // Re-export for consumers
 export { UploadError, UploadErrorCode } from '../lib/upload-errors';
@@ -162,7 +162,9 @@ export function UploadProvider({ children }: UploadProviderProps) {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<UploadError | null>(null);
   const [, setActiveTasks] = useState<UploadTask[]>([]);
-  const { addToast, removeToast } = useToast();
+  const toast = useOptionalToast();
+  const addToast = toast?.addToast ?? (() => '');
+  const removeToast = toast?.removeToast ?? (() => undefined);
   const rustAdaptersByTaskId = useRef(new Map<string, RustUploadAdapter>());
   const rustSubmittedTaskEvents = useRef(new Map<string, Set<string>>());
   const sessionExpiredToastId = useRef<string | null>(null);
@@ -366,6 +368,10 @@ export function UploadProvider({ children }: UploadProviderProps) {
   }, [decrementActiveUploadCount, showSessionExpiredToast]);
 
   useEffect(() => {
+    if (typeof subscribeToSessionExpired !== 'function') {
+      return undefined;
+    }
+
     return subscribeToSessionExpired(() => {
       void uploadQueue.pauseForAuthRequired();
       showSessionExpiredToast();

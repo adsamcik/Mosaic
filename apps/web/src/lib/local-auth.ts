@@ -91,11 +91,20 @@ function toWorkerKdfParams(params: Argon2Params): WorkerKdfParams {
 }
 
 function parseAuthKdfProfile(payload: {
-  kdfMemoryKib: number;
-  kdfIterations: number;
-  kdfParallelism: number;
-  kdfAlgVersion: number;
+  kdfMemoryKib?: number;
+  kdfIterations?: number;
+  kdfParallelism?: number;
+  kdfAlgVersion?: number;
 }): Argon2Params {
+  if (
+    payload.kdfMemoryKib === undefined ||
+    payload.kdfIterations === undefined ||
+    payload.kdfParallelism === undefined ||
+    payload.kdfAlgVersion === undefined
+  ) {
+    return selectRegistrationArgon2Params();
+  }
+
   return parseServerArgon2Params({
     memoryKib: payload.kdfMemoryKib,
     iterations: payload.kdfIterations,
@@ -106,11 +115,25 @@ function parseAuthKdfProfile(payload: {
 
 export async function parseProblemDetails(response: Response): Promise<string> {
   const fallback = `HTTP ${response.status}`;
-  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  const contentType = response.headers?.get?.('content-type')?.toLowerCase() ?? '';
   const isProblemDetails = contentType.includes('application/problem+json');
   const isJson =
     isProblemDetails || contentType.includes('application/json');
-  const body = await response.text().catch(() => '');
+  const body = typeof response.text === 'function'
+    ? await response.text().catch(() => '')
+    : '';
+
+  if (body.trim().length === 0 && typeof response.json === 'function') {
+    try {
+      const parsed: unknown = await response.json();
+      if (!isErrorResponseBody(parsed)) {
+        return fallback;
+      }
+      return firstNonEmptyString(parsed.detail, parsed.title, parsed.error) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
 
   if (!isJson || body.trim().length === 0) {
     return fallback;

@@ -124,7 +124,7 @@ export function SharedGallery({
           : {};
         const photoResponses: ShareLinkPhotoResponse[] = [];
         for (let skip: number | null = 0; skip !== null; ) {
-          const response = await fetch(
+          const response: Response = await fetch(
             `/api/s/${linkId}/photos?skip=${skip}&take=${pageSize}`,
             fetchInit,
           );
@@ -135,8 +135,11 @@ export function SharedGallery({
             );
           }
 
-          const page: { items: ShareLinkPhotoResponse[]; nextSkip: number | null } =
+          const parsed: ShareLinkPhotoResponse[] | { items: ShareLinkPhotoResponse[]; nextSkip: number | null } =
             await response.json();
+          const page: { items: ShareLinkPhotoResponse[]; nextSkip: number | null } = Array.isArray(parsed)
+            ? { items: parsed, nextSkip: parsed.length === pageSize ? skip + pageSize : null }
+            : parsed;
           photoResponses.push(...page.items);
           if (cancelled) return;
           skip = page.nextSkip;

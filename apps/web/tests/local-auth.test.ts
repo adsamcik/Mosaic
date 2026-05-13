@@ -306,7 +306,7 @@ describe('LocalAuth', () => {
       // Mock verifyAuth failure (different error)
       mockFetch.mockResolvedValueOnce({
         ok: false,
-        status: 401,
+        status: 400,
         json: () => Promise.resolve({ error: 'Challenge expired' }),
       });
 

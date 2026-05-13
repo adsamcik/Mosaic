@@ -360,6 +360,7 @@ describe('Session Restore', () => {
         userSalt,
         accountSalt,
         wrappedAccountKey,
+        { memoryKib: 65536, iterations: 3, parallelism: 1 },
       );
       expect(mockCryptoClient.init).not.toHaveBeenCalled();
     });

@@ -113,10 +113,10 @@ export const UserSchema = z.object({
   saltNonce: Base64Schema.nullish(),
   accountSalt: Base64Schema.nullish(),
   wrappedAccountKey: Base64Schema.nullish(),
-  kdfMemoryKib: z.number().int().gte(8192),
-  kdfIterations: z.number().int().gte(1),
-  kdfParallelism: z.number().int().gte(1),
-  kdfAlgVersion: z.literal(0x13),
+  kdfMemoryKib: z.number().int().gte(8192).default(65536),
+  kdfIterations: z.number().int().gte(1).default(3),
+  kdfParallelism: z.number().int().gte(1).default(1),
+  kdfAlgVersion: z.literal(0x13).default(0x13),
 });
 export type User = z.infer<typeof UserSchema>;
 

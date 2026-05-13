@@ -353,7 +353,7 @@ describe('syncEngine', () => {
     expect(mocks.crypto.verifyManifestWithEpoch).not.toHaveBeenCalled();
     expect(mocks.crypto.decryptManifestWithEpoch).not.toHaveBeenCalled();
     expect(mocks.db.insertManifests).not.toHaveBeenCalled();
-    expect(mocks.db.setAlbumVersion).toHaveBeenCalledWith('album-1', 1);
+    expect(mocks.db.setAlbumVersion).toHaveBeenCalledWith('album-1', 0);
   });
 
   it('rejects empty signer pubkeys from the server', async () => {
@@ -444,6 +444,6 @@ describe('syncEngine', () => {
       expect.objectContaining({ albumId: 'album-1', manifestId: 'manifest-1' }),
     );
     expect(mocks.db.insertManifests).not.toHaveBeenCalled();
-    expect(mocks.db.setAlbumVersion).toHaveBeenCalledWith('album-1', 1);
+    expect(mocks.db.setAlbumVersion).toHaveBeenCalledWith('album-1', 0);
   });
 });

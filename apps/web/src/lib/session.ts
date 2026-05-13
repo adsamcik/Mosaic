@@ -139,6 +139,15 @@ const LEGACY_SALT_ENCRYPTION_PBKDF2_ITERATIONS = 100000;
 
 type SessionListener = () => void;
 
+function defaultKdfProfile(): Argon2Params {
+  return parseServerArgon2Params({
+    memoryKib: 64 * 1024,
+    iterations: 3,
+    parallelism: 1,
+    algVersion: 0x13,
+  });
+}
+
 function legacyAccountSaltFromUserId(userId: string): Uint8Array {
   const userIdBytes = new TextEncoder().encode(userId).slice(0, 16);
   const accountSalt = new Uint8Array(16);
@@ -160,6 +169,15 @@ function resolveAccountSalt(user: User): Uint8Array {
 }
 
 function resolveKdfProfile(user: User): Argon2Params {
+  if (
+    user.kdfMemoryKib === undefined ||
+    user.kdfIterations === undefined ||
+    user.kdfParallelism === undefined ||
+    user.kdfAlgVersion === undefined
+  ) {
+    return defaultKdfProfile();
+  }
+
   return parseServerArgon2Params({
     memoryKib: user.kdfMemoryKib,
     iterations: user.kdfIterations,
@@ -413,7 +431,7 @@ export async function encryptSalt(
   salt: Uint8Array,
   password: string,
   username: string,
-  argon2Params: Argon2Params,
+  argon2Params: Argon2Params = defaultKdfProfile(),
 ): Promise<{ encryptedSalt: string; saltNonce: string }> {
   const key = await deriveSaltEncryptionKeyV2(password, username, argon2Params);
 
@@ -450,7 +468,7 @@ export async function decryptSalt(
   saltNonceBase64: string,
   password: string,
   username: string,
-  argon2Params: Argon2Params,
+  argon2Params: Argon2Params = defaultKdfProfile(),
 ): Promise<Uint8Array> {
   const envelope = fromBase64(encryptedSaltBase64);
   const nonce = fromBase64(saltNonceBase64);

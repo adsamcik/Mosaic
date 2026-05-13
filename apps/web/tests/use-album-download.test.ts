@@ -270,7 +270,7 @@ describe('useAlbumDownload', () => {
 
       const state = readState();
       expect(state.hasError).toBe(true);
-      expect(state.errorMessage).toBe('Network failure');
+      expect(state.errorMessage).toBe('Failed to download album');
       expect(state.isDownloading).toBe(false);
       cleanup();
     });
@@ -287,7 +287,7 @@ describe('useAlbumDownload', () => {
 
       const state = readState();
       expect(state.hasError).toBe(true);
-      expect(state.errorMessage).toBe('string error');
+      expect(state.errorMessage).toBe('Failed to download album');
       cleanup();
     });
 

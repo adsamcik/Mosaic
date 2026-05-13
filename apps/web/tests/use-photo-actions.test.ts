@@ -28,11 +28,18 @@ const mocks = vi.hoisted(() => ({
 
 // Mock dependencies
 vi.mock('../src/lib/api', () => ({
+  ApiError: class ApiError extends Error {},
   getApi: () => mocks.api,
 }));
 
 vi.mock('../src/lib/db-client', () => ({
   getDbClient: vi.fn().mockResolvedValue(mocks.dbClient),
+}));
+
+vi.mock('../src/lib/content-hash', () => ({
+  ContentHashDedup: class ContentHashDedup {
+    deleteByPhotoId = vi.fn(async () => undefined);
+  },
 }));
 
 vi.mock('../src/lib/photo-service', () => ({
@@ -155,7 +162,7 @@ describe('usePhotoActions', () => {
 
       expect(caught).toBe(true);
       expect(caughtError).toBeInstanceOf(PhotoDeleteError);
-      expect((caughtError as PhotoDeleteError).message).toBe('Server error');
+      expect((caughtError as PhotoDeleteError).message).toBe('Failed to delete photo');
 
       // After error, isDeleting should be false
       rerender();
@@ -182,7 +189,7 @@ describe('usePhotoActions', () => {
 
       expect(caught).toBe(true);
       expect(caughtError).toBeInstanceOf(PhotoDeleteError);
-      expect((caughtError as PhotoDeleteError).message).toBe('DB error');
+      expect((caughtError as PhotoDeleteError).message).toBe('Failed to delete photo');
       // API was called first
       expect(mocks.api.deleteManifest).toHaveBeenCalled();
 

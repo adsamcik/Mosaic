@@ -9,7 +9,12 @@ import org.mosaic.android.main.picker.PhotoPickerStagingAdapter
 import org.mosaic.android.main.staging.StagedFile
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class RustContentHasherTest {
   @Test
   fun sha256HexMatchesStandardVectors() {
@@ -87,7 +92,8 @@ class RustContentHasherTest {
   }
 
   private fun repoRoot(): File {
-    var current = File(System.getProperty("user.dir")).absoluteFile
+    val userDir = System.getProperty("user.dir") ?: error("user.dir system property is not set")
+    var current = File(userDir).absoluteFile
     while (true) {
       if (current.resolve("tests/vectors/content_hash_dedup.json").isFile) {
         return current

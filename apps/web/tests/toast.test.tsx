@@ -419,7 +419,7 @@ describe('useErrorToast', () => {
     
     expect(toastApi!.toasts).toHaveLength(1);
     expect(toastApi!.toasts[0].type).toBe('error');
-    expect(toastApi!.toasts[0].message).toBe('Something went wrong');
+    expect(toastApi!.toasts[0].message).toBe('An unexpected error occurred. Please try again.');
   });
 
   it('withErrorToast should include prefix in error message', async () => {
@@ -445,7 +445,7 @@ describe('useErrorToast', () => {
       await wrapped();
     });
     
-    expect(toastApi!.toasts[0].message).toBe('Failed to save: Network timeout');
+    expect(toastApi!.toasts[0].message).toBe('Failed to save: An unexpected error occurred');
   });
 
   it('withErrorToast should return value on success', async () => {

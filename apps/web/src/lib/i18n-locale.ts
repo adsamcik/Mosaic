@@ -1,3 +1,4 @@
+import i18next from 'i18next';
 import i18n from './i18n';
 
 /**
@@ -10,5 +11,5 @@ import i18n from './i18n';
  * app's chosen language rather than the browser's navigator.language.
  */
 export function getActiveLocale(): string {
-  return i18n.resolvedLanguage ?? i18n.language ?? 'en';
+  return i18next.resolvedLanguage ?? i18next.language ?? i18n.resolvedLanguage ?? i18n.language ?? 'en';
 }

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runPerFileFinalizer, type PerFileFinalizerDeps, type PerFileSaveSink } from '../per-file-finalizer';
+import { PartialExportError } from '../zip-finalizer';
 import type { PerFileStrategy } from '../../types';
 
 const loggerMocks = vi.hoisted(() => ({
@@ -76,7 +77,9 @@ describe('runPerFileFinalizer', () => {
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error('cancelled'))
       .mockResolvedValueOnce(undefined);
-    await runPerFileFinalizer({ jobId: 'job-1', entries }, 'fsAccessPerFile', deps, new AbortController().signal);
+    await expect(
+      runPerFileFinalizer({ jobId: 'job-1', entries }, 'fsAccessPerFile', deps, new AbortController().signal),
+    ).rejects.toBeInstanceOf(PartialExportError);
     expect(sink.writeOne).toHaveBeenCalledTimes(3);
     expect(sink.finalize).toHaveBeenCalledTimes(1);
     expect(deps.recordPhotoFailure).toHaveBeenCalledWith('job-1', 'photo-02', 'IllegalState');
@@ -108,4 +111,3 @@ describe('runPerFileFinalizer', () => {
     expect(sink.writeOne).not.toHaveBeenCalled();
   });
 });
-

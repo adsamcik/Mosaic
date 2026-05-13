@@ -49,6 +49,36 @@ export async function disposeDownloadManager(): Promise<void> {
 }
 
 async function createDownloadManager(): Promise<Comlink.Remote<CoordinatorWorkerApi>> {
+  if (typeof Worker === 'undefined' && import.meta.env.MODE === 'test') {
+    const noopSubscription = { unsubscribe: async () => undefined };
+    return {
+      initialize: async () => ({ reconstructedJobs: 0 }),
+      startJob: async () => ({ jobId: '00000000000000000000000000000000' }),
+      sendEvent: async () => ({ phase: 'Cancelled' }),
+      pauseJob: async () => ({ phase: 'Paused' }),
+      resumeJob: async () => ({ phase: 'Running' }),
+      rebindJobSource: async () => undefined,
+      cancelJob: async () => ({ phase: 'Cancelled' }),
+      listJobs: async () => [],
+      listResumableJobs: async () => [],
+      computeAlbumDiff: async () => ({
+        removed: [],
+        added: [],
+        rekeyed: [],
+        unchanged: [],
+        shardChanged: [],
+      }),
+      getJob: async () => null,
+      subscribe: async () => noopSubscription,
+      gc: async () => ({ purged: [] }),
+      clear: async () => undefined,
+      setSaveTargetProvider: async () => undefined,
+      forceStartJob: async () => undefined,
+      updateJobSchedule: async () => undefined,
+      subscribeToThumbnails: async () => noopSubscription,
+    } as unknown as Comlink.Remote<CoordinatorWorkerApi>;
+  }
+
   worker = new Worker(new URL('../workers/coordinator.worker.ts', import.meta.url), {
     type: 'module',
     name: 'mosaic-download-coordinator-worker',
@@ -68,5 +98,4 @@ async function createDownloadManager(): Promise<Comlink.Remote<CoordinatorWorker
   api = remote;
   return remote;
 }
-
 
