@@ -9,7 +9,12 @@ import initRustWasm, {
 import { toArrayBufferView } from './buffer-utils';
 import { clearAllCovers } from './album-cover-service';
 import { clearAllCachedMetadata } from './album-metadata-service';
-import { fromBase64, getApi, toBase64 } from './api';
+import {
+  fromBase64,
+  getApi,
+  toBase64,
+  type SessionExpiredReason,
+} from './api';
 import { clearPlaceholderCache } from './thumbhash-decoder';
 import { clearPhotoCache } from './photo-service';
 import type { User } from './api-types';
@@ -97,6 +102,8 @@ const USER_SALT_KEY = 'mosaic:userSalt';
 
 /** Session state stored in sessionStorage for page reload detection */
 const SESSION_STATE_KEY = 'mosaic:sessionState';
+
+export { subscribeToSessionExpired } from './api';
 
 /**
  * Salt-encryption envelope format.
@@ -482,6 +489,7 @@ class SessionManager {
   private boundUploadActiveListener: (event: Event) => void;
   private settingsUnsubscribe: (() => void) | null = null;
   private uploadInProgress = false;
+  private sessionExpiredHandled = false;
 
   /**
    * Concurrency guard for login-style entry points (M3).
@@ -528,7 +536,10 @@ class SessionManager {
     try {
       this.broadcast = new BroadcastChannel(SESSION_BROADCAST_CHANNEL);
       this.broadcast.addEventListener('message', (event: MessageEvent) => {
-        const data = event.data as { type?: string } | null | undefined;
+        const data = event.data as {
+          type?: string;
+          reason?: SessionExpiredReason;
+        } | null | undefined;
         if (data?.type === 'logout' && this._isLoggedIn) {
           // Another tab logged out — drop our state too. Pass
           // skipBroadcast to avoid a re-broadcast loop. Any error
@@ -537,6 +548,11 @@ class SessionManager {
           // logout to a global unhandled-rejection handler.
           this.logout({ skipBroadcast: true }).catch((error: unknown) => {
             log.warn('Cross-tab logout teardown failed', { error });
+          });
+        }
+        if (data?.type === 'session-expired') {
+          this.handleSessionExpired(data.reason ?? 'unknown', {
+            skipBroadcast: true,
           });
         }
       });
@@ -585,6 +601,70 @@ class SessionManager {
 
   private notify(): void {
     this.listeners.forEach((cb) => cb());
+  }
+
+  private markLoggedIn(): void {
+    this.sessionExpiredHandled = false;
+    this._isLoggedIn = true;
+    this.markSessionActive();
+    this.notify();
+  }
+
+  private clearSessionExpiredState(): void {
+    if (this.idleTimer !== null) {
+      this.clearIdleTimer();
+    }
+
+    if (this.settingsUnsubscribe) {
+      this.settingsUnsubscribe();
+      this.settingsUnsubscribe = null;
+    }
+
+    this.detachIdleListeners();
+    this.detachUploadActiveListener();
+    this.uploadInProgress = false;
+
+    clearAllCachedMetadata();
+    clearAllCovers();
+    clearPlaceholderCache();
+    clearPhotoCache();
+    syncCoordinator.dispose();
+    clearAllEpochKeys();
+    clearCacheEncryptionKey();
+    clearLinkKeyEncryption();
+
+    void closeDbClient().catch((error: unknown) => {
+      log.warn('Failed to close DB client after session expiry', { error });
+    });
+    void closeCryptoClient().catch((error: unknown) => {
+      log.warn('Failed to close crypto client after session expiry', { error });
+    });
+    closeGeoClient();
+
+    this._currentUser = null;
+    sessionStorage.removeItem(SESSION_STATE_KEY);
+    this._isLoggedIn = false;
+  }
+
+  handleSessionExpired(
+    reason: SessionExpiredReason = 'unknown',
+    options: { skipBroadcast?: boolean } = {},
+  ): void {
+    if (this.sessionExpiredHandled) {
+      return;
+    }
+    this.sessionExpiredHandled = true;
+
+    if (!options.skipBroadcast && this.broadcast) {
+      try {
+        this.broadcast.postMessage({ type: 'session-expired', reason });
+      } catch (error) {
+        log.warn('Failed to broadcast session expiry', { error });
+      }
+    }
+
+    this.clearSessionExpiredState();
+    this.notify();
   }
 
   /**
@@ -847,9 +927,7 @@ class SessionManager {
       const db = await getDbClient();
       await db.init(makeDbCryptoBridge(cryptoClient));
 
-      this._isLoggedIn = true;
-      this.markSessionActive();
-      this.notify();
+      this.markLoggedIn();
 
       // Cache keys for automatic restore on next reload
       await this.cacheSessionKeys(userSalt, accountSalt);
@@ -992,9 +1070,7 @@ class SessionManager {
       const db = await getDbClient();
       await db.init(makeDbCryptoBridge(cryptoClient));
 
-      this._isLoggedIn = true;
-      this.markSessionActive();
-      this.notify();
+      this.markLoggedIn();
 
       // Cache keys for automatic restore on next reload
       await this.cacheSessionKeys(userSalt, accountSalt);
@@ -1070,9 +1146,7 @@ class SessionManager {
       const db = await getDbClient();
       await db.init(makeDbCryptoBridge(cryptoClient));
 
-      this._isLoggedIn = true;
-      this.markSessionActive();
-      this.notify();
+      this.markLoggedIn();
 
       // Cache keys for automatic restore on next reload
       await this.cacheSessionKeys(userSalt, accountSalt);
@@ -1145,9 +1219,7 @@ class SessionManager {
       const db = await getDbClient();
       await db.init(makeDbCryptoBridge(cryptoClient));
 
-      this._isLoggedIn = true;
-      this.markSessionActive();
-      this.notify();
+      this.markLoggedIn();
 
       // Cache keys for automatic restore on next reload
       await this.cacheSessionKeys(userSalt, accountSalt);

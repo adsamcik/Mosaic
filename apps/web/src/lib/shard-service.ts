@@ -5,7 +5,7 @@
  * Handles network errors and supports progress callbacks.
  */
 
-import { ApiError, getApi } from './api';
+import { ApiError, getApi, handleUnauthorizedResponse } from './api';
 import { evictCachedShard, lookupCachedShardBytes } from './shard-cache';
 
 /**
@@ -74,6 +74,9 @@ export async function downloadShard(
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        await handleUnauthorizedResponse('cookie-expired');
+      }
       throw new ApiError(response.status, response.statusText);
     }
 

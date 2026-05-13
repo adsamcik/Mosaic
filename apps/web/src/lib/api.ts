@@ -178,6 +178,74 @@ export class ApiError extends Error {
   }
 }
 
+export type SessionExpiredReason =
+  | 'cookie-expired'
+  | 'server-revoked'
+  | 'unknown';
+
+type SessionExpiredListener = (reason: SessionExpiredReason) => void;
+
+const sessionExpiredListeners = new Set<SessionExpiredListener>();
+
+export function subscribeToSessionExpired(
+  listener: SessionExpiredListener,
+): () => void {
+  sessionExpiredListeners.add(listener);
+  return () => {
+    sessionExpiredListeners.delete(listener);
+  };
+}
+
+function emitSessionExpired(reason: SessionExpiredReason): void {
+  sessionExpiredListeners.forEach((listener) => listener(reason));
+}
+
+export async function handleUnauthorizedResponse(
+  reason: SessionExpiredReason = 'cookie-expired',
+): Promise<void> {
+  emitSessionExpired(reason);
+  try {
+    const { session } = await import('./session');
+    session.handleSessionExpired(reason);
+  } catch (error) {
+    log.warn('Failed to handle expired session', { error });
+  }
+}
+
+async function throwApiErrorForResponse(
+  response: Response,
+  options: { path?: string; clientCorrelationId?: string } = {},
+): Promise<never> {
+  const { body: errorBody, problem, correlationId } = await readApiError(response);
+  const resolvedCorrelationId = correlationId ?? options.clientCorrelationId;
+  if (response.status === 401) {
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(
+          new CustomEvent('mosaic:session-expired', {
+            detail: {
+              ...(options.path !== undefined ? { path: options.path } : {}),
+              ...(resolvedCorrelationId !== undefined
+                ? { correlationId: resolvedCorrelationId }
+                : {}),
+            },
+          }),
+        );
+      } catch {
+        // CustomEvent unavailable in some test environments — non-fatal.
+      }
+    }
+    await handleUnauthorizedResponse('cookie-expired');
+  }
+  throw new ApiError(
+    response.status,
+    response.statusText,
+    errorBody,
+    problem,
+    resolvedCorrelationId,
+  );
+}
+
 // =============================================================================
 // Request Helper
 // =============================================================================
@@ -252,34 +320,7 @@ async function apiRequest<T>(
   const response = await fetch(`${API_BASE}${path}`, init);
 
   if (!response.ok) {
-    const { body: errorBody, problem, correlationId } = await readApiError(response);
-    const resolvedCorrelationId = correlationId ?? clientCorrelationId;
-
-    // C4: tell any interested subscriber that the server returned 401.
-    // We do not auto-logout here — the session module owns that decision
-    // and is the only code path with the right cleanup ordering. The
-    // event is purely advisory: subscribers MUST verify they currently
-    // hold a session before reacting (login attempts that produce 401 on
-    // wrong-credentials must not be treated as expiry).
-    if (response.status === 401 && typeof window !== 'undefined') {
-      try {
-        window.dispatchEvent(
-          new CustomEvent('mosaic:session-expired', {
-            detail: { path, correlationId: resolvedCorrelationId },
-          }),
-        );
-      } catch {
-        // CustomEvent unavailable in some test environments — non-fatal.
-      }
-    }
-
-    throw new ApiError(
-      response.status,
-      response.statusText,
-      errorBody,
-      problem,
-      resolvedCorrelationId,
-    );
+    await throwApiErrorForResponse(response, { path, clientCorrelationId });
   }
 
   // Handle 204 No Content
@@ -660,14 +701,7 @@ export function createApiClient(): MosaicApi {
       });
 
       if (!response.ok) {
-        const { body: errorBody, problem, correlationId } = await readApiError(response);
-        throw new ApiError(
-          response.status,
-          response.statusText,
-          errorBody,
-          problem,
-          correlationId,
-        );
+        await throwApiErrorForResponse(response);
       }
 
       return new Uint8Array(await response.arrayBuffer());
@@ -785,14 +819,7 @@ export function createApiClient(): MosaicApi {
         `${API_BASE}/s/${encodeURIComponent(linkIdBase64)}/shards/${encodeURIComponent(shardId)}`,
       );
       if (!response.ok) {
-        const { body: errorBody, problem, correlationId } = await readApiError(response);
-        throw new ApiError(
-          response.status,
-          response.statusText,
-          errorBody,
-          problem,
-          correlationId,
-        );
+        await throwApiErrorForResponse(response);
       }
       return response.arrayBuffer();
     },
