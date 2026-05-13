@@ -20,6 +20,7 @@ public partial class CombinedAuthMiddleware
     private readonly bool _proxyAuthEnabled;
     private readonly List<IPNetwork> _trustedNetworks;
     private readonly bool _testSeedEnabled;
+    private readonly IWebHostEnvironment _environment;
     private readonly ILogger<CombinedAuthMiddleware> _logger;
 
     // Session sliding window: 7 days
@@ -52,6 +53,7 @@ public partial class CombinedAuthMiddleware
     {
         _next = next;
         _logger = logger;
+        _environment = environment;
 
         var authConfiguration = AuthConfigurationResolver.Resolve(config);
         _localAuthEnabled = authConfiguration.LocalAuthEnabled;
@@ -181,6 +183,7 @@ public partial class CombinedAuthMiddleware
         {
             session.LastSeenAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
+            RefreshSessionCookie(context, tokenBase64);
         }
 
         // Set user identity in HttpContext
@@ -190,6 +193,25 @@ public partial class CombinedAuthMiddleware
         context.Items["AuthUser"] = session.User;
 
         return true;
+    }
+
+    private void RefreshSessionCookie(HttpContext context, string tokenBase64)
+    {
+        if (context.Response.HasStarted)
+        {
+            return;
+        }
+
+        var isSecure = !_environment.IsDevelopment() &&
+                       !_environment.EnvironmentName.Equals("Testing", StringComparison.OrdinalIgnoreCase);
+        context.Response.Cookies.Append("mosaic_session", tokenBase64, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = isSecure,
+            SameSite = isSecure ? SameSiteMode.Strict : SameSiteMode.Lax,
+            Path = "/api",
+            MaxAge = SessionSlidingExpiry
+        });
     }
 
     private bool TryProxyAuth(HttpContext context)
