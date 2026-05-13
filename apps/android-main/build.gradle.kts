@@ -115,8 +115,8 @@ android {
     applicationId = "org.mosaic.android.main"
     minSdk = 26
     targetSdk = 35
-    versionCode = 1
-    versionName = "0.1.0"
+    versionCode = (project.findProperty("mosaicVersionCode") as String?)?.toInt() ?: 1
+    versionName = project.findProperty("mosaicVersionName") as String? ?: "0.1.0-dev"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

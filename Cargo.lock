@@ -634,7 +634,7 @@ dependencies = [
 
 [[package]]
 name = "mosaic-client"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "blake2",
  "ciborium",
@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "mosaic-crypto"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "argon2",
  "blake2",
@@ -672,7 +672,7 @@ dependencies = [
 
 [[package]]
 name = "mosaic-domain"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "mosaic-media",
  "regex",
@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "mosaic-media"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "mosaic-domain",
  "zeroize",
@@ -688,7 +688,7 @@ dependencies = [
 
 [[package]]
 name = "mosaic-parity-tests"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "ciborium",
  "mosaic-client",
@@ -704,7 +704,7 @@ dependencies = [
 
 [[package]]
 name = "mosaic-uniffi"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "blake2",
  "blake3",
@@ -723,7 +723,7 @@ dependencies = [
 
 [[package]]
 name = "mosaic-vectors"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "mosaic-crypto",
  "mosaic-domain",
@@ -734,7 +734,7 @@ dependencies = [
 
 [[package]]
 name = "mosaic-wasm"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "blake2",
  "ciborium",
