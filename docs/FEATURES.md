@@ -687,6 +687,28 @@ contentKey = HKDF-SHA256(epochKey.readKey, "mosaic-album-content-v1")
 
 ## UI/UX Features
 
+### Cross-Origin Isolation Guard
+
+**Purpose:** Show a clear startup error when the browser cannot provide cross-origin isolation required for client-side encryption.
+
+**Implementation:**
+| Layer | Location |
+|-------|----------|
+| Frontend | `apps/web/src/main.tsx` |
+| Frontend | `apps/web/src/boot-app.tsx` |
+| Frontend | `apps/web/src/lib/cross-origin-isolation.ts` |
+| Frontend | `apps/web/src/components/Errors/CrossOriginIsolationRequired.tsx` |
+
+**Features:**
+- Checks `window.crossOriginIsolated` before loading React, workers, WASM, IndexedDB, or SQLite.
+- Renders a self-contained browser-support page for unsupported browsers such as Safari 16.4-17.3.
+- Documents Safari 17.4+, Chrome 102+, Firefox 111+, or Edge 102+ as the required browser baseline.
+
+**Tests:**
+- Frontend: `apps/web/src/lib/__tests__/cross-origin-isolation.test.ts`
+
+---
+
 ### Privacy Class Metadata Error Banner
 
 **Purpose:** Show a clear upload/decode error when a sidecar decoder rejects a forbidden metadata field.
@@ -1070,6 +1092,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-05-13 | Cross-Origin Isolation Guard | Added | Web startup now blocks unsupported non-isolated browsers before loading WASM/workers and shows Safari 17.4+/Chrome 102+/Firefox 111+/Edge 102+ guidance |
 | 2026-05-13 | Web production-readiness blockers (B1-B5) | Fixed | (B1) Drop plaintext album name from log in `SharedAlbumViewer` (ZK leak); (B2) Wire `DownloadResumePrompt` to a real `CurrentAlbumManifest` projected from local DB via new `lib/album-manifest-source.ts` with 6 unit tests, replaces placeholder empty manifest; (B3) Remove 5 dead `as any` casts at the `EpochHandleId` crypto boundary in `useShareLinks`/`epoch-key-store`/`epoch-rotation-service`; (B4) Re-encode mojibake in `cs.json` + `en.json` `download.modePicker` strings to proper UTF-8; (B5) Install & configure ESLint flat config (`eslint.config.js`) with TypeScript + react-hooks v7 + retired-`@mosaic/crypto`-imports ban; clean up 6 unused eslint-disable directives, useless try/catch in `local-auth.ts`, `this`-aliasing in `coordinator.worker.ts`, irregular-whitespace bug in `VisitorDownloadDisclosure.tsx`, unused `PhotoMeta` import in `crypto.worker.ts` |
 | 2026-05-10 | Content-hash upload-time dedup | Added | SHA-256 of source plaintext bytes; client-local dedup table; cross-device dedup explicitly deferred to v2 |
 | 2026-05-10 | Tus shard SHA-256 advisory-only | Modified | Tus shard checksums are client-supplied advisory metadata only; backend does not enforce plaintext-derived hashes |

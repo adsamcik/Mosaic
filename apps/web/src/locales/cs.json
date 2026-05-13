@@ -39,6 +39,16 @@
   "a11y": {
     "skipToMain": "Přeskočit na hlavní obsah"
   },
+  "errors": {
+    "crossOriginIsolation": {
+      "title": "Je vyžadována aktualizace prohlížeče",
+      "eyebrow": "Mosaic nelze spustit",
+      "message": "Váš prohlížeč nepodporuje izolaci mezi původy, kterou Mosaic vyžaduje pro šifrování na straně klienta.",
+      "details": "Mosaic potřebuje Safari 17.4+ (vydáno 2024-03), Chrome 102+, Firefox 111+ nebo Edge 102+, aby bylo možné bezpečně inicializovat SharedArrayBuffer, WebAssembly a šifrované lokální úložiště.",
+      "help": "Pokud již používáte podporovaný prohlížeč, požádejte správce, aby ověřil, že jsou přítomny hlavičky Cross-Origin-Opener-Policy a Cross-Origin-Embedder-Policy.",
+      "openDocumentation": "Otevřít dokumentaci"
+    }
+  },
   "auth": {
     "checkingSession": "Kontrola relace...",
     "welcomeBack": "Vítejte zpět! Zadejte heslo pro pokračování.",
@@ -892,4 +902,3 @@
     }
   }
 }
-

@@ -39,6 +39,16 @@
   "a11y": {
     "skipToMain": "Skip to main content"
   },
+  "errors": {
+    "crossOriginIsolation": {
+      "title": "Browser upgrade required",
+      "eyebrow": "Mosaic cannot start",
+      "message": "Your browser doesn't support cross-origin isolation, which Mosaic requires for client-side encryption.",
+      "details": "Mosaic needs Safari 17.4+ (released 2024-03), Chrome 102+, Firefox 111+, or Edge 102+ so SharedArrayBuffer, WebAssembly, and encrypted local storage can initialize safely.",
+      "help": "If you are already using a supported browser, ask your administrator to verify that Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers are present.",
+      "openDocumentation": "Open documentation"
+    }
+  },
   "auth": {
     "checkingSession": "Checking session...",
     "welcomeBack": "Welcome back! Enter your password to continue.",
@@ -880,4 +890,3 @@
     }
   }
 }
-
