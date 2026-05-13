@@ -11,12 +11,12 @@ use chacha20poly1305::{
 use ed25519_dalek::{Signature as Ed25519Signature, Signer, SigningKey, VerifyingKey};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
+pub use mosaic_domain::streaming_frame_nonce;
 use mosaic_domain::{
     SHARD_ENVELOPE_HEADER_LEN, SHARD_ENVELOPE_MAGIC, SHARD_ENVELOPE_VERSION,
     SHARD_ENVELOPE_VERSION_V04, STREAMING_SHARD_ENVELOPE_HEADER_LEN, STREAMING_SHARD_FRAME_SIZE,
     STREAMING_SHARD_SALT_LEN, ShardEnvelopeHeader, ShardTier, StreamingShardEnvelopeHeader,
 };
-pub use mosaic_domain::streaming_frame_nonce;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use unicode_normalization::UnicodeNormalization;
