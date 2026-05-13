@@ -129,8 +129,8 @@ async function readApiError(
   problem?: ProblemDetailsBody;
   correlationId?: string;
 }> {
-  const contentType = response.headers.get('content-type') ?? '';
-  const correlationId = response.headers.get('x-correlation-id') ?? undefined;
+  const contentType = response.headers?.get('content-type') ?? '';
+  const correlationId = response.headers?.get('x-correlation-id') ?? undefined;
   const body = await response.text().catch(() => undefined);
   let problem: ProblemDetailsBody | undefined;
 
