@@ -217,13 +217,15 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
     [Fact]
     public async Task TtlHardCutoff_ClosesActiveRoom()
     {
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero));
         // Tight TTL: even with traffic, the room MUST be force-closed at the deadline.
         await using var factory = new Factory(opts =>
         {
             opts.RoomTtl = TimeSpan.FromSeconds(1);
-            opts.SweepInterval = TimeSpan.FromMilliseconds(250);
-        });
+            opts.SweepInterval = TimeSpan.FromMilliseconds(100);
+        }, timeProvider);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var http = factory.CreateClient();
         var roomId = NewRoomId();
 
         var wsClient = factory.Server.CreateWebSocketClient();
@@ -231,39 +233,23 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
         var a = await wsClient.ConnectAsync(uri, cts.Token);
         var b = await wsClient.ConnectAsync(uri, cts.Token);
 
-        // Generate background traffic so we prove the cutoff is wall-clock, not idle-based.
-        var trafficCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
-        var traffic = Task.Run(async () =>
-        {
-            try
-            {
-                while (!trafficCts.IsCancellationRequested && a.State == WebSocketState.Open)
-                {
-                    await SendBinaryAsync(a, new byte[] { 0xAB }, trafficCts.Token);
-                    await Task.Delay(50, trafficCts.Token);
-                }
-            }
-            catch { /* expected on close */ }
-        }, trafficCts.Token);
+        // Send traffic before the TTL so the cutoff is proven independent of idleness.
+        await SendBinaryAsync(a, new byte[] { 0xAB }, cts.Token);
+        var (_, relayedType, _) = await ReceiveOnceAsync(b, ct: cts.Token);
+        Assert.Equal(WebSocketMessageType.Binary, relayedType);
 
-        // Drain b until close.
-        var observedClose = false;
-        var deadline = DateTime.UtcNow.AddSeconds(8);
-        while (DateTime.UtcNow < deadline)
-        {
-            try
-            {
-                var (_, type, _) = await ReceiveOnceAsync(b, ct: cts.Token);
-                if (type == WebSocketMessageType.Close) { observedClose = true; break; }
-            }
-            catch (WebSocketException) { observedClose = true; break; }
-        }
+        var closeTask = ReceiveUntilCloseAsync(b, cts.Token);
+        await Task.Yield();
+        await AdvanceUntilAsync(
+            () => closeTask.IsCompleted,
+            timeProvider,
+            TimeSpan.FromMilliseconds(50),
+            TimeSpan.FromSeconds(5));
 
-        trafficCts.Cancel();
-        try { await traffic; } catch { }
         a.Dispose();
         b.Dispose();
 
+        var observedClose = await closeTask;
         Assert.True(observedClose, "expected room to be force-closed at TTL");
     }
 
@@ -314,7 +300,11 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
 
         timeProvider.Advance(TimeSpan.FromSeconds(2));
 
-        await WaitUntilAsync(() => GetRateLimitBucketCount(limiter) == 0, TimeSpan.FromSeconds(5));
+        await AdvanceUntilAsync(
+            () => GetRateLimitBucketCount(limiter) == 0,
+            timeProvider,
+            TimeSpan.FromMilliseconds(100),
+            TimeSpan.FromSeconds(5));
         Assert.Equal(0, GetRateLimitBucketCount(limiter));
     }
 
@@ -333,20 +323,47 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
         Assert.Equal("rateLimiter", ex.ParamName);
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    private static async Task<bool> ReceiveUntilCloseAsync(WebSocket ws, CancellationToken ct)
     {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
+        while (true)
+        {
+            try
+            {
+                var (_, type, _) = await ReceiveOnceAsync(ws, ct: ct);
+                if (type == WebSocketMessageType.Close)
+                {
+                    return true;
+                }
+            }
+            catch (WebSocketException) { return true; }
+            catch (IOException) { return true; }
+            catch (ObjectDisposedException) { return true; }
+        }
+    }
+
+    private static async Task AdvanceUntilAsync(
+        Func<bool> condition,
+        FakeTimeProvider timeProvider,
+        TimeSpan step,
+        TimeSpan maxAdvance)
+    {
+        var advanced = TimeSpan.Zero;
+        while (advanced < maxAdvance)
         {
             if (condition())
             {
                 return;
             }
 
-            await Task.Delay(10);
+            timeProvider.Advance(step);
+            advanced += step;
+            for (var i = 0; i < 5; i++)
+            {
+                await Task.Yield();
+            }
         }
 
-        Assert.True(condition(), "condition was not met before the timeout elapsed");
+        Assert.True(condition(), $"condition was not met after advancing fake time by {maxAdvance}");
     }
 
     private static int GetRateLimitBucketCount(SidecarRateLimiter limiter)
