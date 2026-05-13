@@ -278,7 +278,7 @@ public class TestSeedController : ControllerBase
     /// <response code="200">User was promoted to admin.</response>
     /// <response code="404">Environment is not Development/Testing or user not found.</response>
     [HttpPost("promote-admin/{email}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<PromoteAdminResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> PromoteAdmin(string email)
     {
@@ -298,7 +298,7 @@ public class TestSeedController : ControllerBase
 
         _logger.LogInformation("Promoted E2E test user to admin: {UserId}", user.Id);
 
-        return Ok(new { email = user.AuthSub, isAdmin = true });
+        return Ok(new PromoteAdminResponse(user.AuthSub, true));
     }
 
     /// <summary>

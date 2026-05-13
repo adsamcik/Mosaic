@@ -354,7 +354,7 @@ public class ShareLinkAccessController : ControllerBase
             .ToList();
 
         Response.AddPaginationHeaders(skip, take, totalCount);
-        return Ok(PagedResult.Create(photos, skip, take));
+        return Ok(PagedResult.Create(photos, skip, take, totalCount));
     }
 
     /// <summary>

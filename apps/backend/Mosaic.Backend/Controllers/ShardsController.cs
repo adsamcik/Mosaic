@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Mosaic.Backend.Models.Shards;
 using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
@@ -79,7 +80,7 @@ public class ShardsController : ControllerBase
     /// Get shard metadata
     /// </summary>
     [HttpGet("{shardId}/meta")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ShardMetadataResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetMeta(Guid shardId)
     {
         if (HttpContext.Items["AuthSub"] is not string)
@@ -112,14 +113,12 @@ public class ShardsController : ControllerBase
             return Forbid();
         }
 
-        return Ok(new
-        {
+        return Ok(new ShardMetadataResponse(
             shard.Id,
             shard.SizeBytes,
             shard.Status,
             shard.StatusUpdatedAt,
-            shard.Sha256
-        });
+            shard.Sha256));
     }
 
     private Task<bool> HasMemberReferenceAsync(Guid shardId, Guid userId)

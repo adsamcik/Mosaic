@@ -1121,7 +1121,7 @@ paths:
         - name: Upload-Metadata
           in: header
           required: true
-          description: Comma-separated Tus metadata including `content-sha256 <base64-value>`.
+          description: Comma-separated Tus metadata including `content-sha256 <base64-value>`, where the value is base64 of a 64-character lowercase hex SHA-256 digest.
           schema: { type: string }
       responses:
         '201':

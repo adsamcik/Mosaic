@@ -77,7 +77,7 @@ public class AdminAlbumsController : ControllerBase
         )).ToList();
 
         Response.AddPaginationHeaders(skip, take, totalCount);
-        return Ok(PagedResult.Create(result, skip, take));
+        return Ok(PagedResult.Create(result, skip, take, totalCount));
     }
 
     /// <summary>

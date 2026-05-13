@@ -62,8 +62,8 @@ public class GlobalExceptionMiddleware
                 ? "Authentication required"
                 : "An unexpected error occurred",
             Detail = statusCode == HttpStatusCode.Unauthorized
-                ? "Authentication required"
-                : "An unexpected error occurred"
+                ? "A valid session or trusted proxy identity is required to access this resource."
+                : "The request failed due to an unexpected server error. Provide the correlationId when reporting this issue."
         };
         response.Extensions["correlationId"] = correlationId;
 

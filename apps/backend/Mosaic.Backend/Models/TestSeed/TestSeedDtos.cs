@@ -53,6 +53,13 @@ public record CreateUserResponse(
 public record ErrorResponse(string Error);
 
 /// <summary>
+/// Response for the promote-admin endpoint.
+/// </summary>
+/// <param name="Email">The promoted user's email/AuthSub.</param>
+/// <param name="IsAdmin">Whether the user is now an admin.</param>
+public record PromoteAdminResponse(string Email, bool IsAdmin);
+
+/// <summary>
 /// Request for the create-authenticated-user endpoint.
 /// Creates a user with full crypto setup and returns a session cookie.
 /// </summary>

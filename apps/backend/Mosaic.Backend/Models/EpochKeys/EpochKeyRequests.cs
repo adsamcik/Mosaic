@@ -11,6 +11,16 @@ public record CreateEpochKeyRequest(
     [MaxLength(64)] byte[] SignPubkey
 );
 
+public record EpochKeyResponse(
+    Guid Id,
+    Guid AlbumId,
+    int EpochId,
+    byte[] EncryptedKeyBundle,
+    byte[] OwnerSignature,
+    byte[] SharerPubkey,
+    byte[] SignPubkey,
+    DateTime CreatedAt);
+
 /// <summary>
 /// Wrapped key for a share link at a specific tier
 /// </summary>

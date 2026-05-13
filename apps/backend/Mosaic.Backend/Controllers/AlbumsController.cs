@@ -87,7 +87,7 @@ public class AlbumsController : ControllerBase
             .ToListAsync();
 
         Response.AddPaginationHeaders(skip, take, totalCount);
-        return Ok(PagedResult.Create(albums, skip, take));
+        return Ok(PagedResult.Create(albums, skip, take, totalCount));
     }
 
     /// <summary>
@@ -295,7 +295,7 @@ public class AlbumsController : ControllerBase
     /// Update album expiration settings (owner only)
     /// </summary>
     [HttpPatch("{albumId:guid}/expiration")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<AlbumExpirationUpdateResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateExpiration(Guid albumId, [FromBody] UpdateExpirationRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -345,20 +345,18 @@ public class AlbumsController : ControllerBase
             user.Id,
             HttpContext.GetCorrelationId());
 
-        return Ok(new
-        {
+        return Ok(new AlbumExpirationUpdateResponse(
             album.Id,
             album.ExpiresAt,
             album.ExpirationWarningDays,
-            UpdatedAt = updatedAt
-        });
+            updatedAt));
     }
 
     /// <summary>
     /// Update photo expiration settings through the album-scoped route.
     /// </summary>
     [HttpPatch("{albumId:guid}/photos/{photoId:guid}/expiration")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<PhotoExpirationUpdateResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdatePhotoExpiration(
         Guid albumId,
         Guid photoId,
@@ -404,13 +402,11 @@ public class AlbumsController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        return Ok(new
-        {
-            Id = manifest.Id,
+        return Ok(new PhotoExpirationUpdateResponse(
+            manifest.Id,
             manifest.ExpiresAt,
             manifest.VersionCreated,
-            UpdatedAt = now
-        });
+            now));
     }
 
     /// <summary>
@@ -510,7 +506,7 @@ public class AlbumsController : ControllerBase
     /// </summary>
     [HttpGet("{albumId}/photos")]
     [HttpGet("/api/shared/{albumId}/photos")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<PagedResult<PhotoResponse>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetPhotos(Guid albumId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
         skip = Math.Max(0, skip);
@@ -560,7 +556,7 @@ public class AlbumsController : ControllerBase
             .ToList();
 
         Response.AddPaginationHeaders(skip, take, totalCount);
-        return Ok(PagedResult.Create(photos, skip, take));
+        return Ok(PagedResult.Create(photos, skip, take, totalCount));
     }
 
     /// <summary>
@@ -621,7 +617,7 @@ public class AlbumsController : ControllerBase
     /// Rename an album (update encrypted name). Members with edit access can rename.
     /// </summary>
     [HttpPatch("{albumId:guid}/name")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<AlbumRenameResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Rename(Guid albumId, [FromBody] RenameAlbumRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -665,19 +661,14 @@ public class AlbumsController : ControllerBase
             user.Id,
             HttpContext.GetCorrelationId());
 
-        return Ok(new
-        {
-            album.Id,
-            album.EncryptedName,
-            album.UpdatedAt
-        });
+        return Ok(new AlbumRenameResponse(album.Id, album.EncryptedName, album.UpdatedAt));
     }
 
     /// <summary>
     /// Update album description. Members with edit access can update.
     /// </summary>
     [HttpPatch("{albumId:guid}/description")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<AlbumDescriptionUpdateResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateDescription(Guid albumId, [FromBody] UpdateDescriptionRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -713,11 +704,6 @@ public class AlbumsController : ControllerBase
             user.Id,
             HttpContext.GetCorrelationId());
 
-        return Ok(new
-        {
-            album.Id,
-            album.EncryptedDescription,
-            album.UpdatedAt
-        });
+        return Ok(new AlbumDescriptionUpdateResponse(album.Id, album.EncryptedDescription, album.UpdatedAt));
     }
 }

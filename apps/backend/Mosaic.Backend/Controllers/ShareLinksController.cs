@@ -220,7 +220,7 @@ public class ShareLinksController : ControllerBase
             }).ToList();
 
         Response.AddPaginationHeaders(skip, take, shareLinks.Count);
-        return Ok(PagedResult.Create(links, skip, take));
+        return Ok(PagedResult.Create(links, skip, take, shareLinks.Count));
     }
 
     /// <summary>
@@ -287,7 +287,7 @@ public class ShareLinksController : ControllerBase
             .ToList();
 
         Response.AddPaginationHeaders(skip, take, links.Count);
-        return Ok(PagedResult.Create(page, skip, take));
+        return Ok(PagedResult.Create(page, skip, take, links.Count));
     }
 
     /// <summary>

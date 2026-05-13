@@ -79,12 +79,14 @@ public partial class CombinedAuthMiddleware
         {
             context.Response.StatusCode = 404;
             context.Response.ContentType = "application/problem+json";
-            await context.Response.WriteAsJsonAsync(new ProblemDetails
+            var problem = new ProblemDetails
             {
                 Status = StatusCodes.Status404NotFound,
                 Title = "Not found",
                 Detail = "Not found"
-            });
+            };
+            problem.Extensions["correlationId"] = context.GetCorrelationId();
+            await context.Response.WriteAsJsonAsync(problem);
             return;
         }
 
@@ -123,12 +125,14 @@ public partial class CombinedAuthMiddleware
         // No valid authentication found
         context.Response.StatusCode = 401;
         context.Response.ContentType = "application/problem+json";
-        await context.Response.WriteAsJsonAsync(new ProblemDetails
+        var authProblem = new ProblemDetails
         {
             Status = StatusCodes.Status401Unauthorized,
             Title = "Authentication required",
             Detail = "Authentication required"
-        });
+        };
+        authProblem.Extensions["correlationId"] = context.GetCorrelationId();
+        await context.Response.WriteAsJsonAsync(authProblem);
     }
 
     private async Task<bool> TryLocalAuthAsync(HttpContext context, MosaicDbContext db)

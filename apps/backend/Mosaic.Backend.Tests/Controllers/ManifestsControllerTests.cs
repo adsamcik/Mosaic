@@ -491,7 +491,7 @@ public class ManifestsControllerTests
         var result = await controller.UpdateMetadata(manifest.Id, request);
 
         var okResult = Assert.IsType<OkObjectResult>(result);
-        Assert.Equal(previousVersion + 1, GetResponseProperty<long>(okResult.Value, "versionCreated"));
+        Assert.Equal(previousVersion + 1, GetResponseProperty<long>(okResult.Value, "VersionCreated"));
 
         var updatedManifest = await db.Manifests.SingleAsync(m => m.Id == manifest.Id);
         var updatedAlbum = await db.Albums.SingleAsync(a => a.Id == album.Id);

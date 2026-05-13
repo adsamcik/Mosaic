@@ -400,7 +400,7 @@ public class ManifestsController : ControllerBase
     /// Update encrypted metadata for an existing manifest without changing shard references.
     /// </summary>
     [HttpPatch("{manifestId:guid}/metadata")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ManifestMetadataUpdateResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateMetadata(Guid manifestId, [FromBody] UpdateManifestMetadataRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -511,7 +511,7 @@ public class ManifestsController : ControllerBase
                 user.Id,
                 manifest.VersionCreated);
 
-            return Ok(new { id = manifest.Id, versionCreated = manifest.VersionCreated });
+            return Ok(new ManifestMetadataUpdateResponse(manifest.Id, manifest.VersionCreated));
         }
         catch
         {
@@ -524,7 +524,7 @@ public class ManifestsController : ControllerBase
     /// Update photo expiration settings. Album owners and editors can update photo lifecycle metadata.
     /// </summary>
     [HttpPatch("{manifestId:guid}/expiration")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ManifestExpirationUpdateResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateExpiration(Guid manifestId, [FromBody] UpdateManifestExpirationRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -574,12 +574,10 @@ public class ManifestsController : ControllerBase
         await _db.SaveChangesAsync();
         SetManifestETag(manifest);
 
-        return Ok(new
-        {
+        return Ok(new ManifestExpirationUpdateResponse(
             manifest.Id,
             manifest.ExpiresAt,
-            manifest.VersionCreated
-        });
+            manifest.VersionCreated));
     }
 
     /// <summary>

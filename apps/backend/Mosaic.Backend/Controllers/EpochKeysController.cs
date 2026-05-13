@@ -167,7 +167,7 @@ public class EpochKeysController : ControllerBase
     /// Get a specific epoch key
     /// </summary>
     [HttpGet("{keyId}")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<EpochKeyResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Get(Guid albumId, Guid keyId)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -186,8 +186,7 @@ public class EpochKeysController : ControllerBase
             return Forbid();
         }
 
-        return Ok(new
-        {
+        return Ok(new EpochKeyResponse(
             key.Id,
             key.AlbumId,
             key.EpochId,
@@ -195,8 +194,7 @@ public class EpochKeysController : ControllerBase
             key.OwnerSignature,
             key.SharerPubkey,
             key.SignPubkey,
-            key.CreatedAt
-        });
+            key.CreatedAt));
     }
 
 

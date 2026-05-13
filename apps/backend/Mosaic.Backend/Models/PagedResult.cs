@@ -8,4 +8,9 @@ public static class PagedResult
     {
         return new PagedResult<T>(items, items.Count == take ? skip + take : null);
     }
+
+    public static PagedResult<T> Create<T>(IReadOnlyList<T> items, int skip, int take, int totalCount)
+    {
+        return new PagedResult<T>(items, skip + items.Count < totalCount ? skip + items.Count : null);
+    }
 }

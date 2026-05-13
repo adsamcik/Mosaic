@@ -80,6 +80,10 @@ public sealed class ManifestFinalizeResponse
     public Guid Id => ManifestId;
 }
 
+public record ManifestMetadataUpdateResponse(Guid Id, long VersionCreated);
+
+public record ManifestExpirationUpdateResponse(Guid Id, DateTimeOffset? ExpiresAt, long VersionCreated);
+
 public record UpdateManifestExpirationRequest(DateTimeOffset? ExpiresAt);
 
 public record UpdateManifestMetadataRequest(

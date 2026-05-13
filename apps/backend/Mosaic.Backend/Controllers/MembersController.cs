@@ -68,7 +68,7 @@ public class MembersController : ControllerBase
             .ToListAsync();
 
         Response.AddPaginationHeaders(skip, take, totalCount);
-        return Ok(PagedResult.Create(members, skip, take));
+        return Ok(PagedResult.Create(members, skip, take, totalCount));
     }
 
 
