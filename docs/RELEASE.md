@@ -212,8 +212,8 @@ update.
    - Check the GitHub Release page for correct release notes
    - Verify Docker images are accessible:
      ```bash
-     docker pull ghcr.io/eivindholvik/mosaic-backend:0.0.1
-     docker pull ghcr.io/eivindholvik/mosaic-frontend:0.0.1
+     docker pull ghcr.io/adsamcik/mosaic-backend:0.0.1
+     docker pull ghcr.io/adsamcik/mosaic-frontend:0.0.1
      ```
 
 ### After Release
@@ -285,12 +285,12 @@ echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
 
 # Build and push manually
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/eivindholvik/mosaic-backend:0.0.1 \
+  -t ghcr.io/adsamcik/mosaic-backend:0.0.1 \
   -f apps/backend/Mosaic.Backend/Dockerfile \
   apps/backend/Mosaic.Backend --push
 
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/eivindholvik/mosaic-frontend:0.0.1 \
+  -t ghcr.io/adsamcik/mosaic-frontend:0.0.1 \
   -f apps/web/Dockerfile . --push
 ```
 

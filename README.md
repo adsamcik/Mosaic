@@ -281,19 +281,19 @@ This will:
 
 1. Run all tests (crypto, frontend, backend)
 2. Build multi-architecture Docker images (amd64, arm64)
-3. Push to `ghcr.io/eivindholvik/mosaic-backend` and `ghcr.io/eivindholvik/mosaic-frontend`
+3. Push to `ghcr.io/adsamcik/mosaic-backend` and `ghcr.io/adsamcik/mosaic-frontend`
 4. Create a GitHub Release with image digests
 
 ### Using Published Images
 
 ```bash
 # Pull the latest release
-docker pull ghcr.io/eivindholvik/mosaic-backend:latest
-docker pull ghcr.io/eivindholvik/mosaic-frontend:latest
+docker pull ghcr.io/adsamcik/mosaic-backend:latest
+docker pull ghcr.io/adsamcik/mosaic-frontend:latest
 
 # Or a specific version
-docker pull ghcr.io/eivindholvik/mosaic-backend:0.0.1
-docker pull ghcr.io/eivindholvik/mosaic-frontend:0.0.1
+docker pull ghcr.io/adsamcik/mosaic-backend:0.0.1
+docker pull ghcr.io/adsamcik/mosaic-frontend:0.0.1
 ```
 
 ## Browser Support
