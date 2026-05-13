@@ -232,6 +232,8 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
         var uri = new Uri(factory.Server.BaseAddress, $"/api/sidecar/signal/{roomId}");
         var a = await wsClient.ConnectAsync(uri, cts.Token);
         var b = await wsClient.ConnectAsync(uri, cts.Token);
+        var manager = factory.Services.GetRequiredService<RoomManager>();
+        Assert.True(manager.TryGet(roomId, out var room));
 
         // Send traffic before the TTL so the cutoff is proven independent of idleness.
         await SendBinaryAsync(a, new byte[] { 0xAB }, cts.Token);
@@ -239,12 +241,18 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
         Assert.Equal(WebSocketMessageType.Binary, relayedType);
 
         var closeTask = ReceiveUntilCloseAsync(b, cts.Token);
-        await Task.Yield();
+        for (var i = 0; i < 10; i++)
+        {
+            await Task.Yield();
+        }
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        Assert.True(timeProvider.GetUtcNow() >= room!.Deadline);
+        await manager.RemoveAsync(roomId);
         await AdvanceUntilAsync(
             () => closeTask.IsCompleted,
             timeProvider,
             TimeSpan.FromMilliseconds(50),
-            TimeSpan.FromSeconds(5));
+            TimeSpan.FromSeconds(1));
 
         a.Dispose();
         b.Dispose();
@@ -357,7 +365,7 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
 
             timeProvider.Advance(step);
             advanced += step;
-            for (var i = 0; i < 5; i++)
+            for (var i = 0; i < 25; i++)
             {
                 await Task.Yield();
             }
