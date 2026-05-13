@@ -289,6 +289,27 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+
+  /users/me/wrapped-key:
+    put:
+      operationId: updateCurrentUserWrappedKey
+      summary: Update current user's wrapped account key
+      description: Stores a client-wrapped account key blob for identity persistence; the server never sees plaintext keys.
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateWrappedKeyRequest' }
+      responses:
+        '200':
+          description: Wrapped key updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /users/{userId}:
     get:
       operationId: getUser
@@ -445,6 +466,205 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+
+  /albums/{albumId}/expiration:
+    patch:
+      operationId: updateAlbumExpiration
+      summary: Update album expiration
+      description: Updates encrypted album lifecycle metadata; no plaintext album data crosses the server boundary.
+      tags: [Albums]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateExpirationRequest' }
+      responses:
+        '200':
+          description: Album expiration updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlbumExpirationResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { description: Album expired }
+
+  /albums/{albumId}/photos/{photoId}/expiration:
+    patch:
+      operationId: updateAlbumPhotoExpiration
+      summary: Update photo expiration via album route
+      description: Updates lifecycle metadata for an encrypted photo manifest within an album.
+      tags: [Albums]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+        - name: photoId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateManifestExpirationRequest' }
+      responses:
+        '200':
+          description: Photo expiration updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManifestExpirationResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { description: Album or photo expired }
+
+  /albums/{albumId}/photos:
+    get:
+      operationId: listAlbumPhotos
+      summary: List album photos
+      description: Returns non-deleted, non-expired encrypted photo manifests for an authenticated album member.
+      tags: [Albums]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+        - $ref: '#/components/parameters/PageSkip'
+        - $ref: '#/components/parameters/PageTake'
+      responses:
+        '200':
+          description: Paged photo manifests
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PagedPhotos' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { description: Album expired }
+
+  /shared/{albumId}/photos:
+    get:
+      operationId: listSharedAlbumPhotos
+      summary: List shared album photos
+      description: Alias for listing encrypted photo manifests from albums shared with the current authenticated user.
+      tags: [Albums]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+        - $ref: '#/components/parameters/PageSkip'
+        - $ref: '#/components/parameters/PageTake'
+      responses:
+        '200':
+          description: Paged photo manifests
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PagedPhotos' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { description: Album expired }
+
+  /albums/{albumId}/name:
+    patch:
+      operationId: renameAlbum
+      summary: Update encrypted album name
+      description: Replaces the client-encrypted album name blob; the server never decrypts it.
+      tags: [Albums]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RenameAlbumRequest' }
+      responses:
+        '200':
+          description: Album name updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RenameAlbumResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /albums/{albumId}/description:
+    patch:
+      operationId: updateAlbumDescription
+      summary: Update encrypted album description
+      description: Replaces or clears the client-encrypted album description blob; the server never decrypts it.
+      tags: [Albums]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateDescriptionRequest' }
+      responses:
+        '200':
+          description: Album description updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpdateDescriptionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /albums/{albumId}/content:
+    get:
+      operationId: getAlbumContent
+      summary: Get encrypted album content document
+      description: Returns the opaque encrypted album story/content document for members.
+      tags: [Albums]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      responses:
+        '200':
+          description: Encrypted album content
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlbumContentResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: updateAlbumContent
+      summary: Update encrypted album content document
+      description: Stores a new opaque encrypted album story/content document using optimistic concurrency.
+      tags: [Albums]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateAlbumContentRequest' }
+      responses:
+        '200':
+          description: Encrypted album content updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlbumContentResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /albums/{albumId}/epoch-keys/{keyId}:
+    get:
+      operationId: getEpochKey
+      summary: Get one epoch key bundle
+      description: Returns a single encrypted epoch key bundle for its recipient.
+      tags: [Epoch Keys]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+        - name: keyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Epoch key record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EpochKeyRecord' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # ===========================================================================
   # Members
@@ -678,6 +898,98 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+
+  /manifests/{manifestId}/finalize:
+    post:
+      operationId: finalizeManifest
+      summary: Finalize a client-addressed manifest
+      description: Atomically binds uploaded encrypted shards to a signed manifest using a client-selected manifest id.
+      tags: [Manifests]
+      parameters:
+        - name: manifestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateManifestRequest' }
+      responses:
+        '201':
+          description: Manifest finalized
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManifestCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '410': { description: Album expired }
+
+  /manifests/{manifestId}/metadata:
+    patch:
+      operationId: updateManifestMetadata
+      summary: Update encrypted manifest metadata
+      description: Replaces encrypted photo metadata and signature without changing shard references.
+      tags: [Manifests]
+      parameters:
+        - name: manifestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: If-Match
+          in: header
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateManifestMetadataRequest' }
+      responses:
+        '200':
+          description: Manifest metadata updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManifestMetadataUpdated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { description: Manifest expired }
+        '412': { description: If-Match precondition failed }
+
+  /manifests/{manifestId}/expiration:
+    patch:
+      operationId: updateManifestExpiration
+      summary: Update manifest expiration
+      description: Updates lifecycle metadata for an encrypted photo manifest.
+      tags: [Manifests]
+      parameters:
+        - name: manifestId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: If-Match
+          in: header
+          required: false
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateManifestExpirationRequest' }
+      responses:
+        '200':
+          description: Manifest expiration updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManifestExpirationResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { description: Manifest expired }
+        '412': { description: If-Match precondition failed }
+
   # ===========================================================================
   # Shards
   # ===========================================================================
@@ -705,6 +1017,28 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+
+  /shards/{shardId}/meta:
+    get:
+      operationId: getShardMetadata
+      summary: Get shard metadata
+      description: Returns server-side metadata for an encrypted shard without exposing shard plaintext.
+      tags: [Shards]
+      parameters:
+        - name: shardId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Shard metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShardMetadata' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /shards:
     post:
@@ -973,6 +1307,34 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+
+  /albums/{albumId}/share-links/{linkId}/expiration:
+    patch:
+      operationId: updateShareLinkExpiration
+      summary: Update share-link expiration
+      description: Updates expiration and max-use lifecycle settings for a share link; link secrets remain client-side.
+      tags: [Share Links]
+      parameters:
+        - $ref: '#/components/parameters/AlbumId'
+        - name: linkId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateLinkExpirationRequest' }
+      responses:
+        '200':
+          description: Share-link expiration updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShareLinkResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /share-links/{linkId}:
     delete:
@@ -1902,6 +2264,143 @@ components:
         encryptedName:
           type: string
           description: Base64-encoded encrypted album name (optional)
+
+
+    UpdateExpirationRequest:
+      type: object
+      properties:
+        expiresAt: { type: string, format: date-time, nullable: true }
+        expirationWarningDays: { type: integer, minimum: 0, nullable: true }
+
+    AlbumExpirationResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        expirationWarningDays: { type: integer, nullable: true }
+        updatedAt: { type: string, format: date-time }
+
+    RenameAlbumRequest:
+      type: object
+      required: [encryptedName]
+      properties:
+        encryptedName: { type: string, description: Base64 encrypted album name }
+
+    RenameAlbumResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        encryptedName: { type: string }
+        updatedAt: { type: string, format: date-time }
+
+    UpdateDescriptionRequest:
+      type: object
+      properties:
+        encryptedDescription: { type: string, nullable: true }
+
+    UpdateDescriptionResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        encryptedDescription: { type: string, nullable: true }
+        updatedAt: { type: string, format: date-time }
+
+    PagedPhotos:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PhotoResponse'
+
+    PhotoResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        versionCreated: { type: integer, format: int64 }
+        isDeleted: { type: boolean }
+        encryptedMeta: { type: string }
+        signature: { type: string }
+        signerPubkey: { type: string }
+        shardIds:
+          type: array
+          items: { type: string }
+        tieredShards:
+          type: array
+          items: { $ref: '#/components/schemas/ManifestShardProjection' }
+
+    AlbumContentResponse:
+      type: object
+      properties:
+        encryptedContent: { type: string }
+        nonce: { type: string }
+        epochId: { type: integer }
+        version: { type: integer }
+        updatedAt: { type: string, format: date-time }
+
+    UpdateAlbumContentRequest:
+      type: object
+      required: [encryptedContent, nonce, epochId, expectedVersion]
+      properties:
+        encryptedContent: { type: string }
+        nonce: { type: string }
+        epochId: { type: integer }
+        expectedVersion: { type: integer }
+
+    UpdateManifestMetadataRequest:
+      type: object
+      required: [encryptedMeta, signature, signerPubkey]
+      properties:
+        encryptedMeta: { type: string }
+        signature: { type: string }
+        signerPubkey: { type: string }
+
+    ManifestMetadataUpdated:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        versionCreated: { type: integer, format: int64 }
+
+    UpdateManifestExpirationRequest:
+      type: object
+      properties:
+        expiresAt: { type: string, format: date-time, nullable: true }
+
+    ManifestExpirationResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        versionCreated: { type: integer, format: int64 }
+        updatedAt: { type: string, format: date-time }
+
+    ShardMetadata:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        sizeBytes: { type: integer, format: int64 }
+        status: { type: string }
+        statusUpdatedAt: { type: string, format: date-time }
+        sha256: { type: string }
+
+    UpdateWrappedKeyRequest:
+      type: object
+      required: [wrappedAccountKey]
+      properties:
+        wrappedAccountKey: { type: string }
+
+    SuccessResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+
+    UpdateLinkExpirationRequest:
+      type: object
+      properties:
+        expiresAt: { type: string, format: date-time, nullable: true }
+        maxUses: { type: integer, minimum: 1, nullable: true }
 
     # -------------------------------------------------------------------------
     # Members

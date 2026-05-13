@@ -295,6 +295,7 @@ public class AlbumsController : ControllerBase
     /// Update album expiration settings (owner only)
     /// </summary>
     [HttpPatch("{albumId:guid}/expiration")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateExpiration(Guid albumId, [FromBody] UpdateExpirationRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -357,6 +358,7 @@ public class AlbumsController : ControllerBase
     /// Update photo expiration settings through the album-scoped route.
     /// </summary>
     [HttpPatch("{albumId:guid}/photos/{photoId:guid}/expiration")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdatePhotoExpiration(
         Guid albumId,
         Guid photoId,
@@ -508,6 +510,7 @@ public class AlbumsController : ControllerBase
     /// </summary>
     [HttpGet("{albumId}/photos")]
     [HttpGet("/api/shared/{albumId}/photos")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetPhotos(Guid albumId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
         skip = Math.Max(0, skip);
@@ -618,6 +621,7 @@ public class AlbumsController : ControllerBase
     /// Rename an album (update encrypted name). Members with edit access can rename.
     /// </summary>
     [HttpPatch("{albumId:guid}/name")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> Rename(Guid albumId, [FromBody] RenameAlbumRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -673,6 +677,7 @@ public class AlbumsController : ControllerBase
     /// Update album description. Members with edit access can update.
     /// </summary>
     [HttpPatch("{albumId:guid}/description")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateDescription(Guid albumId, [FromBody] UpdateDescriptionRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);

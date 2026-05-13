@@ -325,6 +325,7 @@ public class ShareLinksController : ControllerBase
     /// Update expiration settings for a share link (owner only)
     /// </summary>
     [HttpPatch("api/albums/{albumId:guid}/share-links/{linkId}/expiration")]
+    [ProducesResponseType<ShareLinkResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateLinkExpiration(Guid albumId, string linkId, [FromBody] UpdateLinkExpirationRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);

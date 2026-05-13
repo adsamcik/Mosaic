@@ -131,6 +131,7 @@ public class UsersController : ControllerBase
     /// Update user's wrapped account key (for identity persistence across sessions)
     /// </summary>
     [HttpPut("me/wrapped-key")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateWrappedKey([FromBody] UpdateWrappedKeyRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);

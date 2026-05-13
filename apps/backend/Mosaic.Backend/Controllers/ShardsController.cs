@@ -79,6 +79,7 @@ public class ShardsController : ControllerBase
     /// Get shard metadata
     /// </summary>
     [HttpGet("{shardId}/meta")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetMeta(Guid shardId)
     {
         if (HttpContext.Items["AuthSub"] is not string)

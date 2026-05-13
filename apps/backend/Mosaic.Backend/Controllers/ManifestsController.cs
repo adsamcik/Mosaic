@@ -54,6 +54,7 @@ public class ManifestsController : ControllerBase
     /// Finalize a client-addressed manifest id using the ADR-022 v1 shape.
     /// </summary>
     [HttpPost("{manifestId:guid}/finalize")]
+    [ProducesResponseType(StatusCodes.Status201Created)]
     public Task<IActionResult> Finalize(Guid manifestId, [FromBody] CreateManifestRequest request)
         => FinalizeManifestCoreAsync(manifestId, request);
 
@@ -399,6 +400,7 @@ public class ManifestsController : ControllerBase
     /// Update encrypted metadata for an existing manifest without changing shard references.
     /// </summary>
     [HttpPatch("{manifestId:guid}/metadata")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateMetadata(Guid manifestId, [FromBody] UpdateManifestMetadataRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -522,6 +524,7 @@ public class ManifestsController : ControllerBase
     /// Update photo expiration settings. Album owners and editors can update photo lifecycle metadata.
     /// </summary>
     [HttpPatch("{manifestId:guid}/expiration")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateExpiration(Guid manifestId, [FromBody] UpdateManifestExpirationRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
