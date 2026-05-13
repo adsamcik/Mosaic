@@ -237,6 +237,81 @@ public class AuthControllerTests
     }
 
     [Fact]
+    public async Task InitAuth_ReturnsPinnedKdfProfileForExistingUser()
+    {
+        using var db = TestDbContextFactory.Create();
+        var userSalt = RandomNumberGenerator.GetBytes(16);
+        db.Users.Add(new User
+        {
+            Id = Guid.CreateVersion7(),
+            AuthSub = "mobile-user",
+            IdentityPubkey = "identity-pubkey",
+            AuthPubkey = Convert.ToBase64String(GenerateEd25519Keypair().publicKey),
+            UserSalt = userSalt,
+            KdfMemoryKib = 32768,
+            KdfIterations = 4,
+            KdfParallelism = 1,
+            KdfAlgVersion = 0x13
+        });
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db);
+
+        var result = await controller.InitAuth(new AuthInitRequest("mobile-user"));
+
+        var response = Assert.IsType<AuthInitResponse>(
+            Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal(Convert.ToBase64String(userSalt), response.UserSalt);
+        Assert.Equal(32768, response.KdfMemoryKib);
+        Assert.Equal(4, response.KdfIterations);
+        Assert.Equal(1, response.KdfParallelism);
+        Assert.Equal(0x13, response.KdfAlgVersion);
+    }
+
+    [Fact]
+    public async Task VerifyAuth_ReturnsPinnedKdfProfileAfterSuccessfulLogin()
+    {
+        using var db = TestDbContextFactory.Create();
+        var (publicKey, secretKey) = GenerateEd25519Keypair();
+        var user = new User
+        {
+            Id = Guid.CreateVersion7(),
+            AuthSub = "alice-mobile",
+            IdentityPubkey = "identity-pubkey",
+            AuthPubkey = Convert.ToBase64String(publicKey),
+            UserSalt = RandomNumberGenerator.GetBytes(16),
+            AccountSalt = RandomNumberGenerator.GetBytes(16),
+            KdfMemoryKib = 32768,
+            KdfIterations = 4,
+            KdfParallelism = 1,
+            KdfAlgVersion = 0x13
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db);
+        var initResult = await controller.InitAuth(new AuthInitRequest(user.AuthSub));
+        var initResponse = Assert.IsType<AuthInitResponse>(
+            Assert.IsType<OkObjectResult>(initResult).Value);
+        var signature = SignChallenge(
+            Convert.FromBase64String(initResponse.Challenge),
+            user.AuthSub,
+            secretKey);
+
+        var result = await controller.VerifyAuth(new AuthVerifyRequest(
+            user.AuthSub,
+            initResponse.ChallengeId,
+            signature));
+
+        var response = Assert.IsType<AuthVerifyResponse>(
+            Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal(32768, response.KdfMemoryKib);
+        Assert.Equal(4, response.KdfIterations);
+        Assert.Equal(1, response.KdfParallelism);
+        Assert.Equal(0x13, response.KdfAlgVersion);
+    }
+
+    [Fact]
     public async Task VerifyAuth_RejectsInvalidUsernameFormatBeforeChallengeLookup()
     {
         // Arrange
@@ -434,6 +509,60 @@ public class AuthControllerTests
         var createdResult = Assert.IsType<CreatedResult>(result);
         Assert.Single(db.Users);
         Assert.Equal("newuser", db.Users.First().AuthSub);
+    }
+
+    [Theory]
+    [InlineData(65536, 3, 1, 0x13)]
+    [InlineData(32768, 4, 1, 0x13)]
+    public async Task Register_StoresClientPinnedKdfProfile(int memoryKib, int iterations, int parallelism, byte algVersion)
+    {
+        using var db = TestDbContextFactory.Create();
+        var controller = CreateController(db);
+
+        var result = await controller.Register(new AuthRegisterRequest(
+            "newuser",
+            "auth-pubkey-base64",
+            "identity-pubkey-base64",
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            KdfMemoryKib: memoryKib,
+            KdfIterations: iterations,
+            KdfParallelism: parallelism,
+            KdfAlgVersion: algVersion
+        ));
+
+        Assert.IsType<CreatedResult>(result);
+        var user = Assert.Single(db.Users);
+        Assert.Equal(memoryKib, user.KdfMemoryKib);
+        Assert.Equal(iterations, user.KdfIterations);
+        Assert.Equal(parallelism, user.KdfParallelism);
+        Assert.Equal(algVersion, user.KdfAlgVersion);
+    }
+
+    [Theory]
+    [InlineData(0, 3, 1, 0x13)]
+    [InlineData(65536, 0, 1, 0x13)]
+    [InlineData(65536, 3, 0, 0x13)]
+    [InlineData(65536, 3, 1, 0x10)]
+    public async Task Register_RejectsInvalidKdfProfile(int memoryKib, int iterations, int parallelism, byte algVersion)
+    {
+        using var db = TestDbContextFactory.Create();
+        var controller = CreateController(db);
+
+        var result = await controller.Register(new AuthRegisterRequest(
+            "newuser",
+            "auth-pubkey-base64",
+            "identity-pubkey-base64",
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            KdfMemoryKib: memoryKib,
+            KdfIterations: iterations,
+            KdfParallelism: parallelism,
+            KdfAlgVersion: algVersion
+        ));
+
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("Invalid KDF profile", ProblemDetailsAssertions.GetDetail(badRequest));
     }
 
     [Fact]

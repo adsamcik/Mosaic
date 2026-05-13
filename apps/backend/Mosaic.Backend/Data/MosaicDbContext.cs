@@ -32,6 +32,10 @@ public class MosaicDbContext : DbContext
         modelBuilder.Entity<User>(e =>
         {
             e.HasIndex(u => u.AuthSub).IsUnique();
+            e.Property(u => u.KdfMemoryKib).HasDefaultValue(65536);
+            e.Property(u => u.KdfIterations).HasDefaultValue(3);
+            e.Property(u => u.KdfParallelism).HasDefaultValue(1);
+            e.Property(u => u.KdfAlgVersion).HasDefaultValue((byte)0x13);
             e.Property(u => u.RowVersion).IsConcurrencyToken();
         });
 

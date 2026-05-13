@@ -65,6 +65,30 @@ public class User
     public string? AuthPubkey { get; set; }
 
     /// <summary>
+    /// Argon2id memory cost in KiB pinned at registration for cross-device login parity.
+    /// </summary>
+    [Required]
+    public int KdfMemoryKib { get; set; } = 65536;
+
+    /// <summary>
+    /// Argon2id time cost pinned at registration.
+    /// </summary>
+    [Required]
+    public int KdfIterations { get; set; } = 3;
+
+    /// <summary>
+    /// Argon2id parallelism pinned at registration.
+    /// </summary>
+    [Required]
+    public int KdfParallelism { get; set; } = 1;
+
+    /// <summary>
+    /// Argon2 algorithm version pinned at registration. 0x13 is Argon2id v1.3.
+    /// </summary>
+    [Required]
+    public byte KdfAlgVersion { get; set; } = 0x13;
+
+    /// <summary>
     /// Concurrency token for optimistic locking. Automatically incremented on update.
     /// </summary>
     public uint RowVersion { get; set; }

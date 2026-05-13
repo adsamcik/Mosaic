@@ -10,6 +10,10 @@ public record AuthInitResponse
     public required string Challenge { get; init; }
     public required string UserSalt { get; init; }
     public long Timestamp { get; init; }
+    public int KdfMemoryKib { get; init; }
+    public int KdfIterations { get; init; }
+    public int KdfParallelism { get; init; }
+    public byte KdfAlgVersion { get; init; }
 }
 
 public record AuthVerifyRequest(
@@ -27,6 +31,10 @@ public record AuthVerifyResponse
     public string? WrappedAccountKey { get; init; }
     public string? WrappedIdentitySeed { get; init; }
     public string? IdentityPubkey { get; init; }
+    public int KdfMemoryKib { get; init; }
+    public int KdfIterations { get; init; }
+    public int KdfParallelism { get; init; }
+    public byte KdfAlgVersion { get; init; }
 }
 
 public record AuthRegisterRequest(
@@ -36,5 +44,9 @@ public record AuthRegisterRequest(
     [MaxLength(128)] string UserSalt,
     [MaxLength(128)] string AccountSalt,
     [MaxLength(2048)] string? WrappedAccountKey = null,
-    [MaxLength(2048)] string? WrappedIdentitySeed = null
+    [MaxLength(2048)] string? WrappedIdentitySeed = null,
+    int KdfMemoryKib = 65536,
+    int KdfIterations = 3,
+    int KdfParallelism = 1,
+    byte KdfAlgVersion = 0x13
 );

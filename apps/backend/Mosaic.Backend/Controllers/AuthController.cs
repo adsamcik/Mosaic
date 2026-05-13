@@ -37,6 +37,11 @@ public partial class AuthController : ControllerBase
 
     // Domain separation context (must match TypeScript implementation)
     private const string AuthChallengeContext = "Mosaic_Auth_Challenge_v1";
+    private const int DefaultKdfMemoryKib = 65536;
+    private const int DefaultKdfIterations = 3;
+    private const int DefaultKdfParallelism = 1;
+    private const byte DefaultKdfAlgVersion = 0x13;
+    private const int MinimumKdfMemoryKib = 8192;
 
     [GeneratedRegex(@"^[a-zA-Z0-9_\-@.]+$", RegexOptions.Compiled)]
     private static partial Regex ValidUsernamePattern();
@@ -146,11 +151,19 @@ public partial class AuthController : ControllerBase
 
         byte[] challenge = RandomNumberGenerator.GetBytes(32);
         byte[] userSalt;
+        var kdfMemoryKib = DefaultKdfMemoryKib;
+        var kdfIterations = DefaultKdfIterations;
+        var kdfParallelism = DefaultKdfParallelism;
+        var kdfAlgVersion = DefaultKdfAlgVersion;
 
         if (user != null && user.UserSalt != null)
         {
             // Real user - use actual salt
             userSalt = user.UserSalt;
+            kdfMemoryKib = user.KdfMemoryKib;
+            kdfIterations = user.KdfIterations;
+            kdfParallelism = user.KdfParallelism;
+            kdfAlgVersion = user.KdfAlgVersion;
         }
         else
         {
@@ -179,7 +192,11 @@ public partial class AuthController : ControllerBase
             ChallengeId = authChallenge.Id,
             Challenge = Convert.ToBase64String(challenge),
             UserSalt = Convert.ToBase64String(userSalt),
-            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            KdfMemoryKib = kdfMemoryKib,
+            KdfIterations = kdfIterations,
+            KdfParallelism = kdfParallelism,
+            KdfAlgVersion = kdfAlgVersion
         });
     }
 
@@ -344,7 +361,11 @@ public partial class AuthController : ControllerBase
             AccountSalt = user.AccountSalt != null ? Convert.ToBase64String(user.AccountSalt) : null,
             WrappedAccountKey = user.WrappedAccountKey != null ? Convert.ToBase64String(user.WrappedAccountKey) : null,
             WrappedIdentitySeed = user.WrappedIdentitySeed != null ? Convert.ToBase64String(user.WrappedIdentitySeed) : null,
-            IdentityPubkey = user.IdentityPubkey
+            IdentityPubkey = user.IdentityPubkey,
+            KdfMemoryKib = user.KdfMemoryKib,
+            KdfIterations = user.KdfIterations,
+            KdfParallelism = user.KdfParallelism,
+            KdfAlgVersion = user.KdfAlgVersion
         });
     }
 
@@ -376,6 +397,13 @@ public partial class AuthController : ControllerBase
         {
             return Problem(
                 detail: "Invalid username format",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (!IsValidKdfProfile(request.KdfMemoryKib, request.KdfIterations, request.KdfParallelism, request.KdfAlgVersion))
+        {
+            return Problem(
+                detail: "Invalid KDF profile",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
@@ -478,6 +506,10 @@ public partial class AuthController : ControllerBase
             AccountSalt = accountSalt,
             WrappedAccountKey = wrappedAccountKey.Length > 0 ? wrappedAccountKey : null,
             WrappedIdentitySeed = wrappedIdentitySeed.Length > 0 ? wrappedIdentitySeed : null,
+            KdfMemoryKib = request.KdfMemoryKib,
+            KdfIterations = request.KdfIterations,
+            KdfParallelism = request.KdfParallelism,
+            KdfAlgVersion = request.KdfAlgVersion,
             IsAdmin = isFirstUser  // First user is admin
         };
 
@@ -653,6 +685,14 @@ public partial class AuthController : ControllerBase
     }
 
     // ===== Helper Methods =====
+
+    private static bool IsValidKdfProfile(int memoryKib, int iterations, int parallelism, byte algVersion)
+    {
+        return memoryKib >= MinimumKdfMemoryKib &&
+               iterations >= 1 &&
+               parallelism >= 1 &&
+               algVersion == DefaultKdfAlgVersion;
+    }
 
     private byte[]? GetSessionToken()
     {
