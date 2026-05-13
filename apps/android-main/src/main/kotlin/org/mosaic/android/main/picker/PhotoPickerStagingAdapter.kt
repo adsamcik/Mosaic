@@ -7,7 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.mosaic.android.main.staging.AppPrivateStagingManager
 import org.mosaic.android.main.staging.StagedFile
-import java.security.MessageDigest
+import org.mosaic.android.main.upload.RustContentHasher
 
 class PhotoPickerStagingAdapter internal constructor(
   private val stageUri: (Uri) -> StagedFile,
@@ -62,22 +62,9 @@ class PhotoPickerStagingAdapter internal constructor(
 
   internal companion object {
     const val DEFAULT_MIME_TYPE = "application/octet-stream"
-    private const val HASH_BUFFER_BYTES = 1024 * 1024
 
-    fun computeAlbumContentHash(stagedFile: StagedFile): String {
-      val digest = MessageDigest.getInstance("SHA-256")
-      stagedFile.file.inputStream().buffered().use { input ->
-        val buffer = ByteArray(HASH_BUFFER_BYTES)
-        while (true) {
-          val read = input.read(buffer)
-          if (read < 0) break
-          if (read > 0) digest.update(buffer, 0, read)
-        }
-      }
-      return digest.digest().toHex()
-    }
-
-    private fun ByteArray.toHex(): String = joinToString(separator = "") { byte -> "%02x".format(byte) }
+    fun computeAlbumContentHash(stagedFile: StagedFile): String =
+      RustContentHasher.sha256Hex(stagedFile.file)
   }
 }
 

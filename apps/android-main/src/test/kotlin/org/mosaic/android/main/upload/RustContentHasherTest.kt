@@ -1,9 +1,12 @@
 package org.mosaic.android.main.upload
 
 import java.io.File
+import android.net.Uri
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.mosaic.android.main.picker.PhotoPickerStagingAdapter
+import org.mosaic.android.main.staging.StagedFile
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -37,6 +40,21 @@ class RustContentHasherTest {
     )
   }
 
+  @Test
+  fun photoPickerProductionHashPathMatchesRustHasherForStagedFile() {
+    val fixture = loadContentHashDedupFixture()
+    val stagedFile = stagedFileWithBytes(fixture.sourceFileBytes)
+
+    assertEquals(
+      RustContentHasher.sha256Hex(fixture.sourceFileBytes),
+      PhotoPickerStagingAdapter.computeAlbumContentHash(stagedFile),
+    )
+    assertEquals(
+      fixture.plaintextSha256Hex,
+      PhotoPickerStagingAdapter.computeAlbumContentHash(stagedFile),
+    )
+  }
+
   private data class ContentHashDedupFixture(
     val sourceFileBytes: ByteArray,
     val plaintextSha256Hex: String,
@@ -50,6 +68,21 @@ class RustContentHasherTest {
     return ContentHashDedupFixture(
       sourceFileBytes = hexToBytes(inputs.getValue("sourceFileBytesHex").jsonPrimitive.content),
       plaintextSha256Hex = expected.getValue("plaintextSha256Hex").jsonPrimitive.content,
+    )
+  }
+
+  private fun stagedFileWithBytes(bytes: ByteArray): StagedFile {
+    val file = kotlin.io.path.createTempFile(prefix = "mosaic-content-hash-", suffix = ".blob").toFile()
+    file.deleteOnExit()
+    file.writeBytes(bytes)
+    return StagedFile(
+      id = file.nameWithoutExtension,
+      uri = Uri.fromFile(file),
+      file = file,
+      displayName = file.name,
+      sizeBytes = file.length(),
+      createdAtMs = 1_700_000_000_000L,
+      lastAccessMs = 1_700_000_000_000L,
     )
   }
 

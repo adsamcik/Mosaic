@@ -107,7 +107,8 @@ encryption and passing it through WorkData:
 | `apps/android-main/src/main/kotlin/org/mosaic/android/main/crypto/ShardEnvelopeStore.kt:14-25` | Reads the staged file or content URI bytes back as the encryption worker input. |
 | `apps/android-main/src/main/kotlin/org/mosaic/android/main/crypto/ShardEncryptionScheduler.kt` | Passes precomputed `KEY_ALBUM_CONTENT_HASH_HEX` into `ShardEncryptionWorker` WorkData. |
 | `apps/android-main/src/main/kotlin/org/mosaic/android/main/crypto/ShardEncryptionWorker.kt` | Reads and validates `KEY_ALBUM_CONTENT_HASH_HEX` and uses it for dedup lookup/recording without hashing staging input. |
-| `apps/android-main/src/main/kotlin/org/mosaic/android/main/upload/RustContentHasher.kt:13-18` | Calls the UniFFI Rust core `sha256OfBytes` export and lower-hex encodes the 32-byte digest. |
+| `apps/android-main/src/main/kotlin/org/mosaic/android/main/picker/PhotoPickerStagingAdapter.kt` | Production path delegates `computeAlbumContentHash` to `RustContentHasher.sha256Hex(stagedFile.file)` before shard scheduling. |
+| `apps/android-main/src/main/kotlin/org/mosaic/android/main/upload/RustContentHasher.kt` | Calls the UniFFI Rust core `sha256OfBytes` export for files up to 32 MiB and preserves streaming SHA-256 behavior for larger staged files. |
 | `crates/mosaic-uniffi/src/lib.rs:2451-2459` | Exposes `sha256_of_bytes` and `sha256_hex_of_bytes` to native clients. |
 | `crates/mosaic-uniffi/src/lib.rs:2476-2480` | Exposes `compute_plaintext_content_hash(bytes)` as SHA-256 lowercase hex. |
 
