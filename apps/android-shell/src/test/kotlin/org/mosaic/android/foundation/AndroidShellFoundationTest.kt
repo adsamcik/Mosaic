@@ -440,8 +440,6 @@ private fun generatedRustUploadBridgeMapsManualHandoffToClientCoreStateMachine()
   assertEquals("upload-job-1", initRequest.jobId)
   assertEquals("album-1", initRequest.albumId)
   assertEquals("asset-1", initRequest.assetId)
-  assertEquals(0, initRequest.epochId)
-  assertEquals(1_700_000_000_000, initRequest.nowUnixMs)
   assertEquals(3, initRequest.maxRetryCount)
   assertEquals("StartRequested", api.lastAdvanceEvent?.kind)
 }
@@ -479,19 +477,16 @@ private fun generatedRustUploadBridgeStringsRedactStagedSourceAndClientSecrets()
   )
   val snapshot = RustClientCoreUploadJobFfiSnapshot.initialFrom(ffiRequest)
   val snapshotWithRefs = snapshot.copy(
-    completedShards = listOf(
+    tieredShards = listOf(
       RustClientCoreUploadShardRef(
         tier = 1,
         shardIndex = 2,
         shardId = "raw-client-secret-shard",
-        sha256 = "raw-client-secret-sha256",
+        sha256 = "raw-client-secret-sha256".toByteArray(Charsets.US_ASCII),
+        contentLength = 1024L,
+        envelopeVersion = 3,
         uploaded = true,
       ),
-    ),
-    hasManifestReceipt = true,
-    manifestReceipt = RustClientCoreManifestReceipt(
-      manifestId = "raw-client-secret-manifest",
-      manifestVersion = 1,
     ),
   )
   val event = RustClientCoreUploadJobFfiEvent.startRequested()

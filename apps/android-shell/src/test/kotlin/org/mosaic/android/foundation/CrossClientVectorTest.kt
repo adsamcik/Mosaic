@@ -274,8 +274,8 @@ private class CorpusBackedGeneratedRustHeaderApi : GeneratedRustHeaderApi {
     }
     return RustHeaderParseFfiResult(
       code = RustHeaderStableCode.OK,
-      epochId = epochId,
-      shardIndex = shardIndex,
+      epochId = epochId.toLong(),
+      shardIndex = shardIndex.toLong(),
       tier = tier,
       nonce = nonce,
     )
