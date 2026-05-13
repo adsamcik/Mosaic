@@ -43,6 +43,59 @@ export interface AuthRegisterResponse {
   isAdmin: boolean;
 }
 
+interface ErrorResponseBody {
+  detail?: unknown;
+  title?: unknown;
+  error?: unknown;
+}
+
+function isErrorResponseBody(value: unknown): value is ErrorResponseBody {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+
+  return undefined;
+}
+
+export async function parseProblemDetails(response: Response): Promise<string> {
+  const fallback = `HTTP ${response.status}`;
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  const isProblemDetails = contentType.includes('application/problem+json');
+  const isJson =
+    isProblemDetails || contentType.includes('application/json');
+  const body = await response.text().catch(() => '');
+
+  if (!isJson || body.trim().length === 0) {
+    return fallback;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (!isErrorResponseBody(parsed)) {
+      return fallback;
+    }
+
+    if (isProblemDetails) {
+      return firstNonEmptyString(parsed.detail, parsed.title) ?? fallback;
+    }
+
+    return firstNonEmptyString(parsed.error) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 // =============================================================================
 // LocalAuth API Client
 // =============================================================================
@@ -61,8 +114,7 @@ export async function initAuth(username: string): Promise<AuthInitResponse> {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Auth init failed: ${response.status}`);
+    throw new Error(await parseProblemDetails(response));
   }
 
   return response.json();
@@ -95,11 +147,10 @@ export async function verifyAuth(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
     if (response.status === 401) {
-      throw new Error(error.error || 'Invalid credentials');
+      throw new Error('Invalid credentials');
     }
-    throw new Error(error.error || `Auth verify failed: ${response.status}`);
+    throw new Error(await parseProblemDetails(response));
   }
 
   return response.json();
@@ -131,8 +182,7 @@ export async function registerUser(params: {
   }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Registration failed: ${response.status}`);
+    throw new Error(await parseProblemDetails(response));
   }
 
   return response.json();
@@ -406,20 +456,11 @@ export async function checkServerStatus(): Promise<ServerStatus> {
 
     // 5xx means server error
     if (response.status >= 500) {
-      let errorDetail = `Server error: ${response.status}`;
-      try {
-        const text = await response.text();
-        if (text) {
-          try {
-            const json = JSON.parse(text);
-            errorDetail = json.error || json.message || errorDetail;
-          } catch {
-            errorDetail = text.slice(0, 100);
-          }
-        }
-      } catch {
-        // Ignore body read errors
-      }
+      const parsedError = await parseProblemDetails(response);
+      const errorDetail =
+        parsedError === `HTTP ${response.status}`
+          ? `Server error: ${response.status}`
+          : parsedError;
 
       return {
         isOnline: true,
@@ -490,8 +531,7 @@ export async function devLogin(username: string): Promise<DevLoginResponse> {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Dev login failed: ${response.status}`);
+    throw new Error(await parseProblemDetails(response));
   }
 
   return response.json();
@@ -515,7 +555,6 @@ export async function devUpdateKeys(keys: {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Dev key update failed: ${response.status}`);
+    throw new Error(await parseProblemDetails(response));
   }
 }
