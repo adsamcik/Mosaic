@@ -54,11 +54,11 @@ fn generated_wasm_typescript_declarations_match_golden() {
     }
 
     assert_eq!(
-        normalize_newlines(GOLDEN),
-        generated,
+        normalize_for_comparison(GOLDEN),
+        normalize_for_comparison(&generated),
         "WASM API-shape drift detected. Regenerate wasm-bindgen output, review \
-         the declaration diff for raw-secret exports, then update only with: \
-         UPDATE_GOLDEN=1 cargo test -p mosaic-wasm --test api_shape_lock --locked"
+          the declaration diff for raw-secret exports, then update only with: \
+          UPDATE_GOLDEN=1 cargo test -p mosaic-wasm --test api_shape_lock --locked"
     );
 }
 
@@ -439,6 +439,49 @@ fn skip_typescript_export_negative_fixture_is_rejected() {
     );
 }
 
+#[test]
+fn api_shape_comparison_ignores_flat_readonly_interface_order() {
+    let first = "\
+export interface InitOutput {
+    readonly b: () => number;
+    readonly a: () => number;
+}
+";
+    let second = "\
+export interface InitOutput {
+    readonly a: () => number;
+    readonly b: () => number;
+}
+";
+
+    assert_eq!(
+        normalize_for_comparison(first),
+        normalize_for_comparison(second),
+        "flat readonly wasm-bindgen export interfaces should compare as sorted sets"
+    );
+}
+
+#[test]
+fn api_shape_comparison_still_detects_new_flat_readonly_exports() {
+    let golden = "\
+export interface InitOutput {
+    readonly a: () => number;
+}
+";
+    let generated = "\
+export interface InitOutput {
+    readonly a: () => number;
+    readonly leakSecret: () => number;
+}
+";
+
+    assert_ne!(
+        normalize_for_comparison(golden),
+        normalize_for_comparison(generated),
+        "sorted interface comparison must still detect added wasm-bindgen exports"
+    );
+}
+
 fn assert_allowed_skip_typescript_exports(source: &str) {
     let skipped_exports = skip_typescript_exports(source);
     for skipped_export in skipped_exports {
@@ -552,6 +595,52 @@ fn collect_attribute(lines: &[&str], start: usize) -> (usize, String) {
 
 fn normalize_newlines(value: &str) -> String {
     value.replace("\r\n", "\n")
+}
+
+fn normalize_for_comparison(value: &str) -> String {
+    let normalized = normalize_newlines(value);
+    let lines = normalized.split_inclusive('\n').collect::<Vec<_>>();
+    let mut output = String::new();
+    let mut index = 0;
+
+    while index < lines.len() {
+        let line = lines[index];
+        if is_interface_start(line) {
+            let mut end = index + 1;
+            while end < lines.len() && lines[end].trim() != "}" {
+                end += 1;
+            }
+
+            if end < lines.len() && is_flat_readonly_interface(&lines[index + 1..end]) {
+                output.push_str(line);
+                let mut declarations = lines[index + 1..end].to_vec();
+                declarations.sort_unstable();
+                for declaration in declarations {
+                    output.push_str(declaration);
+                }
+                output.push_str(lines[end]);
+                index = end + 1;
+                continue;
+            }
+        }
+
+        output.push_str(line);
+        index += 1;
+    }
+
+    output
+}
+
+fn is_interface_start(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.starts_with("export interface ") && trimmed.ends_with('{')
+}
+
+fn is_flat_readonly_interface(lines: &[&str]) -> bool {
+    !lines.is_empty()
+        && lines
+            .iter()
+            .all(|line| line.trim_start().starts_with("readonly "))
 }
 
 fn project_root() -> PathBuf {
