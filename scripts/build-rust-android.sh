@@ -63,17 +63,10 @@ cargo ndk \
 
 cargo build -p mosaic-uniffi --release --locked
 
-case "$(uname -s)" in
-  Darwin*)
-    host_library_path="$PROJECT_ROOT/target/release/libmosaic_uniffi.dylib"
-    ;;
-  MINGW*|MSYS*|CYGWIN*)
-    host_library_path="$PROJECT_ROOT/target/release/mosaic_uniffi.dll"
-    ;;
-  *)
-    host_library_path="$PROJECT_ROOT/target/release/libmosaic_uniffi.so"
-    ;;
-esac
+# UniFFI 0.31 can exit successfully without emitting Kotlin when probing the
+# Linux cdylib. The rlib contains the same setup_scaffolding! metadata and is
+# consistently discoverable by --library mode across host platforms.
+host_library_path="$PROJECT_ROOT/target/release/libmosaic_uniffi.rlib"
 
 kotlin_out_dir="$PROJECT_ROOT/target/android/kotlin"
 rm -rf "$kotlin_out_dir"
