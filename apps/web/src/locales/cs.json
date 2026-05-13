@@ -49,6 +49,9 @@
       "openDocumentation": "Otevřít dokumentaci"
     }
   },
+  "error": {
+    "referenceId": "Identifikátor: {{id}}"
+  },
   "auth": {
     "checkingSession": "Kontrola relace...",
     "welcomeBack": "Vítejte zpět! Zadejte heslo pro pokračování.",

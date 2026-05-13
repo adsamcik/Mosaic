@@ -108,13 +108,72 @@ const API_BASE = '/api';
 // Error Handling
 // =============================================================================
 
+export interface ProblemDetailsBody {
+  type?: string;
+  title?: string;
+  status?: number;
+  detail?: string;
+  instance?: string;
+  correlationId?: string;
+  [key: string]: unknown;
+}
+
+function isProblemDetailsBody(value: unknown): value is ProblemDetailsBody {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function readApiError(
+  response: Response,
+): Promise<{
+  body?: string;
+  problem?: ProblemDetailsBody;
+  correlationId?: string;
+}> {
+  const contentType = response.headers.get('content-type') ?? '';
+  const correlationId = response.headers.get('x-correlation-id') ?? undefined;
+  const body = await response.text().catch(() => undefined);
+  let problem: ProblemDetailsBody | undefined;
+
+  if (
+    body !== undefined &&
+    body.length > 0 &&
+    (contentType.includes('application/problem+json') ||
+      contentType.includes('application/json'))
+  ) {
+    try {
+      const parsed: unknown = JSON.parse(body);
+      if (isProblemDetailsBody(parsed)) {
+        problem = parsed;
+      }
+    } catch {
+      // Keep the raw body below for diagnostics without assuming JSON shape.
+    }
+  }
+
+  const problemCorrelationId =
+    typeof problem?.correlationId === 'string' && problem.correlationId.length > 0
+      ? problem.correlationId
+      : undefined;
+  const resolvedCorrelationId = problemCorrelationId ?? correlationId;
+
+  return {
+    ...(body !== undefined ? { body } : {}),
+    ...(problem !== undefined ? { problem } : {}),
+    ...(resolvedCorrelationId !== undefined
+      ? { correlationId: resolvedCorrelationId }
+      : {}),
+  };
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly statusText: string,
     public readonly body?: string,
+    public readonly problem?: ProblemDetailsBody,
+    public readonly correlationId?: string,
   ) {
-    super(`API Error ${status}: ${statusText}`);
+    super(problem?.detail ?? problem?.title ?? `API Error ${status}: ${statusText}`);
     this.name = 'ApiError';
   }
 }
@@ -177,8 +236,14 @@ async function apiRequest<T>(
   const response = await fetch(`${API_BASE}${path}`, init);
 
   if (!response.ok) {
-    const errorBody = await response.text().catch(() => undefined);
-    throw new ApiError(response.status, response.statusText, errorBody);
+    const { body: errorBody, problem, correlationId } = await readApiError(response);
+    throw new ApiError(
+      response.status,
+      response.statusText,
+      errorBody,
+      problem,
+      correlationId,
+    );
   }
 
   // Handle 204 No Content
@@ -559,8 +624,14 @@ export function createApiClient(): MosaicApi {
       });
 
       if (!response.ok) {
-        const errorBody = await response.text().catch(() => undefined);
-        throw new ApiError(response.status, response.statusText, errorBody);
+        const { body: errorBody, problem, correlationId } = await readApiError(response);
+        throw new ApiError(
+          response.status,
+          response.statusText,
+          errorBody,
+          problem,
+          correlationId,
+        );
       }
 
       return new Uint8Array(await response.arrayBuffer());
@@ -678,8 +749,14 @@ export function createApiClient(): MosaicApi {
         `${API_BASE}/s/${encodeURIComponent(linkIdBase64)}/shards/${encodeURIComponent(shardId)}`,
       );
       if (!response.ok) {
-        const errorBody = await response.text().catch(() => undefined);
-        throw new ApiError(response.status, response.statusText, errorBody);
+        const { body: errorBody, problem, correlationId } = await readApiError(response);
+        throw new ApiError(
+          response.status,
+          response.statusText,
+          errorBody,
+          problem,
+          correlationId,
+        );
       }
       return response.arrayBuffer();
     },

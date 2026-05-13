@@ -1,5 +1,14 @@
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useToast } from '../contexts/ToastContext';
+import { ApiError } from '../lib/api';
+import { toSafeErrorMessage } from '../lib/error-messages';
+
+function getCorrelationId(error: unknown): string | undefined {
+  return error instanceof ApiError && error.correlationId
+    ? error.correlationId
+    : undefined;
+}
 
 /**
  * Hook for easy error handling with toast notifications.
@@ -20,19 +29,39 @@ import { useToast } from '../contexts/ToastContext';
  */
 export function useErrorToast() {
   const { addToast } = useToast();
+  const { t } = useTranslation();
+
+  const formatErrorMessage = useCallback(
+    (error: unknown, fallback?: string): string => {
+      const message =
+        typeof error === 'string'
+          ? error
+          : toSafeErrorMessage(error, fallback);
+      const correlationId = getCorrelationId(error);
+      if (!correlationId) {
+        return message;
+      }
+
+      return `${message} (${t('error.referenceId', {
+        id: correlationId,
+        defaultValue: 'Reference: {{id}}',
+      })})`;
+    },
+    [t],
+  );
 
   /**
    * Show an error toast with a message
    */
   const showError = useCallback(
-    (message: string, options?: { duration?: number }) => {
+    (error: unknown, options?: { duration?: number; fallback?: string }) => {
       return addToast({
-        message,
+        message: formatErrorMessage(error, options?.fallback),
         type: 'error',
         duration: options?.duration ?? 8000, // Errors show longer by default
       });
     },
-    [addToast]
+    [addToast, formatErrorMessage],
   );
 
   /**
@@ -93,14 +122,16 @@ export function useErrorToast() {
         try {
           return await fn(...args);
         } catch (err) {
-          const message =
-            err instanceof Error ? err.message : 'An unexpected error occurred';
-          showError(errorMessage ? `${errorMessage}: ${message}` : message);
+          const message = formatErrorMessage(
+            err,
+            'An unexpected error occurred',
+          );
+          showError(errorMessage ? `${errorMessage}: ${message}` : err);
           return undefined;
         }
       };
     },
-    [showError]
+    [formatErrorMessage, showError],
   );
 
   return {

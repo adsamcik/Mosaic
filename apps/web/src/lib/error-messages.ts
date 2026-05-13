@@ -192,6 +192,13 @@ export function toSafeErrorMessage(
 
   // Handle API errors based on HTTP status
   if (error instanceof ApiError) {
+    if (
+      typeof error.problem?.detail === 'string' &&
+      error.problem.detail.trim().length > 0
+    ) {
+      return error.problem.detail;
+    }
+
     return HTTP_STATUS_MESSAGES[error.status] ?? fallback;
   }
 
