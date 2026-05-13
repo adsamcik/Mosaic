@@ -102,3 +102,15 @@ data class AlbumContentHashRecord(
   @ColumnInfo(name = "photo_id") val photoId: String,
   @ColumnInfo(name = "date_added") val dateAdded: Long,
 )
+
+@Entity(
+  tableName = "album_epoch_keys",
+  primaryKeys = ["album_id", "epoch_id"],
+  indices = [Index(value = ["album_id"])],
+)
+data class AlbumEpochKeyRecord(
+  @ColumnInfo(name = "album_id") val albumId: String,
+  @ColumnInfo(name = "epoch_id") val epochId: Int,
+  @ColumnInfo(name = "wrapped_epoch_seed", typeAffinity = ColumnInfo.BLOB) val wrappedEpochSeed: ByteArray,
+  @ColumnInfo(name = "updated_at_ms") val updatedAtMs: Long,
+)

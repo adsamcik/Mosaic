@@ -243,7 +243,8 @@ class ShardUploadWorkerTest {
     val plan = UploadPipelineBuilder.buildShardPlan(
       jobId = "job-456",
       stagingUri = "mosaic-staged://original",
-      epochHandleId = 42L,
+      albumId = "album-456",
+      epochId = 5,
       tier = 2,
       shardIndex = 3,
       albumContentHashHex = "2".repeat(64),

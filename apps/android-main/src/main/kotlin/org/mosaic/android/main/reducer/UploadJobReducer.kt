@@ -224,11 +224,11 @@ class WorkManagerEffectDispatcher(
         ShardEncryptionScheduler.buildRequest(
           jobId = snapshot.jobId,
           stagingUri = input.stagingUri,
-          epochHandleId = input.epochHandleId,
+          albumId = UploadJobSnapshotCodec.decode(snapshot.canonicalCborBytes).albumId,
+          epochId = input.epochId,
           tier = effect.tier,
           shardIndex = effect.shardIndex,
           albumContentHashHex = input.albumContentHashHex,
-          albumId = UploadJobSnapshotCodec.decode(snapshot.canonicalCborBytes).albumId,
           photoId = snapshot.jobId,
         ),
       )
@@ -273,7 +273,7 @@ interface EffectInputResolver {
 
 data class EncryptShardWorkInput(
   val stagingUri: String,
-  val epochHandleId: Long,
+  val epochId: Int,
   val albumContentHashHex: String,
 )
 

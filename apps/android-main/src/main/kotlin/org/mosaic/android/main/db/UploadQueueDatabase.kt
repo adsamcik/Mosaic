@@ -15,8 +15,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     UploadJobSnapshotRow::class,
     AlbumSyncSnapshotRow::class,
     AlbumContentHashRecord::class,
+    AlbumEpochKeyRecord::class,
   ],
-  version = 2,
+  version = 3,
   exportSchema = true,
 )
 abstract class UploadQueueDatabase : RoomDatabase() {
@@ -26,6 +27,7 @@ abstract class UploadQueueDatabase : RoomDatabase() {
   abstract fun uploadJobSnapshotDao(): UploadJobSnapshotDao
   abstract fun albumSyncSnapshotDao(): AlbumSyncSnapshotDao
   abstract fun albumContentHashDao(): AlbumContentHashDao
+  abstract fun albumEpochKeyDao(): AlbumEpochKeyDao
 
   companion object {
     const val DATABASE_NAME: String = "mosaic_upload_queue.db"
@@ -34,7 +36,7 @@ abstract class UploadQueueDatabase : RoomDatabase() {
       context.applicationContext,
       UploadQueueDatabase::class.java,
       DATABASE_NAME,
-    ).addMigrations(MIGRATION_1_2)
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
       .addCallback(PrivacyValidationRoomCallback)
       .build()
 
@@ -60,6 +62,23 @@ abstract class UploadQueueDatabase : RoomDatabase() {
         )
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_album_content_hashes_album_id_content_hash` ON `album_content_hashes` (`album_id`, `content_hash`)")
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_content_hashes_album_id` ON `album_content_hashes` (`album_id`)")
+      }
+    }
+
+    val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+      override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+          """
+            CREATE TABLE IF NOT EXISTS `album_epoch_keys` (
+              `album_id` TEXT NOT NULL,
+              `epoch_id` INTEGER NOT NULL,
+              `wrapped_epoch_seed` BLOB NOT NULL,
+              `updated_at_ms` INTEGER NOT NULL,
+              PRIMARY KEY(`album_id`, `epoch_id`)
+            )
+          """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_epoch_keys_album_id` ON `album_epoch_keys` (`album_id`)")
       }
     }
   }
@@ -92,6 +111,7 @@ private fun installPrivacyTriggers(db: SupportSQLiteDatabase) {
     "upload_job_snapshots" to listOf("job_id", "canonical_cbor_bytes"),
     "album_sync_snapshots" to listOf("album_id", "canonical_cbor_bytes"),
     "album_content_hashes" to listOf("album_id", "content_hash", "photo_id"),
+    "album_epoch_keys" to listOf("album_id"),
   )
   for ((table, columns) in tables) {
     for (operation in listOf("INSERT", "UPDATE")) {

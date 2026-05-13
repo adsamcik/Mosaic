@@ -149,3 +149,21 @@ interface AlbumContentHashDao {
   @Query("DELETE FROM album_content_hashes WHERE album_id = :albumId")
   fun clear(albumId: String): Int
 }
+
+@Dao
+interface AlbumEpochKeyDao {
+  @Transaction
+  fun upsert(row: AlbumEpochKeyRecord) {
+    PrivacyPatternValidator.validateAlbumEpochKey(row)
+    upsertValidated(row)
+  }
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  fun upsertValidated(row: AlbumEpochKeyRecord)
+
+  @Query("SELECT * FROM album_epoch_keys WHERE album_id = :albumId AND epoch_id = :epochId")
+  fun get(albumId: String, epochId: Int): AlbumEpochKeyRecord?
+
+  @Query("DELETE FROM album_epoch_keys WHERE album_id = :albumId")
+  fun clear(albumId: String): Int
+}

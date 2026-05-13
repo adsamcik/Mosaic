@@ -58,6 +58,11 @@ object PrivacyPatternValidator {
     values = listOf(row.albumId, row.schemaVersion, row.canonicalCborBytes, row.updatedAtMs, row.snapshotRevision),
   )
 
+  fun validateAlbumEpochKey(row: AlbumEpochKeyRecord) = validateValues(
+    tableName = "album_epoch_keys",
+    values = listOf(row.albumId, row.epochId, row.wrappedEpochSeed, row.updatedAtMs),
+  )
+
   private fun validateValues(tableName: String, values: Iterable<Any?>) {
     for (value in values) {
       val text = when (value) {

@@ -22,6 +22,8 @@ import org.junit.runner.RunWith
 import org.mosaic.android.main.crypto.ShardCryptoEngine
 import org.mosaic.android.main.crypto.ShardEncryptionWorker
 import org.mosaic.android.main.crypto.ShardEnvelopeStore
+import org.mosaic.android.main.crypto.EpochHandleResolver
+import org.mosaic.android.main.crypto.OpenedEpochHandle
 import org.mosaic.android.main.media.BitmapTierEncoder
 import org.mosaic.android.main.media.CanonicalTierLayout
 import org.mosaic.android.main.media.TierDimensions
@@ -87,7 +89,8 @@ class MemoryLeakTest {
   private fun workerFor(staging: File, crypto: ShardCryptoEngine): ShardEncryptionWorker {
     val input = Data.Builder()
       .putString(ShardEncryptionWorker.KEY_STAGING_URI, staging.toURI().toString())
-      .putLong(ShardEncryptionWorker.KEY_EPOCH_HANDLE_ID, 42L)
+      .putString(ShardEncryptionWorker.KEY_ALBUM_ID, "album-memory")
+      .putInt(ShardEncryptionWorker.KEY_EPOCH_ID, 1)
       .putInt(ShardEncryptionWorker.KEY_TIER, 1)
       .putInt(ShardEncryptionWorker.KEY_SHARD_INDEX, 7)
       .putString(ShardEncryptionWorker.KEY_ALBUM_CONTENT_HASH_HEX, "0".repeat(64))
@@ -104,6 +107,10 @@ class MemoryLeakTest {
           workerParameters,
           crypto,
           ShardEnvelopeStore(appContext),
+          object : EpochHandleResolver {
+            override fun openEpochHandle(albumId: String, epochId: Int): OpenedEpochHandle =
+              OpenedEpochHandle(42L) {}
+          },
         )
       })
       .build()

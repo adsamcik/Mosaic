@@ -9,32 +9,26 @@ import androidx.work.OneTimeWorkRequestBuilder
 import java.util.concurrent.TimeUnit
 
 object ShardEncryptionScheduler {
-  /**
-   * `epochHandleId` is the bit-pattern carrier for a Rust `u64` handle.
-   * WorkManager `Data` cannot store `ULong`, so high-bit handles are
-   * intentionally transported as negative `Long` values and reinterpreted
-   * with `toULong()` by the crypto engine.
-   */
   fun buildRequest(
     jobId: String,
     stagingUri: String,
-    epochHandleId: Long,
+    albumId: String,
+    epochId: Int,
     tier: Int,
     shardIndex: Int,
     albumContentHashHex: String,
-    albumId: String? = null,
     photoId: String? = null,
   ): OneTimeWorkRequest =
     OneTimeWorkRequestBuilder<ShardEncryptionWorker>()
       .setInputData(
         Data.Builder()
           .putString(ShardEncryptionWorker.KEY_STAGING_URI, stagingUri)
-          .putLong(ShardEncryptionWorker.KEY_EPOCH_HANDLE_ID, epochHandleId)
+          .putString(ShardEncryptionWorker.KEY_ALBUM_ID, albumId)
+          .putInt(ShardEncryptionWorker.KEY_EPOCH_ID, epochId)
           .putInt(ShardEncryptionWorker.KEY_TIER, tier)
           .putInt(ShardEncryptionWorker.KEY_SHARD_INDEX, shardIndex)
           .putString(ShardEncryptionWorker.KEY_ALBUM_CONTENT_HASH_HEX, albumContentHashHex)
           .apply {
-            if (albumId != null) putString(ShardEncryptionWorker.KEY_ALBUM_ID, albumId)
             if (photoId != null) putString(ShardEncryptionWorker.KEY_PHOTO_ID, photoId)
           }
           .build(),

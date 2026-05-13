@@ -10,24 +10,24 @@ object UploadPipelineBuilder {
   fun buildShardPlan(
     jobId: String,
     stagingUri: String,
-    epochHandleId: Long,
+    albumId: String,
+    epochId: Int,
     tier: Int,
     shardIndex: Int,
     albumContentHashHex: String,
     shardId: String,
     tusEndpoint: String,
     metadataSignature: String? = null,
-    albumId: String? = null,
     photoId: String? = null,
   ): UploadShardPlan {
     val encryptionRequest = ShardEncryptionScheduler.buildRequest(
       jobId = jobId,
       stagingUri = stagingUri,
-      epochHandleId = epochHandleId,
+      albumId = albumId,
+      epochId = epochId,
       tier = tier,
       shardIndex = shardIndex,
       albumContentHashHex = albumContentHashHex,
-      albumId = albumId,
       photoId = photoId,
     )
     val uploadRequest = ShardUploadScheduler.buildRequest(

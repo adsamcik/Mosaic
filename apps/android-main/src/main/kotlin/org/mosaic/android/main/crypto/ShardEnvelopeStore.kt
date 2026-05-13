@@ -74,7 +74,7 @@ internal class ShardEnvelopeStore(
   }
 
   private fun ShardEnvelopeInput.cacheKey(): String = sha256Hex(
-    listOf(stagingUri, epochHandleId.toString(), tier.toString(), shardIndex.toString(), plaintextSha256Hex)
+    listOf(stagingUri, albumId, epochId.toString(), tier.toString(), shardIndex.toString(), plaintextSha256Hex)
       .joinToString(separator = "\u001f")
       .toByteArray(Charsets.UTF_8),
   )
@@ -108,7 +108,8 @@ private fun OutputStream.writeAndHash(bytes: ByteArray, digest: MessageDigest) {
 
 internal data class ShardEnvelopeInput(
   val stagingUri: String,
-  val epochHandleId: Long,
+  val albumId: String,
+  val epochId: Int,
   val tier: Int,
   val shardIndex: Int,
   val plaintextSha256Hex: String,

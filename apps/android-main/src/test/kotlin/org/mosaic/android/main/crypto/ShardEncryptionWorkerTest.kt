@@ -11,6 +11,7 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.ArrayDeque
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -40,7 +41,8 @@ class ShardEncryptionWorkerTest {
   fun happyPathEncryptsSmallShardAndReturnsEnvelopeUriAndSha256() = runBlocking {
     val staging = stageBytes("small-shard".toByteArray())
     val crypto = RecordingCryptoEngine()
-    val worker = workerFor(staging, crypto = crypto)
+    val resolver = RecordingEpochHandleResolver(84L)
+    val worker = workerFor(staging, crypto = crypto, epochHandleResolver = resolver)
 
     val result = worker.doWork()
 
@@ -53,6 +55,9 @@ class ShardEncryptionWorkerTest {
     assertEquals(sha256Hex("small-shard".toByteArray()), output.getString(ShardEncryptionWorker.KEY_CONTENT_HASH_HEX))
     assertEquals(1, crypto.smallCalls)
     assertEquals(0, crypto.streamingCalls)
+    assertEquals(listOf(Triple("album-1", 3, 84L)), resolver.opened)
+    assertEquals(listOf(84L), resolver.closed)
+    assertEquals(listOf(84L), crypto.smallEpochHandles)
   }
 
   @Test
@@ -241,14 +246,37 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun invalidEpochHandleFailsWithoutRetry() = runBlocking {
+  fun workerSurvivesProcessDeathByReopeningEpochHandle() = runBlocking {
+    val staging = stageBytes("replayed-after-process-death".toByteArray())
+    val resolver = RecordingEpochHandleResolver(4242L)
+    val crypto = RecordingCryptoEngine()
+    val worker = workerFor(
+      staging,
+      albumId = "album-replay",
+      epochId = 9,
+      crypto = crypto,
+      epochHandleResolver = resolver,
+    )
+
+    val result = worker.doWork()
+
+    assertTrue(result is ListenableWorker.Result.Success)
+    assertEquals(listOf(Triple("album-replay", 9, 4242L)), resolver.opened)
+    assertEquals(listOf(4242L), crypto.smallEpochHandles)
+    assertEquals(listOf(4242L), resolver.closed)
+  }
+
+  @Test
+  fun workerFailsClearlyWhenEpochHandleResolverReturnsNull() = runBlocking {
     val staging = stageBytes("invalid".toByteArray())
     val crypto = RecordingCryptoEngine()
-    val worker = workerFor(staging, epochHandleId = 0L, crypto = crypto)
+    val worker = workerFor(staging, crypto = crypto, epochHandleResolver = UnavailableEpochHandleResolver)
 
     val result = worker.doWork()
 
     assertTrue(result is ListenableWorker.Result.Failure)
+    val output = (result as ListenableWorker.Result.Failure).outputData
+    assertEquals(ShardEncryptionWorker.ERROR_EPOCH_HANDLE_UNAVAILABLE, output.getString("error"))
     assertEquals(0, crypto.smallCalls + crypto.streamingCalls)
   }
 
@@ -276,35 +304,34 @@ class ShardEncryptionWorkerTest {
   fun sameInputsReturnByteIdenticalEnvelopeAcrossRuns() = runBlocking {
     val staging = stageBytes("idempotent".toByteArray())
     val crypto = RecordingCryptoEngine()
-    val first = workerFor(staging, crypto = crypto).doWork() as ListenableWorker.Result.Success
+    val resolver = RecordingEpochHandleResolver(101L, 202L)
+    val first = workerFor(staging, crypto = crypto, epochHandleResolver = resolver).doWork() as ListenableWorker.Result.Success
     val firstEnvelope = File(requireNotNull(android.net.Uri.parse(first.outputData.getString(ShardEncryptionWorker.KEY_ENVELOPE_URI)).path)).readBytes()
 
     crypto.smallEnvelope = "different-if-reencrypted".toByteArray()
-    val second = workerFor(staging, crypto = crypto).doWork() as ListenableWorker.Result.Success
+    val second = workerFor(staging, crypto = crypto, epochHandleResolver = resolver).doWork() as ListenableWorker.Result.Success
     val secondEnvelope = File(requireNotNull(android.net.Uri.parse(second.outputData.getString(ShardEncryptionWorker.KEY_ENVELOPE_URI)).path)).readBytes()
 
     assertArrayEquals(firstEnvelope, secondEnvelope)
-    assertEquals("second run must reuse the persisted deterministic output", 1, crypto.smallCalls)
+    assertEquals("second run must reuse the persisted deterministic output after handle regeneration", 1, crypto.smallCalls)
+    assertEquals(listOf(101L, 202L), resolver.closed)
   }
 
   @Test
-  fun schedulerPreservesHighBitRustU64HandleBitPattern() {
-    val highBitHandle = ULong.MAX_VALUE.toLong()
+  fun schedulerPersistsStableEpochRederivationKeyInsteadOfHandleId() {
     val request = ShardEncryptionScheduler.buildRequest(
       jobId = "job-high-bit",
       stagingUri = "file:///staged-high-bit.bin",
-      epochHandleId = highBitHandle,
+      albumId = "album-stable",
+      epochId = 12,
       tier = 2,
       shardIndex = 9,
       albumContentHashHex = "0".repeat(64),
     )
 
-    val storedHandle = request.workSpec.input.getLong(
-      ShardEncryptionWorker.KEY_EPOCH_HANDLE_ID,
-      0L,
-    )
-    assertEquals(highBitHandle, storedHandle)
-    assertEquals(ULong.MAX_VALUE, storedHandle.toULong())
+    assertEquals("album-stable", request.workSpec.input.getString(ShardEncryptionWorker.KEY_ALBUM_ID))
+    assertEquals(12, request.workSpec.input.getInt(ShardEncryptionWorker.KEY_EPOCH_ID, -1))
+    assertEquals(Long.MIN_VALUE, request.workSpec.input.getLong("epoch_handle_id", Long.MIN_VALUE))
   }
 
   @Test
@@ -312,7 +339,8 @@ class ShardEncryptionWorkerTest {
     val request = ShardEncryptionScheduler.buildRequest(
       jobId = "job-123",
       stagingUri = "file:///staged.bin",
-      epochHandleId = 42L,
+      albumId = "album-123",
+      epochId = 4,
       tier = 2,
       shardIndex = 9,
       albumContentHashHex = "1".repeat(64),
@@ -322,7 +350,8 @@ class ShardEncryptionWorkerTest {
     assertTrue(request.tags.contains(ShardEncryptionScheduler.SHARD_ENCRYPT_TAG))
     assertEquals(NetworkType.NOT_REQUIRED, request.workSpec.constraints.requiredNetworkType)
     assertEquals("file:///staged.bin", request.workSpec.input.getString(ShardEncryptionWorker.KEY_STAGING_URI))
-    assertEquals(42L, request.workSpec.input.getLong(ShardEncryptionWorker.KEY_EPOCH_HANDLE_ID, 0L))
+    assertEquals("album-123", request.workSpec.input.getString(ShardEncryptionWorker.KEY_ALBUM_ID))
+    assertEquals(4, request.workSpec.input.getInt(ShardEncryptionWorker.KEY_EPOCH_ID, -1))
     assertEquals(2, request.workSpec.input.getInt(ShardEncryptionWorker.KEY_TIER, 0))
     assertEquals(9, request.workSpec.input.getInt(ShardEncryptionWorker.KEY_SHARD_INDEX, -1))
     assertEquals("1".repeat(64), request.workSpec.input.getString(ShardEncryptionWorker.KEY_ALBUM_CONTENT_HASH_HEX))
@@ -330,22 +359,23 @@ class ShardEncryptionWorkerTest {
 
   private fun workerFor(
     staging: File,
-    epochHandleId: Long = 42L,
+    epochId: Int = 3,
     tier: Int = 1,
     shardIndex: Int = 7,
-    albumId: String? = null,
+    albumId: String = "album-1",
     photoId: String? = null,
     albumContentHashHex: String? = sha256Hex(staging.readBytes()),
     runAttemptCount: Int = 0,
     crypto: ShardCryptoEngine = RecordingCryptoEngine(),
+    epochHandleResolver: EpochHandleResolver = RecordingEpochHandleResolver(42L),
     contentHashDedup: ContentHashDedup = NoOpContentHashDedup,
   ): ShardEncryptionWorker {
     val inputBuilder = Data.Builder()
       .putString(ShardEncryptionWorker.KEY_STAGING_URI, staging.toURI().toString())
-      .putLong(ShardEncryptionWorker.KEY_EPOCH_HANDLE_ID, epochHandleId)
+      .putString(ShardEncryptionWorker.KEY_ALBUM_ID, albumId)
+      .putInt(ShardEncryptionWorker.KEY_EPOCH_ID, epochId)
       .putInt(ShardEncryptionWorker.KEY_TIER, tier)
       .putInt(ShardEncryptionWorker.KEY_SHARD_INDEX, shardIndex)
-    if (albumId != null) inputBuilder.putString(ShardEncryptionWorker.KEY_ALBUM_ID, albumId)
     if (photoId != null) inputBuilder.putString(ShardEncryptionWorker.KEY_PHOTO_ID, photoId)
     if (albumContentHashHex != null) {
       inputBuilder.putString(ShardEncryptionWorker.KEY_ALBUM_CONTENT_HASH_HEX, albumContentHashHex)
@@ -364,6 +394,7 @@ class ShardEncryptionWorkerTest {
           workerParameters,
           crypto,
           ShardEnvelopeStore(appContext),
+          epochHandleResolver,
           contentHashDedup,
         )
       })
@@ -399,6 +430,8 @@ class ShardEncryptionWorkerTest {
     var streamingEnvelope: ByteArray = "streaming-envelope".toByteArray()
     var smallCalls: Int = 0
     var streamingCalls: Int = 0
+    val smallEpochHandles = mutableListOf<Long>()
+    val streamingEpochHandles = mutableListOf<Long>()
 
     override fun encryptShardWithEpochHandle(
       epochHandleId: Long,
@@ -407,6 +440,7 @@ class ShardEncryptionWorkerTest {
       shardIndex: Int,
     ): ByteArray {
       smallCalls++
+      smallEpochHandles += epochHandleId
       return smallEnvelope.copyOf()
     }
 
@@ -418,6 +452,7 @@ class ShardEncryptionWorkerTest {
       shardIndex: Int,
     ): ByteArray {
       streamingCalls++
+      streamingEpochHandles += epochHandleId
       lastStreamingLength = plaintextLength
       lastStreamingPlaintext = plaintext.readBytes()
       return streamingEnvelope.copyOf()
@@ -441,6 +476,24 @@ class ShardEncryptionWorkerTest {
     ): ByteArray {
       error("boom")
     }
+  }
+
+  private class RecordingEpochHandleResolver(vararg handles: Long) : EpochHandleResolver {
+    private val remainingHandles = ArrayDeque(handles.toList())
+    val opened = mutableListOf<Triple<String, Int, Long>>()
+    val closed = mutableListOf<Long>()
+
+    override fun openEpochHandle(albumId: String, epochId: Int): OpenedEpochHandle? {
+      val handle = if (remainingHandles.size > 1) remainingHandles.removeFirst() else remainingHandles.peekFirst()
+      opened += Triple(albumId, epochId, handle)
+      return OpenedEpochHandle(handle) {
+        closed += handle
+      }
+    }
+  }
+
+  private object UnavailableEpochHandleResolver : EpochHandleResolver {
+    override fun openEpochHandle(albumId: String, epochId: Int): OpenedEpochHandle? = null
   }
 
   private class RecordingContentHashDedup(
