@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Middleware;
+using Npgsql;
 
 namespace Mosaic.Backend.Infrastructure;
 
@@ -47,9 +48,8 @@ public class DatabaseExceptionHandler : IExceptionHandler
 
         if (exception is DbUpdateException dbUpdateException)
         {
-            var inner = dbUpdateException.InnerException?.Message ?? "";
-            var isUniqueViolation = inner.Contains("unique", StringComparison.OrdinalIgnoreCase) ||
-                                    inner.Contains("duplicate", StringComparison.OrdinalIgnoreCase);
+            var isUniqueViolation =
+                dbUpdateException.InnerException is PostgresException { SqlState: "23505" };
 
             if (isUniqueViolation)
             {
