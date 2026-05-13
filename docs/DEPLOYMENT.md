@@ -38,16 +38,27 @@ cd Mosaic
 cp .env.example .env
 ```
 
-**Important:** Open `.env` and change the `POSTGRES_PASSWORD`:
+**Important:** Open `.env` and set both `AUTH_SERVER_SECRET` and `POSTGRES_PASSWORD`:
 
 ```bash
-# Generate a secure password
+# Generate a stable auth server secret
+openssl rand -base64 32
+# Copy the output and paste it as AUTH_SERVER_SECRET in .env
+
+# Generate a secure database password
 openssl rand -base64 32
 # Copy the output and paste it as POSTGRES_PASSWORD in .env
 ```
 
+#### Auth server secret
+
+`AUTH_SERVER_SECRET` is required for production Docker Compose deployments. It is used during LocalAuth initialization to derive deterministic fake-salt values for unknown usernames, which prevents user enumeration via timing or salt-stability differences.
+
+Generate it once with `openssl rand -base64 32`, store it in `.env`, and keep it stable for the lifetime of the deployment. Changing it after users have registered will change auth init responses for existing accounts and may break password-manager stored derivations. Rotate it only as part of a coordinated password-rotation event.
+
 Your `.env` should look like:
 ```ini
+AUTH_SERVER_SECRET=your-stable-generated-auth-secret-here
 POSTGRES_PASSWORD=your-secure-generated-password-here
 FRONTEND_PORT=8080
 ```
@@ -211,7 +222,9 @@ Caddy will automatically obtain and renew TLS certificates from Let's Encrypt.
 
 ### 3. Configure Authentication
 
-Mosaic uses the `Remote-User` header for authentication. Your reverse proxy should set this header based on your authentication provider.
+The default `docker-compose.yml` configuration uses local username/password authentication (`LOCAL_AUTH_ENABLED=true`, `PROXY_AUTH_ENABLED=false`) so first deploys work without an external identity proxy.
+
+To use trusted reverse-proxy authentication instead, disable local auth and enable proxy auth. Your reverse proxy must set the `Remote-User` header based on your authentication provider.
 
 **Common authentication solutions:**
 

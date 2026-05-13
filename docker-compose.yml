@@ -36,6 +36,7 @@ services:
       Storage__Path: /app/data/blobs
       Auth__LocalAuthEnabled: "${LOCAL_AUTH_ENABLED:-true}"
       Auth__ProxyAuthEnabled: "${PROXY_AUTH_ENABLED:-false}"
+      Auth__ServerSecret: "${AUTH_SERVER_SECRET:?AUTH_SERVER_SECRET must be set; generate with: openssl rand -base64 32}"
       Auth__TrustedProxies__0: "127.0.0.1/32"
       Auth__TrustedProxies__1: "::1/128"
       Quota__DefaultMaxBytes: ${DEFAULT_QUOTA_BYTES:-10737418240}
