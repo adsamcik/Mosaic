@@ -10,6 +10,7 @@ using Mosaic.Backend.Services;
 
 using Mosaic.Backend.Models.Albums;
 using Mosaic.Backend.Models.Manifests;
+using Mosaic.Backend.Models;
 using Mosaic.Backend.Models.Photos;
 
 namespace Mosaic.Backend.Controllers;
@@ -86,7 +87,7 @@ public class AlbumsController : ControllerBase
             .ToListAsync();
 
         Response.AddPaginationHeaders(skip, take, totalCount);
-        return Ok(albums);
+        return Ok(PagedResult.Create(albums, skip, take));
     }
 
     /// <summary>
@@ -556,7 +557,7 @@ public class AlbumsController : ControllerBase
             .ToList();
 
         Response.AddPaginationHeaders(skip, take, totalCount);
-        return Ok(photos);
+        return Ok(PagedResult.Create(photos, skip, take));
     }
 
     /// <summary>

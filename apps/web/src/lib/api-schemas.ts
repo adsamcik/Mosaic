@@ -72,6 +72,12 @@ const AccessTierSchema = z.union([
   z.literal(3),
 ]);
 
+const PagedResultSchema = <T extends z.ZodTypeAny>(itemSchema: T) =>
+  z.object({
+    items: z.array(itemSchema),
+    nextSkip: z.number().int().nonnegative().nullable(),
+  });
+
 // =============================================================================
 // Health
 // =============================================================================
@@ -134,7 +140,7 @@ export const AlbumSchema = z.object({
 });
 export type Album = z.infer<typeof AlbumSchema>;
 
-export const AlbumListSchema = z.array(AlbumSchema);
+export const AlbumListSchema = PagedResultSchema(AlbumSchema);
 
 export const RenameAlbumResponseSchema = z.object({
   id: UuidSchema,
@@ -185,7 +191,7 @@ export const AlbumMemberSchema = z.object({
 });
 export type AlbumMember = z.infer<typeof AlbumMemberSchema>;
 
-export const AlbumMemberListSchema = z.array(AlbumMemberSchema);
+export const AlbumMemberListSchema = PagedResultSchema(AlbumMemberSchema);
 
 // =============================================================================
 // Epoch Keys
@@ -317,7 +323,7 @@ export const ShareLinkResponseSchema = z.object({
 });
 export type ShareLinkResponse = z.infer<typeof ShareLinkResponseSchema>;
 
-export const ShareLinkResponseListSchema = z.array(ShareLinkResponseSchema);
+export const ShareLinkResponseListSchema = PagedResultSchema(ShareLinkResponseSchema);
 
 export const ShareLinkWithSecretResponseSchema = z.object({
   id: UuidSchema,
@@ -330,7 +336,7 @@ export type ShareLinkWithSecretResponse = z.infer<
   typeof ShareLinkWithSecretResponseSchema
 >;
 
-export const ShareLinkWithSecretResponseListSchema = z.array(
+export const ShareLinkWithSecretResponseListSchema = PagedResultSchema(
   ShareLinkWithSecretResponseSchema,
 );
 
@@ -371,7 +377,7 @@ export type ShareLinkPhotoResponse = z.infer<
   typeof ShareLinkPhotoResponseSchema
 >;
 
-export const ShareLinkPhotoResponseListSchema = z.array(
+export const ShareLinkPhotoResponseListSchema = PagedResultSchema(
   ShareLinkPhotoResponseSchema,
 );
 
@@ -420,7 +426,8 @@ export type AdminUserResponse = z.infer<typeof AdminUserResponseSchema>;
 
 /** Wrapper response from `/admin/users` (the backend wraps the list). */
 export const AdminUserListEnvelopeSchema = z.object({
-  users: z.array(AdminUserResponseSchema),
+  items: z.array(AdminUserResponseSchema),
+  nextSkip: z.number().int().nonnegative().nullable(),
 });
 
 export const AdminAlbumLimitsSchema = z.object({
@@ -445,7 +452,8 @@ export type AdminAlbumResponse = z.infer<typeof AdminAlbumResponseSchema>;
 
 /** Wrapper response from `/admin/albums` (the backend wraps the list). */
 export const AdminAlbumListEnvelopeSchema = z.object({
-  albums: z.array(AdminAlbumResponseSchema),
+  items: z.array(AdminAlbumResponseSchema),
+  nextSkip: z.number().int().nonnegative().nullable(),
 });
 
 export const AdminStatsResponseSchema = z.object({

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Extensions;
+using Mosaic.Backend.Models;
 using Mosaic.Backend.Models.ShareLinks;
 using Mosaic.Backend.Services;
 
@@ -219,7 +220,7 @@ public class ShareLinksController : ControllerBase
             }).ToList();
 
         Response.AddPaginationHeaders(skip, take, shareLinks.Count);
-        return Ok(links);
+        return Ok(PagedResult.Create(links, skip, take));
     }
 
     /// <summary>
@@ -286,7 +287,7 @@ public class ShareLinksController : ControllerBase
             .ToList();
 
         Response.AddPaginationHeaders(skip, take, links.Count);
-        return Ok(page);
+        return Ok(PagedResult.Create(page, skip, take));
     }
 
     /// <summary>

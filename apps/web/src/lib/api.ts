@@ -210,6 +210,19 @@ async function apiRequest<T>(
   return json as T;
 }
 
+interface PagedResult<T> {
+  items: T[];
+  nextSkip: number | null;
+}
+
+async function apiPagedRequest<T>(
+  path: string,
+  options: RequestOptions,
+): Promise<T[]> {
+  const page = await apiRequest<PagedResult<T>>(path, options);
+  return page.items;
+}
+
 /**
  * Maximum page size accepted by every paginated `*List*` backend endpoint.
  * Backend caps `take` at 100; matching this minimises the number of round
@@ -311,7 +324,7 @@ export function createApiClient(): MosaicApi {
     // Albums
     // =========================================================================
     async listAlbums(skip?: number, take?: number): Promise<Album[]> {
-      return apiRequest(`/albums${paginationQuery(skip, take)}`, {
+      return apiPagedRequest(`/albums${paginationQuery(skip, take)}`, {
         schema: AlbumListSchema,
       });
     },
@@ -415,7 +428,7 @@ export function createApiClient(): MosaicApi {
       skip?: number,
       take?: number,
     ): Promise<AlbumMember[]> {
-      return apiRequest(
+      return apiPagedRequest(
         `/albums/${albumId}/members${paginationQuery(skip, take)}`,
         { schema: AlbumMemberListSchema },
       );
@@ -572,7 +585,7 @@ export function createApiClient(): MosaicApi {
       skip?: number,
       take?: number,
     ): Promise<ShareLinkResponse[]> {
-      return apiRequest(
+      return apiPagedRequest(
         `/albums/${albumId}/share-links${paginationQuery(skip, take)}`,
         { schema: ShareLinkResponseListSchema },
       );
@@ -583,7 +596,7 @@ export function createApiClient(): MosaicApi {
       skip?: number,
       take?: number,
     ): Promise<ShareLinkWithSecretResponse[]> {
-      return apiRequest(
+      return apiPagedRequest(
         `/albums/${albumId}/share-links/with-secrets${paginationQuery(skip, take)}`,
         { schema: ShareLinkWithSecretResponseListSchema },
       );
@@ -651,7 +664,7 @@ export function createApiClient(): MosaicApi {
       skip?: number,
       take?: number,
     ): Promise<ShareLinkPhotoResponse[]> {
-      return apiRequest(
+      return apiPagedRequest(
         `/s/${encodeURIComponent(linkIdBase64)}/photos${paginationQuery(skip, take)}`,
         { schema: ShareLinkPhotoResponseListSchema },
       );
@@ -692,11 +705,11 @@ export function createApiClient(): MosaicApi {
     // Admin - Users
     // =========================================================================
     async listUsers(skip?: number, take?: number): Promise<AdminUserResponse[]> {
-      const wrapped = await apiRequest<{ users: AdminUserResponse[] }>(
+      const wrapped = await apiRequest<PagedResult<AdminUserResponse>>(
         `/admin/users${paginationQuery(skip, take)}`,
         { schema: AdminUserListEnvelopeSchema },
       );
-      return wrapped.users;
+      return wrapped.items;
     },
 
     async getUserQuota(userId: string): Promise<AdminUserQuota> {
@@ -742,11 +755,11 @@ export function createApiClient(): MosaicApi {
       skip?: number,
       take?: number,
     ): Promise<AdminAlbumResponse[]> {
-      const wrapped = await apiRequest<{ albums: AdminAlbumResponse[] }>(
+      const wrapped = await apiRequest<PagedResult<AdminAlbumResponse>>(
         `/admin/albums${paginationQuery(skip, take)}`,
         { schema: AdminAlbumListEnvelopeSchema },
       );
-      return wrapped.albums;
+      return wrapped.items;
     },
 
     async getAlbumLimits(albumId: string): Promise<AdminAlbumLimits> {

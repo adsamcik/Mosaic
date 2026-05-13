@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Extensions;
+using Mosaic.Backend.Models;
 using Mosaic.Backend.Models.Photos;
 using Mosaic.Backend.Models.ShareLinks;
 using Mosaic.Backend.Services;
@@ -353,7 +354,7 @@ public class ShareLinkAccessController : ControllerBase
             .ToList();
 
         Response.AddPaginationHeaders(skip, take, totalCount);
-        return Ok(photos);
+        return Ok(PagedResult.Create(photos, skip, take));
     }
 
     /// <summary>

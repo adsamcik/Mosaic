@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.Members;
+using Mosaic.Backend.Models;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Logging;
@@ -67,7 +68,7 @@ public class MembersController : ControllerBase
             .ToListAsync();
 
         Response.AddPaginationHeaders(skip, take, totalCount);
-        return Ok(members);
+        return Ok(PagedResult.Create(members, skip, take));
     }
 
 

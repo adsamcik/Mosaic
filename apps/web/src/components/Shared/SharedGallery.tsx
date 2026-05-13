@@ -123,7 +123,7 @@ export function SharedGallery({
           ? { headers: { 'X-Share-Grant': grantToken } }
           : {};
         const photoResponses: ShareLinkPhotoResponse[] = [];
-        for (let skip = 0; ; skip += pageSize) {
+        for (let skip: number | null = 0; skip !== null; ) {
           const response = await fetch(
             `/api/s/${linkId}/photos?skip=${skip}&take=${pageSize}`,
             fetchInit,
@@ -135,10 +135,11 @@ export function SharedGallery({
             );
           }
 
-          const page: ShareLinkPhotoResponse[] = await response.json();
-          photoResponses.push(...page);
+          const page: { items: ShareLinkPhotoResponse[]; nextSkip: number | null } =
+            await response.json();
+          photoResponses.push(...page.items);
           if (cancelled) return;
-          if (page.length < pageSize) break;
+          skip = page.nextSkip;
         }
 
         // Slice 4 — manifest decryption no longer needs the legacy

@@ -162,9 +162,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Album'
+                $ref: '#/components/schemas/PagedAlbums'
 
     post:
       operationId: createAlbum
@@ -283,9 +281,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/AlbumMember'
+                $ref: '#/components/schemas/PagedAlbumMembers'
         '403':
           $ref: '#/components/responses/Forbidden'
 
@@ -577,9 +573,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ShareLinkResponse'
+                $ref: '#/components/schemas/PagedShareLinks'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -640,9 +634,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ShareLinkWithSecretResponse'
+                $ref: '#/components/schemas/PagedShareLinksWithSecrets'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -808,9 +800,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ShareLinkPhotoResponse'
+                $ref: '#/components/schemas/PagedShareLinkPhotos'
         '404':
           $ref: '#/components/responses/NotFound'
         '410':
@@ -906,12 +896,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  users:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/UserWithQuota'
+                $ref: '#/components/schemas/PagedAdminUsers'
         '403':
           $ref: '#/components/responses/Forbidden'
 
@@ -1018,12 +1003,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  albums:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/AlbumWithLimits'
+                $ref: '#/components/schemas/PagedAdminAlbums'
         '403':
           $ref: '#/components/responses/Forbidden'
 
@@ -1238,6 +1218,107 @@ components:
           type: object
           additionalProperties: true
           description: Additional error context
+
+    ProblemDetails:
+      type: object
+      description: RFC 7807 problem details error response.
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        correlationId:
+          type: string
+          description: Request correlation identifier when available.
+      additionalProperties: true
+
+    PagedResult:
+      type: object
+      required: [items, nextSkip]
+      properties:
+        items:
+          type: array
+          items: {}
+        nextSkip:
+          type: integer
+          nullable: true
+          description: Skip value for the next page, or null when no further page is available.
+
+    PagedAlbums:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Album'
+
+    PagedAlbumMembers:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AlbumMember'
+
+    PagedShareLinks:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ShareLinkResponse'
+
+    PagedShareLinksWithSecrets:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ShareLinkWithSecretResponse'
+
+    PagedShareLinkPhotos:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ShareLinkPhotoResponse'
+
+    PagedAdminUsers:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/UserWithQuota'
+
+    PagedAdminAlbums:
+      allOf:
+        - $ref: '#/components/schemas/PagedResult'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AlbumWithLimits'
 
     HealthResponse:
       type: object

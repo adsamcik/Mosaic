@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Models.Admin;
+using Mosaic.Backend.Models;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Logging;
 using Mosaic.Backend.Services;
@@ -71,19 +73,10 @@ public class AdminUsersController : ControllerBase
                 u.Quota?.CurrentAlbumCount ?? 0,
                 u.Quota?.MaxAlbums.HasValue == true || (u.Quota?.MaxStorageBytes ?? 0) != defaults.MaxStorageBytesPerUser
             )
-        ));
+        )).ToList();
 
-        return Ok(new
-        {
-            users = result,
-            pagination = new
-            {
-                skip,
-                take,
-                totalCount,
-                hasMore = skip + take < totalCount
-            }
-        });
+        Response.AddPaginationHeaders(skip, take, totalCount);
+        return Ok(PagedResult.Create(result, skip, take));
     }
 
     /// <summary>

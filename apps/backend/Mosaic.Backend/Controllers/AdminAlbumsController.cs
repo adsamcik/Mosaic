@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Models.Admin;
+using Mosaic.Backend.Models;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;
 
@@ -72,19 +74,10 @@ public class AdminAlbumsController : ControllerBase
                 a.Limits?.CurrentSizeBytes ?? 0,
                 a.Limits?.MaxPhotos.HasValue == true || a.Limits?.MaxSizeBytes.HasValue == true
             )
-        ));
+        )).ToList();
 
-        return Ok(new
-        {
-            albums = result,
-            pagination = new
-            {
-                skip,
-                take,
-                totalCount,
-                hasMore = skip + take < totalCount
-            }
-        });
+        Response.AddPaginationHeaders(skip, take, totalCount);
+        return Ok(PagedResult.Create(result, skip, take));
     }
 
     /// <summary>
