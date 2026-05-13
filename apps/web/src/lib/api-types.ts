@@ -251,6 +251,23 @@ export interface RotateEpochRequest {
   shareLinkKeys?: ShareLinkKeyUpdateRequest[];
 }
 
+/**
+ * Atomic remove-member-and-rotate request body. Combines the membership
+ * revocation and epoch rotation into a single backend call so the two
+ * commit (or roll back) together — closes the TOCTOU window where a
+ * still-active member could upload content under the OLD epoch between
+ * the two API calls of the historical two-step flow.
+ *
+ * `epochId` MUST equal `album.currentEpochId + 1`. The server validates
+ * that `epochKeys` covers every still-active member except the one being
+ * removed, and that the removed user is NOT in the recipient list.
+ */
+export interface RemoveAndRotateRequest {
+  epochId: number;
+  epochKeys: CreateEpochKeyRequest[];
+  shareLinkKeys?: ShareLinkKeyUpdateRequest[];
+}
+
 export interface SyncAlbumOptions {
   limit?: number;
   signal?: AbortSignal;
@@ -570,6 +587,16 @@ export interface MosaicApi {
   ): Promise<AlbumMember[]>;
   inviteToAlbum(albumId: string, request: InviteRequest): Promise<AlbumMember>;
   removeAlbumMember(albumId: string, userId: string): Promise<void>;
+  /**
+   * Atomically revoke a member AND rotate the album's epoch in a single
+   * backend transaction. See {@link RemoveAndRotateRequest} for the
+   * contract.
+   */
+  removeAlbumMemberAndRotate(
+    albumId: string,
+    userId: string,
+    request: RemoveAndRotateRequest,
+  ): Promise<void>;
 
   // Epoch Keys
   getEpochKeys(albumId: string): Promise<EpochKeyRecord[]>;

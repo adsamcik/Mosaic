@@ -35,6 +35,7 @@ import type {
   EpochKeyRecord,
   CreateEpochKeyRequest,
   RotateEpochRequest,
+  RemoveAndRotateRequest,
   ManifestRecord,
   CreateManifestRequest,
   ManifestCreated,
@@ -594,6 +595,20 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/albums/${albumId}/members/${userId}`, {
         method: 'DELETE',
       });
+    },
+
+    async removeAlbumMemberAndRotate(
+      albumId: string,
+      userId: string,
+      request: RemoveAndRotateRequest,
+    ): Promise<void> {
+      return apiRequest(
+        `/albums/${albumId}/members/${userId}/remove-and-rotate`,
+        {
+          method: 'POST',
+          body: request,
+        },
+      );
     },
 
     // =========================================================================

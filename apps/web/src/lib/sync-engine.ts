@@ -110,12 +110,33 @@ type SyncEventType =
   | 'sync-progress'
   | 'sync-complete'
   | 'sync-error'
+  | 'sync-warning'
+  | 'sync-server-regression'
   | 'content-conflict';
 
 interface SyncEventDetail {
   albumId: string;
   count?: number;
   error?: Error;
+  /**
+   * For `sync-warning`: opaque manifest IDs the engine could not safely
+   * apply to the local DB on this run (signature failed, decrypt failed,
+   * JSON parse failed, transcript mismatch, signer-pubkey mismatch, etc.).
+   * The cursor was held back so they will be retried on the next sync.
+   * Carries IDs only — never plaintext metadata.
+   */
+  skippedManifestIds?: readonly string[];
+  /** For `sync-warning`: classification of the skip count by reason. */
+  skipReasonCounts?: Readonly<Record<string, number>>;
+  /**
+   * For `sync-server-regression`: the cursor value the client held vs the
+   * smaller value the server returned. Surfaced so a parent UI can demand
+   * a hard re-auth / full re-sync rather than silently rewinding.
+   */
+  serverRegression?: {
+    clientHeld: number;
+    serverReported: number;
+  };
 }
 
 /**
@@ -225,6 +246,32 @@ class SyncEngine extends EventTarget {
         const response = await api.syncAlbum(albumId, sinceVersion, { signal });
         throwIfAborted(signal);
 
+        // Audit "sync C3": detect server cursor regression. If the server
+        // claims `albumVersion < sinceVersion` (DB reset, restore-from-
+        // backup, malicious response), we MUST NOT silently rewind the
+        // local cursor — that would re-process every manifest from the
+        // smaller value forward and risk re-purging local state from
+        // stale tombstones. Emit a distinct event the UI can react to
+        // (re-auth, full resync) and abort sync.
+        if (response.albumVersion < sinceVersion) {
+          const regression = new Error(
+            `Server reported album version ${String(response.albumVersion)} but client holds ${String(sinceVersion)} for album ${albumId}`,
+          );
+          log.error(regression.message, {
+            albumId,
+            sinceVersion,
+            responseAlbumVersion: response.albumVersion,
+          });
+          this.dispatchSyncEvent('sync-server-regression', {
+            albumId,
+            serverRegression: {
+              clientHeld: sinceVersion,
+              serverReported: response.albumVersion,
+            },
+          });
+          throw regression;
+        }
+
         if (response.hasMore && response.albumVersion <= sinceVersion) {
           const error = new Error(
             `Sync pagination did not advance album version for album ${albumId}`,
@@ -252,6 +299,22 @@ class SyncEngine extends EventTarget {
         }
 
         const decrypted: DecryptedManifest[] = [];
+        // Audit "sync C1": every continue path below is a SKIP that
+        // historically advanced the cursor past the skipped manifest,
+        // making it permanently invisible. We now collect every skip
+        // here and use the minimum skipped versionCreated to clamp the
+        // cursor advance below — the cursor is never advanced past a
+        // skipped manifest, so the next sync run will retry it.
+        const skippedIds: string[] = [];
+        const skipReasonCounts: Record<string, number> = {};
+        let minSkippedVersion: number | null = null;
+        const recordSkip = (manifestId: string, versionCreated: number, reason: string): void => {
+          skippedIds.push(manifestId);
+          skipReasonCounts[reason] = (skipReasonCounts[reason] ?? 0) + 1;
+          if (minSkippedVersion === null || versionCreated < minSkippedVersion) {
+            minSkippedVersion = versionCreated;
+          }
+        };
         let failedVerifyCount = 0;
         for (const manifest of response.manifests) {
           throwIfAborted(signal);
@@ -273,6 +336,7 @@ class SyncEngine extends EventTarget {
 
             if (!hasValidSigningKey(serverSignerPubkey)) {
               log.warn(`Manifest ${manifest.id} has empty signer pubkey`);
+              recordSkip(manifest.id, manifest.versionCreated, 'empty-signer-pubkey');
               continue;
             }
 
@@ -280,6 +344,7 @@ class SyncEngine extends EventTarget {
               log.warn(
                 `Manifest ${manifest.id} signer pubkey mismatch for album ${albumId}`,
               );
+              recordSkip(manifest.id, manifest.versionCreated, 'signer-pubkey-mismatch');
               continue;
             }
 
@@ -301,6 +366,7 @@ class SyncEngine extends EventTarget {
               log.warn(`Manifest ${manifest.id} JSON parse failed`, {
                 error: parseErr instanceof Error ? parseErr.message : String(parseErr),
               });
+              recordSkip(manifest.id, manifest.versionCreated, 'json-parse');
               continue;
             }
 
@@ -312,6 +378,7 @@ class SyncEngine extends EventTarget {
                 manifestId: manifest.id,
                 failedVerifyCount,
               });
+              recordSkip(manifest.id, manifest.versionCreated, 'transcript-mismatch');
               continue;
             }
 
@@ -329,6 +396,7 @@ class SyncEngine extends EventTarget {
                 manifestId: manifest.id,
                 failedVerifyCount,
               });
+              recordSkip(manifest.id, manifest.versionCreated, 'signature-invalid');
               continue;
             }
 
@@ -348,6 +416,7 @@ class SyncEngine extends EventTarget {
             log.warn(`Failed to process manifest ${manifest.id}`, {
               error: decryptErr instanceof Error ? decryptErr.message : String(decryptErr),
             });
+            recordSkip(manifest.id, manifest.versionCreated, 'decrypt-error');
           }
         }
 
@@ -360,11 +429,43 @@ class SyncEngine extends EventTarget {
           });
         }
 
-        await db.setAlbumVersion(albumId, response.albumVersion);
-        sinceVersion = response.albumVersion;
+        // Audit "sync C1 + C3": cursor advance is the riskiest line in
+        // the engine. The new contract:
+        //   - If any manifest was skipped this page, advance only to
+        //     `minSkippedVersion - 1` so the skipped manifests will be
+        //     re-fetched on the next run.
+        //   - Otherwise advance to the response page-max.
+        //   - In all cases, never let the persisted cursor go BACKWARDS
+        //     (clamp to `max(sinceVersion, …)`). Combined with the
+        //     server-regression guard above, this makes silent drift
+        //     impossible.
+        const desiredAdvance = minSkippedVersion !== null
+          ? Math.max(sinceVersion, minSkippedVersion - 1)
+          : Math.max(sinceVersion, response.albumVersion);
+        await db.setAlbumVersion(albumId, desiredAdvance);
+        sinceVersion = desiredAdvance;
+
+        if (skippedIds.length > 0) {
+          this.dispatchSyncEvent('sync-warning', {
+            albumId,
+            count: skippedIds.length,
+            skippedManifestIds: skippedIds,
+            skipReasonCounts,
+          });
+        }
+
         throwIfAborted(signal);
 
         if (!response.hasMore) {
+          break;
+        }
+
+        // If we held the cursor back due to skips AND the server reports
+        // hasMore=true, exit the loop too — re-querying with the same
+        // sinceVersion would return the same skipped manifests and the
+        // pagination-no-advance guard above would error. Wait for the
+        // next sync pass to retry the skipped IDs.
+        if (minSkippedVersion !== null && desiredAdvance < response.albumVersion) {
           break;
         }
       }

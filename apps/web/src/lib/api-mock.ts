@@ -572,6 +572,28 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       memberList.splice(index, 1);
     },
 
+    async removeAlbumMemberAndRotate(
+      albumId: string,
+      userId: string,
+      _request,
+    ): Promise<void> {
+      // Mock collapses to: revoke + bump epoch counter. Real keys/wraps
+      // are exercised in unit tests against the live API client.
+      const memberList = store.members.get(albumId);
+      if (!memberList) {
+        throw new Error(`Album not found: ${albumId}`);
+      }
+      const index = memberList.findIndex((m) => m.userId === userId);
+      if (index < 0) {
+        throw new Error(`Member not found: ${userId}`);
+      }
+      memberList.splice(index, 1);
+      const album = store.albums.get(albumId);
+      if (album) {
+        album.currentEpochId = (album.currentEpochId ?? 1) + 1;
+      }
+    },
+
     // =========================================================================
     // Epoch Keys
     // =========================================================================

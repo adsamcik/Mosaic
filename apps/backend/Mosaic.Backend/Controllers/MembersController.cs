@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.Members;
 using Mosaic.Backend.Models;
+using Mosaic.Backend.Models.EpochKeys;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Logging;
@@ -228,5 +229,138 @@ public class MembersController : ControllerBase
         _logger.MemberRemoved(userId, albumId, user.Id);
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Atomically revoke a member AND rotate the album's epoch in a single
+    /// transaction.
+    ///
+    /// Audit "epoch-rotation High": the historical two-step flow
+    /// (DELETE /members/:userId then POST /epochs/:epochId/rotate) opens
+    /// a TOCTOU window where, between the two API calls, a still-active
+    /// member can upload new content under the OLD epoch — which the
+    /// just-removed member can decrypt because they retained their copy
+    /// of the old epoch keys. This endpoint commits both writes (member
+    /// revocation + epoch bump + per-member sealed bundles + share-link
+    /// re-wraps) in a single DbContext transaction so either both
+    /// succeed or both roll back.
+    ///
+    /// Validation:
+    ///   - Caller must be the album owner.
+    ///   - The member-being-removed cannot be the owner.
+    ///   - The supplied <c>EpochKeys</c> must NOT include the
+    ///     member-being-removed (they shouldn't get the new key).
+    ///   - <c>EpochKeys</c> must cover every OTHER active member; the
+    ///     EpochKeyRotationService rejects any recipient that is not an
+    ///     active member, but here we additionally confirm coverage so a
+    ///     malformed owner client cannot silently lock out members.
+    ///   - <c>epochId</c> must equal <c>album.CurrentEpochId + 1</c>.
+    /// </summary>
+    [HttpPost("{userId}/remove-and-rotate")]
+    public async Task<IActionResult> RemoveAndRotate(
+        Guid albumId,
+        Guid userId,
+        [FromBody] RemoveAndRotateRequest request,
+        [FromServices] IEpochKeyRotationService rotationService)
+    {
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
+
+        var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id);
+        if (ownerError != null)
+        {
+            return ownerError;
+        }
+
+        if (userId == album!.OwnerId)
+        {
+            return Problem(
+                detail: "Cannot remove album owner",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (request.EpochId != album.CurrentEpochId + 1)
+        {
+            return Problem(
+                detail: $"epochId must equal current epoch + 1 (current={album.CurrentEpochId}, requested={request.EpochId})",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (request.EpochKeys.Any(k => k.RecipientId == userId))
+        {
+            return Problem(
+                detail: "epochKeys must not include the member being removed",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var membership = await _db.AlbumMembers
+            .FirstOrDefaultAsync(am => am.AlbumId == albumId && am.UserId == userId && am.RevokedAt == null);
+
+        if (membership == null)
+        {
+            return NotFound();
+        }
+
+        // The set of active members the rotation MUST cover is "everyone
+        // who is currently active, except the person being removed and
+        // (per existing policy) the album owner who is implicit in their
+        // own keys". Match exactly: any uncovered member would silently
+        // lose access to new uploads after rotation.
+        var activeMemberIds = await _db.AlbumMembers
+            .Where(am => am.AlbumId == albumId
+                         && am.RevokedAt == null
+                         && am.UserId != userId)
+            .Select(am => am.UserId)
+            .ToHashSetAsync();
+
+        var suppliedRecipients = request.EpochKeys.Select(k => k.RecipientId).ToHashSet();
+        var missing = activeMemberIds.Where(id => !suppliedRecipients.Contains(id)).ToList();
+        if (missing.Count > 0)
+        {
+            return Problem(
+                detail: $"epochKeys is missing entries for {missing.Count} still-active member(s); rotation would lock them out",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            membership.RevokedAt = DateTime.UtcNow;
+
+            var rotateRequest = new RotateEpochRequest(
+                EpochKeys: request.EpochKeys,
+                ShareLinkKeys: request.ShareLinkKeys ?? Array.Empty<ShareLinkKeyUpdateRequest>());
+
+            var staged = await rotationService.RotateInExistingTransactionAsync(
+                album,
+                request.EpochId,
+                rotateRequest);
+
+            if (!staged.Success)
+            {
+                await tx.RollbackAsync();
+                return Problem(
+                    detail: staged.ErrorDetail,
+                    statusCode: staged.StatusCode ?? StatusCodes.Status400BadRequest);
+            }
+
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            _logger.MemberRemoved(userId, albumId, user.Id);
+
+            return Created($"/api/albums/{albumId}/epochs/{request.EpochId}", new
+            {
+                staged.AlbumId,
+                staged.EpochId,
+                staged.KeyCount,
+                staged.ShareLinkKeysUpdated,
+                RemovedUserId = userId
+            });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
     }
 }

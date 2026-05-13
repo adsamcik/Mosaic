@@ -17,7 +17,7 @@ import { fetchAndUnwrapEpochKeys } from '../lib/epoch-key-service';
 import {
   clearPhotoCaches,
   EpochRotationError,
-  rotateEpoch,
+  removeMemberAndRotateEpoch,
 } from '../lib/epoch-rotation-service';
 
 /** Error thrown by member management operations */
@@ -405,27 +405,24 @@ export function useMemberManagement(
       onProgress?.('removing');
 
       try {
-        const api = getApi();
-
-        // Step 1: Remove member
-        await api.removeAlbumMember(albumId, userId);
-        setMembers((prev) => prev.filter((m) => m.userId !== userId));
-
-        // Step 2: Rotate epoch keys
+        // Single atomic backend call replaces the historical two-step
+        // (DELETE member -> POST rotate). Closes the TOCTOU window where
+        // a still-active member could upload content under the OLD epoch
+        // between the two API calls — readable by the just-removed
+        // member who retained their copy of the old epoch keys.
+        // Audit "epoch-rotation High".
         setRemovalStep('rotating');
         onProgress?.('rotating');
-        await rotateEpoch(albumId);
+        await removeMemberAndRotateEpoch(albumId, userId);
+        setMembers((prev) => prev.filter((m) => m.userId !== userId));
 
-        // Step 3: Clear local caches
         setRemovalStep('clearing');
         onProgress?.('clearing');
         await clearPhotoCaches(albumId);
 
-        // Step 4: Complete
         setRemovalStep('complete');
         onProgress?.('complete');
       } catch (err) {
-        // Wrap epoch rotation errors
         if (err instanceof EpochRotationError) {
           throw new MemberManagementError(
             `Failed to rotate keys: ${err.message}`,

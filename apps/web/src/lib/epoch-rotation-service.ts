@@ -13,6 +13,7 @@ import { fromBase64, getApi, paginateAll, toBase64 } from './api';
 import type {
   AlbumMember,
   CreateEpochKeyRequest,
+  RemoveAndRotateRequest,
   RotateEpochRequest,
   ShareLinkKeyUpdateRequest,
   ShareLinkWithSecretResponse,
@@ -290,6 +291,209 @@ export async function rotateEpoch(
   clearAlbumKeys(albumId);
 
   // Cache the new epoch key reference for the current user.
+  const newBundle: EpochKeyBundle = {
+    epochId: newEpochId,
+    epochHandleId: newEpochKey.epochHandleId,
+    signPublicKey: newEpochKey.signPublicKey,
+    signKeypair: {
+      publicKey: newEpochKey.signPublicKey,
+      secretKey: new Uint8Array(0),
+    },
+  };
+  setEpochKey(albumId, newBundle);
+
+  onProgress?.(RotationStep.COMPLETE);
+
+  return {
+    newEpochId,
+    recipientCount: epochKeys.length,
+    shareLinkCount: shareLinkKeys.length,
+  };
+}
+
+/**
+ * Atomically revoke a member AND rotate the album epoch in a SINGLE
+ * backend transaction. Mirrors {@link rotateEpoch} but:
+ *   - excludes the removed user from the recipients list (the server
+ *     additionally rejects them if mistakenly included),
+ *   - posts to `POST /api/albums/:id/members/:userId/remove-and-rotate`
+ *     instead of the two separate DELETE + POST endpoints,
+ *   - so member revocation and epoch rotation commit (or roll back) as
+ *     one unit. Closes the TOCTOU window where a still-active member
+ *     could upload content under the OLD epoch — readable by the
+ *     just-removed member — between the two API calls of the historical
+ *     two-step flow.
+ *
+ * Audit "epoch-rotation High": this is the documented fix.
+ *
+ * @param albumId - Album to rotate
+ * @param removedUserId - Member being revoked; must NOT be the album owner
+ * @param onProgress - Optional progress callback
+ */
+export async function removeMemberAndRotateEpoch(
+  albumId: string,
+  removedUserId: string,
+  onProgress?: RotationProgressCallback,
+): Promise<EpochRotationResult> {
+  const api = getApi();
+  const crypto = await getCryptoClient();
+
+  onProgress?.(RotationStep.FETCHING_ALBUM);
+  let currentEpochId: number;
+  try {
+    const album = await api.getAlbum(albumId);
+    currentEpochId = album.currentEpochId;
+  } catch (err) {
+    throw new EpochRotationError(
+      'Failed to get album information',
+      EpochRotationErrorCode.ALBUM_FETCH_FAILED,
+      err instanceof Error ? err : undefined,
+    );
+  }
+
+  onProgress?.(RotationStep.GENERATING_KEY);
+  const newEpochId = currentEpochId + 1;
+  let newEpochKey: {
+    epochHandleId: EpochHandleId;
+    wrappedSeed: Uint8Array;
+    signPublicKey: Uint8Array;
+  };
+  try {
+    newEpochKey = await crypto.generateEpochKey(newEpochId);
+  } catch (err) {
+    throw new EpochRotationError(
+      'Failed to generate new epoch key',
+      EpochRotationErrorCode.KEY_GENERATION_FAILED,
+      err instanceof Error ? err : undefined,
+    );
+  }
+
+  onProgress?.(RotationStep.FETCHING_MEMBERS);
+  let members: AlbumMember[];
+  try {
+    const allMembers = await paginateAll((skip, take) =>
+      api.listAlbumMembers(albumId, skip, take),
+    );
+    // Exclude the member being removed — they must not receive the new
+    // epoch's sealed bundle. Backend additionally validates this.
+    members = allMembers.filter((m) => m.userId !== removedUserId);
+  } catch (err) {
+    throw new EpochRotationError(
+      'Failed to fetch remaining members',
+      EpochRotationErrorCode.MEMBERS_FETCH_FAILED,
+      err instanceof Error ? err : undefined,
+    );
+  }
+
+  if (members.length === 0) {
+    throw new EpochRotationError(
+      'No members to distribute keys to',
+      EpochRotationErrorCode.NO_RECIPIENTS,
+    );
+  }
+
+  const identityPubkey = await crypto.getIdentityPublicKey();
+  if (!identityPubkey) {
+    try {
+      await crypto.deriveIdentity();
+    } catch (err) {
+      throw new EpochRotationError(
+        'Identity not derived - please log in again',
+        EpochRotationErrorCode.IDENTITY_NOT_DERIVED,
+        err instanceof Error ? err : undefined,
+      );
+    }
+  }
+  const signerPubkey = await crypto.getIdentityPublicKey();
+  if (!signerPubkey) {
+    throw new EpochRotationError(
+      'Identity not derived - please log in again',
+      EpochRotationErrorCode.IDENTITY_NOT_DERIVED,
+    );
+  }
+
+  onProgress?.(RotationStep.SEALING_KEYS);
+  const epochKeys: CreateEpochKeyRequest[] = [];
+  for (const member of members) {
+    const recipientPubkey = member.user?.identityPubkey;
+    if (!recipientPubkey) {
+      throw new EpochRotationError(
+        `Member ${member.userId} has no identity public key`,
+        EpochRotationErrorCode.RECIPIENT_NO_PUBKEY,
+      );
+    }
+    try {
+      const recipientPubkeyBytes = fromBase64(recipientPubkey);
+      const sealed = await crypto.createEpochKeyBundle(
+        newEpochKey.epochHandleId,
+        albumId,
+        recipientPubkeyBytes,
+      );
+      epochKeys.push({
+        recipientId: member.userId,
+        epochId: newEpochId,
+        encryptedKeyBundle: toBase64(sealed.encryptedBundle),
+        ownerSignature: toBase64(sealed.signature),
+        sharerPubkey: toBase64(signerPubkey),
+        signPubkey: toBase64(newEpochKey.signPublicKey),
+      });
+    } catch (err) {
+      throw new EpochRotationError(
+        `Failed to seal key bundle for member ${member.userId}`,
+        EpochRotationErrorCode.SEAL_FAILED,
+        err instanceof Error ? err : undefined,
+      );
+    }
+  }
+
+  onProgress?.(RotationStep.FETCHING_SHARE_LINKS);
+  let shareLinks: ShareLinkWithSecretResponse[] = [];
+  try {
+    shareLinks = await paginateAll((skip, take) =>
+      api.listShareLinksWithSecrets(albumId, skip, take),
+    );
+  } catch (err) {
+    throw new EpochRotationError(
+      'Failed to fetch share links',
+      EpochRotationErrorCode.SHARE_LINKS_FETCH_FAILED,
+      err instanceof Error ? err : undefined,
+    );
+  }
+
+  onProgress?.(RotationStep.WRAPPING_SHARE_LINK_KEYS);
+  const shareLinkKeys = await wrapKeysForShareLinks(
+    shareLinks,
+    newEpochKey.epochHandleId,
+  );
+
+  // Atomic call: backend revokes the member AND commits the rotation
+  // payload in a single transaction.
+  onProgress?.(RotationStep.CALLING_API);
+  try {
+    const removeAndRotateRequest: RemoveAndRotateRequest = {
+      epochId: newEpochId,
+      epochKeys,
+    };
+    if (shareLinkKeys.length > 0) {
+      removeAndRotateRequest.shareLinkKeys = shareLinkKeys;
+    }
+    await api.removeAlbumMemberAndRotate(
+      albumId,
+      removedUserId,
+      removeAndRotateRequest,
+    );
+  } catch (err) {
+    throw new EpochRotationError(
+      'Failed to atomically remove member and rotate epoch on server',
+      EpochRotationErrorCode.ROTATE_FAILED,
+      err instanceof Error ? err : undefined,
+    );
+  }
+
+  onProgress?.(RotationStep.UPDATING_CACHE);
+
+  clearAlbumKeys(albumId);
+
   const newBundle: EpochKeyBundle = {
     epochId: newEpochId,
     epochHandleId: newEpochKey.epochHandleId,

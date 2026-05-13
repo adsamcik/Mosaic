@@ -444,7 +444,13 @@ public class AlbumsController : ControllerBase
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(m => m.AlbumId == albumId && m.VersionCreated > since)
+            // Audit "sync C4": stable secondary sort on Id ensures the page
+            // ordering is deterministic when two manifests share a
+            // VersionCreated value. Without this, paginated requests can
+            // return a different ordering across calls and the cursor can
+            // skip rows.
             .OrderBy(m => m.VersionCreated)
+            .ThenBy(m => m.Id)
             .Take(100)
             .Select(m => new
             {
@@ -482,6 +488,20 @@ public class AlbumsController : ControllerBase
             .OrderByDescending(m => m.VersionCreated)
             .FirstOrDefaultAsync();
 
+        // Audit "sync C4": AlbumVersion is the cursor advancement signal,
+        // NOT the album's global head. Returning album.CurrentVersion here
+        // could advance the client past in-flight inserts that were
+        // committed AFTER our snapshot but before the next page fetch,
+        // permanently skipping those manifests on the client. Use the
+        // page's max VersionCreated instead, falling back to `since` when
+        // the page is empty so an empty terminal page never moves the
+        // cursor backward or forward unexpectedly. The album's global
+        // head is still exposed via the existing CurrentVersion field
+        // for clients that need it for UI purposes.
+        var pageMaxVersion = manifests.Count > 0
+            ? manifests.Max(m => m.VersionCreated)
+            : since;
+
         return Ok(new
         {
             AlbumId = album.Id,
@@ -495,7 +515,7 @@ public class AlbumsController : ControllerBase
                 .FirstOrDefault() ?? string.Empty,
             Manifests = manifests,
             CurrentEpochId = album.CurrentEpochId,
-            AlbumVersion = album.CurrentVersion,
+            AlbumVersion = pageMaxVersion,
             HasMore = manifests.Count == 100
         });
     }

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Mosaic.Backend.Models.EpochKeys;
 
 namespace Mosaic.Backend.Models.Members;
 
@@ -20,4 +21,16 @@ public record InviteRequest(
     Guid RecipientId,
     [MaxLength(32)] string Role,
     [MaxLength(100)] EpochKeyCreate[] EpochKeys
+);
+
+/// <summary>
+/// Atomic remove-member-and-rotate request body. Carries everything the
+/// rotation service needs alongside the membership revocation so both
+/// commit (or roll back) in a single transaction.
+/// See <c>MembersController.RemoveAndRotate</c> for the rationale.
+/// </summary>
+public record RemoveAndRotateRequest(
+    int EpochId,
+    [MaxLength(100)] CreateEpochKeyRequest[] EpochKeys,
+    [MaxLength(100)] ShareLinkKeyUpdateRequest[]? ShareLinkKeys = null
 );

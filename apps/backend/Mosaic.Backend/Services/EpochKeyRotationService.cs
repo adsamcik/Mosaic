@@ -32,6 +32,25 @@ public interface IEpochKeyRotationService
         Album album,
         int epochId,
         RotateEpochRequest request);
+
+    /// <summary>
+    /// Rotates to a new epoch as part of an *already-open* DbContext
+    /// transaction owned by the caller. Performs the same validation and
+    /// staging work as <see cref="RotateAsync"/> but does NOT call
+    /// <c>BeginTransactionAsync</c>, <c>SaveChangesAsync</c>, or
+    /// <c>CommitAsync</c>; the caller is responsible for both. This is
+    /// the entry point used by the atomic "remove member and rotate"
+    /// flow in <c>MembersController</c> so member revocation and epoch
+    /// rotation commit (or roll back) together.
+    ///
+    /// Audit "epoch-rotation High": closes the TOCTOU window where a
+    /// member could be revoked while rotation was still in flight,
+    /// allowing them to read content uploaded in between.
+    /// </summary>
+    Task<EpochRotationResult> RotateInExistingTransactionAsync(
+        Album album,
+        int epochId,
+        RotateEpochRequest request);
 }
 
 public class EpochKeyRotationService : IEpochKeyRotationService
@@ -44,6 +63,69 @@ public class EpochKeyRotationService : IEpochKeyRotationService
     }
 
     public async Task<EpochRotationResult> RotateAsync(
+        Album album,
+        int epochId,
+        RotateEpochRequest request)
+    {
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            var staged = await StageRotationAsync(album, epochId, request);
+            if (!staged.Success)
+            {
+                await tx.RollbackAsync();
+                return staged;
+            }
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+            return staged;
+        }
+        catch (DbUpdateException ex) when (
+            ex.InnerException?.Message.Contains("unique", StringComparison.OrdinalIgnoreCase) == true ||
+            ex.InnerException?.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            await tx.RollbackAsync();
+            return new EpochRotationResult
+            {
+                Success = false,
+                StatusCode = StatusCodes.Status409Conflict,
+                ErrorDetail = "Epoch keys already exist for this epoch. Another request may have created them concurrently."
+            };
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await tx.RollbackAsync();
+            return new EpochRotationResult
+            {
+                Success = false,
+                StatusCode = StatusCodes.Status409Conflict,
+                ErrorDetail = "Album was modified by another request. Please retry."
+            };
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    public Task<EpochRotationResult> RotateInExistingTransactionAsync(
+        Album album,
+        int epochId,
+        RotateEpochRequest request)
+    {
+        // No transaction / SaveChanges here — caller owns both. We share
+        // the staging work with RotateAsync via StageRotationAsync.
+        return StageRotationAsync(album, epochId, request);
+    }
+
+    /// <summary>
+    /// Validate the rotation request and stage all entity additions on
+    /// the change tracker. Returns success only when every validation has
+    /// passed AND every entity has been added; the caller is responsible
+    /// for SaveChanges + Commit.
+    /// </summary>
+    private async Task<EpochRotationResult> StageRotationAsync(
         Album album,
         int epochId,
         RotateEpochRequest request)
@@ -73,66 +155,32 @@ public class EpochKeyRotationService : IEpochKeyRotationService
                 .ToDictionaryAsync(sl => sl.Id);
         }
 
-        await using var tx = await _db.Database.BeginTransactionAsync();
-        try
+        album.CurrentEpochId = epochId;
+        album.UpdatedAt = DateTime.UtcNow;
+
+        var memberKeysError = ValidateMemberKeys(request.EpochKeys, activeMembers, existingKeys);
+        if (memberKeysError != null)
         {
-            album.CurrentEpochId = epochId;
-            album.UpdatedAt = DateTime.UtcNow;
-
-            var memberKeysError = ValidateMemberKeys(request.EpochKeys, activeMembers, existingKeys);
-            if (memberKeysError != null)
-            {
-                return memberKeysError;
-            }
-
-            AddMemberKeys(albumId, epochId, request.EpochKeys);
-
-            var (shareLinkKeysUpdated, shareLinkError) =
-                ValidateAndAddShareLinkKeys(epochId, request.ShareLinkKeys, shareLinksByLinkId);
-            if (shareLinkError != null)
-            {
-                return shareLinkError;
-            }
-
-            await _db.SaveChangesAsync();
-            await tx.CommitAsync();
-
-            return new EpochRotationResult
-            {
-                Success = true,
-                AlbumId = albumId,
-                EpochId = epochId,
-                KeyCount = request.EpochKeys.Length,
-                ShareLinkKeysUpdated = shareLinkKeysUpdated
-            };
+            return memberKeysError;
         }
-        catch (DbUpdateException ex) when (
-            ex.InnerException?.Message.Contains("unique", StringComparison.OrdinalIgnoreCase) == true ||
-            ex.InnerException?.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase) == true)
+
+        AddMemberKeys(albumId, epochId, request.EpochKeys);
+
+        var (shareLinkKeysUpdated, shareLinkError) =
+            ValidateAndAddShareLinkKeys(epochId, request.ShareLinkKeys, shareLinksByLinkId);
+        if (shareLinkError != null)
         {
-            await tx.RollbackAsync();
-            return new EpochRotationResult
-            {
-                Success = false,
-                StatusCode = StatusCodes.Status409Conflict,
-                ErrorDetail = "Epoch keys already exist for this epoch. Another request may have created them concurrently."
-            };
+            return shareLinkError;
         }
-        catch (DbUpdateConcurrencyException)
+
+        return new EpochRotationResult
         {
-            await tx.RollbackAsync();
-            return new EpochRotationResult
-            {
-                Success = false,
-                StatusCode = StatusCodes.Status409Conflict,
-                ErrorDetail = "Album was modified by another request. Please retry."
-            };
-        }
-        catch
-        {
-            await tx.RollbackAsync();
-            throw;
-        }
+            Success = true,
+            AlbumId = albumId,
+            EpochId = epochId,
+            KeyCount = request.EpochKeys.Length,
+            ShareLinkKeysUpdated = shareLinkKeysUpdated
+        };
     }
 
     private static EpochRotationResult? ValidateMemberKeys(
