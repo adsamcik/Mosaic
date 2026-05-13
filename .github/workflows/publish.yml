@@ -278,15 +278,14 @@ jobs:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ steps.meta.outputs.version }}
           artifact-name: sbom-frontend.spdx.json
 
-  # Validate Android version stamping in the publish pipeline. Release signing is
-  # wired in a separate tag-only job once operator secrets are supplied.
-  android-version-stamp:
-    name: Android Version Stamp
+  android-release:
+    name: Android Release
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [validate-bypass, unit-tests, e2e-tests]
     if: |
       always() &&
+      startsWith(github.ref, 'refs/tags/v') &&
       needs.unit-tests.result == 'success' &&
       (needs.e2e-tests.result == 'success' || needs.e2e-tests.result == 'skipped') &&
       (needs.validate-bypass.result == 'success' || needs.validate-bypass.result == 'skipped')
@@ -297,11 +296,37 @@ jobs:
       - name: Derive build version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          if [ -n "${{ inputs.tag }}" ]; then
-            VERSION="${{ inputs.tag }}"
-            VERSION="${VERSION#v}"
-          fi
           echo "MOSAIC_BUILD_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Inject ADR-019 release pins
+        env:
+          MOSAIC_RELEASE_PINS: ${{ secrets.MOSAIC_RELEASE_PINS }}
+        run: |
+          if [ -z "${MOSAIC_RELEASE_PINS:-}" ]; then
+            echo "::error::Missing required GitHub Actions secret MOSAIC_RELEASE_PINS. Set one sha256/<base64> SPKI pin per line before publishing Android release artifacts."
+            exit 1
+          fi
+          printf '%s\n' "$MOSAIC_RELEASE_PINS" > apps/android-main/src/main/assets/adr019-pins.txt
+
+      - name: Prepare Android release signing
+        env:
+          MOSAIC_RELEASE_KEYSTORE_BASE64: ${{ secrets.MOSAIC_RELEASE_KEYSTORE_BASE64 }}
+          MOSAIC_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.MOSAIC_RELEASE_KEYSTORE_PASSWORD }}
+          MOSAIC_RELEASE_KEY_ALIAS: ${{ secrets.MOSAIC_RELEASE_KEY_ALIAS }}
+          MOSAIC_RELEASE_KEY_PASSWORD: ${{ secrets.MOSAIC_RELEASE_KEY_PASSWORD }}
+        run: |
+          for name in MOSAIC_RELEASE_KEYSTORE_BASE64 MOSAIC_RELEASE_KEYSTORE_PASSWORD MOSAIC_RELEASE_KEY_ALIAS MOSAIC_RELEASE_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required GitHub Actions secret $name for Android release signing."
+              exit 1
+            fi
+          done
+          KEYSTORE_PATH="$RUNNER_TEMP/mosaic-release.keystore"
+          printf '%s' "$MOSAIC_RELEASE_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          echo "MOSAIC_RELEASE_KEYSTORE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "MOSAIC_RELEASE_KEYSTORE_PASSWORD=$MOSAIC_RELEASE_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "MOSAIC_RELEASE_KEY_ALIAS=$MOSAIC_RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "MOSAIC_RELEASE_KEY_PASSWORD=$MOSAIC_RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Setup JDK 17
         uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
@@ -340,16 +365,27 @@ jobs:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
         run: bash ./scripts/build-rust-android.sh
 
-      - name: Build Android APK with stamped version
+      - name: Build Android release artifacts
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
-        run: ./gradlew :apps:android-main:assembleDebug --no-daemon --console=plain -PmosaicVersionName="$MOSAIC_BUILD_VERSION" -PmosaicVersionCode="$GITHUB_RUN_NUMBER"
+        run: ./gradlew :apps:android-main:assembleRelease :apps:android-main:bundleRelease --no-daemon --console=plain -PmosaicVersionName="$MOSAIC_BUILD_VERSION" -PmosaicVersionCode="$GITHUB_RUN_NUMBER"
+
+      - name: Upload Android release artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-release-artifacts
+          path: |
+            apps/android-main/build/outputs/apk/release/*.apk
+            apps/android-main/build/outputs/bundle/release/*.aab
+            apps/android-main/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: error
+          retention-days: 30
 
   # Create GitHub Release with image info
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [publish-backend, publish-frontend]
+    needs: [publish-backend, publish-frontend, android-release]
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write

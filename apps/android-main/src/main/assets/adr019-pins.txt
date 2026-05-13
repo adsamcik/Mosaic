@@ -1,1 +1,4 @@
-// Production pins will be sourced before v1 ship — see ADR-019.
+# ADR-019 cert pins (operator-supplied at deploy time).
+# CI release builds replace this file from the MOSAIC_RELEASE_PINS GH Actions secret.
+# Local debug builds skip pin enforcement (releasePinsRequired = !BuildConfig.DEBUG in MosaicHttpClient.kt).
+# Production pins format: one SPKI SHA-256 base64 hash per line, prefixed with sha256/.

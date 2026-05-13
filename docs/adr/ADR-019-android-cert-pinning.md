@@ -4,7 +4,7 @@
 
 Accepted. Decision: **public-key pin to a managed root + backup pin for self-hosted deployments; document the operator-controlled rotation procedure; do not pin in development builds.** Gates A4 (shared OkHttp client) and A5b (Tus client adapter).
 
-Status note: Android now sources ADR-019 pins from the sealed asset `apps/android-main/src/main/assets/adr019-pins.txt`. The checked-in reference asset is intentionally a comment-only stub; production release builds MUST replace it with operator pins before v1.0.0 ships to users. Keeping the stub is acceptable only for the v1.0.0-rc build-time validation state, not for user-distributed release artifacts.
+Status note: Android now sources ADR-019 pins from the sealed asset `apps/android-main/src/main/assets/adr019-pins.txt`. The checked-in reference asset is intentionally a comment-only stub because operator pins are deployment-specific. The release pipeline MUST replace it from the `MOSAIC_RELEASE_PINS` GitHub Actions secret before `assembleRelease`; a missing secret fails the publish job. `MOSAIC_RELEASE_PINS` contains one `sha256/<base64>` SPKI hash per line.
 
 ## Context
 
@@ -44,22 +44,19 @@ The pin set carries **at least two pins** for the operator's domain:
 
 Optionally, a third pin may be configured for a CA in escrow (cold-storage key not active in DNS).
 
-The operator-shipped Mosaic Android build embeds these pins at compile time via a Gradle product flavor `operatorConfig`:
+The operator-shipped Mosaic Android build embeds these pins at compile time by replacing `apps/android-main/src/main/assets/adr019-pins.txt` in CI from the `MOSAIC_RELEASE_PINS` GitHub Actions secret. The secret format is one SPKI SHA-256 pin per line:
 
-```kotlin
-operatorConfig {
-    primaryPin = "sha256/..."   // base64 of SPKI SHA-256
-    backupPin = "sha256/..."
-    escrowPin = "sha256/..."    // optional
-    pinnedHostnames = listOf("mosaic.example.com")
-}
+```text
+sha256/<primary-base64>
+sha256/<backup-base64>
+sha256/<escrow-base64>
 ```
 
-The Mosaic-main reference build ships placeholder pins that fail-closed (pin set `["sha256/<unconfigured>"]`); installing the reference build without operator configuration produces a controlled startup error, not a silent pin bypass.
+The Mosaic-main source tree keeps a comment-only stub in `adr019-pins.txt`; it is acceptable as the in-repo source of truth because the CI replacement is mandatory before publish. A release build with a missing or comment-only pin asset fails closed through `MosaicCertificatePinnerFactory.fromAdr019Pins(releasePinsRequired = true)`.
 
 ### Pinning implementation
 
-OkHttp `CertificatePinner.Builder` builds the pinner from the sealed asset `assets/adr019-pins.txt` at app start. The file lists one pin per line as `<hostname>:<sha256-base64>`; comment-only or empty assets are accepted only for debug development builds. Failures yield a stable `ClientErrorCode = PinValidationFailed` and surface to the user as "Cannot reach Mosaic server (TLS pin mismatch). Contact your operator."
+OkHttp `CertificatePinner.Builder` builds the pinner from the sealed asset `assets/adr019-pins.txt` at app start. The file lists one pin per line as `sha256/<base64>`; comment-only or empty assets are accepted only for debug development builds. Failures yield a stable `ClientErrorCode = PinValidationFailed` and surface to the user as "Cannot reach Mosaic server (TLS pin mismatch). Contact your operator."
 
 Pin failures **never** retry blindly; the upload state machine (R-Cl1) treats `PinValidationFailed` as a `NonRetryableFailure` and routes the user to a help screen.
 

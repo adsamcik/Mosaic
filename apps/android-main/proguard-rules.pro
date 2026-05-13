@@ -25,12 +25,23 @@
 # package. The bindings rely on field-name reflection (`UniffiLib`, RustBuffer
 # Structure subclasses, callback interfaces). Renaming any of these breaks
 # the FFI at runtime.
+-keep class uniffi.** { *; }
 -keep class uniffi.mosaic_uniffi.** { *; }
 -keep interface uniffi.mosaic_uniffi.** { *; }
 -keepclassmembers class uniffi.mosaic_uniffi.** {
     <fields>;
     <methods>;
 }
+-keepclassmembers class uniffi.mosaic_uniffi.** { *; }
+-keep class * implements uniffi.mosaic_uniffi.* { *; }
+
+# App-side callback/serialization surfaces used around Room, sync, and manifest
+# transport are safer to keep than to discover by a production-only R8 crash.
+-keep class * extends androidx.room.RoomDatabase$Callback { *; }
+-keep class org.mosaic.android.main.db.PrivacyValidationRoomCallback { *; }
+-keep class org.mosaic.android.main.net.sync.** { *; }
+-keep class org.mosaic.android.main.net.manifest.** { *; }
+-keep class org.mosaic.android.main.net.dto.** { *; }
 
 # AndroidX Activity / AppCompat keep rules are provided by their own consumer
 # rules; nothing extra is required here.

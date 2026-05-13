@@ -127,15 +127,28 @@ android {
     }
   }
 
+  signingConfigs {
+    val releaseKeystorePath = System.getenv("MOSAIC_RELEASE_KEYSTORE")
+    if (!releaseKeystorePath.isNullOrBlank()) {
+      create("release") {
+        storeFile = file(releaseKeystorePath)
+        storePassword = System.getenv("MOSAIC_RELEASE_KEYSTORE_PASSWORD")
+        keyAlias = System.getenv("MOSAIC_RELEASE_KEY_ALIAS")
+        keyPassword = System.getenv("MOSAIC_RELEASE_KEY_PASSWORD")
+      }
+    }
+  }
+
   buildTypes {
     debug {
       isMinifyEnabled = false
     }
     release {
-      // Release build is intentionally a placeholder for v1: it inherits debug
-      // signing for now; minify is disabled until we ship a release keystore +
-      // verified ProGuard/R8 keep rules for `uniffi.mosaic_uniffi.**`.
-      isMinifyEnabled = false
+      // Release variant: minified and signed when MOSAIC_RELEASE_* env vars are
+      // present; local builds without those vars produce an unsigned APK.
+      isMinifyEnabled = true
+      isShrinkResources = true
+      signingConfig = signingConfigs.findByName("release")
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
   }
