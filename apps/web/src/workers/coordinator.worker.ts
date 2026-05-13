@@ -1079,6 +1079,22 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
           const mode = this.jobOutputModes.get(jobId) ?? { kind: 'keepOffline' };
           await this.runFinalizer(jobId, mode, abortController.signal);
           await this.sendEvent(jobId, { kind: 'FinalizationDone' });
+          // B2: purge plaintext OPFS staging for non-keepOffline modes once
+          // the job is verifiably Done. The audit "privacy L4" + "download
+          // C3" found that decrypted photo bytes were lingering in OPFS
+          // long after a successful zip / per-file / sidecar export. The
+          // keepOffline mode intentionally retains them so the gallery can
+          // serve photos without a network shard fetch later.
+          if (mode.kind !== 'keepOffline') {
+            void opfsStaging
+              .purgeJob(jobId)
+              .catch((err) => {
+                log.warn('Post-finalize OPFS purge failed', {
+                  jobId: shortId(jobId),
+                  errorName: err instanceof Error ? err.name : 'Unknown',
+                });
+              });
+          }
           // Non-blocking opportunistic trim after a successful job completion.
           void this.shardMirror.trim().catch(() => undefined);
         } catch (err) {
@@ -1311,6 +1327,18 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
       const mode = this.jobOutputModes.get(jobId) ?? { kind: 'keepOffline' };
       await this.runFinalizer(jobId, mode, abortController.signal);
       await this.sendEvent(jobId, { kind: 'FinalizationDone' });
+      // Mirror the post-finalize OPFS purge from the primary run path so
+      // resumed finalizers also clear plaintext staging on success.
+      if (mode.kind !== 'keepOffline') {
+        void opfsStaging
+          .purgeJob(jobId)
+          .catch((err) => {
+            log.warn('Post-finalize OPFS purge (resume) failed', {
+              jobId: shortId(jobId),
+              errorName: err instanceof Error ? err.name : 'Unknown',
+            });
+          });
+      }
     } catch (err) {
       log.warn('Finalizing-resume failed', {
         jobId: shortId(jobId),

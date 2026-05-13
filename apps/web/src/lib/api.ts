@@ -209,9 +209,25 @@ async function apiRequest<T>(
 ): Promise<T> {
   const { method = 'GET', body, headers = {}, signal, schema } = options;
 
+  // D3: every API call gets a fresh client-side correlation ID. The
+  // backend's CorrelationIdMiddleware will echo this back on the response
+  // (and prefer it over generating its own). On error we surface the
+  // resolved correlationId in the thrown ApiError so the UI can show a
+  // support reference like "Reference: ab12cd34" — the goal is that a
+  // user reporting a problem can give support a string that lets them
+  // grep both web logs and backend logs for the exact failed request.
+  const clientCorrelationId =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : undefined;
+
   const requestHeaders: Record<string, string> = {
     ...headers,
   };
+
+  if (clientCorrelationId !== undefined && requestHeaders['X-Correlation-Id'] === undefined) {
+    requestHeaders['X-Correlation-Id'] = clientCorrelationId;
+  }
 
   // Only add Content-Type for requests with body
   if (body !== undefined) {
@@ -237,12 +253,32 @@ async function apiRequest<T>(
 
   if (!response.ok) {
     const { body: errorBody, problem, correlationId } = await readApiError(response);
+    const resolvedCorrelationId = correlationId ?? clientCorrelationId;
+
+    // C4: tell any interested subscriber that the server returned 401.
+    // We do not auto-logout here — the session module owns that decision
+    // and is the only code path with the right cleanup ordering. The
+    // event is purely advisory: subscribers MUST verify they currently
+    // hold a session before reacting (login attempts that produce 401 on
+    // wrong-credentials must not be treated as expiry).
+    if (response.status === 401 && typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(
+          new CustomEvent('mosaic:session-expired', {
+            detail: { path, correlationId: resolvedCorrelationId },
+          }),
+        );
+      } catch {
+        // CustomEvent unavailable in some test environments — non-fatal.
+      }
+    }
+
     throw new ApiError(
       response.status,
       response.statusText,
       errorBody,
       problem,
-      correlationId,
+      resolvedCorrelationId,
     );
   }
 

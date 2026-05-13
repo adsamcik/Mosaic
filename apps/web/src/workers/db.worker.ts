@@ -575,6 +575,44 @@ export class DbWorker implements DbWorkerApi {
       }
     }
 
+    // Version 8 -> 9: Composite indexes for hot gallery / map queries.
+    //
+    // Audit "perf-slo C4/C5" found that:
+    //   - getPhotos() does `WHERE album_id = ? ORDER BY taken_at DESC,
+    //     created_at DESC LIMIT ? OFFSET ?` but only had a single-column
+    //     idx_photos_album. Sorting was unindexable, so deep scrolling on
+    //     a 10k-photo album degraded to O(N) per page.
+    //   - getPhotosForMap() does `WHERE album_id = ? AND lat BETWEEN ?
+    //     AND ? AND lng BETWEEN ? AND ?` but idx_photos_geo had no
+    //     album_id prefix, so multi-album users scanned every geo-tagged
+    //     photo and post-filtered.
+    //
+    // The new composite indexes subsume the legacy single-column ones,
+    // which we drop to avoid double-write cost and planner confusion.
+    if (this.getSchemaVersion() < 9) {
+      log.info('Running migration: v8 -> v9 (composite gallery + geo indexes)');
+
+      try {
+        db.run(`
+          CREATE INDEX IF NOT EXISTS idx_photos_album_taken_created
+            ON photos(album_id, taken_at DESC, created_at DESC, id);
+
+          CREATE INDEX IF NOT EXISTS idx_photos_album_geo
+            ON photos(album_id, lat, lng) WHERE lat IS NOT NULL;
+
+          DROP INDEX IF EXISTS idx_photos_album;
+          DROP INDEX IF EXISTS idx_photos_taken;
+          DROP INDEX IF EXISTS idx_photos_geo;
+        `);
+
+        this.setSchemaVersion(9);
+        log.info('Composite index migration complete');
+      } catch (error) {
+        log.error('Failed to apply composite index migration', error);
+        throw error;
+      }
+    }
+
     // Ensure FTS table exists (safety check for corrupted state)
     if (!this.ftsTableExists()) {
       log.warn('FTS table missing despite schema version, recreating...');

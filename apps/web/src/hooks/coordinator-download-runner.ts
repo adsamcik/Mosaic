@@ -48,17 +48,38 @@ export async function runCoordinatorDownload(args: RunCoordinatorDownloadArgs): 
     ? { ...planInput, outputMode: { kind: 'zip', fileName: suggestedFileName } }
     : { ...planInput, outputMode: args.mode };
   // Comlink-proxy the source so its async methods are callable from the
-  // coordinator worker (the strategy holds React-state callbacks).
-  const withSource: StartJobInput = args.source
-    ? { ...baseInput, source: Comlink.proxy(args.source) }
+  // coordinator worker (the strategy holds React-state callbacks). The
+  // proxy registers a worker-side handle that survives until we release
+  // it explicitly via `[Comlink.releaseProxy]()` — the audit
+  // "perf-slo H1" found that without this every cancel/restart leaked
+  // worker memory. We release in a finally so the cleanup runs on success,
+  // failure, AND abort.
+  let sourceProxy: SourceStrategy | null = null;
+  if (args.source) {
+    sourceProxy = Comlink.proxy(args.source) as unknown as SourceStrategy;
+  }
+  const withSource: StartJobInput = sourceProxy
+    ? { ...baseInput, source: sourceProxy }
     : baseInput;
   const startInput: StartJobInput = args.schedule
     ? { ...withSource, schedule: args.schedule }
     : withSource;
 
-  const { jobId } = await args.api.startJob(startInput);
-  args.activeJobIdRef.current = jobId;
-  await waitForTerminal(args.api, jobId, args.signal, args.onJobProgress);
+  try {
+    const { jobId } = await args.api.startJob(startInput);
+    args.activeJobIdRef.current = jobId;
+    await waitForTerminal(args.api, jobId, args.signal, args.onJobProgress);
+  } finally {
+    if (sourceProxy) {
+      try {
+        (sourceProxy as unknown as { [Comlink.releaseProxy]?: () => void })[
+          Comlink.releaseProxy
+        ]?.();
+      } catch {
+        // Best-effort release; never block job completion on cleanup.
+      }
+    }
+  }
 }
 
 export function isTerminalPhase(phase: JobProgressEvent['phase']): boolean {
@@ -73,8 +94,32 @@ export async function waitForTerminal(
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     let unsubscribe: (() => void) | null = null;
+    // Capture the progress-callback proxy so we can release the worker-side
+    // handle when the job reaches a terminal state. Each unsupported leak
+    // would grow worker memory by one closure per cancel/restart.
+    const progressProxy = Comlink.proxy((event: JobProgressEvent) => {
+      onJobProgress(event);
+      if (isTerminalPhase(event.phase)) {
+        signal.removeEventListener('abort', onAbort);
+        unsubscribe?.();
+        releaseProgressProxy();
+        if (event.phase === 'Done') resolve();
+        else if (event.phase === 'Cancelled') reject(new DOMException('Download cancelled', 'AbortError'));
+        else reject(new Error(`Download failed: ${event.phase}`));
+      }
+    });
+    const releaseProgressProxy = (): void => {
+      try {
+        (progressProxy as unknown as { [Comlink.releaseProxy]?: () => void })[
+          Comlink.releaseProxy
+        ]?.();
+      } catch {
+        // Best-effort release.
+      }
+    };
     const onAbort = (): void => {
       unsubscribe?.();
+      releaseProgressProxy();
       reject(new DOMException('Download aborted', 'AbortError'));
     };
     if (signal.aborted) {
@@ -83,16 +128,7 @@ export async function waitForTerminal(
     }
     signal.addEventListener('abort', onAbort, { once: true });
 
-    api.subscribe(jobId, Comlink.proxy((event: JobProgressEvent) => {
-      onJobProgress(event);
-      if (isTerminalPhase(event.phase)) {
-        signal.removeEventListener('abort', onAbort);
-        unsubscribe?.();
-        if (event.phase === 'Done') resolve();
-        else if (event.phase === 'Cancelled') reject(new DOMException('Download cancelled', 'AbortError'));
-        else reject(new Error(`Download failed: ${event.phase}`));
-      }
-    })).then((subscription) => {
+    api.subscribe(jobId, progressProxy).then((subscription) => {
       unsubscribe = subscription.unsubscribe;
       if (signal.aborted) {
         unsubscribe();
@@ -100,6 +136,7 @@ export async function waitForTerminal(
       }
     }).catch((err) => {
       signal.removeEventListener('abort', onAbort);
+      releaseProgressProxy();
       reject(err instanceof Error ? err : new Error(String(err)));
     });
   });

@@ -1,6 +1,7 @@
 import { createLogger } from '../../lib/logger';
 import type { JobId, PhotoId } from '../../lib/opfs-staging';
 import type { DownloadErrorReason, PerFileStrategy } from '../types';
+import { PartialExportError } from './zip-finalizer';
 
 const log = createLogger('PerFileFinalizer');
 
@@ -56,6 +57,8 @@ export async function runPerFileFinalizer(
 
   const sink = await deps.openPerFileSaveTarget(strategy, photos);
   let completed = false;
+  let failedCount = 0;
+  const failedPhotoIds: string[] = [];
   try {
     for (const photo of photos) {
       throwIfAborted(signal);
@@ -72,6 +75,8 @@ export async function runPerFileFinalizer(
         // integrity etc.); IllegalState is the closest non-misleading code
         // and avoids the previous bug of marking everything as Cancelled.
         await recordPhotoFailure(job.jobId, photo.photoId, 'IllegalState', deps);
+        failedCount += 1;
+        failedPhotoIds.push(photo.photoId);
         log.warn('Per-file photo export failed', {
           jobId: shortId(job.jobId),
           photoId: shortId(photo.photoId),
@@ -87,6 +92,17 @@ export async function runPerFileFinalizer(
     if (!completed && signal.aborted) {
       await sink.abort().catch(() => undefined);
     }
+  }
+  // If any per-photo writes failed we promote them into a single
+  // PartialExportError so the coordinator marks the job Errored rather
+  // than silently `Done`. The user can still see what was successfully
+  // saved on disk; the UI then makes it clear that some photos are
+  // missing instead of presenting the export as complete.
+  if (failedCount > 0) {
+    throw new PartialExportError(
+      `Per-file export incomplete: ${String(failedCount)} of ${String(photos.length)} photos failed to write`,
+      failedPhotoIds,
+    );
   }
 }
 

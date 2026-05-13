@@ -34,6 +34,23 @@ public class LocalAuthMiddleware
         "/openapi"
     ];
 
+    /// <summary>
+    /// Endpoints that MUST be processed anonymously — even if the caller
+    /// presents a valid session cookie. These paths must never have an
+    /// authenticated user identity attached to them, so that future
+    /// request-scoped logging, tracing, or telemetry middleware cannot
+    /// correlate visitor activity to a logged-in account.
+    ///
+    /// Visitor share-link routes (<c>/api/s/*</c>) are the canonical
+    /// example: a visitor browser may also have a valid session cookie
+    /// for the same origin, but the visitor surface is by design
+    /// untied to user identity.
+    /// </summary>
+    private static readonly string[] AnonymousOnlyPaths =
+    [
+        "/api/s/",
+    ];
+
     public LocalAuthMiddleware(
         RequestDelegate next,
         ILogger<LocalAuthMiddleware> logger)
@@ -45,11 +62,22 @@ public class LocalAuthMiddleware
     public async Task InvokeAsync(HttpContext context, MosaicDbContext db)
     {
         var path = context.Request.Path.Value ?? "";
-        var isPublicPath = IsPublicPath(path);
+        var isAnonymousOnly = IsAnonymousOnlyPath(path);
+        var isPublicPath = isAnonymousOnly || IsPublicPath(path);
 
-        // Always attempt authentication to populate context items.
-        // This enables public endpoints to perform their own authorization checks.
-        await TryAuthenticateAsync(context, db);
+        // C5: Anonymous-only paths (visitor share links) MUST NOT be
+        // associated with a user identity. Skip the cookie lookup entirely
+        // so HttpContext.Items["AuthSub"] / ["UserId"] are never populated
+        // for these requests. This guarantees that any request-logging,
+        // tracing, audit, or telemetry middleware added later cannot
+        // re-identify visitors who happen to also hold a valid session
+        // cookie for the same origin.
+        if (!isAnonymousOnly)
+        {
+            // Always attempt authentication to populate context items.
+            // This enables public endpoints to perform their own authorization checks.
+            await TryAuthenticateAsync(context, db);
+        }
 
         // Public paths proceed regardless of auth result
         if (isPublicPath)
@@ -125,6 +153,18 @@ public class LocalAuthMiddleware
         foreach (var publicPath in PublicPaths)
         {
             if (path.StartsWith(publicPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool IsAnonymousOnlyPath(string path)
+    {
+        foreach (var anonymousPath in AnonymousOnlyPaths)
+        {
+            if (path.StartsWith(anonymousPath, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }

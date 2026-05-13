@@ -161,6 +161,48 @@ function serializeError(error: unknown): NonNullable<LogEntry['error']> {
 }
 
 /**
+ * Coerce an arbitrary unhandled-rejection reason or `error` event payload
+ * into a privacy-safe shape suitable for logging.
+ *
+ * The browser may surface ANY value as a promise-rejection reason or as
+ * `event.error` from `window.onerror` — including:
+ *   - a Mosaic crypto error wrapping a `Uint8Array` of plaintext
+ *   - a fetch/Response object whose body would be consumed by JSON.stringify
+ *   - a parsed manifest whose fields contain decrypted user metadata
+ *
+ * Anything passed through this helper becomes either:
+ *   - `{ name, message }` for `Error` instances (via `serializeError`)
+ *   - `{ name: 'String'|'Number'|'Boolean', message }` for primitives
+ *   - `{ name: 'NonError', message: 'See console for details (sanitized)' }`
+ *     for everything else — deliberately lossy so we never JSON-stringify
+ *     an attacker- or app-controlled object that could carry plaintext.
+ *
+ * Use this at the global crash-handler boundary in `boot-app.tsx` and any
+ * other site where `unknown` reasons could be forwarded to the logger.
+ */
+export function safeReason(reason: unknown): { name: string; message: string } {
+  if (reason instanceof Error) {
+    return { name: reason.name, message: reason.message };
+  }
+  if (typeof reason === 'string') {
+    return { name: 'String', message: reason.slice(0, 200) };
+  }
+  if (typeof reason === 'number') {
+    return { name: 'Number', message: String(reason) };
+  }
+  if (typeof reason === 'boolean') {
+    return { name: 'Boolean', message: String(reason) };
+  }
+  if (reason === null || reason === undefined) {
+    return { name: 'NonError', message: String(reason) };
+  }
+  return {
+    name: 'NonError',
+    message: 'See console for details (sanitized)',
+  };
+}
+
+/**
  * Get current timestamp for log entries
  */
 function timestamp(): string {

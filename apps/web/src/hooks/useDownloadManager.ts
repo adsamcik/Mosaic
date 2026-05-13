@@ -158,15 +158,30 @@ export function useDownloadManager(): UseDownloadManagerResult {
     }
     let disposed = false;
     let unsubscribe: (() => void) | null = null;
-    void currentApi.subscribe(jobId, Comlink.proxy((): void => {
+    // Capture the progress-callback proxy so we can release the worker-side
+    // handle on dispose. Without releaseProxy each unsubscribe leaked a
+    // worker-side closure (audit "perf-slo H1").
+    const progressProxy = Comlink.proxy((): void => {
       void refreshJobs();
-    })).then((subscription) => {
+    });
+    const releaseProgressProxy = (): void => {
+      try {
+        (progressProxy as unknown as { [Comlink.releaseProxy]?: () => void })[
+          Comlink.releaseProxy
+        ]?.();
+      } catch {
+        // Best-effort release.
+      }
+    };
+    void currentApi.subscribe(jobId, progressProxy).then((subscription) => {
       if (disposed) {
         subscription.unsubscribe();
+        releaseProgressProxy();
         return;
       }
       unsubscribe = subscription.unsubscribe;
     }).catch((caught) => {
+      releaseProgressProxy();
       const nextError = caught instanceof Error ? caught : new Error(String(caught));
       setError(nextError);
       log.warn('Download job subscription failed', { errorName: nextError.name });
@@ -175,6 +190,7 @@ export function useDownloadManager(): UseDownloadManagerResult {
     return (): void => {
       disposed = true;
       unsubscribe?.();
+      releaseProgressProxy();
     };
   }, [refreshJobs]);
 

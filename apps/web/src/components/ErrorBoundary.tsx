@@ -18,12 +18,21 @@ function DefaultErrorFallback({
   onReset: () => void;
 }) {
   const { t } = useTranslation();
+  const supportRef = extractSupportReference(error);
 
   return (
     <div className="error-boundary-fallback" style={defaultStyles.container}>
       <div style={defaultStyles.content}>
         <h2 style={defaultStyles.heading}>{t('error.somethingWentWrong')}</h2>
         <p style={defaultStyles.message}>{t('error.unexpectedError')}</p>
+        {supportRef && (
+          <p
+            style={defaultStyles.reference}
+            data-testid="error-boundary-support-reference"
+          >
+            {t('error.supportReference', { ref: supportRef })}
+          </p>
+        )}
         <div style={defaultStyles.actions}>
           <button onClick={onReset} style={defaultStyles.button}>
             {t('common.tryAgain')}
@@ -50,6 +59,22 @@ function DefaultErrorFallback({
       </div>
     </div>
   );
+}
+
+/**
+ * Extract a short correlation/support reference from an error if it
+ * carries one (e.g. {@link import('@/lib/api').ApiError}). Returned in
+ * a short, copy-pasteable form (~8 chars) suitable for the user to
+ * dictate to support over the phone.
+ */
+function extractSupportReference(error: Error): string | null {
+  const candidate = (error as { correlationId?: unknown }).correlationId;
+  if (typeof candidate !== 'string' || candidate.length === 0) {
+    return null;
+  }
+  // UUIDs are 36 chars; show only the first 8 to reduce visual noise
+  // while still keying log greps reliably.
+  return candidate.length > 8 ? candidate.slice(0, 8) : candidate;
 }
 
 interface ErrorBoundaryState {
@@ -184,6 +209,13 @@ const defaultStyles: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border-secondary, #333333)',
     borderRadius: '0.5rem',
     cursor: 'pointer',
+  },
+  reference: {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontSize: '0.75rem',
+    color: 'var(--text-secondary, #999999)',
+    marginBottom: '1rem',
+    userSelect: 'all',
   },
   details: {
     textAlign: 'left',

@@ -50,14 +50,18 @@ function useShareLinkParams(): {
 
     setParams({ linkId, linkSecret });
 
-    // Listen for hash changes (in case user modifies fragment)
-    const handleHashChange = () => {
-      const newSecret = parseLinkFragment(window.location.hash);
-      setParams((prev) => ({ ...prev, linkSecret: newSecret }));
-    };
-
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    // Privacy: once the secret has been captured into memory, drop the
+    // fragment from the URL so it does not persist in browser history,
+    // tab restore, page-visibility callbacks, document.title, copy-link
+    // menus, or any subresource Referer. The fragment never reaches the
+    // server in any request, but it does survive in client-side history
+    // entries until explicitly replaced. The listener that previously
+    // tracked `hashchange` here was defensive against the user manually
+    // editing the fragment — that flow is intentionally retired now that
+    // we strip the fragment ourselves on first load.
+    if (linkSecret && window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
   }, []);
 
   return params;

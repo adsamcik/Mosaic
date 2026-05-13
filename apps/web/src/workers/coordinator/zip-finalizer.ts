@@ -47,6 +47,27 @@ export interface ZipFinalizerDeps {
  * @param deps       Injected I/O dependencies.
  * @param signal     Abort signal observed during archive streaming.
  */
+/**
+ * Thrown by ZIP/per-file finalizers when one or more expected photos
+ * could not be included in the produced output (missing OPFS file,
+ * unreadable stream, per-photo write failure). Surfaces a clear failure
+ * to the coordinator so the job phase becomes `Errored` instead of
+ * `Done`, preventing the user from believing they have a complete
+ * archive when they don't.
+ *
+ * The `missing` array is for the coordinator's failure log; it is NOT
+ * displayed to the user verbatim — IDs are opaque internal handles.
+ */
+export class PartialExportError extends Error {
+  constructor(
+    message: string,
+    public readonly missing: ReadonlyArray<PhotoId>,
+  ) {
+    super(message);
+    this.name = 'PartialExportError';
+  }
+}
+
 export async function runZipFinalizer(
   job: ZipFinalizerJobView,
   fileName: string,
@@ -57,11 +78,23 @@ export async function runZipFinalizer(
     throw new DOMException('Finalizer aborted', 'AbortError');
   }
 
+  // Track every photo that was expected in the ZIP but could not be
+  // streamed. The generator below populates this list. After the pipe
+  // completes successfully we promote a non-empty list into a
+  // PartialExportError so the coordinator can mark the job Errored.
+  const missing: PhotoId[] = [];
+
   const target = await deps.openSaveTarget(fileName);
-  const zipResponse = downloadZip(generateFiles(job, deps, signal));
+  const zipResponse = downloadZip(generateFiles(job, deps, signal, missing));
   const body = zipResponse.body;
   if (!body) {
     await target.close();
+    if (missing.length > 0) {
+      throw new PartialExportError(
+        `ZIP export incomplete: ${String(missing.length)} of ${String(job.entries.length)} photos missing or unreadable`,
+        missing,
+      );
+    }
     return;
   }
 
@@ -74,6 +107,13 @@ export async function runZipFinalizer(
     throw new DOMException('Finalizer aborted', 'AbortError');
   }
   await body.pipeTo(target, { signal });
+
+  if (missing.length > 0) {
+    throw new PartialExportError(
+      `ZIP export incomplete: ${String(missing.length)} of ${String(job.entries.length)} photos missing or unreadable`,
+      missing,
+    );
+  }
 }
 
 interface ZipFileInput {
@@ -87,6 +127,7 @@ async function* generateFiles(
   job: ZipFinalizerJobView,
   deps: ZipFinalizerDeps,
   signal: AbortSignal,
+  missing: PhotoId[],
 ): AsyncGenerator<ZipFileInput> {
   for (const entry of job.entries) {
     if (signal.aborted) {
@@ -94,14 +135,18 @@ async function* generateFiles(
     }
     const size = await deps.getPhotoFileLength(job.jobId, entry.photoId);
     if (size === null || size === 0) {
-      // Skip not-yet-staged or empty photos; failed entries are reflected in
-      // the job's failure log already.
+      // Photo wasn't successfully staged. Track and continue so the rest
+      // of the album still produces a usable archive — but the caller
+      // throws PartialExportError after pipeTo so the job overall is
+      // marked Errored rather than silently Done.
+      missing.push(entry.photoId);
       continue;
     }
     let input: ReadableStream<Uint8Array>;
     try {
       input = await deps.readPhotoStream(job.jobId, entry.photoId);
     } catch {
+      missing.push(entry.photoId);
       continue;
     }
     yield {

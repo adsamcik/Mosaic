@@ -850,7 +850,8 @@
     "sectionGallery": "Gallery",
     "sectionSettings": "Settings",
     "sectionAdmin": "Admin",
-    "sectionShared": "Shared Album"
+    "sectionShared": "Shared Album",
+    "supportReference": "Reference: {{ref}}"
   },
   "blocks": {
     "heading": "Heading",

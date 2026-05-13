@@ -862,7 +862,8 @@
     "sectionGallery": "Galerie",
     "sectionSettings": "Nastavení",
     "sectionAdmin": "Administrace",
-    "sectionShared": "Sdílené album"
+    "sectionShared": "Sdílené album",
+    "supportReference": "Reference: {{ref}}"
   },
   "blocks": {
     "heading": "Nadpis",

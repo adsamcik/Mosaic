@@ -132,6 +132,35 @@ public class ManifestsController : ControllerBase
                 });
             }
 
+            // A5: reject manifests signed by an epoch older than the album's
+            // current epoch. Without this check, a stale client (e.g. a tab
+            // that was kept open across an admin's member-removal + epoch
+            // rotation) can keep uploading new content encrypted under the
+            // OLD epoch — readable by the just-removed member who retained
+            // their copy of the old epoch keys. Identifying the manifest's
+            // epoch from the SignerPubkey is the only ZK-safe option (the
+            // server cannot parse the encrypted manifest envelope itself).
+            if (TryDecodeBase64(request.SignerPubkey, out var signerPubkeyBytesForEpochLookup)
+                && signerPubkeyBytesForEpochLookup.Length == 32)
+            {
+                var manifestEpochId = await _db.EpochKeys
+                    .Where(ek => ek.AlbumId == album.Id && ek.SignPubkey == signerPubkeyBytesForEpochLookup)
+                    .Select(ek => (int?)ek.EpochId)
+                    .FirstOrDefaultAsync();
+                if (manifestEpochId == null)
+                {
+                    return Problem(
+                        detail: "Manifest signed by an unknown epoch key for this album",
+                        statusCode: StatusCodes.Status400BadRequest);
+                }
+                if (manifestEpochId.Value < album.CurrentEpochId)
+                {
+                    return Problem(
+                        detail: $"Manifest signed by stale epoch ({manifestEpochId.Value}); album is at epoch {album.CurrentEpochId}. Re-encrypt with the current epoch and retry.",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+            }
+
             var shards = await _db.Shards
                 .Where(s => shardGuids.Contains(s.Id))
                 .ToListAsync();

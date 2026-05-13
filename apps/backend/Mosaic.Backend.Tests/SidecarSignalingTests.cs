@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -410,17 +411,26 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
     {
         private readonly Action<SidecarSignalingOptions>? _configureSidecar;
         private readonly TimeProvider? _timeProvider;
+        private readonly string _serverSecret;
 
         public Factory(Action<SidecarSignalingOptions>? configureSidecar = null, TimeProvider? timeProvider = null)
         {
-            Environment.SetEnvironmentVariable("Auth__ServerSecret", Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)));
             _configureSidecar = configureSidecar;
             _timeProvider = timeProvider;
+            _serverSecret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            builder.UseSetting("Auth:ServerSecret", _serverSecret);
             builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((_, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Auth:ServerSecret"] = _serverSecret
+                });
+            });
             builder.ConfigureServices(services =>
             {
                 if (_timeProvider is not null)

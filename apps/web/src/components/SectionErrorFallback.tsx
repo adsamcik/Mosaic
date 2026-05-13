@@ -17,6 +17,7 @@ export function SectionErrorFallback({
   onReset,
 }: SectionErrorFallbackProps) {
   const { t } = useTranslation();
+  const supportRef = extractSupportReference(error);
 
   logger.error(`Section "${section}" crashed`, {
     error: { name: error.name, message: error.message, stack: error.stack },
@@ -29,6 +30,14 @@ export function SectionErrorFallback({
         <p style={styles.message}>
           {t('error.sectionCrashed', { section: t(`error.section${section}`) })}
         </p>
+        {supportRef && (
+          <p
+            style={styles.reference}
+            data-testid="section-error-support-reference"
+          >
+            {t('error.supportReference', { ref: supportRef })}
+          </p>
+        )}
         <div style={styles.actions}>
           <button onClick={onReset} style={styles.button}>
             {t('common.tryAgain')}
@@ -49,6 +58,14 @@ export function SectionErrorFallback({
       </div>
     </div>
   );
+}
+
+function extractSupportReference(error: Error): string | null {
+  const candidate = (error as { correlationId?: unknown }).correlationId;
+  if (typeof candidate !== 'string' || candidate.length === 0) {
+    return null;
+  }
+  return candidate.length > 8 ? candidate.slice(0, 8) : candidate;
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -98,6 +115,14 @@ const styles: Record<string, React.CSSProperties> = {
   summary: {
     cursor: 'pointer',
     color: 'var(--text-secondary, #999999)',
+  },
+  reference: {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontSize: '0.75rem',
+    color: 'var(--text-secondary, #999999)',
+    marginTop: '-0.5rem',
+    marginBottom: '1rem',
+    userSelect: 'all',
   },
   pre: {
     marginTop: '0.5rem',
