@@ -66,7 +66,7 @@ public class AdminUsersControllerTests
 
         var okResult = Assert.IsType<OkObjectResult>(result);
         var data = okResult.Value;
-        var usersProperty = data!.GetType().GetProperty("users");
+        var usersProperty = data!.GetType().GetProperty("Items");
         var users = (usersProperty!.GetValue(data) as IEnumerable<object>)!.ToList();
         Assert.Equal(3, users.Count);
     }

@@ -39,7 +39,7 @@ public class MembersControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var members = Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value);
+        var members = AssertPagedItems(okResult.Value);
         Assert.Equal(2, members.Count()); // owner + member
     }
 
@@ -69,7 +69,7 @@ public class MembersControllerTests
         var result = await controller.List(album.Id, skip: 1, take: 2);
 
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var members = Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value);
+        var members = AssertPagedItems(okResult.Value);
         Assert.Equal(2, members.Count());
         Assert.Equal("1", controller.Response.Headers["X-Pagination-Skip"].ToString());
         Assert.Equal("2", controller.Response.Headers["X-Pagination-Take"].ToString());
@@ -659,4 +659,12 @@ public class MembersControllerTests
         // Assert
         Assert.IsType<NotFoundResult>(result);
     }
+    private static IReadOnlyList<object> AssertPagedItems(object? value)
+    {
+        Assert.NotNull(value);
+        var items = value.GetType().GetProperty("Items")?.GetValue(value) as System.Collections.IEnumerable;
+        Assert.NotNull(items);
+        return items.Cast<object>().ToList();
+    }
+
 }

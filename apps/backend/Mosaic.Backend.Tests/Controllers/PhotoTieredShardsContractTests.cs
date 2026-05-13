@@ -155,7 +155,9 @@ public class PhotoTieredShardsContractTests
     private static PhotoResponse AssertSinglePhoto(IActionResult result)
     {
         var ok = Assert.IsType<OkObjectResult>(result);
-        var photos = Assert.IsAssignableFrom<IReadOnlyCollection<PhotoResponse>>(ok.Value);
+        Assert.NotNull(ok.Value);
+        var photos = ok.Value.GetType().GetProperty("Items")?.GetValue(ok.Value) as IEnumerable<PhotoResponse>;
+        Assert.NotNull(photos);
         return Assert.Single(photos);
     }
 

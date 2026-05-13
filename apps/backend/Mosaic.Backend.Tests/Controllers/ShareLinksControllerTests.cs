@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.ShareLinks;
+using Mosaic.Backend.Models;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Tests.Helpers;
 using Xunit;
@@ -495,7 +496,7 @@ public class ShareLinksControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var links = Assert.IsAssignableFrom<List<ShareLinkResponse>>(okResult.Value);
+        var links = Assert.IsType<PagedResult<ShareLinkResponse>>(okResult.Value).Items;
         Assert.Empty(links);
     }
 
@@ -526,7 +527,7 @@ public class ShareLinksControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var links = Assert.IsAssignableFrom<List<ShareLinkResponse>>(okResult.Value);
+        var links = Assert.IsType<PagedResult<ShareLinkResponse>>(okResult.Value).Items;
         Assert.Equal(3, links.Count);
     }
 
@@ -557,7 +558,7 @@ public class ShareLinksControllerTests
         var result = await controller.List(album.Id, skip: 1, take: 1);
 
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var links = Assert.IsAssignableFrom<List<ShareLinkResponse>>(okResult.Value);
+        var links = Assert.IsType<PagedResult<ShareLinkResponse>>(okResult.Value).Items;
         var link = Assert.Single(links);
         Assert.Equal(middle.Id, link.Id);
         Assert.Equal("1", controller.Response.Headers["X-Pagination-Skip"].ToString());
@@ -651,7 +652,7 @@ public class ShareLinksControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var links = Assert.IsAssignableFrom<List<ShareLinkWithSecretResponse>>(okResult.Value);
+        var links = Assert.IsType<PagedResult<ShareLinkWithSecretResponse>>(okResult.Value).Items;
         Assert.Single(links);
         Assert.Equal(shareLink.Id, links[0].Id);
         Assert.NotNull(links[0].OwnerEncryptedSecret);
@@ -684,7 +685,7 @@ public class ShareLinksControllerTests
         var result = await controller.ListWithSecrets(album.Id, skip: 1, take: 1);
 
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var links = Assert.IsAssignableFrom<List<ShareLinkWithSecretResponse>>(okResult.Value);
+        var links = Assert.IsType<PagedResult<ShareLinkWithSecretResponse>>(okResult.Value).Items;
         var link = Assert.Single(links);
         Assert.Equal(middle.Id, link.Id);
         Assert.Equal("1", controller.Response.Headers["X-Pagination-Skip"].ToString());
@@ -720,7 +721,7 @@ public class ShareLinksControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var links = Assert.IsAssignableFrom<List<ShareLinkWithSecretResponse>>(okResult.Value);
+        var links = Assert.IsType<PagedResult<ShareLinkWithSecretResponse>>(okResult.Value).Items;
         Assert.Empty(links);
     }
 
@@ -751,7 +752,7 @@ public class ShareLinksControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var links = Assert.IsAssignableFrom<List<ShareLinkWithSecretResponse>>(okResult.Value);
+        var links = Assert.IsType<PagedResult<ShareLinkWithSecretResponse>>(okResult.Value).Items;
         Assert.Empty(links);
     }
 
@@ -782,7 +783,7 @@ public class ShareLinksControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var links = Assert.IsAssignableFrom<List<ShareLinkWithSecretResponse>>(okResult.Value);
+        var links = Assert.IsType<PagedResult<ShareLinkWithSecretResponse>>(okResult.Value).Items;
         Assert.Empty(links);
     }
 
@@ -1633,7 +1634,7 @@ public class ShareLinksControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var photos = Assert.IsAssignableFrom<List<ShareLinkPhotoResponse>>(okResult.Value);
+        var photos = Assert.IsType<PagedResult<ShareLinkPhotoResponse>>(okResult.Value).Items;
         Assert.Equal(2, photos.Count);
         Assert.All(photos, p => Assert.Single(p.ShardIds));
     }
@@ -1652,7 +1653,7 @@ public class ShareLinksControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var photos = Assert.IsAssignableFrom<List<ShareLinkPhotoResponse>>(okResult.Value);
+        var photos = Assert.IsType<PagedResult<ShareLinkPhotoResponse>>(okResult.Value).Items;
         Assert.Equal(25, photos.Count);
         Assert.Equal(
             Enumerable.Range(101, 25).Select(i => (long)i).ToArray(),
@@ -1677,7 +1678,7 @@ public class ShareLinksControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var photos = Assert.IsAssignableFrom<List<ShareLinkPhotoResponse>>(okResult.Value);
+        var photos = Assert.IsType<PagedResult<ShareLinkPhotoResponse>>(okResult.Value).Items;
         Assert.Equal(100, photos.Count);
         Assert.Equal(1, photos[0].VersionCreated);
         Assert.Equal(100, photos[^1].VersionCreated);
@@ -1697,7 +1698,7 @@ public class ShareLinksControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var photos = Assert.IsAssignableFrom<List<ShareLinkPhotoResponse>>(okResult.Value);
+        var photos = Assert.IsType<PagedResult<ShareLinkPhotoResponse>>(okResult.Value).Items;
         var photo = Assert.Single(photos);
         Assert.Equal(1, photo.VersionCreated);
     }
@@ -1735,7 +1736,7 @@ public class ShareLinksControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var photos = Assert.IsAssignableFrom<List<ShareLinkPhotoResponse>>(okResult.Value);
+        var photos = Assert.IsType<PagedResult<ShareLinkPhotoResponse>>(okResult.Value).Items;
         Assert.Single(photos);
     }
 
@@ -1829,7 +1830,7 @@ public class ShareLinksControllerTests
         var result = await controller.GetPhotos(ToBase64Url(shareLink.LinkId));
 
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var photos = Assert.IsAssignableFrom<List<ShareLinkPhotoResponse>>(okResult.Value);
+        var photos = Assert.IsType<PagedResult<ShareLinkPhotoResponse>>(okResult.Value).Items;
         Assert.Single(photos);
         Assert.Equal([thumbShard.Id, previewShard.Id], photos[0].ShardIds.ToArray());
     }

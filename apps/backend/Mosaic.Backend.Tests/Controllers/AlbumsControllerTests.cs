@@ -34,7 +34,7 @@ public class AlbumsControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var albums = Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value);
+        var albums = AssertPagedItems(okResult.Value);
         Assert.Empty(albums);
     }
 
@@ -63,7 +63,7 @@ public class AlbumsControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var albums = Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value);
+        var albums = AssertPagedItems(okResult.Value);
         Assert.Equal(2, albums.Count());
     }
 
@@ -89,7 +89,7 @@ public class AlbumsControllerTests
         var result = await controller.List(skip: 1, take: 1);
 
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var albums = Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value);
+        var albums = AssertPagedItems(okResult.Value);
         Assert.Single(albums);
         Assert.Equal("1", controller.Response.Headers["X-Pagination-Skip"].ToString());
         Assert.Equal("1", controller.Response.Headers["X-Pagination-Take"].ToString());
@@ -127,7 +127,7 @@ public class AlbumsControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var albums = Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value);
+        var albums = AssertPagedItems(okResult.Value);
         Assert.Empty(albums);
     }
 
@@ -1141,7 +1141,7 @@ public class AlbumsControllerTests
 
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var albums = Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value);
+        var albums = AssertPagedItems(okResult.Value);
         var albumObj = albums.First();
         var props = albumObj.GetType().GetProperties();
 
@@ -1436,4 +1436,12 @@ public class AlbumsControllerTests
         Assert.Equal(futureDate, album.ExpiresAt);
         Assert.Equal(0, album.ExpirationWarningDays);
     }
+    private static IReadOnlyList<object> AssertPagedItems(object? value)
+    {
+        Assert.NotNull(value);
+        var items = value.GetType().GetProperty("Items")?.GetValue(value) as System.Collections.IEnumerable;
+        Assert.NotNull(items);
+        return items.Cast<object>().ToList();
+    }
+
 }

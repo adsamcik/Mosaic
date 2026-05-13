@@ -174,7 +174,7 @@ public class SecurityTests
 
         // Assert - UserB should only see their own album
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var albums = Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value);
+        var albums = AssertPagedItems(okResult.Value);
         Assert.Single(albums);
     }
 
@@ -560,7 +560,7 @@ public class SecurityTests
             };
             var result = await controller.List();
             var okResult = Assert.IsType<OkObjectResult>(result);
-            return Assert.IsAssignableFrom<IEnumerable<object>>(okResult.Value).Count();
+            return AssertPagedItems(okResult.Value).Count;
         }
 
         // Assert - Each user sees only their own albums
@@ -812,4 +812,12 @@ public class SecurityTests
     }
 
     #endregion
+
+    private static IReadOnlyList<object> AssertPagedItems(object? value)
+    {
+        Assert.NotNull(value);
+        var items = value.GetType().GetProperty("Items")?.GetValue(value) as System.Collections.IEnumerable;
+        Assert.NotNull(items);
+        return items.Cast<object>().ToList();
+    }
 }
