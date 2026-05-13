@@ -5,7 +5,7 @@
  * for React's act() function to work correctly.
  */
 
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 
 // Tell React we're in a test environment where act() is expected
 // This is required for React 19 to use act() without warnings/errors
@@ -49,3 +49,10 @@ vi.mock('../src/lib/i18n', () => ({
     changeLanguage: vi.fn(),
   },
 }));
+
+afterEach(() => {
+  // @testing-library/react is not installed in this test package; clear Happy-DOM directly.
+  document.body.innerHTML = '';
+  vi.clearAllMocks();
+  vi.useRealTimers();
+});
