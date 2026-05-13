@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { api, Album } from '../api-client';
+import { api, Album, PagedResponse } from '../api-client';
 import { waitForApi, uniqueUser, createTestAlbum, generateCreateAlbumRequest } from '../utils';
 
 describe('Albums API', () => {
@@ -50,28 +50,29 @@ describe('Albums API', () => {
       await api.post<Album>('/api/albums', generateCreateAlbumRequest());
       await api.post<Album>('/api/albums', generateCreateAlbumRequest());
 
-      const response = await api.get<Album[]>('/api/albums');
+      const response = await api.get<PagedResponse<Album>>('/api/albums');
 
       expect(response.status).toBe(200);
-      expect(response.data).toHaveLength(2);
+      expect(response.data.items).toHaveLength(2);
     });
 
     it('returns empty array for new user', async () => {
       api.setUser(uniqueUser());
 
-      const response = await api.get<Album[]>('/api/albums');
+      const response = await api.get<PagedResponse<Album>>('/api/albums');
 
       expect(response.status).toBe(200);
-      expect(response.data).toEqual([]);
+      expect(response.data.items).toEqual([]);
+      expect(response.data.nextSkip).toBeNull();
     });
 
     it('includes role in response', async () => {
       api.setUser(testUser);
 
       await api.post<Album>('/api/albums', generateCreateAlbumRequest());
-      const response = await api.get<Album[]>('/api/albums');
+      const response = await api.get<PagedResponse<Album>>('/api/albums');
 
-      expect(response.data[0].role).toBe('owner');
+      expect(response.data.items[0].role).toBe('owner');
     });
   });
 
@@ -125,8 +126,7 @@ describe('Albums API', () => {
 
       expect(response.status).toBe(200);
       expect(response.data.manifests).toEqual([]);
-      // Album is created with version 1 due to initial epoch key
-      expect(response.data.albumVersion).toBe(1);
+      expect(response.data.albumVersion).toBe(0);
     });
 
     it('returns 403 for non-member', async () => {

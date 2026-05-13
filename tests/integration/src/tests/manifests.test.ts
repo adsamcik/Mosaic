@@ -28,18 +28,28 @@ describe('Manifests API', () => {
     });
   });
 
+  function manifestRequest(albumId: string) {
+    const shardId = '00000000-0000-0000-0000-000000000001';
+    return {
+      albumId,
+      encryptedMeta: randomBase64(256),
+      signature: randomBase64(64),
+      signerPubkey: randomBase64(32),
+      shardIds: [shardId],
+      tieredShards: [{
+        shardId,
+        tier: 3,
+        shardIndex: 0,
+      }],
+    };
+  }
+
   describe('POST /api/manifests', () => {
     it('returns 400 when shards not found', async () => {
       const album = await createTestAlbum(api, owner);
 
       // Try to create manifest with non-existent shard IDs
-      const response = await api.post('/api/manifests', {
-        albumId: album.id,
-        encryptedMeta: randomBase64(256),
-        signature: randomBase64(64),
-        signerPubkey: randomBase64(32),
-        shardIds: ['00000000-0000-0000-0000-000000000001'],
-      });
+      const response = await api.post('/api/manifests', manifestRequest(album.id));
 
       // Should fail because shards don't exist
       expect(response.status).toBe(400);
@@ -49,13 +59,7 @@ describe('Manifests API', () => {
       const album = await createTestAlbum(api, owner);
 
       api.setUser(uniqueUser());
-      const response = await api.post('/api/manifests', {
-        albumId: album.id,
-        encryptedMeta: randomBase64(256),
-        signature: randomBase64(64),
-        signerPubkey: randomBase64(32),
-        shardIds: ['00000000-0000-0000-0000-000000000001'],
-      });
+      const response = await api.post('/api/manifests', manifestRequest(album.id));
 
       // Non-member should be forbidden
       expect(response.status).toBe(403);
@@ -63,13 +67,10 @@ describe('Manifests API', () => {
 
     it('returns 404 for non-existent album', async () => {
       api.setUser(owner);
-      const response = await api.post('/api/manifests', {
-        albumId: '00000000-0000-0000-0000-000000000000',
-        encryptedMeta: randomBase64(256),
-        signature: randomBase64(64),
-        signerPubkey: randomBase64(32),
-        shardIds: ['00000000-0000-0000-0000-000000000001'],
-      });
+      const response = await api.post(
+        '/api/manifests',
+        manifestRequest('00000000-0000-0000-0000-000000000000')
+      );
 
       expect(response.status).toBe(404);
     });

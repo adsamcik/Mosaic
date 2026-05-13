@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace Mosaic.Backend.Models.Manifests;
 
@@ -32,6 +33,7 @@ public record CreateManifestRequest(
     /// </summary>
     DateTimeOffset? ExpiresAt = null
 ) {
+    [JsonConstructor]
     public CreateManifestRequest(
         Guid AlbumId,
         byte[] EncryptedMeta,

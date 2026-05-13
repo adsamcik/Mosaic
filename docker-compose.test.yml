@@ -33,6 +33,7 @@ services:
       Auth__LocalAuthEnabled: "true"
       Auth__ProxyAuthEnabled: "true"
       Auth__AllowDualMode: "true"           # Test env intentionally enables both auth modes; required since 7a0952f fail-closed validation
+      Auth__ServerSecret: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="  # 32-byte deterministic test-only secret
       Auth__TrustedProxies__0: "0.0.0.0/0"  # Trust all IPv4 for testing
       Auth__TrustedProxies__1: "::/0"       # Trust all IPv6 for testing
       Quota__DefaultMaxBytes: "10737418240"

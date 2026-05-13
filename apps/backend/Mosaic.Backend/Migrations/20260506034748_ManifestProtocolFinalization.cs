@@ -1,10 +1,14 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Mosaic.Backend.Data;
 
 #nullable disable
 
 namespace Mosaic.Backend.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(MosaicDbContext))]
+    [Migration("20260506034748_ManifestProtocolFinalization")]
     public partial class ManifestProtocolFinalization : Migration
     {
         /// <inheritdoc />

@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { api, User } from '../api-client';
+import { api, PagedResponse, User } from '../api-client';
 import { waitForApi, uniqueUser, createTestAlbum, randomBase64 } from '../utils';
 
 /**
@@ -56,11 +56,11 @@ describe('Members API', () => {
     it('lists album members', async () => {
       const album = await createTestAlbum(api, owner);
 
-      const response = await api.get<MemberResponse[]>(`/api/albums/${album.id}/members`);
+      const response = await api.get<PagedResponse<MemberResponse>>(`/api/albums/${album.id}/members`);
 
       expect(response.status).toBe(200);
-      expect(response.data).toHaveLength(1);
-      expect(response.data[0].role).toBe('owner');
+      expect(response.data.items).toHaveLength(1);
+      expect(response.data.items[0].role).toBe('owner');
     });
 
     it('returns 403 for non-member', async () => {
