@@ -56,8 +56,7 @@ const epochKeyCache = new Map<string, Map<number, EpochKeyBundle>>();
 async function closeHandle(bundle: EpochKeyBundle): Promise<void> {
   try {
     const crypto = await getCryptoClient();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await crypto.closeEpochHandle(bundle.epochHandleId as any);
+    await crypto.closeEpochHandle(bundle.epochHandleId);
   } catch (err) {
     log.warn('closeEpochHandle rejected during cache cleanup', {
       albumId: '<unknown>',

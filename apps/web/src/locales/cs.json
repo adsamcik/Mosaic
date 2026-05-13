@@ -380,26 +380,26 @@
       "IllegalState": "Interní chyba"
     },
     "modePicker": {
-      "title": "Ulo?it album",
-      "subtitle": "{{count}} fotek ? {{size}}",
-      "sizeUnknown": "nezn?m? velikost",
-      "cancel": "Zru?it",
-      "start": "St?hnout",
+      "title": "Uložit album",
+      "subtitle": "{{count}} fotek · {{size}}",
+      "sizeUnknown": "neznámá velikost",
+      "cancel": "Zrušit",
+      "start": "Stáhnout",
       "statusStreaming": "Streamuje se na disk",
-      "statusFallback": "Ukl?d? se do pam?ti",
-      "connection": "P?ipojen?: {{type}}",
+      "statusFallback": "Ukládá se do paměti",
+      "connection": "Připojení: {{type}}",
       "battery": "Baterie: {{level}}",
       "zip": {
-        "label": "Ulo?it jako ZIP",
-        "sub": "Nejlep?? pro desktop"
+        "label": "Uložit jako ZIP",
+        "sub": "Nejlepší pro desktop"
       },
       "keepOffline": {
-        "label": "Zp??stupnit offline",
-        "sub": "Prohl??ejte album v Mosaicu pozd?ji bez exportu soubor?"
+        "label": "Zpřístupnit offline",
+        "sub": "Prohlížejte album v Mosaicu později bez exportu souborů"
       },
       "perFile": {
-        "label": "Ulo?it jednotliv? soubory",
-        "sub": "Ji? brzy"
+        "label": "Uložit jednotlivé soubory",
+        "sub": "Již brzy"
       },
       "perFileWebShare": "Uložit jednotlivé soubory (přes nabídku sdílení)",
       "perFileFsAccess": "Uložit jednotlivé soubory ({{count}} výzev)",

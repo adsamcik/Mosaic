@@ -58,10 +58,11 @@ vi.mock('../logger', () => ({
 // Imports must come after the mocks are registered.
 import { getCryptoClient } from '../crypto-client';
 import { wrapKeysForShareLinks } from '../epoch-rotation-service';
+import type { EpochHandleId } from '../../workers/types';
 
 const mockGetCryptoClient = vi.mocked(getCryptoClient);
 
-const TEST_EPOCH_HANDLE_ID = 'epch_test-handle-id';
+const TEST_EPOCH_HANDLE_ID = 'epch_test-handle-id' as EpochHandleId;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -130,7 +131,6 @@ describe('wrapKeysForShareLinks (P-W7.6 handle material)', () => {
 
     expect(results).toHaveLength(1);
     // Three calls = thumb (tier 1) + preview (tier 2) + full (tier 3).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((crypto as any).wrapLinkTierHandle).toHaveBeenCalledTimes(3);
   });
 });

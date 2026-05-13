@@ -370,7 +370,7 @@
     },
     "modePicker": {
       "title": "Save album",
-      "subtitle": "{{count}} photos ? {{size}}",
+      "subtitle": "{{count}} photos · {{size}}",
       "sizeUnknown": "size unknown",
       "cancel": "Cancel",
       "start": "Start download",

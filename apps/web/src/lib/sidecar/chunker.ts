@@ -48,7 +48,6 @@ export async function* chunkPhoto(
   let carry: Uint8Array | null = null;
   try {
     // Outer loop: keep reading until the upstream is done AND carry is drained.
-    // eslint-disable-next-line no-constant-condition
     while (true) {
       // Drain any carry first.
       if (carry && carry.byteLength >= max) {

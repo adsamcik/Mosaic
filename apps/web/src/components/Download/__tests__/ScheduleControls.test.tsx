@@ -29,7 +29,7 @@ describe("ScheduleControls", () => {
   it("renders all five kind options", async () => {
     const r = await render(<Harness initial={{ kind: "immediate" }} />);
     for (const kind of ["immediate", "wifi", "wifi-charging", "idle", "window"]) {
-      expect(r.container.querySelector(`[data-testid=\"schedule-kind-${kind}\"]`)).not.toBeNull();
+      expect(r.container.querySelector(`[data-testid="schedule-kind-${kind}"]`)).not.toBeNull();
     }
     await r.unmount();
   });

@@ -6,7 +6,7 @@ import { Dialog } from './Dialog';
 /** Props for {@link VisitorDownloadDisclosure}. */
 export interface VisitorDownloadDisclosureProps {
   /**
-   * Visitor scope key (isitor:<hex16>) the disclosure is gating. The
+   * Visitor scope key (visitor:<hex16>) the disclosure is gating. The
    * acknowledgement is persisted against this key, so two different share
    * links never share consent.
    */

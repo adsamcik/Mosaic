@@ -251,8 +251,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
           const epochBundle = getEpochKey(albumId, epochId);
           if (!epochBundle?.epochHandleId) continue;
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const epochHandleId = epochBundle.epochHandleId as any;
+          const { epochHandleId } = epochBundle;
 
           let wrappedThumb: { tier: number; nonce: Uint8Array; encryptedKey: Uint8Array };
           if (!linkShareHandleId) {

@@ -197,41 +197,40 @@ export async function localAuthLogin(
   await ensureLocalAuthRustWasmInitialized();
   const accountSaltBytes = await deriveAccountSalt(userSaltBytes);
 
-  // Step 4: Verify with server
-  try {
-    const verifyResult = await verifyAuth(
-      username,
-      challengeId,
-      signatureBase64,
-      timestamp,
-    );
+  // Step 4: Verify with server.
+  //
+  // We intentionally let any verifyAuth error propagate. Auto-registering on
+  // an authentication failure is forbidden because:
+  //   1. The backend returns the same error for "user doesn't exist" and
+  //      "wrong password" (anti-enumeration).
+  //   2. Auto-registering on wrong password would leak that the username
+  //      exists.
+  //   3. Users must explicitly choose "Create Account" to register.
+  const verifyResult = await verifyAuth(
+    username,
+    challengeId,
+    signatureBase64,
+    timestamp,
+  );
 
-    // If server has a wrapped account key, we need to re-init with it
-    // to get the correct identity for epoch key operations
-    const serverAccountSalt = verifyResult.accountSalt
-      ? fromBase64(verifyResult.accountSalt)
-      : accountSaltBytes;
+  // If server has a wrapped account key, we need to re-init with it
+  // to get the correct identity for epoch key operations
+  const serverAccountSalt = verifyResult.accountSalt
+    ? fromBase64(verifyResult.accountSalt)
+    : accountSaltBytes;
 
-    // Return wrapped key so caller can re-init if needed
-    const wrappedAccountKey = verifyResult.wrappedAccountKey
-      ? fromBase64(verifyResult.wrappedAccountKey)
-      : null;
+  // Return wrapped key so caller can re-init if needed
+  const wrappedAccountKey = verifyResult.wrappedAccountKey
+    ? fromBase64(verifyResult.wrappedAccountKey)
+    : null;
 
-    return {
-      userId: verifyResult.userId,
-      userSalt: userSaltBytes,
-      accountSalt: serverAccountSalt,
-      wrappedAccountKey,
-      isNewUser: false,
-    };
-  } catch (error) {
-    // Pass through authentication errors - user must explicitly register if they don't have an account.
-    // We intentionally do NOT auto-register on "Invalid credentials" because:
-    // 1. The backend returns the same error for "user doesn't exist" and "wrong password" (anti-enumeration)
-    // 2. Auto-registering on wrong password would leak that the username exists
-    // 3. Users should explicitly choose "Create Account" to register
-    throw error;
-  }
+  return {
+    userId: verifyResult.userId,
+    userSalt: userSaltBytes,
+    accountSalt: serverAccountSalt,
+    wrappedAccountKey,
+    isNewUser: false,
+  };
 }
 
 /**

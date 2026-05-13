@@ -89,7 +89,6 @@ describe('UserSchema', () => {
   it('strips unknown fields silently (default permissive mode)', () => {
     const withExtras = {
       ...validUser,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       maliciousFlag: 'pwned',
       anotherExtra: 12345,
     } as Record<string, unknown>;

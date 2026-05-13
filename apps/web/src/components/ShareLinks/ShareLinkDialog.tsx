@@ -146,7 +146,7 @@ export function CreateShareLinkView({
       await navigator.clipboard.writeText(result.shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
+    } catch (_err) {
       // Fallback: select the input text
       urlInputRef.current?.select();
       setLocalError('Press Ctrl+C to copy');

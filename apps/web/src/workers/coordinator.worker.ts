@@ -741,24 +741,27 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     if (this.thumbnailStreamerInstance) return this.thumbnailStreamerInstance;
     const sourceFor = (jobId: string): SourceStrategy =>
       this.jobSources.get(jobId) ?? this.getDefaultAuthSource();
-    const self = this;
+    const getDefaultAuthSource = (): SourceStrategy => this.getDefaultAuthSource();
+    const getJobThumbnailManifests = (): typeof this.jobThumbnailManifests =>
+      this.jobThumbnailManifests;
+    const jobsRef = this.jobs;
     this.thumbnailStreamerInstance = createThumbnailStreamer({
       fetchShard: async (shardId, signal): Promise<Uint8Array> => {
         // Fallback for tests / legacy entries. Real coordinator entries are
         // bound below to the job-local source captured when the stream starts.
-        return self.getDefaultAuthSource().fetchShard(shardId, signal);
+        return getDefaultAuthSource().fetchShard(shardId, signal);
       },
       resolveThumbKey: async (_photoId, epochId) => {
         const epoch = Number.parseInt(epochId, 10);
-        return self.getDefaultAuthSource().resolveKey('', Number.isFinite(epoch) ? epoch : 0);
+        return getDefaultAuthSource().resolveKey('', Number.isFinite(epoch) ? epoch : 0);
       },
       decryptShard: async (bytes, key): Promise<Uint8Array> => {
         const pool = await acquireCryptoPoolForCoordinator();
         return decryptShardWithResolvedKey(pool, bytes, key, 1);
       },
       resolveJobThumbnails: async function* (jobId: string): AsyncIterable<ThumbnailManifestEntry> {
-        const manifest = self.jobThumbnailManifests.get(jobId) ?? [];
-        const job = self.jobs.get(jobId);
+        const manifest = getJobThumbnailManifests().get(jobId) ?? [];
+        const job = jobsRef.get(jobId);
         const source = sourceFor(jobId);
         const albumId = job?.albumId ?? '';
         for (const entry of manifest) {

@@ -139,7 +139,6 @@ async function loadSqlJs(): Promise<SqlJsStatic> {
   await verifyIntegrity(scriptText, SQL_WASM_SHA384);
 
   // sql.js exports initSqlJs as a global - capture it via Function constructor
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
   const initSqlJs = new Function(scriptText + '\nreturn initSqlJs;')();
 
   // Initialize sql.js with WASM file path

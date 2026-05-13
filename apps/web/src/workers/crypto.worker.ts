@@ -14,7 +14,6 @@ import {
   type LinkTierHandleId,
   type ManifestTranscriptInput,
   type OpenEpochKeyBundleOptions,
-  type PhotoMeta,
   type ShardTier,
   type WorkerKdfParams,
 } from './types';

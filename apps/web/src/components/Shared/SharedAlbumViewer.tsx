@@ -161,7 +161,9 @@ export function SharedAlbumViewer({
           albumId ?? 'shared',
         );
 
-        log.info('Album name decrypted successfully', { name });
+        // Zero-knowledge invariant: the decrypted plaintext album name is
+        // user metadata and must never be logged. Successful decryption is
+        // implicit if no error was thrown above.
 
         if (!cancelled) {
           setAlbumName(name);

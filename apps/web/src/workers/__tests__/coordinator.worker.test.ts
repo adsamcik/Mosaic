@@ -1315,7 +1315,6 @@ describe('CoordinatorWorker', () => {
       const sendStream = vi.fn(async (s: ReadableStream<Uint8Array>): Promise<void> => {
         // Drain the stream to mimic the real transport.
         const reader = s.getReader();
-        // eslint-disable-next-line no-constant-condition
         while (true) {
           const { done } = await reader.read();
           if (done) break;

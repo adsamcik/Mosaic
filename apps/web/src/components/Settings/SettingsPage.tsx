@@ -161,7 +161,7 @@ export function SettingsPage() {
       saveSettings(settings);
       setSaveMessage('Settings saved successfully');
       setTimeout(() => setSaveMessage(null), 3000);
-    } catch (err) {
+    } catch (_err) {
       setSaveMessage('Failed to save settings');
     } finally {
       setIsSaving(false);

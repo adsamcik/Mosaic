@@ -147,7 +147,7 @@ export async function rotateEpoch(
   onProgress?.(RotationStep.GENERATING_KEY);
   const newEpochId = currentEpochId + 1;
   let newEpochKey: {
-    epochHandleId: string;
+    epochHandleId: EpochHandleId;
     wrappedSeed: Uint8Array;
     signPublicKey: Uint8Array;
   };
@@ -223,8 +223,7 @@ export async function rotateEpoch(
       // Slice 3 — bundle payload bytes never cross Comlink. The worker
       // resolves the epoch handle internally and seals + signs in Rust.
       const sealed = await crypto.createEpochKeyBundle(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        newEpochKey.epochHandleId as any,
+        newEpochKey.epochHandleId,
         albumId,
         recipientPubkeyBytes,
       );
@@ -293,7 +292,7 @@ export async function rotateEpoch(
   // Cache the new epoch key reference for the current user.
   const newBundle: EpochKeyBundle = {
     epochId: newEpochId,
-    epochHandleId: newEpochKey.epochHandleId as EpochHandleId,
+    epochHandleId: newEpochKey.epochHandleId,
     signPublicKey: newEpochKey.signPublicKey,
     signKeypair: {
       publicKey: newEpochKey.signPublicKey,
@@ -329,7 +328,7 @@ export async function rotateEpoch(
 // Exported for unit testing in __tests__/epoch-rotation-service.test.ts.
 export async function wrapKeysForShareLinks(
   shareLinks: ShareLinkWithSecretResponse[],
-  epochHandleId: string,
+  epochHandleId: EpochHandleId,
 ): Promise<ShareLinkKeyUpdateRequest[]> {
   const crypto = await getCryptoClient();
   const results: ShareLinkKeyUpdateRequest[] = [];
@@ -361,8 +360,7 @@ export async function wrapKeysForShareLinks(
       // Always wrap thumb key (tier byte 0).
       const wrappedThumb = await crypto.wrapLinkTierHandle(
         linkShareHandleId,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        epochHandleId as any,
+        epochHandleId,
         1,
       );
       wrappedKeys.push({
@@ -374,8 +372,7 @@ export async function wrapKeysForShareLinks(
       if (link.accessTier >= 2) {
         const wrappedPreview = await crypto.wrapLinkTierHandle(
           linkShareHandleId,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          epochHandleId as any,
+          epochHandleId,
           2,
         );
         wrappedKeys.push({
@@ -388,8 +385,7 @@ export async function wrapKeysForShareLinks(
       if (link.accessTier >= 3) {
         const wrappedFull = await crypto.wrapLinkTierHandle(
           linkShareHandleId,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          epochHandleId as any,
+          epochHandleId,
           3,
         );
         wrappedKeys.push({
