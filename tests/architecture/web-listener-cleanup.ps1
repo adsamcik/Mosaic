@@ -16,9 +16,10 @@ function ConvertTo-RepoPath([string]$Path) {
 
 Get-ChildItem -Path $src -Recurse -Include *.ts,*.tsx |
   Where-Object {
-    $_.FullName -notmatch '\\__tests__\\' -and
-    $_.FullName -notmatch '\\service-worker\\' -and
-    -not $AllowList.ContainsKey((ConvertTo-RepoPath $_.FullName))
+    $repoPath = ConvertTo-RepoPath $_.FullName
+    $repoPath -notmatch '/__tests__/' -and
+    $repoPath -notmatch '/service-worker/' -and
+    -not $AllowList.ContainsKey($repoPath)
   } |
   ForEach-Object {
     $text = Get-Content -Raw -Path $_.FullName
