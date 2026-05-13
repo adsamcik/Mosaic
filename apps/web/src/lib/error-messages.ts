@@ -48,6 +48,8 @@ const CRYPTO_ERROR_MESSAGES: Partial<Record<WorkerCryptoErrorCode, string>> = {
     'Invalid data format. The data may be corrupted.',
   [WorkerCryptoErrorCode.NonZeroReservedByte]:
     'Invalid data format. The data may be corrupted.',
+  [WorkerCryptoErrorCode.UnknownEnvelopeVersion]:
+    'Unsupported data format. Please refresh the page.',
 
   // Crypto operation failures (Rust 200-series).
   [WorkerCryptoErrorCode.EmptyContext]:
@@ -94,6 +96,16 @@ const CRYPTO_ERROR_MESSAGES: Partial<Record<WorkerCryptoErrorCode, string>> = {
     'Album key bundle is corrupted.',
   [WorkerCryptoErrorCode.BundleSealOpenFailed]:
     'Unable to unseal album keys. The bundle may be corrupted.',
+  [WorkerCryptoErrorCode.ShardIntegrityFailed]:
+    'Downloaded photo data failed integrity checks. Please try again.',
+  [WorkerCryptoErrorCode.LegacyRawKeyDecryptFallback]:
+    'Unable to unlock legacy encrypted data. Please log in again.',
+  [WorkerCryptoErrorCode.StreamingChunkOutOfOrder]:
+    'Downloaded photo data arrived out of order. Please try again.',
+  [WorkerCryptoErrorCode.StreamingTotalChunkMismatch]:
+    'Downloaded photo data is incomplete. Please try again.',
+  [WorkerCryptoErrorCode.StreamingPlaintextDivergence]:
+    'Downloaded photo data failed verification. Please try again.',
 
   // Cancellation (300-series).
   [WorkerCryptoErrorCode.OperationCancelled]: 'Operation was cancelled.',
@@ -111,6 +123,103 @@ const CRYPTO_ERROR_MESSAGES: Partial<Record<WorkerCryptoErrorCode, string>> = {
   // State corruption (Rust 500-series).
   [WorkerCryptoErrorCode.InternalStatePoisoned]:
     'Encryption subsystem is in a bad state. Please refresh the page.',
+
+  // Media and metadata validation (Rust 600-series).
+  [WorkerCryptoErrorCode.UnsupportedMediaFormat]:
+    'This media format is not supported.',
+  [WorkerCryptoErrorCode.InvalidMediaContainer]:
+    'This media file appears to be invalid or corrupted.',
+  [WorkerCryptoErrorCode.InvalidMediaDimensions]:
+    'This media file has invalid dimensions.',
+  [WorkerCryptoErrorCode.MediaOutputTooLarge]:
+    'Processed media is too large to upload.',
+  [WorkerCryptoErrorCode.MediaMetadataMismatch]:
+    'Media metadata does not match the file contents.',
+  [WorkerCryptoErrorCode.InvalidMediaSidecar]:
+    'Media metadata is invalid or corrupted.',
+  [WorkerCryptoErrorCode.MediaAdapterOutputMismatch]:
+    'Media processing produced inconsistent output. Please try again.',
+  [WorkerCryptoErrorCode.VideoContainerInvalid]:
+    'This video file appears to be invalid or corrupted.',
+  [WorkerCryptoErrorCode.MediaInspectFailed]:
+    'Unable to inspect this media file.',
+  [WorkerCryptoErrorCode.MediaStripFailed]:
+    'Unable to remove unsafe metadata from this media file.',
+  [WorkerCryptoErrorCode.SidecarFieldOverflow]:
+    'Media metadata is too large to process.',
+  [WorkerCryptoErrorCode.SidecarTagUnknown]:
+    'Media metadata contains an unsupported field.',
+  [WorkerCryptoErrorCode.MalformedSidecar]:
+    'Media metadata is malformed.',
+  [WorkerCryptoErrorCode.MakerNoteRejected]:
+    'Unsupported camera metadata was rejected.',
+  [WorkerCryptoErrorCode.ExifTraversalLimitExceeded]:
+    'Media metadata is too deeply nested to process safely.',
+  [WorkerCryptoErrorCode.VideoTooLargeForV1]:
+    'This video is too large for the current upload format.',
+  [WorkerCryptoErrorCode.VideoSourceUnreadable]:
+    'Unable to read this video file.',
+  [WorkerCryptoErrorCode.VideoTierShapeRejected]:
+    'Generated video tiers are invalid. Please try again.',
+  [WorkerCryptoErrorCode.MetadataSidecarReservedTagNotPromoted]:
+    'Media metadata contains a reserved field that cannot be uploaded.',
+
+  // Client workflow / sync state (Rust 700-series).
+  [WorkerCryptoErrorCode.ClientCoreInvalidTransition]:
+    'Sync reached an invalid state. Please refresh the page.',
+  [WorkerCryptoErrorCode.ClientCoreMissingEventPayload]:
+    'Sync data is incomplete. Please refresh the page.',
+  [WorkerCryptoErrorCode.ClientCoreRetryBudgetExhausted]:
+    'Sync retry limit reached. Please check your connection and try again.',
+  [WorkerCryptoErrorCode.ClientCoreSyncPageDidNotAdvance]:
+    'Sync could not make progress. Please refresh the page.',
+  [WorkerCryptoErrorCode.ClientCoreManifestOutcomeUnknown]:
+    'Photo sync returned an unknown result. Please try again.',
+  [WorkerCryptoErrorCode.ClientCoreUnsupportedSnapshotVersion]:
+    'Local sync data is from an unsupported version. Please refresh the page.',
+  [WorkerCryptoErrorCode.ClientCoreInvalidSnapshot]:
+    'Local sync data is corrupted. Please refresh the page.',
+  [WorkerCryptoErrorCode.ManifestShapeRejected]:
+    'Photo manifest data is invalid.',
+  [WorkerCryptoErrorCode.IdempotencyExpired]:
+    'This upload session expired. Please try again.',
+  [WorkerCryptoErrorCode.ManifestSetConflict]:
+    'The album changed during sync. Please reload and try again.',
+  [WorkerCryptoErrorCode.BackendIdempotencyConflict]:
+    'This request conflicts with a previous request. Please reload and try again.',
+  [WorkerCryptoErrorCode.VideoPosterExtractionFailed]:
+    'Unable to create a preview image for this video.',
+  [WorkerCryptoErrorCode.DownloadInvalidPlan]:
+    'Download plan is invalid. Please try again.',
+  [WorkerCryptoErrorCode.DownloadIllegalTransition]:
+    'Download reached an invalid state. Please restart the download.',
+  [WorkerCryptoErrorCode.DownloadSnapshotMigration]:
+    'Saved download state is from an unsupported version. Please restart the download.',
+  [WorkerCryptoErrorCode.DownloadSnapshotCorrupt]:
+    'Saved download state is corrupted. Please restart the download.',
+  [WorkerCryptoErrorCode.DownloadSnapshotChecksumMismatch]:
+    'Saved download state failed integrity checks. Please restart the download.',
+  [WorkerCryptoErrorCode.DownloadSnapshotTorn]:
+    'Saved download state is incomplete. Please restart the download.',
+  [WorkerCryptoErrorCode.DownloadTransientNetwork]:
+    'Network interrupted the download. Please try again.',
+  [WorkerCryptoErrorCode.DownloadIntegrity]:
+    'Downloaded data failed integrity checks. Please try again.',
+  [WorkerCryptoErrorCode.DownloadDecrypt]:
+    'Unable to decrypt downloaded data. Please log in again.',
+  [WorkerCryptoErrorCode.DownloadNotFound]:
+    'A downloaded item was not found. Please refresh and try again.',
+  [WorkerCryptoErrorCode.DownloadQuota]:
+    'Not enough storage is available for this download.',
+  [WorkerCryptoErrorCode.DownloadCancelled]: 'Download was cancelled.',
+  [WorkerCryptoErrorCode.DownloadAccessRevoked]:
+    'Access to this download was revoked.',
+  [WorkerCryptoErrorCode.DownloadAuthorizationChanged]:
+    'Your permissions changed. Please refresh and try again.',
+  [WorkerCryptoErrorCode.DownloadIllegalState]:
+    'Download is in an invalid state. Please restart it.',
+  [WorkerCryptoErrorCode.PinValidationFailed]:
+    'The pairing PIN could not be verified. Please try again.',
 
   // Worker-only handle-lifecycle codes (1000-series).
   [WorkerCryptoErrorCode.StaleHandle]:

@@ -25,4 +25,21 @@ describe('toSafeErrorMessage', () => {
       'Unable to decrypt content. The data may be corrupted or the key is wrong.',
     );
   });
+
+  it('maps v1 client workflow and media codes to curated safe messages', () => {
+    const cases: Array<[WorkerCryptoErrorCode, string]> = [
+      [WorkerCryptoErrorCode.ShardIntegrityFailed, 'integrity checks'],
+      [WorkerCryptoErrorCode.UnsupportedMediaFormat, 'not supported'],
+      [WorkerCryptoErrorCode.ManifestSetConflict, 'album changed'],
+      [WorkerCryptoErrorCode.DownloadDecrypt, 'Unable to decrypt'],
+      [WorkerCryptoErrorCode.PinValidationFailed, 'pairing PIN'],
+    ];
+
+    for (const [code, expected] of cases) {
+      expect(
+        toSafeErrorMessage(new WorkerCryptoError(code, `raw error ${code}`)),
+        `code=${code}`,
+      ).toContain(expected);
+    }
+  });
 });
