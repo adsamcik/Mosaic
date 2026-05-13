@@ -53,6 +53,9 @@ export class UploadQueue {
   private contentHashDedup: ContentHashDedup | null = null;
   private initPromise: Promise<void> | null = null;
   private initialized = false;
+  private readonly handleSessionExpired = (): void => {
+    void this.pauseForAuthRequired();
+  };
 
   /** Called when upload progress updates */
   onProgress?: ProgressCallback;
@@ -68,9 +71,16 @@ export class UploadQueue {
 
   constructor() {
     if (typeof window !== 'undefined') {
-      window.addEventListener('mosaic:session-expired', () => {
-        void this.pauseForAuthRequired();
-      });
+      window.addEventListener('mosaic:session-expired', this.handleSessionExpired);
+    }
+  }
+
+  /**
+   * Remove global listeners for isolated tests; production keeps the singleton for the page lifetime.
+   */
+  dispose(): void {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('mosaic:session-expired', this.handleSessionExpired);
     }
   }
 
