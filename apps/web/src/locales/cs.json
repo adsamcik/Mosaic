@@ -36,6 +36,9 @@
     "refreshPage": "Obnovit stránku",
     "dismissError": "Zavřít chybu"
   },
+  "a11y": {
+    "skipToMain": "Přeskočit na hlavní obsah"
+  },
   "auth": {
     "checkingSession": "Kontrola relace...",
     "welcomeBack": "Vítejte zpět! Zadejte heslo pro pokračování.",

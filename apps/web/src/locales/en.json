@@ -36,6 +36,9 @@
     "refreshPage": "Refresh Page",
     "dismissError": "Dismiss error"
   },
+  "a11y": {
+    "skipToMain": "Skip to main content"
+  },
   "auth": {
     "checkingSession": "Checking session...",
     "welcomeBack": "Welcome back! Enter your password to continue.",

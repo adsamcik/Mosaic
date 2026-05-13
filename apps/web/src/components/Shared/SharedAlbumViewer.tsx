@@ -254,7 +254,7 @@ export function SharedAlbumViewer({
         </div>
       </header>
 
-      <main className="shared-viewer-main">
+      <main id="main-content" className="shared-viewer-main">
         {albumId && accessTier && (
           <SharedGallery
             linkId={linkId!}

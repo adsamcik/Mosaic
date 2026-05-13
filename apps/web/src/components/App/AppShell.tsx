@@ -212,7 +212,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="app-main">
+        <main id="main-content" className="app-main">
           {currentView === 'albums' && (
             <ErrorBoundary
               fallback={(error, reset) => (

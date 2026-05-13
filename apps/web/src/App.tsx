@@ -73,6 +73,11 @@ function isPairRoute(): boolean {
  */
 export function App() {
   const { t } = useTranslation();
+  const skipLink = (
+    <a href="#main-content" className="skip-link">
+      {t('a11y.skipToMain')}
+    </a>
+  );
   const [isLoggedIn, setIsLoggedIn] = useState(session.isLoggedIn);
   const [isShareLink, setIsShareLink] = useState(isShareLinkRoute);
   const [shareLinkId, setShareLinkId] = useState<string | null>(getShareLinkId);
@@ -181,39 +186,44 @@ export function App() {
   if (cryptoError) {
     return (
       <ToastProvider>
-        <div className="login-container" data-testid="crypto-error">
+        {skipLink}
+        <main
+          id="main-content"
+          className="login-container"
+          data-testid="crypto-error"
+        >
           <div className="login-card">
-          <h1
-            className="login-title"
-            style={{ color: 'var(--color-error, #dc2626)' }}
-          >
-            {t('errors.cryptoNotSupported', 'Crypto Not Supported')}
-          </h1>
-          <p className="login-subtitle" style={{ marginBottom: '1rem' }}>
-            {t(
-              'errors.cryptoNotSupportedMessage',
-              'This application requires a secure context (HTTPS or localhost) to function.',
-            )}
-          </p>
-          <details style={{ textAlign: 'left', fontSize: '0.875rem' }}>
-            <summary style={{ cursor: 'pointer', marginBottom: '0.5rem' }}>
-              {t('errors.technicalDetails', 'Technical Details')}
-            </summary>
-            <pre
-              style={{
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-                background: 'var(--color-surface, #f5f5f5)',
-                padding: '0.5rem',
-                borderRadius: '4px',
-              }}
+            <h1
+              className="login-title"
+              style={{ color: 'var(--color-error, #dc2626)' }}
             >
-              {cryptoError}
-            </pre>
-          </details>
-        </div>
+              {t('errors.cryptoNotSupported', 'Crypto Not Supported')}
+            </h1>
+            <p className="login-subtitle" style={{ marginBottom: '1rem' }}>
+              {t(
+                'errors.cryptoNotSupportedMessage',
+                'This application requires a secure context (HTTPS or localhost) to function.',
+              )}
+            </p>
+            <details style={{ textAlign: 'left', fontSize: '0.875rem' }}>
+              <summary style={{ cursor: 'pointer', marginBottom: '0.5rem' }}>
+                {t('errors.technicalDetails', 'Technical Details')}
+              </summary>
+              <pre
+                style={{
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                  background: 'var(--color-surface, #f5f5f5)',
+                  padding: '0.5rem',
+                  borderRadius: '4px',
+                }}
+              >
+                {cryptoError}
+              </pre>
+            </details>
+          </div>
+        </main>
         <ToastContainer />
-      </div>
       </ToastProvider>
     );
   }
@@ -224,6 +234,7 @@ export function App() {
   if (isPairRoute()) {
     return (
       <ToastProvider>
+        {skipLink}
         <ErrorBoundary
           fallback={(error, reset) => (
             <SectionErrorFallback error={error} section="Pair" onReset={reset} />
@@ -240,6 +251,7 @@ export function App() {
   if (isShareLink && shareLinkId) {
     return (
       <ToastProvider>
+        {skipLink}
         <ErrorBoundary
           fallback={(error, reset) => (
             <SectionErrorFallback error={error} section="Shared" onReset={reset} />
@@ -256,12 +268,17 @@ export function App() {
   if (isCheckingSession) {
     return (
       <ToastProvider>
-        <div className="login-container" data-testid="session-check">
+        {skipLink}
+        <main
+          id="main-content"
+          className="login-container"
+          data-testid="session-check"
+        >
           <div className="login-card">
             <h1 className="login-title">{t('common.appName')}</h1>
             <p className="login-subtitle">{t('auth.checkingSession')}</p>
           </div>
-        </div>
+        </main>
         <ToastContainer />
       </ToastProvider>
     );
@@ -270,8 +287,11 @@ export function App() {
   // Standard authenticated routes
   return (
     <ToastProvider>
+      {skipLink}
       {!isLoggedIn ? (
-        <LoginForm pendingSessionUser={pendingSessionUser} />
+        <main id="main-content">
+          <LoginForm pendingSessionUser={pendingSessionUser} />
+        </main>
       ) : (
         <AppShell />
       )}
