@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { getApi } from '../../lib/api';
+import { toSafeErrorMessage } from '../../lib/error-messages';
 import type { AdminUserResponse, QuotaDefaults } from '../../lib/api-types';
 import { formatBytes, formatDate, usagePercent } from './helpers';
 
@@ -143,7 +144,7 @@ export function UsersTab({ users, defaults, onRefresh }: UsersTabProps) {
       onRefresh();
       setEditingUser(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update quota');
+      setError(toSafeErrorMessage(err, 'Failed to update quota'));
     }
   };
 
@@ -155,7 +156,7 @@ export function UsersTab({ users, defaults, onRefresh }: UsersTabProps) {
       onRefresh();
       setEditingUser(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reset quota');
+      setError(toSafeErrorMessage(err, 'Failed to reset quota'));
     }
   };
 
@@ -175,7 +176,7 @@ export function UsersTab({ users, defaults, onRefresh }: UsersTabProps) {
       }
       onRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Failed to ${action} user`);
+      setError(toSafeErrorMessage(err, `Failed to ${action} user`));
     }
   };
 

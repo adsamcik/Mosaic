@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { getApi } from '../../lib/api';
+import { toSafeErrorMessage } from '../../lib/error-messages';
 import type { AdminAlbumResponse, QuotaDefaults } from '../../lib/api-types';
 import { formatBytes, formatDate, usagePercent } from './helpers';
 
@@ -152,7 +153,7 @@ export function AlbumsTab({ albums, defaults, onRefresh }: AlbumsTabProps) {
       onRefresh();
       setEditingAlbum(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update limits');
+      setError(toSafeErrorMessage(err, 'Failed to update limits'));
     }
   };
 
@@ -164,7 +165,7 @@ export function AlbumsTab({ albums, defaults, onRefresh }: AlbumsTabProps) {
       onRefresh();
       setEditingAlbum(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reset limits');
+      setError(toSafeErrorMessage(err, 'Failed to reset limits'));
     }
   };
 

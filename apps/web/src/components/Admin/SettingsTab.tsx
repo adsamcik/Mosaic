@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { getApi } from '../../lib/api';
+import { toSafeErrorMessage } from '../../lib/error-messages';
 import type { QuotaDefaults } from '../../lib/api-types';
 import { bytesToGb, gbToBytes } from './helpers';
 
@@ -65,7 +66,7 @@ export function SettingsTab({ defaults, onRefresh }: SettingsTabProps) {
       onRefresh();
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save settings');
+      setError(toSafeErrorMessage(err, 'Failed to save settings'));
     } finally {
       setSaving(false);
     }

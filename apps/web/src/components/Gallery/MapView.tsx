@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getGeoClient } from '../../lib/geo-client';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
+import { toSafeErrorMessage } from '../../lib/error-messages';
 import { getActiveLocale } from '../../lib/i18n-locale';
 import { createLogger } from '../../lib/logger';
 
@@ -294,7 +295,7 @@ export function MapView({
         }
       } catch (err) {
         log.error('Failed to load points into geo worker:', err);
-        setError(err instanceof Error ? err : new Error(String(err)));
+        setError(new Error(toSafeErrorMessage(err, 'Failed to load map data')));
       }
     };
 
@@ -320,7 +321,7 @@ export function MapView({
         setClusters(result);
       } catch (err) {
         log.error('Failed to get clusters:', err);
-        setError(err instanceof Error ? err : new Error(String(err)));
+        setError(new Error(toSafeErrorMessage(err, 'Failed to load map data')));
       } finally {
         setIsLoading(false);
       }

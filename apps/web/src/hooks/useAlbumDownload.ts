@@ -5,6 +5,7 @@ import { useWakeLock } from './useWakeLock';
 import { useDownloadManager } from './useDownloadManager';
 import { runCoordinatorDownload } from './coordinator-download-runner';
 import { maybeStartBackgroundFetch } from '../lib/background-fetch-launcher';
+import { toSafeErrorMessage } from '../lib/error-messages';
 import { useBackgroundFetch } from './useBackgroundFetch';
 import type {
   DownloadOutputMode,
@@ -165,9 +166,9 @@ export function useAlbumDownload(): UseAlbumDownloadResult {
         log.info('Download cancelled by user');
         return;
       }
-      const e = err instanceof Error ? err : new Error(String(err));
-      log.error('Album download failed', e);
-      setError(e);
+      const errorForLog = err instanceof Error ? err : new Error(String(err));
+      log.error('Album download failed', errorForLog);
+      setError(new Error(toSafeErrorMessage(err, 'Failed to download album')));
     } finally {
       setIsDownloading(false);
       void releaseWakeLock();

@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { getApi, paginateAll } from '../../lib/api';
+import { toSafeErrorMessage } from '../../lib/error-messages';
 import type {
   AdminStatsResponse,
   AdminUserResponse,
@@ -63,9 +64,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
       setAlbums(albumsData);
       setDefaults(defaultsData);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to load admin data',
-      );
+      setError(toSafeErrorMessage(err, 'Failed to load admin data'));
     } finally {
       setLoading(false);
     }

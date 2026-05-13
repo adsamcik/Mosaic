@@ -9,6 +9,7 @@ import { useCallback, useState } from 'react';
 import { getCachedCover, releaseCover } from '../lib/album-cover-service';
 import { getApi } from '../lib/api';
 import { getDbClient } from '../lib/db-client';
+import { toSafeErrorMessage } from '../lib/error-messages';
 import { releasePhoto, releaseThumbnail } from '../lib/photo-service';
 
 /**
@@ -107,8 +108,7 @@ export function usePhotoActions(): UsePhotoActionsResult {
         // 3. Clean up caches
         cleanupPhotoCache(manifestId, albumId);
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : 'Failed to delete photo';
+        const message = toSafeErrorMessage(err, 'Failed to delete photo');
         setError(message);
         throw new PhotoDeleteError(
           message,
@@ -162,9 +162,7 @@ export function usePhotoActions(): UsePhotoActionsResult {
             result.failureCount++;
             result.failedIds.push(manifestId);
             result.errors.push(
-              err instanceof Error
-                ? err.message
-                : `Failed to delete ${manifestId}`,
+              toSafeErrorMessage(err, `Failed to delete ${manifestId}`),
             );
           }
         }
