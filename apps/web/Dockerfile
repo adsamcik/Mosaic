@@ -26,7 +26,13 @@ COPY apps/web/package*.json ./
 # Copy admin source first (needed for postinstall to have public/ folder)
 COPY apps/web/ ./
 
+# Frontend build checks generated worker crypto error codes against Rust source.
+WORKDIR /app
+COPY scripts/generate-worker-crypto-error-codes.mjs ./scripts/generate-worker-crypto-error-codes.mjs
+COPY crates/mosaic-client/src/lib.rs ./crates/mosaic-client/src/lib.rs
+
 # Install dependencies (postinstall copies sql.js files to public/)
+WORKDIR /app/apps/web
 RUN npm ci
 
 # Build arg for E2E weak crypto keys (for faster tests)
