@@ -45,7 +45,7 @@ vi.mock('../../src/lib/session', () => ({
   },
 }));
 
-import { LoginForm } from '../../src/components/Auth/LoginForm';
+import { isValidUsername, LoginForm } from '../../src/components/Auth/LoginForm';
 import type { User } from '../../src/lib/api-types';
 
 function createPendingUser(): User {
@@ -254,6 +254,32 @@ describe('LoginForm', () => {
       expect(password!.getAttribute('autocomplete')).toBe('new-password');
       expect(confirm).not.toBeNull();
       expect(confirm!.getAttribute('autocomplete')).toBe('new-password');
+
+      cleanup();
+    });
+  });
+
+  describe('username validation', () => {
+    it('matches the backend ASCII-only username contract', () => {
+      expect(isValidUsername('user_1-2@example.com')).toBe(true);
+      expect(isValidUsername('uživatel')).toBe(false);
+      expect(isValidUsername('user name')).toBe(false);
+    });
+
+    it('shows the ASCII-only username hint in registration mode', async () => {
+      const { container, cleanup } = await renderLogin();
+
+      const toggle = container.querySelector(
+        'button.mode-toggle-button',
+      ) as HTMLButtonElement | null;
+      expect(toggle).not.toBeNull();
+      await act(async () => {
+        toggle!.click();
+      });
+
+      expect(container.textContent).toContain(
+        'auth.usernameFormatHint',
+      );
 
       cleanup();
     });

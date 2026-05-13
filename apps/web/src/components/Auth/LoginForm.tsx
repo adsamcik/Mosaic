@@ -4,6 +4,12 @@ import type { User } from '../../lib/api-types';
 import { checkServerStatus } from '../../lib/local-auth';
 import { session } from '../../lib/session';
 
+const validUsernamePattern = /^[a-zA-Z0-9_\-@.]+$/;
+
+export function isValidUsername(username: string): boolean {
+  return validUsernamePattern.test(username);
+}
+
 interface LoginFormProps {
   /** User from a pending session that needs password to restore crypto state */
   pendingSessionUser?: User | null;
@@ -93,6 +99,10 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
       }
       // Registration mode: require password confirmation
       if (isRegisterMode) {
+        if (!isValidUsername(username)) {
+          setError(t('auth.error.usernameInvalidCharacters'));
+          return;
+        }
         if (password.length < 8) {
           setError(t('auth.error.passwordTooShort'));
           return;
@@ -306,7 +316,15 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
                     disabled={loading}
                     className="form-input"
                     autoComplete="username"
+                    aria-describedby={
+                      isRegisterMode ? 'username-format-hint' : undefined
+                    }
                   />
+                  {isRegisterMode && (
+                    <p id="username-format-hint" className="form-hint">
+                      {t('auth.usernameFormatHint')}
+                    </p>
+                  )}
                 </div>
               )}
 

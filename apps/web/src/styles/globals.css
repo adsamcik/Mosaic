@@ -241,6 +241,13 @@ button {
   gap: var(--spacing-xs);
 }
 
+.form-hint {
+  margin-top: var(--spacing-xs);
+  color: var(--color-text-tertiary);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
 .login-button {
   width: 100%;
   padding: 12px;

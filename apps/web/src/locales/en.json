@@ -47,6 +47,7 @@
     "localAuthentication": "Local Authentication",
     "proxyAuthentication": "Proxy Authentication",
     "usernameLabel": "Username",
+    "usernameFormatHint": "Username must contain only letters, numbers, and the characters `_`, `-`, `@`, `.`",
     "usernamePlaceholder": "Enter your username",
     "passwordLabel": "Password",
     "passwordPlaceholder": "Enter your password",
@@ -69,6 +70,7 @@
     "lock": "Lock",
     "error": {
       "passwordRequired": "Password is required",
+      "usernameInvalidCharacters": "Username must contain only letters, numbers, and the characters `_`, `-`, `@`, `.`",
       "usernameRequired": "Username is required",
       "passwordTooShort": "Password must be at least 8 characters",
       "passwordMismatch": "Passwords do not match",

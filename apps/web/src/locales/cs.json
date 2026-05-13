@@ -47,6 +47,7 @@
     "localAuthentication": "Lokální ověření",
     "proxyAuthentication": "Ověření přes proxy",
     "usernameLabel": "Uživatelské jméno",
+    "usernameFormatHint": "Uživatelské jméno smí obsahovat pouze písmena, číslice a znaky `_`, `-`, `@`, `.`",
     "usernamePlaceholder": "Zadejte uživatelské jméno",
     "passwordLabel": "Heslo",
     "passwordPlaceholder": "Zadejte heslo",
@@ -69,6 +70,7 @@
     "lock": "Zamknout",
     "error": {
       "passwordRequired": "Heslo je povinné",
+      "usernameInvalidCharacters": "Uživatelské jméno smí obsahovat pouze písmena, číslice a znaky `_`, `-`, `@`, `.`",
       "usernameRequired": "Uživatelské jméno je povinné",
       "passwordTooShort": "Heslo musí mít alespoň 8 znaků",
       "passwordMismatch": "Hesla se neshodují",
