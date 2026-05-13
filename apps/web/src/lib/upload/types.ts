@@ -201,6 +201,7 @@ export interface UploadQueueDB {
     indexes: {
       'album-hash': [string, string];
       album: string;
+      'album-photo': [string, string];
     };
   };
 }

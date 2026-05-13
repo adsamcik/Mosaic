@@ -6,7 +6,7 @@ import type { AlbumContentHashRecord, UploadQueueDB } from './upload/types';
 import { getActiveLocale } from './i18n-locale';
 
 export const UPLOAD_QUEUE_DB_NAME = 'mosaic-upload-queue';
-export const UPLOAD_QUEUE_DB_VERSION = 2;
+export const UPLOAD_QUEUE_DB_VERSION = 3;
 export const ALBUM_CONTENT_HASHES_STORE = 'albumContentHashes';
 
 let rustWasmInitPromise: Promise<void> | null = null;
@@ -52,7 +52,31 @@ function testOnlyHashHex(bytes: Uint8Array): string {
   return chunk.repeat(8);
 }
 
-export function ensureContentHashStores(db: IDBPDatabase<UploadQueueDB> | IDBDatabase): void {
+interface ContentHashIndexStore {
+  readonly indexNames: DOMStringList;
+  createIndex(
+    name: string,
+    keyPath: string | string[],
+    options?: IDBIndexParameters,
+  ): unknown;
+}
+
+function ensureContentHashIndexes(store: ContentHashIndexStore): void {
+  if (!store.indexNames.contains('album-hash')) {
+    store.createIndex('album-hash', ['albumId', 'contentHash'], { unique: true });
+  }
+  if (!store.indexNames.contains('album')) {
+    store.createIndex('album', 'albumId', { unique: false });
+  }
+  if (!store.indexNames.contains('album-photo')) {
+    store.createIndex('album-photo', ['albumId', 'photoId'], { unique: false });
+  }
+}
+
+export function ensureContentHashStores(
+  db: IDBPDatabase<UploadQueueDB> | IDBDatabase,
+  albumContentHashesStore?: ContentHashIndexStore,
+): void {
   if (!db.objectStoreNames.contains('tasks')) {
     db.createObjectStore('tasks', { keyPath: 'id' });
   }
@@ -60,8 +84,9 @@ export function ensureContentHashStores(db: IDBPDatabase<UploadQueueDB> | IDBDat
     const store = db.createObjectStore(ALBUM_CONTENT_HASHES_STORE, {
       keyPath: ['albumId', 'contentHash'],
     });
-    store.createIndex('album-hash', ['albumId', 'contentHash'], { unique: true });
-    store.createIndex('album', 'albumId', { unique: false });
+    ensureContentHashIndexes(store);
+  } else if (albumContentHashesStore) {
+    ensureContentHashIndexes(albumContentHashesStore);
   }
 }
 
@@ -71,8 +96,11 @@ export class ContentHashDedup {
   private async database(): Promise<IDBPDatabase<UploadQueueDB>> {
     if (this.db) return this.db;
     return openDB<UploadQueueDB>(UPLOAD_QUEUE_DB_NAME, UPLOAD_QUEUE_DB_VERSION, {
-      upgrade(database) {
-        ensureContentHashStores(database);
+      upgrade(database, _oldVersion, _newVersion, transaction) {
+        const store = database.objectStoreNames.contains(ALBUM_CONTENT_HASHES_STORE)
+          ? transaction.objectStore(ALBUM_CONTENT_HASHES_STORE)
+          : undefined;
+        ensureContentHashStores(database, store);
       },
     });
   }
@@ -99,6 +127,19 @@ export class ContentHashDedup {
       dateAdded: Date.now(),
     };
     await database.put(ALBUM_CONTENT_HASHES_STORE, row);
+  }
+
+  async deleteByContentHash(albumId: string, contentHash: string): Promise<void> {
+    const database = await this.database();
+    await database.delete(ALBUM_CONTENT_HASHES_STORE, [albumId, contentHash]);
+  }
+
+  async deleteByPhotoId(albumId: string, photoId: string): Promise<void> {
+    const database = await this.database();
+    const tx = database.transaction(ALBUM_CONTENT_HASHES_STORE, 'readwrite');
+    const keys = await tx.store.index('album-photo').getAllKeys([albumId, photoId]);
+    await Promise.all(keys.map((key) => tx.store.delete(key)));
+    await tx.done;
   }
 
   async clear(albumId: string): Promise<void> {

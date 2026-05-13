@@ -8,6 +8,7 @@
 import { useCallback, useState } from 'react';
 import { getCachedCover, releaseCover } from '../lib/album-cover-service';
 import { getApi } from '../lib/api';
+import { ContentHashDedup } from '../lib/content-hash';
 import { getDbClient } from '../lib/db-client';
 import { toSafeErrorMessage } from '../lib/error-messages';
 import { releasePhoto, releaseThumbnail } from '../lib/photo-service';
@@ -98,14 +99,18 @@ export function usePhotoActions(): UsePhotoActionsResult {
       try {
         const api = getApi();
         const db = await getDbClient();
+        const contentHashDedup = new ContentHashDedup();
 
         // 1. Delete from server
         await api.deleteManifest(manifestId);
 
-        // 2. Delete from local database
+        // 2. Delete stale dedup record so a re-upload is not blocked
+        await contentHashDedup.deleteByPhotoId(albumId, manifestId);
+
+        // 3. Delete from local database
         await db.deleteManifest(manifestId);
 
-        // 3. Clean up caches
+        // 4. Clean up caches
         cleanupPhotoCache(manifestId, albumId);
       } catch (err) {
         const message = toSafeErrorMessage(err, 'Failed to delete photo');
@@ -143,6 +148,7 @@ export function usePhotoActions(): UsePhotoActionsResult {
       try {
         const api = getApi();
         const db = await getDbClient();
+        const contentHashDedup = new ContentHashDedup();
 
         // Delete each photo - we do this sequentially to avoid overwhelming the server
         // and to ensure proper error handling for each photo
@@ -151,10 +157,13 @@ export function usePhotoActions(): UsePhotoActionsResult {
             // 1. Delete from server
             await api.deleteManifest(manifestId);
 
-            // 2. Delete from local database
+            // 2. Delete stale dedup record so a re-upload is not blocked
+            await contentHashDedup.deleteByPhotoId(albumId, manifestId);
+
+            // 3. Delete from local database
             await db.deleteManifest(manifestId);
 
-            // 3. Clean up caches
+            // 4. Clean up caches
             cleanupPhotoCache(manifestId, albumId);
 
             result.successCount++;
