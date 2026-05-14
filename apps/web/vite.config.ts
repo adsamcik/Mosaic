@@ -93,6 +93,26 @@ export default defineConfig(({ mode }) => {
         },
         output: {
           entryFileNames: (chunk) => (chunk.name === 'sw' ? 'sw.js' : 'assets/[name]-[hash].js'),
+          manualChunks: (id) => {
+            const normalizedId = id.replaceAll('\\', '/');
+            if (normalizedId.includes('/node_modules/libsodium-wrappers-sumo/')) {
+              return 'sodium';
+            }
+            if (
+              normalizedId.includes('/node_modules/leaflet/') ||
+              normalizedId.includes('/node_modules/supercluster/')
+            ) {
+              return 'leaflet';
+            }
+            if (
+              normalizedId.includes('/node_modules/@tiptap/extension-placeholder/') ||
+              normalizedId.includes('/node_modules/@tiptap/react/') ||
+              normalizedId.includes('/node_modules/@tiptap/starter-kit/')
+            ) {
+              return 'editor';
+            }
+            return undefined;
+          },
         },
       },
     },
