@@ -271,6 +271,7 @@ export interface RemoveAndRotateRequest {
 export interface SyncAlbumOptions {
   limit?: number;
   signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 // =============================================================================

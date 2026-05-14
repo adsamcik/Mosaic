@@ -104,6 +104,7 @@ const log = createLogger('ApiClient');
 // =============================================================================
 
 const API_BASE = '/api';
+const DEFAULT_API_TIMEOUT_MS = 30_000;
 
 // =============================================================================
 // Error Handling
@@ -256,6 +257,7 @@ interface RequestOptions {
   body?: unknown;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  timeoutMs?: number;
   /**
    * Optional Zod schema. When provided, the parsed JSON response is
    * validated against the schema and rejected (via {@link ApiError}) on
@@ -272,11 +274,52 @@ interface RequestOptions {
   schema?: z.ZodTypeAny;
 }
 
+function composeSignals(
+  signals: (AbortSignal | undefined)[],
+  timeoutMs: number,
+): AbortSignal | undefined {
+  const filtered = signals.filter((s): s is AbortSignal => s !== undefined);
+  if (timeoutMs === 0) {
+    if (filtered.length === 0) return undefined;
+    if (filtered.length === 1) return filtered[0];
+    if (typeof AbortSignal.any === 'function') {
+      return AbortSignal.any(filtered);
+    }
+  }
+
+  const signalsWithTimeout = timeoutMs === 0
+    ? filtered
+    : [...filtered, AbortSignal.timeout(timeoutMs)];
+
+  if (signalsWithTimeout.length === 0) return undefined;
+  if (signalsWithTimeout.length === 1) return signalsWithTimeout[0];
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any(signalsWithTimeout);
+  }
+
+  const ctrl = new AbortController();
+  for (const sig of signalsWithTimeout) {
+    if (sig.aborted) {
+      ctrl.abort(sig.reason);
+    } else {
+      sig.addEventListener('abort', () => ctrl.abort(sig.reason), { once: true });
+    }
+  }
+  return ctrl.signal;
+}
+
 async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { method = 'GET', body, headers = {}, signal, schema } = options;
+  const {
+    method = 'GET',
+    body,
+    headers = {},
+    signal,
+    schema,
+    timeoutMs = DEFAULT_API_TIMEOUT_MS,
+  } = options;
 
   // D3: every API call gets a fresh client-side correlation ID. The
   // backend's CorrelationIdMiddleware will echo this back on the response
@@ -309,8 +352,9 @@ async function apiRequest<T>(
     credentials: 'same-origin',
   };
 
-  if (signal !== undefined) {
-    init.signal = signal;
+  const composedSignal = composeSignals([signal], timeoutMs);
+  if (composedSignal !== undefined) {
+    init.signal = composedSignal;
   }
 
   // Only add body if it's defined
@@ -531,7 +575,7 @@ export function createApiClient(): MosaicApi {
       since: number,
       options: SyncAlbumOptions = {},
     ): Promise<SyncResponse> {
-      const { limit, signal } = options;
+      const { limit, signal, timeoutMs } = options;
       const params = new URLSearchParams({
         since: String(since),
       });
@@ -541,6 +585,9 @@ export function createApiClient(): MosaicApi {
       const requestOptions: RequestOptions = { schema: SyncResponseSchema };
       if (signal !== undefined) {
         requestOptions.signal = signal;
+      }
+      if (timeoutMs !== undefined) {
+        requestOptions.timeoutMs = timeoutMs;
       }
 
       return apiRequest(`/albums/${albumId}/sync?${params}`, requestOptions);

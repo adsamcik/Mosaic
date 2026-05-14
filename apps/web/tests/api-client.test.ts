@@ -37,6 +37,78 @@ describe('ApiError', () => {
   });
 });
 
+describe('apiRequest timeout handling', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
+      const controller = new AbortController();
+      setTimeout(
+        () => controller.abort(new DOMException('Request timed out', 'TimeoutError')),
+        ms,
+      );
+      return controller.signal;
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects a never-resolving request with a TimeoutError after 30 seconds', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+          once: true,
+        });
+      })),
+    );
+
+    const promise = getApi().syncAlbum('album-1', 0);
+    const expectation = expect(promise).rejects.toMatchObject({ name: 'TimeoutError' });
+    await vi.advanceTimersByTimeAsync(30_001);
+
+    await expectation;
+  });
+
+  it('lets a caller-provided signal abort before the timeout', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+          once: true,
+        });
+      })),
+    );
+    const controller = new AbortController();
+
+    const reason = new DOMException('Caller canceled', 'AbortError');
+    const promise = getApi().syncAlbum('album-1', 0, { signal: controller.signal });
+    const expectation = expect(promise).rejects.toBe(reason);
+    controller.abort(reason);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expectation;
+  });
+
+  it('does not auto-timeout when timeoutMs is 0', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise(() => undefined)),
+    );
+
+    const promise = getApi().syncAlbum('album-1', 0, { timeoutMs: 0 });
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    await expect(Promise.race([
+      promise.then(() => 'resolved', () => 'rejected'),
+      Promise.resolve('pending'),
+    ])).resolves.toBe('pending');
+  });
+});
+
 describe('base64 utilities', () => {
   it('round-trips simple data', () => {
     const original = new Uint8Array([1, 2, 3, 4, 5]);
