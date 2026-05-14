@@ -152,8 +152,11 @@ try {
     Push-Location "$RepoRoot/apps/backend/Mosaic.Backend"
     $previousAspNetCoreEnvironment = $env:ASPNETCORE_ENVIRONMENT
     $previousConnectionString = $env:ConnectionStrings__Default
+    $previousServerSecretMig = $env:Auth__ServerSecret
     $env:ASPNETCORE_ENVIRONMENT = $E2EEnvironment
     $env:ConnectionStrings__Default = $E2EConnectionString
+    # Stable 32-byte Base-64 test-only secret required outside Development.
+    $env:Auth__ServerSecret = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
     try {
         $migrationResult = dotnet ef database update 2>&1
         if ($LASTEXITCODE -ne 0) {
@@ -164,6 +167,7 @@ try {
     finally {
         $env:ASPNETCORE_ENVIRONMENT = $previousAspNetCoreEnvironment
         $env:ConnectionStrings__Default = $previousConnectionString
+        $env:Auth__ServerSecret = $previousServerSecretMig
         Pop-Location
     }
     Write-Success "Database migrations applied"
@@ -217,6 +221,7 @@ try {
     $previousAllowDualMode = $env:Auth__AllowDualMode
     $previousTrustedProxy0 = $env:Auth__TrustedProxies__0
     $previousTrustedProxy1 = $env:Auth__TrustedProxies__1
+    $previousServerSecret = $env:Auth__ServerSecret
     $env:ASPNETCORE_ENVIRONMENT = $E2EEnvironment
     $env:ConnectionStrings__Default = $E2EConnectionString
     $env:RUN_MIGRATIONS = "true"
@@ -225,6 +230,9 @@ try {
     $env:Auth__AllowDualMode = "true"
     $env:Auth__TrustedProxies__0 = "127.0.0.0/8"
     $env:Auth__TrustedProxies__1 = "::1/128"
+    # Stable 32-byte Base-64 test-only secret required outside Development (AuthConfigurationResolver.ValidateForStartup
+    # validates length; AuthController.GenerateFakeSalt expects Base-64). Bytes 1..32 = AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=
+    $env:Auth__ServerSecret = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
     try {
         $script:BackendProcess = Start-Process -FilePath "dotnet" `
             -ArgumentList @("run", "--no-launch-profile", "--urls=http://localhost:5000") `
@@ -243,6 +251,7 @@ try {
         $env:Auth__AllowDualMode = $previousAllowDualMode
         $env:Auth__TrustedProxies__0 = $previousTrustedProxy0
         $env:Auth__TrustedProxies__1 = $previousTrustedProxy1
+        $env:Auth__ServerSecret = $previousServerSecret
     }
     
     # Wait for backend to be ready
