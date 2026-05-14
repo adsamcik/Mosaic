@@ -183,8 +183,9 @@ public partial class CombinedAuthMiddleware
         {
             session.LastSeenAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
-            RefreshSessionCookie(context, tokenBase64);
         }
+
+        RefreshSessionCookie(context, tokenBase64);
 
         // Set user identity in HttpContext
         context.Items["AuthSub"] = session.User.AuthSub;

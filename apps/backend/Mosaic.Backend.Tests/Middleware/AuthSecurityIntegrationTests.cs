@@ -174,6 +174,58 @@ public class AuthSecurityIntegrationTests
         Assert.Contains("samesite=lax", setCookie, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task AuthenticatedApiRequest_WithRecentlySeenLocalSession_RefreshesSlidingSessionCookie()
+    {
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            "Testing",
+            new Dictionary<string, string?>
+            {
+                ["Auth:LocalAuthEnabled"] = "true",
+                ["Auth:ProxyAuthEnabled"] = "false"
+            },
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+
+        await using var db = TestDbContextFactory.Create();
+        var user = new User
+        {
+            Id = Guid.CreateVersion7(),
+            AuthSub = "active-uploader@example.com",
+            IdentityPubkey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+        };
+        var sessionToken = RandomNumberGenerator.GetBytes(32);
+        db.Users.Add(user);
+        db.Sessions.Add(new Session
+        {
+            Id = Guid.CreateVersion7(),
+            UserId = user.Id,
+            User = user,
+            TokenHash = SHA256.HashData(sessionToken),
+            LastSeenAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddDays(30)
+        });
+        await db.SaveChangesAsync();
+
+        var tokenBase64 = Convert.ToBase64String(sessionToken);
+        var context = new DefaultHttpContext();
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Path = "/api/albums";
+        context.Request.Headers.Cookie = $"mosaic_session={tokenBase64}";
+
+        await middleware.InvokeAsync(context, db);
+
+        Assert.True(nextCalled);
+        var setCookie = Assert.Single(context.Response.Headers.SetCookie);
+        Assert.Contains("mosaic_session=", setCookie);
+        Assert.Contains("path=/api", setCookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("samesite=lax", setCookie, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static CombinedAuthMiddleware CreateMiddleware(
         string environmentName,
         IReadOnlyDictionary<string, string?> configurationValues,
