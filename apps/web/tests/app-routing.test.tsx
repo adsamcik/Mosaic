@@ -49,6 +49,15 @@ describe('App routing', () => {
   let root: ReturnType<typeof createRoot>;
   let originalLocation: Location;
 
+  const renderApp = async () => {
+    await act(async () => {
+      root.render(createElement(App));
+    });
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
+  };
+
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -90,9 +99,7 @@ describe('App routing', () => {
         configurable: true,
       });
 
-      await act(async () => {
-        root.render(createElement(App));
-      });
+      await renderApp();
 
       const viewer = container.querySelector(
         '[data-testid="shared-album-viewer"]',
@@ -111,9 +118,7 @@ describe('App routing', () => {
         configurable: true,
       });
 
-      await act(async () => {
-        root.render(createElement(App));
-      });
+      await renderApp();
 
       const viewer = container.querySelector(
         '[data-testid="shared-album-viewer"]',
@@ -133,9 +138,7 @@ describe('App routing', () => {
 
       mocks.session.isLoggedIn = false;
 
-      await act(async () => {
-        root.render(createElement(App));
-      });
+      await renderApp();
 
       expect(
         container.querySelector('[data-testid="shared-album-viewer"]'),
@@ -157,9 +160,7 @@ describe('App routing', () => {
 
       mocks.session.isLoggedIn = false;
 
-      await act(async () => {
-        root.render(createElement(App));
-      });
+      await renderApp();
 
       expect(
         container.querySelector('[data-testid="shared-album-viewer"]'),
@@ -178,9 +179,7 @@ describe('App routing', () => {
 
       mocks.session.isLoggedIn = false;
 
-      await act(async () => {
-        root.render(createElement(App));
-      });
+      await renderApp();
 
       expect(
         container.querySelector('[data-testid="shared-album-viewer"]'),
@@ -203,9 +202,7 @@ describe('App routing', () => {
     it('should render LoginForm when not logged in', async () => {
       mocks.session.isLoggedIn = false;
 
-      await act(async () => {
-        root.render(createElement(App));
-      });
+      await renderApp();
 
       expect(
         container.querySelector('[data-testid="login-form"]'),
@@ -216,18 +213,14 @@ describe('App routing', () => {
     it('should render AppShell when logged in', async () => {
       mocks.session.isLoggedIn = true;
 
-      await act(async () => {
-        root.render(createElement(App));
-      });
+      await renderApp();
 
       expect(container.querySelector('[data-testid="app-shell"]')).toBeTruthy();
       expect(container.querySelector('[data-testid="login-form"]')).toBeFalsy();
     });
 
     it('should subscribe to session changes', async () => {
-      await act(async () => {
-        root.render(createElement(App));
-      });
+      await renderApp();
 
       expect(mocks.session.subscribe).toHaveBeenCalled();
     });
@@ -246,9 +239,7 @@ describe('App routing', () => {
 
       mocks.session.isLoggedIn = false;
 
-      await act(async () => {
-        root.render(createElement(App));
-      });
+      await renderApp();
 
       expect(
         container.querySelector('[data-testid="shared-album-viewer"]'),
@@ -268,9 +259,7 @@ describe('App routing', () => {
 
       mocks.session.isLoggedIn = true;
 
-      await act(async () => {
-        root.render(createElement(App));
-      });
+      await renderApp();
 
       expect(
         container.querySelector('[data-testid="shared-album-viewer"]'),
@@ -291,9 +280,7 @@ describe('App routing', () => {
         configurable: true,
       });
 
-      await act(async () => {
-        root.render(createElement(App));
-      });
+      await renderApp();
 
       expect(
         container.querySelector('[data-testid="shared-album-viewer"]'),
@@ -312,9 +299,7 @@ describe('App routing', () => {
 
       mocks.session.isLoggedIn = false;
 
-      await act(async () => {
-        root.render(createElement(App));
-      });
+      await renderApp();
 
       expect(
         container.querySelector('[data-testid="shared-album-viewer"]'),

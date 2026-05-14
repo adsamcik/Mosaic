@@ -1,11 +1,9 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from './components/App/AppShell';
 import { LoginForm } from './components/Auth/LoginForm';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SectionErrorFallback } from './components/SectionErrorFallback';
-import { SharedAlbumViewer } from './components/Shared/SharedAlbumViewer';
-import { SidecarReceivePage } from './components/Pair/SidecarReceivePage';
 import { getFeatureFlag } from './lib/feature-flags';
 import { ToastContainer } from './components/Toast';
 import { ToastProvider } from './contexts/ToastContext';
@@ -16,6 +14,17 @@ import { session } from './lib/session';
 import './styles/globals.css';
 
 const log = createLogger('App');
+
+const SharedAlbumViewer = lazy(() =>
+  import('./components/Shared/SharedAlbumViewer').then((module) => ({
+    default: module.SharedAlbumViewer,
+  })),
+);
+const SidecarReceivePage = lazy(() =>
+  import('./components/Pair/SidecarReceivePage').then((module) => ({
+    default: module.SidecarReceivePage,
+  })),
+);
 
 /**
  * Check if the browser supports required crypto APIs.
@@ -77,6 +86,14 @@ export function App() {
     <a href="#main-content" className="skip-link">
       {t('a11y.skipToMain')}
     </a>
+  );
+  const routeLoading = (
+    <main id="main-content" className="login-container" data-testid="route-loading">
+      <div className="login-card">
+        <h1 className="login-title">{t('common.appName')}</h1>
+        <p className="login-subtitle">{t('common.loading')}</p>
+      </div>
+    </main>
   );
   const [isLoggedIn, setIsLoggedIn] = useState(session.isLoggedIn);
   const [isShareLink, setIsShareLink] = useState(isShareLinkRoute);
@@ -240,7 +257,9 @@ export function App() {
             <SectionErrorFallback error={error} section="Pair" onReset={reset} />
           )}
         >
-          <SidecarReceivePage />
+          <Suspense fallback={routeLoading}>
+            <SidecarReceivePage />
+          </Suspense>
         </ErrorBoundary>
         <ToastContainer />
       </ToastProvider>
@@ -257,7 +276,9 @@ export function App() {
             <SectionErrorFallback error={error} section="Shared" onReset={reset} />
           )}
         >
-          <SharedAlbumViewer linkId={shareLinkId} />
+          <Suspense fallback={routeLoading}>
+            <SharedAlbumViewer linkId={shareLinkId} />
+          </Suspense>
         </ErrorBoundary>
         <ToastContainer />
       </ToastProvider>

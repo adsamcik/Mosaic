@@ -1,18 +1,25 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SyncProvider } from '../../contexts/SyncContext';
 import { useAlbums, useRouter } from '../../hooks';
 import { AlbumList } from '../Albums/AlbumList';
-import { AdminPage } from '../Admin';
 import { LogoutButton } from '../Auth/LogoutButton';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { Gallery } from '../Gallery/Gallery';
 import { SectionErrorFallback } from '../SectionErrorFallback';
-import { SettingsPage } from '../Settings/SettingsPage';
 import { DownloadTray } from '../Download/DownloadTray';
 import { DownloadResumePrompt } from '../Download/DownloadResumePrompt';
 import { getApi } from '../../lib/api';
 import { getCurrentAlbumManifest } from '../../lib/album-manifest-source';
+
+const AdminPage = lazy(() =>
+  import('../Admin').then((module) => ({ default: module.AdminPage })),
+);
+const SettingsPage = lazy(() =>
+  import('../Settings/SettingsPage').then((module) => ({
+    default: module.SettingsPage,
+  })),
+);
 
 /**
  * Main Application Shell
@@ -88,6 +95,12 @@ export function AppShell() {
   // Derive current view and selected album from route
   const currentView = route.view;
   const selectedAlbumId = route.view === 'gallery' ? route.albumId : null;
+  const routeLoading = (
+    <div className="album-list-loading" data-testid="route-loading">
+      <div className="loading-spinner" />
+      <p>{t('common.loading')}</p>
+    </div>
+  );
 
   return (
     <SyncProvider>
@@ -252,7 +265,9 @@ export function AppShell() {
                 <SectionErrorFallback error={error} section="Settings" onReset={reset} />
               )}
             >
-              <SettingsPage />
+              <Suspense fallback={routeLoading}>
+                <SettingsPage />
+              </Suspense>
             </ErrorBoundary>
           )}
           {currentView === 'admin' && (
@@ -261,7 +276,9 @@ export function AppShell() {
                 <SectionErrorFallback error={error} section="Admin" onReset={reset} />
               )}
             >
-              <AdminPage onBack={handleBackFromAdmin} />
+              <Suspense fallback={routeLoading}>
+                <AdminPage onBack={handleBackFromAdmin} />
+              </Suspense>
             </ErrorBoundary>
           )}
         </main>
