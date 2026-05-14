@@ -31,8 +31,8 @@ export interface EpochKeyBundle {
   /** 32-byte Ed25519 manifest signing public key. */
   signPublicKey: Uint8Array;
   /**
-   * @deprecated Slice 3 cutover placeholder. `publicKey` mirrors
-   * `signPublicKey`; `secretKey` is always an empty `Uint8Array` because
+   * Compatibility mirror for call sites that still read `signKeypair`.
+   * `publicKey` mirrors `signPublicKey`; `secretKey` is always empty because
    * the per-epoch sign secret never crosses the Comlink boundary.
    */
   signKeypair: {
@@ -113,10 +113,7 @@ export function setEpochKey(
     epochId: number;
     epochHandleId: EpochHandleId;
     signPublicKey?: Uint8Array;
-    /**
-     * @deprecated Slice 3 placeholder accepted for transitional callers in
-     * Slice 4-7 territory.
-     */
+    /** Compatibility input accepted while callers migrate to `signPublicKey`. */
     signKeypair?: { publicKey: Uint8Array; secretKey: Uint8Array };
   },
 ): void {

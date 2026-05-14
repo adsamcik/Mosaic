@@ -152,9 +152,9 @@ export interface PhotoMeta {
   tags: string[];
   createdAt: string;
   updatedAt: string;
-  /** @deprecated Use tier-specific shard fields instead */
+  /** Legacy flat shard IDs retained for imported manifests that predate tier-specific fields. */
   shardIds: string[];
-  /** @deprecated Use tier-specific shard fields instead */
+  /** Legacy flat shard hashes retained for imported manifests that predate tier-specific fields. */
   shardHashes?: string[];
   /** Epoch ID for key lookup */
   epochId: number;
@@ -170,7 +170,7 @@ export interface PhotoMeta {
   rotation?: number;
   /** ThumbHash string (base64-encoded, ~25 bytes) for instant placeholder */
   thumbhash?: string;
-  /** @deprecated Legacy BlurHash string - use thumbhash for new uploads */
+  /** Legacy BlurHash string retained so older manifests still render placeholders. */
   blurhash?: string;
 
   // Video-specific metadata (Phase 1)
@@ -561,8 +561,8 @@ export interface CryptoWorkerApi {
    * that still defensively call it; it returns immediately when an
    * identity handle is already open and is otherwise a no-op.
    *
-   * @deprecated Slice 3 will retire the call sites; this stub will be
-   * deleted along with them.
+   * Compatibility call for services that need an idempotent identity-bound
+   * crypto worker before opening or rotating epoch keys.
    */
   deriveIdentity(): Promise<void>;
 
