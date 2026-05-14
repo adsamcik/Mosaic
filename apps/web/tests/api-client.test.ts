@@ -109,6 +109,54 @@ describe('apiRequest timeout handling', () => {
   });
 });
 
+describe('apiRequest Retry-After handling', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function jsonResponse(
+    status: number,
+    body: unknown,
+    headers: Record<string, string> = {},
+  ): Response {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      statusText: status === 429 ? 'Too Many Requests' : 'OK',
+      headers: new Headers(headers),
+      json: () => Promise.resolve(body),
+      text: () => Promise.resolve(JSON.stringify(body)),
+    } as Response;
+  }
+
+  it('retries a 429 GET after a numeric Retry-After delay', async () => {
+    const health = {
+      status: 'healthy',
+      timestamp: '2024-12-25T23:59:59Z',
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(429, { error: 'rate limited' }, {
+        'Retry-After': '2',
+      }))
+      .mockResolvedValueOnce(jsonResponse(200, health));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const promise = getApi().getHealth();
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(promise).resolves.toEqual(health);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('base64 utilities', () => {
   it('round-trips simple data', () => {
     const original = new Uint8Array([1, 2, 3, 4, 5]);

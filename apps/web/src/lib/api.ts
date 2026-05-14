@@ -308,6 +308,41 @@ function composeSignals(
   return ctrl.signal;
 }
 
+function parseRetryAfterMs(value: string | null): number | undefined {
+  if (value === null) return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds)) {
+    const ms = Math.max(0, seconds * 1000);
+    return ms <= 60_000 ? ms : undefined;
+  }
+
+  const retryAt = Date.parse(trimmed);
+  if (Number.isNaN(retryAt)) return undefined;
+  const ms = Math.max(0, retryAt - Date.now());
+  return ms <= 60_000 ? ms : undefined;
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted === true) {
+      reject(signal.reason);
+      return;
+    }
+    const timeout = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timeout);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
+}
+
 async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
@@ -346,23 +381,33 @@ async function apiRequest<T>(
     requestHeaders['Content-Type'] = 'application/json';
   }
 
-  const init: RequestInit = {
-    method,
-    headers: requestHeaders,
-    credentials: 'same-origin',
+  const createRequestInit = (): RequestInit => {
+    const init: RequestInit = {
+      method,
+      headers: requestHeaders,
+      credentials: 'same-origin',
+    };
+
+    const composedSignal = composeSignals([signal], timeoutMs);
+    if (composedSignal !== undefined) {
+      init.signal = composedSignal;
+    }
+
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
+    }
+
+    return init;
   };
 
-  const composedSignal = composeSignals([signal], timeoutMs);
-  if (composedSignal !== undefined) {
-    init.signal = composedSignal;
+  let response = await fetch(`${API_BASE}${path}`, createRequestInit());
+  if (method === 'GET' && response.status === 429) {
+    const retryAfterMs = parseRetryAfterMs(response.headers?.get('retry-after') ?? null);
+    if (retryAfterMs !== undefined) {
+      await sleep(retryAfterMs, signal);
+      response = await fetch(`${API_BASE}${path}`, createRequestInit());
+    }
   }
-
-  // Only add body if it's defined
-  if (body !== undefined) {
-    init.body = JSON.stringify(body);
-  }
-
-  const response = await fetch(`${API_BASE}${path}`, init);
 
   if (!response.ok) {
     await throwApiErrorForResponse(response, {
