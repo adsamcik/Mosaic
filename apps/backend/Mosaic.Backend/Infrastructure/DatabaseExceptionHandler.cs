@@ -27,10 +27,9 @@ public class DatabaseExceptionHandler : IExceptionHandler
         if (exception is DbUpdateConcurrencyException concurrencyException)
         {
             _logger.LogWarning(
-                "Concurrency conflict detected. Path: {Path}, Method: {Method}, CorrelationId: {CorrelationId}",
+                "Concurrency conflict detected. Path: {Path}, Method: {Method}",
                 httpContext.Request.Path,
-                httpContext.Request.Method,
-                httpContext.GetCorrelationId());
+                httpContext.Request.Method);
 
             httpContext.Response.StatusCode = StatusCodes.Status409Conflict;
             var problem = new ProblemDetails
@@ -54,10 +53,9 @@ public class DatabaseExceptionHandler : IExceptionHandler
             if (isUniqueViolation)
             {
                 _logger.LogWarning(
-                    "Unique constraint violation. Path: {Path}, Method: {Method}, CorrelationId: {CorrelationId}",
+                    "Unique constraint violation. Path: {Path}, Method: {Method}",
                     httpContext.Request.Path,
-                    httpContext.Request.Method,
-                    httpContext.GetCorrelationId());
+                    httpContext.Request.Method);
 
                 httpContext.Response.StatusCode = StatusCodes.Status409Conflict;
                 var problem = new ProblemDetails

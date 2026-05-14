@@ -339,11 +339,10 @@ public class AlbumsController : ControllerBase
         await _db.SaveChangesAsync();
 
         _logger.LogInformation(
-            "Album expiration updated. AlbumId: {AlbumId}, ExpiresAt: {ExpiresAt}, UpdatedBy: {UserId}, CorrelationId: {CorrelationId}",
+            "Album expiration updated. AlbumId: {AlbumId}, ExpiresAt: {ExpiresAt}, UpdatedBy: {UserId}",
             albumId,
             album.ExpiresAt,
-            user.Id,
-            HttpContext.GetCorrelationId());
+            user.Id);
 
         return Ok(new AlbumExpirationUpdateResponse(
             album.Id,
@@ -676,10 +675,9 @@ public class AlbumsController : ControllerBase
         await _db.SaveChangesAsync();
 
         _logger.LogInformation(
-            "Album renamed. AlbumId: {AlbumId}, RenamedBy: {UserId}, CorrelationId: {CorrelationId}",
+            "Album renamed. AlbumId: {AlbumId}, RenamedBy: {UserId}",
             albumId,
-            user.Id,
-            HttpContext.GetCorrelationId());
+            user.Id);
 
         return Ok(new AlbumRenameResponse(album.Id, album.EncryptedName, album.UpdatedAt));
     }
@@ -719,10 +717,9 @@ public class AlbumsController : ControllerBase
         await _db.SaveChangesAsync();
 
         _logger.LogInformation(
-            "Album description updated. AlbumId: {AlbumId}, UpdatedBy: {UserId}, CorrelationId: {CorrelationId}",
+            "Album description updated. AlbumId: {AlbumId}, UpdatedBy: {UserId}",
             albumId,
-            user.Id,
-            HttpContext.GetCorrelationId());
+            user.Id);
 
         return Ok(new AlbumDescriptionUpdateResponse(album.Id, album.EncryptedDescription, album.UpdatedAt));
     }
