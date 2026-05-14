@@ -816,32 +816,27 @@ public partial class AuthController : ControllerBase
             return false;
         }
 
-        // Build message exactly as in TypeScript: context || username_length(4 bytes BE) || username || timestamp?(8 bytes BE) || challenge
+        // Build transcript: context || username_length(4 bytes BE) || username || challenge
+        //
+        // Since deep-04 F5 (Wave 2D, commit 27f192c), the `timestamp_ms` parameter
+        // is advisory only and is NOT mixed into the signed transcript. The
+        // Rust client passes the parameter through `build_auth_challenge_transcript`
+        // which intentionally ignores it. Replay protection is provided
+        // exclusively by the server-side single-use AuthChallenge.IsUsed atomic
+        // claim (Wave 2A fix 2A-9). The `timestamp` parameter is accepted by
+        // this method for wire compatibility with older callers but is no
+        // longer mixed into the verify message.
+        _ = timestamp; // intentionally unused — see comment above
         var context = System.Text.Encoding.UTF8.GetBytes(AuthChallengeContext);
         var usernameBytes = System.Text.Encoding.UTF8.GetBytes(username);
         var usernameLenBytes = new byte[4];
         BinaryPrimitives.WriteUInt32BigEndian(usernameLenBytes, (uint)usernameBytes.Length);
 
-        byte[] message;
-        if (timestamp.HasValue)
-        {
-            var timestampBytes = new byte[8];
-            BinaryPrimitives.WriteUInt64BigEndian(timestampBytes, (ulong)timestamp.Value);
-            message = context
-                .Concat(usernameLenBytes)
-                .Concat(usernameBytes)
-                .Concat(timestampBytes)
-                .Concat(challenge)
-                .ToArray();
-        }
-        else
-        {
-            message = context
-                .Concat(usernameLenBytes)
-                .Concat(usernameBytes)
-                .Concat(challenge)
-                .ToArray();
-        }
+        byte[] message = context
+            .Concat(usernameLenBytes)
+            .Concat(usernameBytes)
+            .Concat(challenge)
+            .ToArray();
 
         // Verify Ed25519 signature using NSec
         var algorithm = SignatureAlgorithm.Ed25519;
