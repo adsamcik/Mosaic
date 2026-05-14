@@ -6,6 +6,7 @@ import type { UploadEvent, UploadEffect } from './rust-core/upload-adapter-port'
 import { manifestTranscriptInputForFinalize } from './manifest-transcript';
 import { purgeLocalAlbum } from './local-purge';
 import { ManifestFinalizeResponseSchema } from './api-schemas';
+import { normalizeManifestFilename } from './manifest-filename';
 
 const API_BASE = '/api';
 const SHA256_BYTES = 32;
@@ -111,7 +112,7 @@ export async function finalizeManifestForUpload(
     id: task.id,
     assetId: task.id,
     albumId: task.albumId,
-    filename: task.file.name,
+    filename: normalizeManifestFilename(task.file.name),
     mimeType,
     width: vm?.width ?? task.originalWidth ?? 0,
     height: vm?.height ?? task.originalHeight ?? 0,
