@@ -1942,22 +1942,20 @@ pub struct AlbumSyncRetryMetadata {
     pub retry_target_phase: Option<AlbumSyncPhase>,
 }
 
-impl AlbumSyncRetryMetadata {
-    #[must_use]
-    pub const fn new(max_attempts: u32) -> Self {
-        Self {
-            attempt_count: 0,
-            max_attempts,
-            retry_after_ms: None,
-            last_error_code: None,
-            last_error_stage: None,
-            retry_target_phase: None,
-        }
-    }
-}
 #[must_use]
 pub const fn album_sync_snapshot_schema_version() -> u16 {
     CLIENT_CORE_SNAPSHOT_SCHEMA_VERSION
+}
+
+const fn album_sync_retry_metadata(max_attempts: u32) -> AlbumSyncRetryMetadata {
+    AlbumSyncRetryMetadata {
+        attempt_count: 0,
+        max_attempts,
+        retry_after_ms: None,
+        last_error_code: None,
+        last_error_stage: None,
+        retry_target_phase: None,
+    }
 }
 
 pub fn new_album_sync(request: AlbumSyncRequest) -> Result<AlbumSyncSnapshot, ClientError> {
@@ -1971,7 +1969,7 @@ pub fn new_album_sync(request: AlbumSyncRequest) -> Result<AlbumSyncSnapshot, Cl
         current_page: None,
         rerun_requested: false,
         completed_cycle_count: 0,
-        retry: AlbumSyncRetryMetadata::new(request.max_retry_count),
+        retry: album_sync_retry_metadata(request.max_retry_count),
         failure_code: None,
     })
 }
@@ -2025,7 +2023,12 @@ fn advance_album_sync_inner(
             next.next_page_token = request.initial_page_token;
             next.phase = AlbumSyncPhase::FetchingPage;
             next.rerun_requested = false;
-            next.retry = AlbumSyncRetryMetadata::new(request.max_retry_count);
+            let max_attempts = if request.max_retry_count == 0 {
+                snapshot.retry.max_attempts
+            } else {
+                request.max_retry_count
+            };
+            next.retry = album_sync_retry_metadata(max_attempts);
             next.failure_code = None;
             Ok(AlbumSyncTransition {
                 snapshot: next.clone(),
