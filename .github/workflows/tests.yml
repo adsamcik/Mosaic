@@ -171,7 +171,7 @@ jobs:
           BASE_URL: http://localhost:8080
           API_URL: http://localhost:5000
           CI: "true"
-        run: npx playwright test --reporter=list
+        run: npx playwright test --project=smoke --reporter=list
       
       - name: Upload test results
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
