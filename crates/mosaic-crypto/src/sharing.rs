@@ -262,13 +262,13 @@ fn open_sealed_box(
 
 fn encode_bundle_json(bundle: &EpochKeyBundle) -> Zeroizing<Vec<u8>> {
     let recipient_pubkey_b64 = base64url_no_pad(&bundle.recipient_pubkey);
-    let epoch_seed_b64 = base64url_no_pad(bundle.epoch_seed.as_bytes());
+    let epoch_seed_b64 = Zeroizing::new(base64url_no_pad(bundle.epoch_seed.as_bytes()));
     let sign_public_b64 = base64url_no_pad(bundle.sign_public_key.as_bytes());
 
     let mut sign_secret_combined = Zeroizing::new([0_u8; SIGN_KEYPAIR_SECRET_BYTES]);
     sign_secret_combined[..SEED_BYTES].copy_from_slice(bundle.sign_secret_key.seed_bytes());
     sign_secret_combined[SEED_BYTES..].copy_from_slice(bundle.sign_public_key.as_bytes());
-    let sign_secret_b64 = base64url_no_pad(sign_secret_combined.as_ref());
+    let sign_secret_b64 = Zeroizing::new(base64url_no_pad(sign_secret_combined.as_ref()));
 
     let json = format!(
         "{{\"version\":{version},\"albumId\":{album},\"epochId\":{epoch},\"recipientPubkey\":\"{recipient}\",\"epochSeed\":\"{seed}\",\"signKeypair\":{{\"publicKey\":\"{spk}\",\"secretKey\":\"{ssk}\"}}}}",
@@ -276,9 +276,9 @@ fn encode_bundle_json(bundle: &EpochKeyBundle) -> Zeroizing<Vec<u8>> {
         album = json_string_literal(&bundle.album_id),
         epoch = bundle.epoch_id,
         recipient = recipient_pubkey_b64,
-        seed = epoch_seed_b64,
+        seed = epoch_seed_b64.as_str(),
         spk = sign_public_b64,
-        ssk = sign_secret_b64,
+        ssk = sign_secret_b64.as_str(),
     );
 
     Zeroizing::new(json.into_bytes())
@@ -394,3 +394,50 @@ impl RngCore for MosaicSealRng {
 }
 
 impl CryptoRng for MosaicSealRng {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixed_seed(seed_byte: u8) -> [u8; SEED_BYTES] {
+        let mut seed = [0_u8; SEED_BYTES];
+        for (offset, byte) in seed.iter_mut().enumerate() {
+            *byte = seed_byte.wrapping_add(offset as u8);
+        }
+        seed
+    }
+
+    #[test]
+    fn encode_bundle_json_returns_zeroizing_plaintext_buffer() {
+        let mut epoch_seed_bytes = fixed_seed(0x10);
+        let epoch_seed = match SecretKey::from_bytes(&mut epoch_seed_bytes) {
+            Ok(value) => value,
+            Err(error) => panic!("epoch seed should construct: {error:?}"),
+        };
+        let mut sign_seed = fixed_seed(0x40);
+        let sign_secret_key = match ManifestSigningSecretKey::from_seed(&mut sign_seed) {
+            Ok(value) => value,
+            Err(error) => panic!("signing seed should construct: {error:?}"),
+        };
+        let sign_public_key = sign_secret_key.public_key();
+        let bundle = EpochKeyBundle {
+            version: 1,
+            album_id: String::from("album-0001"),
+            epoch_id: 7,
+            recipient_pubkey: fixed_seed(0x80),
+            epoch_seed,
+            sign_secret_key,
+            sign_public_key,
+        };
+
+        let encoded: Zeroizing<Vec<u8>> = encode_bundle_json(&bundle);
+
+        assert!(encoded.as_slice().starts_with(br#"{"version":1"#));
+        assert!(
+            encoded
+                .as_slice()
+                .windows(b"epochSeed".len())
+                .any(|window| window == b"epochSeed")
+        );
+    }
+}
