@@ -1626,7 +1626,7 @@ than enforceable runtime invariants.
 | b1-fix-nested-tx | B1 advisory lock moved to out-of-band PG connection (PG production blocker fix v2) + Testcontainers integration tests | Done | `b3f0aec` |
 | Wave 9 follow-ups | uniffi-parity-blind-spot structural rule + MosaicApplication runCatching + TierDimensionsParityTest no-skip (subsumed) + uniffi v1 baseline hash lock | Done | `aa0e4b1` |
 | W-S4 | Web boundary-guard sweep + retired libs/crypto modules deletion (11 deleted, 3 deprecated, +rust-cutover-boundary guard) | Done | `29c1c38` |
-| Q-final-1 | Cross-platform parity test harness (crates/mosaic-parity-tests, 6 categories, scripts/run-parity-tests.ps1) | Done | `24d8f46` |
+| Q-final-1 | Cross-platform parity test harness (crates/mosaic-parity-tests, 6 categories) | Done | `24d8f46` |
 | W-A4 | Web manifest finalization cutover (manifest-finalization.ts, RustUploadAdapter integration, Tus + finalize sequence) | Done | `24d0d43` |
 | A8 | Android ShardEncryptionWorker (UniFFI handle API + streaming AEAD threshold >256KiB + idempotency cache) | Done | `f0cdde5` |
 | A10 + A11 | Android ManifestCommitClient + AlbumSyncFetcher (kotlinx.serialization DTOs, contract snapshot parity tests) | Done | `cb0dfab` |

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Q-final-4 status: hard budgets declared for v1.** This spec records the v1 performance budget targets for encryption throughput, cold start, memory, and Tus resume. The local invocation script is `scripts/run-perf-budgets.ps1`.
+**Q-final-4 status: hard budgets declared for v1.** This spec records the v1 performance budget targets for encryption throughput, cold start, memory, and Tus resume.
 
 ## Budget table
 
@@ -72,17 +72,7 @@ The target CI gate is a perf-budget job in `.github/workflows/tests.yml` that:
 3. compares measured throughput against the budgets above;
 4. fails if regression exceeds 10% from the checked-in/reference baseline or if absolute throughput falls below the hard floor.
 
-This repository currently lacks the benchmark harness and baseline artifacts required for an honest automated gate. `.github/workflows/tests.yml` is therefore unchanged for Q-final-4. Enabling CI without a real harness would create a false quality signal.
-
-## Local invocation
-
-Use dry-run mode to verify wiring without requiring a bench harness:
-
-```powershell
-pwsh scripts/run-perf-budgets.ps1 --dry-run
-```
-
-When `crates/mosaic-crypto/benches/throughput.rs` exists, the same script will run `cargo bench -p mosaic-crypto --bench throughput -- --noplot` in non-dry-run mode and can become the single CI entry point.
+This repository currently lacks the benchmark harness and baseline artifacts required for an honest automated gate. `.github/workflows/tests.yml` is therefore unchanged for Q-final-4. Enabling CI without a real harness would create a false quality signal. Add a new CI entry point with the future benchmark harness rather than relying on the retired dry-run wrapper.
 
 ## Release blocker rule
 

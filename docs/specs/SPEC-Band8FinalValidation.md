@@ -94,12 +94,9 @@ Rules:
 
 ## Ordered Final Validation Matrix
 
-The helper `.\scripts\check-band8-validation-readiness.ps1` statically validates the command names, working directories, and primary capture artifact paths in this table without running the expensive commands.
-
 <!-- BAND8_MATRIX_START -->
 | Order | Lane | Working directory | Command | Primary capture artifact |
 |-------|------|-------------------|---------|--------------------------|
-| 00 | readiness | `.` | `.\scripts\check-band8-validation-readiness.ps1` | `artifacts\validation\band8\00-readiness-static.txt` |
 | 01 | preflight | `.` | `git --no-pager status --short --branch` | `artifacts\validation\band8\01-git-status-start.txt` |
 | 02 | backend | `.` | `dotnet restore .\Mosaic.slnx` | `artifacts\validation\band8\02-dotnet-restore.txt` |
 | 03 | crypto | `libs\crypto` | `npm ci` | `artifacts\validation\band8\03-crypto-npm-ci.txt` |
