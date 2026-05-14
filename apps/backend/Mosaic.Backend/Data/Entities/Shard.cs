@@ -19,6 +19,7 @@ public class Shard
     public ShardStatus Status { get; set; } = ShardStatus.PENDING;
     public DateTime StatusUpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? PendingExpiresAt { get; set; }
+    public uint RowVersion { get; set; }
 
     /// <summary>
     /// SHA256 hash of the encrypted shard content (hex-encoded).

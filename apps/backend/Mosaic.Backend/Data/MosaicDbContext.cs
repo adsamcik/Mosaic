@@ -32,6 +32,8 @@ public class MosaicDbContext : DbContext
         modelBuilder.Entity<User>(e =>
         {
             e.HasIndex(u => u.AuthSub).IsUnique();
+            e.HasIndex(u => u.IdentityPubkey)
+                .HasDatabaseName("ix_users_identity_pubkey");
             e.Property(u => u.KdfMemoryKib).HasDefaultValue(65536);
             e.Property(u => u.KdfIterations).HasDefaultValue(3);
             e.Property(u => u.KdfParallelism).HasDefaultValue(1);
@@ -48,6 +50,9 @@ public class MosaicDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             e.HasIndex(a => a.OwnerId);
+            e.HasIndex(a => new { a.OwnerId, a.CreatedAt })
+                .IsDescending(false, true)
+                .HasDatabaseName("ix_albums_owner_created");
 
             // Index for efficient expired album cleanup queries
             e.HasIndex(a => a.ExpiresAt)
@@ -107,6 +112,10 @@ public class MosaicDbContext : DbContext
 
             e.HasIndex(ek => new { ek.AlbumId, ek.RecipientId, ek.EpochId }).IsUnique();
             e.HasIndex(ek => new { ek.RecipientId, ek.AlbumId });
+            e.HasIndex(ek => new { ek.AlbumId, ek.SignPubkey })
+                .HasDatabaseName("ix_epoch_keys_album_signpubkey");
+            e.HasIndex(ek => new { ek.AlbumId, ek.EpochId })
+                .HasDatabaseName("ix_epoch_keys_album_epoch");
         });
 
         // Manifest
@@ -145,6 +154,7 @@ public class MosaicDbContext : DbContext
 
             e.Property(s => s.Status)
                 .HasConversion<string>();
+            e.Property(s => s.RowVersion).IsConcurrencyToken();
         });
 
         // ManifestShard
@@ -287,6 +297,10 @@ public class MosaicDbContext : DbContext
         {
             e.HasIndex(ac => ac.Username);
             e.HasIndex(ac => ac.ExpiresAt);
+            e.HasIndex(ac => new { ac.IpAddress, ac.CreatedAt })
+                .HasDatabaseName("ix_auth_challenges_ip_created");
+            e.HasIndex(ac => new { ac.IpAddress, ac.IsUsed, ac.CreatedAt })
+                .HasDatabaseName("ix_auth_challenges_ip_used_created");
         });
 
         // Use snake_case for PostgreSQL
