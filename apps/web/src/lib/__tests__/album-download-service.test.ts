@@ -421,6 +421,36 @@ describe('album-download-service', () => {
       expect(mockDownloadZip).toHaveBeenCalled();
     });
 
+    it('strips Unicode format characters from ZIP filename', async () => {
+      const photo = createMockPhoto();
+      let downloadName = '';
+      const clickSpy = vi.fn();
+
+      const origCreateElement = document.createElement.bind(document);
+      vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+        const el = origCreateElement(tag);
+        if (tag === 'a') {
+          Object.defineProperty(el, 'click', { value: clickSpy });
+          Object.defineProperty(el, 'download', {
+            get: () => downloadName,
+            set: (value: string) => {
+              downloadName = value;
+            },
+            configurable: true,
+          });
+        }
+        return el;
+      });
+
+      await downloadAlbumAsZip({
+        albumName: 'foo\u202Ebar.zip',
+        photos: [photo],
+        albumId: 'album-1',
+      });
+
+      expect(downloadName).toBe('foo_bar.zip.zip');
+    });
+
     it('handles photos with different epoch IDs', async () => {
       const photo1 = createMockPhoto({ id: 'p1', epochId: 1 });
       const photo2 = createMockPhoto({ id: 'p2', epochId: 2 });

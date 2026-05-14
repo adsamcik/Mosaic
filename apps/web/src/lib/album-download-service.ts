@@ -8,6 +8,7 @@ import { downloadShards } from './shard-service';
 import type { PhotoMeta } from '../workers/types';
 
 const log = createLogger('AlbumDownloadService');
+const FILENAME_FORBIDDEN = /[<>:"/\\|?*\x00-\x1f\x7f\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
 
 /**
  * ZIP64 note: current photo downloads pass Uint8Array inputs, so client-zip can
@@ -56,7 +57,7 @@ export interface AlbumDownloadOptions {
 // ---------------------------------------------------------------------------
 
 function sanitizeFilename(name: string): string {
-  return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'album';
+  return name.replace(FILENAME_FORBIDDEN, '_').trim() || 'album';
 }
 
 function deduplicateFilenames(photos: PhotoMeta[]): Map<string, string> {
