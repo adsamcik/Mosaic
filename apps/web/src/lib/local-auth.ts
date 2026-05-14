@@ -6,7 +6,7 @@
  * (not behind a trusted reverse proxy).
  */
 
-import { fromBase64, toBase64 } from './api';
+import { ApiError, apiRequest, fromBase64, toBase64 } from './api';
 import { getCryptoClient } from './crypto-client';
 import {
   parseServerArgon2Params,
@@ -82,6 +82,25 @@ function firstNonEmptyString(...values: unknown[]): string | undefined {
   return undefined;
 }
 
+export async function parseProblemDetails(response: Response): Promise<string> {
+  const fallback = `HTTP ${response.status}`;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('json')) {
+    return fallback;
+  }
+
+  try {
+    const body: unknown = await response.json();
+    if (!isErrorResponseBody(body)) {
+      return fallback;
+    }
+
+    return firstNonEmptyString(body.detail, body.title, body.error) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function toWorkerKdfParams(params: Argon2Params): WorkerKdfParams {
   return {
     memoryKib: params.memory,
@@ -113,46 +132,17 @@ function parseAuthKdfProfile(payload: {
   });
 }
 
-export async function parseProblemDetails(response: Response): Promise<string> {
-  const fallback = `HTTP ${response.status}`;
-  const contentType = response.headers?.get?.('content-type')?.toLowerCase() ?? '';
-  const isProblemDetails = contentType.includes('application/problem+json');
-  const isJson =
-    isProblemDetails || contentType.includes('application/json');
-  const body = typeof response.text === 'function'
-    ? await response.text().catch(() => '')
-    : '';
-
-  if (body.trim().length === 0 && typeof response.json === 'function') {
-    try {
-      const parsed: unknown = await response.json();
-      if (!isErrorResponseBody(parsed)) {
-        return fallback;
-      }
-      return firstNonEmptyString(parsed.detail, parsed.title, parsed.error) ?? fallback;
-    } catch {
-      return fallback;
-    }
+function apiErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    return firstNonEmptyString(
+      error.problem?.detail,
+      error.problem?.title,
+      error.problem?.error,
+      error.message,
+    ) ?? `HTTP ${error.status}`;
   }
 
-  if (!isJson || body.trim().length === 0) {
-    return fallback;
-  }
-
-  try {
-    const parsed: unknown = JSON.parse(body);
-    if (!isErrorResponseBody(parsed)) {
-      return fallback;
-    }
-
-    if (isProblemDetails) {
-      return firstNonEmptyString(parsed.detail, parsed.title) ?? fallback;
-    }
-
-    return firstNonEmptyString(parsed.error) ?? fallback;
-  } catch {
-    return fallback;
-  }
+  return error instanceof Error ? error.message : 'Request failed';
 }
 
 // =============================================================================
@@ -165,18 +155,10 @@ export async function parseProblemDetails(response: Response): Promise<string> {
  * @returns Challenge data
  */
 export async function initAuth(username: string): Promise<AuthInitResponse> {
-  const response = await fetch('/api/auth/init', {
+  return apiRequest<AuthInitResponse>('/auth/init', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify({ username }),
+    body: { username },
   });
-
-  if (!response.ok) {
-    throw new Error(await parseProblemDetails(response));
-  }
-
-  return response.json();
 }
 
 /**
@@ -193,26 +175,22 @@ export async function verifyAuth(
   signature: string,
   timestamp?: number,
 ): Promise<AuthVerifyResponse> {
-  const response = await fetch('/api/auth/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify({
-      username,
-      challengeId,
-      signature,
-      timestamp,
-    }),
-  });
-
-  if (!response.ok) {
-    if (response.status === 401) {
+  try {
+    return await apiRequest<AuthVerifyResponse>('/auth/verify', {
+      method: 'POST',
+      body: {
+        username,
+        challengeId,
+        signature,
+        timestamp,
+      },
+    });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
       throw new Error('Invalid credentials');
     }
-    throw new Error(await parseProblemDetails(response));
+    throw new Error(apiErrorMessage(error));
   }
-
-  return response.json();
 }
 
 /**
@@ -233,22 +211,17 @@ export async function registerUser(params: {
   kdfParallelism: number;
   kdfAlgVersion: number;
 }): Promise<AuthRegisterResponse> {
-  const response = await fetch('/api/auth/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify(params),
-  });
-
-  if (response.status === 409) {
-    throw new Error('Username already exists');
+  try {
+    return await apiRequest<AuthRegisterResponse>('/auth/register', {
+      method: 'POST',
+      body: params,
+    });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409) {
+      throw new Error('Username already exists');
+    }
+    throw new Error(apiErrorMessage(error));
   }
-
-  if (!response.ok) {
-    throw new Error(await parseProblemDetails(response));
-  }
-
-  return response.json();
 }
 
 // =============================================================================
@@ -500,28 +473,33 @@ export interface ServerStatus {
  */
 export async function checkServerStatus(): Promise<ServerStatus> {
   try {
-    // First try the new /api/auth/config endpoint
-    const configResponse = await fetch('/api/auth/config');
+    const config = await apiRequest<{ localAuthEnabled?: boolean; proxyAuthEnabled?: boolean }>(
+      '/auth/config',
+    );
+    return {
+      isOnline: true,
+      isLocalAuth: config.localAuthEnabled === true,
+      isProxyAuth: config.proxyAuthEnabled === true,
+      statusCode: 200,
+    };
+  } catch {
+    // Fall back to probing /auth/init for older backends that predate /auth/config.
+  }
 
-    if (configResponse.ok) {
-      const config = await configResponse.json();
-      return {
-        isOnline: true,
-        isLocalAuth: config.localAuthEnabled === true,
-        isProxyAuth: config.proxyAuthEnabled === true,
-        statusCode: configResponse.status,
-      };
-    }
-
-    // Fallback for older backends: probe /api/auth/init
-    const response = await fetch('/api/auth/init', {
+  try {
+    await apiRequest<AuthInitResponse>('/auth/init', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: '__check__' }),
+      body: { username: '__check__' },
     });
 
-    // 404 means the endpoint doesn't exist -> ProxyAuth mode (but server is online)
-    if (response.status === 404) {
+    return {
+      isOnline: true,
+      isLocalAuth: true,
+      isProxyAuth: false,
+      statusCode: 200,
+    };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
       return {
         isOnline: true,
         isLocalAuth: false,
@@ -530,32 +508,26 @@ export async function checkServerStatus(): Promise<ServerStatus> {
       };
     }
 
-    // 5xx means server error
-    if (response.status >= 500) {
-      const parsedError = await parseProblemDetails(response);
-      const errorDetail =
-        parsedError === `HTTP ${response.status}`
-          ? `Server error: ${response.status}`
-          : parsedError;
-
+    if (err instanceof ApiError && err.status >= 500) {
+      const message = apiErrorMessage(err);
       return {
         isOnline: true,
         isLocalAuth: true,
         isProxyAuth: false,
-        statusCode: response.status,
-        error: errorDetail,
+        statusCode: err.status,
+        error: message === err.message ? `Server error: ${err.status}` : message,
       };
     }
 
-    // 200-499 (except 404) usually means the endpoint exists -> LocalAuth mode
-    return {
-      isOnline: true,
-      isLocalAuth: true,
-      isProxyAuth: false,
-      statusCode: response.status,
-    };
-  } catch (err) {
-    // Network error (fetch failed completely)
+    if (err instanceof ApiError) {
+      return {
+        isOnline: true,
+        isLocalAuth: true,
+        isProxyAuth: false,
+        statusCode: err.status,
+      };
+    }
+
     return {
       isOnline: false,
       isLocalAuth: false,
@@ -599,18 +571,14 @@ function assertDevMode(): void {
  */
 export async function devLogin(username: string): Promise<DevLoginResponse> {
   assertDevMode();
-  const response = await fetch('/api/dev-auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify({ username }),
-  });
-
-  if (!response.ok) {
-    throw new Error(await parseProblemDetails(response));
+  try {
+    return await apiRequest<DevLoginResponse>('/dev-auth/login', {
+      method: 'POST',
+      body: { username },
+    });
+  } catch (error) {
+    throw new Error(apiErrorMessage(error));
   }
-
-  return response.json();
 }
 
 /**
@@ -623,14 +591,12 @@ export async function devUpdateKeys(keys: {
   wrappedIdentitySeed?: string;
 }): Promise<void> {
   assertDevMode();
-  const response = await fetch('/api/dev-auth/update-keys', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify(keys),
-  });
-
-  if (!response.ok) {
-    throw new Error(await parseProblemDetails(response));
+  try {
+    await apiRequest<void>('/dev-auth/update-keys', {
+      method: 'POST',
+      body: keys,
+    });
+  } catch (error) {
+    throw new Error(apiErrorMessage(error));
   }
 }

@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { AccessTier as AccessTierType } from '../lib/api-types';
-import { fromBase64 } from '../lib/api';
+import { apiRequest, fromBase64 } from '../lib/api';
 import { getCryptoClient } from '../lib/crypto-client';
 import {
   constantTimeEqual,
@@ -166,21 +166,14 @@ export function useLinkKeys(
 
       // Always fetch link info first so limited-use links consume access and return
       // a fresh grant token for subsequent /keys, /photos, and /shards requests.
-      const accessResponse = await fetch(`/api/s/${linkId}`);
-      if (!accessResponse.ok) {
-        const errorData = await accessResponse.json().catch(() => ({}));
-        throw new Error(
-          errorData.error || `Link access failed: ${accessResponse.status}`,
-        );
-      }
-      const linkAccess: LinkAccessResponse = await accessResponse.json();
+      const linkAccess = await apiRequest<LinkAccessResponse>(`/s/${linkId}`);
 
       // P-W7.6: link-tier handles are Rust-owned and not reload-persistent,
       // so this flow imports handles from the server-wrapped keys each load.
 
       // Fetch wrapped keys from server
-      const keysResponse = await fetch(
-        `/api/s/${linkId}/keys`,
+      const wrappedKeys = await apiRequest<WrappedKeyResponse[]>(
+        `/s/${linkId}/keys`,
         linkAccess.grantToken
           ? {
               headers: {
@@ -189,13 +182,6 @@ export function useLinkKeys(
             }
           : {},
       );
-      if (!keysResponse.ok) {
-        const errorData = await keysResponse.json().catch(() => ({}));
-        throw new Error(
-          errorData.error || `Key fetch failed: ${keysResponse.status}`,
-        );
-      }
-      const wrappedKeys: WrappedKeyResponse[] = await keysResponse.json();
 
       // Unwrap tier keys
       log.debug('Unwrapping tier keys', {

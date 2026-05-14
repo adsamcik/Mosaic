@@ -252,7 +252,7 @@ async function throwApiErrorForResponse(
 // Request Helper
 // =============================================================================
 
-interface RequestOptions {
+export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   headers?: Record<string, string>;
@@ -343,7 +343,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-async function apiRequest<T>(
+export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
