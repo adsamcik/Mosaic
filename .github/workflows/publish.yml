@@ -31,6 +31,47 @@ env:
   IMAGE_PREFIX: ${{ github.repository_owner }}/mosaic
 
 jobs:
+  # Detect whether the operator has supplied Android signing + cert-pin secrets.
+  # When absent, the android-release job is skipped (not failed) — Android
+  # binaries are optional in the operator-self-host model. Docker images still
+  # publish without Android.
+  detect-android-secrets:
+    name: Detect Android Release Secrets
+    runs-on: ubuntu-latest
+    outputs:
+      secrets_present: ${{ steps.check.outputs.secrets_present }}
+    steps:
+      - name: Probe operator secret presence
+        id: check
+        env:
+          MOSAIC_RELEASE_PINS: ${{ secrets.MOSAIC_RELEASE_PINS }}
+          MOSAIC_RELEASE_KEYSTORE_BASE64: ${{ secrets.MOSAIC_RELEASE_KEYSTORE_BASE64 }}
+          MOSAIC_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.MOSAIC_RELEASE_KEYSTORE_PASSWORD }}
+          MOSAIC_RELEASE_KEY_ALIAS: ${{ secrets.MOSAIC_RELEASE_KEY_ALIAS }}
+          MOSAIC_RELEASE_KEY_PASSWORD: ${{ secrets.MOSAIC_RELEASE_KEY_PASSWORD }}
+        run: |
+          missing=()
+          for name in MOSAIC_RELEASE_PINS MOSAIC_RELEASE_KEYSTORE_BASE64 MOSAIC_RELEASE_KEYSTORE_PASSWORD MOSAIC_RELEASE_KEY_ALIAS MOSAIC_RELEASE_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "secrets_present=true" >> "$GITHUB_OUTPUT"
+            echo "✅ All 5 Android release secrets are present; android-release job will run." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "secrets_present=false" >> "$GITHUB_OUTPUT"
+            echo "## ⏭️ Android Release Skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Operator has not supplied the required Android release secrets:" >> "$GITHUB_STEP_SUMMARY"
+            for name in "${missing[@]}"; do
+              echo "- \`$name\`" >> "$GITHUB_STEP_SUMMARY"
+            done
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Docker images will still publish. Android APK/AAB will not be built/uploaded." >> "$GITHUB_STEP_SUMMARY"
+            echo "See \`docs/RELEASE_NOTES_v0.2.0.md\` for the full secret list." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   # Validate e2e bypass has a documented reason
   validate-bypass:
     name: Validate E2E Bypass
@@ -297,10 +338,12 @@ jobs:
     name: Android Release
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [validate-bypass, unit-tests, e2e-tests]
+    needs: [validate-bypass, unit-tests, e2e-tests, detect-android-secrets]
     if: |
       always() &&
       startsWith(github.ref, 'refs/tags/v') &&
+      needs.detect-android-secrets.result == 'success' &&
+      needs.detect-android-secrets.outputs.secrets_present == 'true' &&
       needs.unit-tests.result == 'success' &&
       (needs.e2e-tests.result == 'success' || needs.e2e-tests.result == 'skipped') &&
       (needs.validate-bypass.result == 'success' || needs.validate-bypass.result == 'skipped')
@@ -396,7 +439,12 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     needs: [publish-backend, publish-frontend, android-release]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: |
+      always() &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      needs.publish-backend.result == 'success' &&
+      needs.publish-frontend.result == 'success' &&
+      (needs.android-release.result == 'success' || needs.android-release.result == 'skipped')
     permissions:
       contents: write
 
