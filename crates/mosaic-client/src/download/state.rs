@@ -8,7 +8,9 @@ use crate::download::DownloadErrorCode;
 /// | `Preparing` | `PlanReady` | `Running` | empty plans are valid and move to `Running`. |
 /// | `Preparing`/`Running`/`Paused` | `ErrorEncountered` | `Errored` | terminal; includes `AccessRevoked` and `AuthorizationChanged`. |
 /// | `Running` | `PauseRequested` | `Paused` | active work should stop scheduling. |
+/// | `Paused` | `PauseRequested` | `Paused` | idempotent no-op for replayed pause requests. |
 /// | `Paused` | `ResumeRequested` | `Running` | resume queued photo work. |
+/// | `Running` | `ResumeRequested` | `Running` | idempotent no-op for replayed resume requests. |
 /// | `Running` | `AllPhotosDone` | `Finalizing` | output consumer finalization begins. |
 /// | `Finalizing` | `FinalizationDone` | `Done` | terminal success. |
 /// | `Idle`/`Preparing`/`Running`/`Paused` | `CancelRequested { soft }` | `Cancelled { soft }` | soft preserves staged files; hard purges staged files. |
@@ -108,7 +110,9 @@ pub fn apply(
         (S::Idle, E::StartRequested { .. }) => S::Preparing,
         (S::Preparing, E::PlanReady) => S::Running,
         (S::Running, E::PauseRequested) => S::Paused,
+        (S::Paused, E::PauseRequested) => S::Paused,
         (S::Paused, E::ResumeRequested) => S::Running,
+        (S::Running, E::ResumeRequested) => S::Running,
         (S::Running, E::AllPhotosDone) => S::Finalizing,
         (S::Finalizing, E::FinalizationDone) => S::Done,
         (S::Idle | S::Preparing | S::Running | S::Paused, E::CancelRequested { soft }) => {

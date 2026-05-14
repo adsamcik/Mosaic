@@ -207,3 +207,27 @@ fn replay_exercises_full_positive_transition_table() {
         }
     );
 }
+
+#[test]
+fn pause_when_already_paused_is_noop() {
+    assert_eq!(
+        apply(
+            &DownloadJobState::Paused,
+            &DownloadJobEvent::PauseRequested
+        )
+        .unwrap(),
+        DownloadJobState::Paused
+    );
+}
+
+#[test]
+fn resume_when_already_running_is_noop() {
+    assert_eq!(
+        apply(
+            &DownloadJobState::Running,
+            &DownloadJobEvent::ResumeRequested
+        )
+        .unwrap(),
+        DownloadJobState::Running
+    );
+}
