@@ -133,13 +133,14 @@ async function readApiError(
 }> {
   const contentType = response.headers?.get('content-type') ?? '';
   const correlationId = response.headers?.get('x-correlation-id') ?? undefined;
-  const body = await response.text().catch(() => undefined);
+  const body = await readResponseBody(response);
   let problem: ProblemDetailsBody | undefined;
 
   if (
     body !== undefined &&
     body.length > 0 &&
-    (contentType.includes('application/problem+json') ||
+    (contentType.length === 0 ||
+      contentType.includes('application/problem+json') ||
       contentType.includes('application/json'))
   ) {
     try {
@@ -167,6 +168,23 @@ async function readApiError(
   };
 }
 
+async function readResponseBody(response: Response): Promise<string | undefined> {
+  if (typeof response.text === 'function') {
+    return response.text().catch(() => undefined);
+  }
+
+  const jsonReader = (response as { json?: unknown }).json;
+  if (typeof jsonReader !== 'function') {
+    return undefined;
+  }
+
+  try {
+    return JSON.stringify(await jsonReader.call(response));
+  } catch {
+    return undefined;
+  }
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -175,7 +193,12 @@ export class ApiError extends Error {
     public readonly problem?: ProblemDetailsBody,
     public readonly correlationId?: string,
   ) {
-    super(problem?.detail ?? problem?.title ?? `API Error ${status}: ${statusText}`);
+    super(
+      problem?.detail ??
+        problem?.title ??
+        (typeof problem?.error === 'string' ? problem.error : undefined) ??
+        `API Error ${status}: ${statusText}`,
+    );
     this.name = 'ApiError';
   }
 }

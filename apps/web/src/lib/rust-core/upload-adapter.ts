@@ -6,6 +6,7 @@ import type {
   UploadInitInput,
   UploadJobSnapshot,
 } from './upload-adapter-port';
+import { isObject } from '../type-guards';
 
 const UPLOAD_QUEUE_DB_NAME = 'mosaic-upload-queue';
 const UPLOAD_QUEUE_STORE_NAME = 'tasks';
@@ -252,6 +253,3 @@ function isUploadJobSnapshot(value: unknown): value is UploadJobSnapshot {
     && typeof value.lastEffectId === 'string';
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}

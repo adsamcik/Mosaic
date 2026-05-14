@@ -6,6 +6,7 @@ import type {
   SyncEffect,
   SyncEvent,
 } from './upload-adapter-port';
+import { isObject } from '../type-guards';
 
 const ALBUM_SYNC_DB_NAME = 'mosaic-album-sync';
 const ALBUM_SYNC_STORE_NAME = 'snapshots';
@@ -220,6 +221,3 @@ function isAlbumSyncSnapshot(value: unknown): value is AlbumSyncSnapshot {
     && typeof value.updatedAtUnixMs === 'bigint';
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}

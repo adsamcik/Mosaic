@@ -1,3 +1,4 @@
+import { isRecord } from './type-guards';
 /**
  * Tiny feature-flag module. Sidecar flags are read once at module load from
  * `import.meta.env` via `VITE_FEATURE_SIDECAR` and
@@ -158,6 +159,3 @@ function getLocalStorage(): Storage | null {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}

@@ -5,6 +5,7 @@ import {
   UPLOAD_QUEUE_DB_VERSION,
 } from '../content-hash';
 import { SNAPSHOT_VERSION } from './constants';
+import { isObject } from '../type-guards';
 
 export { SNAPSHOT_VERSION };
 
@@ -113,10 +114,6 @@ class LegacyUploadTelemetry {
 }
 
 export const legacyUploadTelemetry = new LegacyUploadTelemetry();
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
 
 function getString(record: LegacyUploadRecord, ...keys: readonly (keyof LegacyUploadRecord)[]): string | undefined {
   for (const key of keys) {

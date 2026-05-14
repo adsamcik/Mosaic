@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import initRustWasm, { initSync } from '../../generated/mosaic-wasm/mosaic_wasm.js';
 import { computeContentHash } from '../content-hash';
+import { isRecord } from '../type-guards';
 
 const WASM_BYTES_PATH = resolve(
   process.cwd(),
@@ -25,10 +26,6 @@ type ContentHashFixture = {
   sourceFileBytes: Uint8Array;
   expectedPlaintextSha256Hex: string;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function requireRecord(value: unknown, field: string): Record<string, unknown> {
   if (!isRecord(value)) {
