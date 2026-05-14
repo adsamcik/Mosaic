@@ -8,8 +8,8 @@ export {
   isUuidV7,
   legacyUploadQueueDrainer,
   legacyUploadTelemetry,
-  SNAPSHOT_VERSION,
 } from './legacy-drainer';
+export { SNAPSHOT_VERSION } from './constants';
 export type {
   CurrentUploadRecord,
   LegacyUploadDetection,

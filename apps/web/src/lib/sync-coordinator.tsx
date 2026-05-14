@@ -20,9 +20,13 @@ import { getDbClient } from './db-client';
 import { createLogger } from './logger';
 import { loadAllAlbumPhotos } from './photo-query-pagination';
 import {
-  syncEngine,
+  registerSyncCoordinatorPurge,
   type ContentConflictEventDetail,
+  type ContentConflictListener,
   type SyncEventDetail,
+} from './sync-types';
+import {
+  syncEngine,
 } from './sync-engine';
 import { usePhotoStore, type PhotoItem } from '../stores/photo-store';
 import type { PhotoMeta } from '../workers/types';
@@ -54,14 +58,6 @@ interface PhotoDelta {
   updated: PhotoMeta[];
   promoted: Array<{ assetId: string; photo: PhotoMeta }>;
 }
-
-/**
- * Listener invoked once per album-content `content-conflict` event from
- * the sync engine. Listeners receive a sanitized payload (no plaintext
- * block content, no key material) and may freely subscribe/unsubscribe
- * via the returned disposer.
- */
-type ContentConflictListener = (detail: ContentConflictEventDetail) => void;
 
 /**
  * SyncCoordinator singleton class
@@ -484,6 +480,7 @@ class SyncCoordinator {
 
 /** Global sync coordinator singleton instance */
 export const syncCoordinator = new SyncCoordinator();
+registerSyncCoordinatorPurge(syncCoordinator);
 
 // ============================================================================
 // React Provider (optional - for components that need to trigger manual syncs)

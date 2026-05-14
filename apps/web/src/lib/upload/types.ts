@@ -1,5 +1,5 @@
 import type { EpochHandleId, TieredShardIds } from '../../workers/types';
-import { SNAPSHOT_VERSION } from './legacy-drainer';
+import { SNAPSHOT_VERSION } from './constants';
 
 /** Chunk size for splitting files (6MB) */
 export const CHUNK_SIZE = 6 * 1024 * 1024;

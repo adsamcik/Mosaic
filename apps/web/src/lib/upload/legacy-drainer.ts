@@ -4,10 +4,9 @@ import {
   UPLOAD_QUEUE_DB_NAME,
   UPLOAD_QUEUE_DB_VERSION,
 } from '../content-hash';
+import { SNAPSHOT_VERSION } from './constants';
 
-// Web IDB upload-record envelope version. Independent of Rust ADR-023
-// SNAPSHOT_SCHEMA_VERSION (currently 1) and Android RustSnapshotVersions.CURRENT.
-export const SNAPSHOT_VERSION = 4;
+export { SNAPSHOT_VERSION };
 
 export type LegacyUploadTelemetryCounter =
   | 'upload_queue_legacy_task_completed'

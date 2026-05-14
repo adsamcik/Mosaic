@@ -7,8 +7,8 @@ import {
   createIdempotencyKey,
   createUuidV7,
   legacyUploadQueueDrainer,
-  SNAPSHOT_VERSION,
 } from './legacy-drainer';
+import { SNAPSHOT_VERSION } from './constants';
 import { UploadPersistence } from './upload-persistence';
 import { ContentHashDedup, DuplicateUploadError } from '../content-hash';
 import {

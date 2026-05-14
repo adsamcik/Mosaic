@@ -6,7 +6,10 @@ import {
 import { getDbClient } from './db-client';
 import { clearAlbumKeys } from './epoch-key-store';
 import { releasePhoto, releaseThumbnail } from './photo-service';
-import { syncCoordinator } from './sync-coordinator';
+import {
+  getRegisteredSyncCoordinatorPurge,
+  type SyncCoordinatorPurge,
+} from './sync-types';
 import { uploadQueue } from './upload-queue';
 import { usePhotoStore, type AlbumPhotoState } from '../stores/photo-store';
 
@@ -49,10 +52,6 @@ interface UploadQueuePurge {
   cancel?: (taskId: string) => Promise<void> | void;
 }
 
-interface SyncCoordinatorPurge {
-  cancelPendingSync?: (albumId: string, assetId: string) => void;
-}
-
 export interface LocalPurgeDeps {
   getDbClient: () => Promise<DbPurgeClient>;
   clearAlbumKeys: (albumId: string) => void;
@@ -77,7 +76,7 @@ function defaultDeps(): LocalPurgeDeps {
     releaseThumbnail,
     photoStore: usePhotoStore.getState(),
     uploadQueue,
-    syncCoordinator,
+    syncCoordinator: getRegisteredSyncCoordinatorPurge(),
   };
 }
 

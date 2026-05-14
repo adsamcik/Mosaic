@@ -22,6 +22,11 @@ import {
   manifestShardIdsMatchTranscript,
   manifestTranscriptInputForPhotoMeta,
 } from './manifest-transcript';
+import type {
+  ContentConflictEventDetail,
+  SyncEventDetail,
+  SyncEventType,
+} from './sync-types';
 
 const log = createLogger('SyncEngine');
 const MAX_SYNC_PAGINATION_ITERATIONS = 1000;
@@ -102,63 +107,6 @@ function createDeletedManifestTombstone(manifest: {
     },
     shardIds: manifest.shardIds,
   };
-}
-
-/** Sync event types */
-type SyncEventType =
-  | 'sync-start'
-  | 'sync-progress'
-  | 'sync-complete'
-  | 'sync-error'
-  | 'sync-warning'
-  | 'sync-server-regression'
-  | 'content-conflict';
-
-interface SyncEventDetail {
-  albumId: string;
-  count?: number;
-  error?: Error;
-  /**
-   * For `sync-warning`: opaque manifest IDs the engine could not safely
-   * apply to the local DB on this run (signature failed, decrypt failed,
-   * JSON parse failed, transcript mismatch, signer-pubkey mismatch, etc.).
-   * The cursor was held back so they will be retried on the next sync.
-   * Carries IDs only — never plaintext metadata.
-   */
-  skippedManifestIds?: readonly string[];
-  /** For `sync-warning`: classification of the skip count by reason. */
-  skipReasonCounts?: Readonly<Record<string, number>>;
-  /**
-   * For `sync-server-regression`: the cursor value the client held vs the
-   * smaller value the server returned. Surfaced so a parent UI can demand
-   * a hard re-auth / full re-sync rather than silently rewinding.
-   */
-  serverRegression?: {
-    clientHeld: number;
-    serverReported: number;
-  };
-}
-
-/**
- * Event detail for `content-conflict` events. Dispatched whenever an
- * album-content save (story blocks document) hits a 409 from the server
- * and the resolver picked a winner per
- * `docs/specs/SPEC-SyncConflictResolution.md`. The payload is plaintext
- * but only carries opaque block ids and resolution categories — never
- * keys, never raw block content — so listening UI can show a generic
- * "conflict resolved" toast without breaking zero-knowledge invariants.
- */
-export interface ContentConflictEventDetail {
-  /** Album whose content document collided with a server update. */
-  albumId: string;
-  /** How the merge was resolved (LWW vs three-way block merge). */
-  strategy: 'lww-server-wins' | 'three-way-block-merge';
-  /** Number of blocks where merge surfaced a manual conflict. */
-  manualConflictCount: number;
-  /** Total number of merge decisions reported. */
-  totalDecisionCount: number;
-  /** Block ids of manually-resolved conflicts (opaque, server-known ids). */
-  manualConflictBlockIds: readonly string[];
 }
 
 /** Queued sync request with deferred promise */
