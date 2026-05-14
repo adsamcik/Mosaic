@@ -414,6 +414,22 @@ fn sync_requested_clears_retry_progress_on_new_attempt() {
     .expect("sync request succeeds");
     assert_eq!(transition.snapshot.phase, AlbumSyncPhase::FetchingPage);
     assert_eq!(transition.snapshot.retry.max_attempts, 7);
+    assert_eq!(transition.snapshot.retry.attempt_count, 0);
+    assert_eq!(transition.snapshot.retry.retry_after_ms, None);
+    assert_eq!(transition.snapshot.retry.last_error_code, None);
+    assert_eq!(transition.snapshot.retry.last_error_stage, None);
+    assert_eq!(transition.snapshot.retry.retry_target_phase, None);
+
+    let retry = advance_album_sync(
+        &transition.snapshot,
+        AlbumSyncEvent::RetryableFailure {
+            code: ClientErrorCode::InvalidInputLength,
+            retry_after_ms: None,
+        },
+    )
+    .expect("first retry uses initial backoff");
+    assert_eq!(retry.snapshot.retry.attempt_count, 1);
+    assert_eq!(retry.snapshot.retry.retry_after_ms, Some(1_000));
 }
 
 #[test]
