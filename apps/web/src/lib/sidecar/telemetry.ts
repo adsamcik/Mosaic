@@ -18,6 +18,8 @@
  * The collector is a no-op when either flag is off.
  */
 
+import { makeStringSetGuard } from '../type-guards';
+
 import { getFeatureFlag } from '../feature-flags';
 
 export type SidecarTelemetryEventName =
@@ -250,12 +252,12 @@ const BYTES_BUCKETS: ReadonlySet<SidecarBytesBucket> = new Set<SidecarBytesBucke
 const THROUGHPUT_BUCKETS: ReadonlySet<SidecarThroughputBucket> = new Set<SidecarThroughputBucket>(['slow', 'medium', 'fast']);
 const DURATION_BUCKETS: ReadonlySet<SidecarDurationBucket> = new Set<SidecarDurationBucket>(['short', 'medium', 'long']);
 
-function isValidEventName(v: unknown): v is SidecarTelemetryEventName { return typeof v === 'string' && EVENT_NAMES.has(v as SidecarTelemetryEventName); }
-function isValidErrCode(v: unknown): v is SidecarErrCode { return typeof v === 'string' && ERR_CODES.has(v as SidecarErrCode); }
-function isValidPhotoCountBucket(v: unknown): v is SidecarPhotoCountBucket { return typeof v === 'string' && PHOTO_BUCKETS.has(v as SidecarPhotoCountBucket); }
-function isValidBytesBucket(v: unknown): v is SidecarBytesBucket { return typeof v === 'string' && BYTES_BUCKETS.has(v as SidecarBytesBucket); }
-function isValidThroughputBucket(v: unknown): v is SidecarThroughputBucket { return typeof v === 'string' && THROUGHPUT_BUCKETS.has(v as SidecarThroughputBucket); }
-function isValidDurationBucket(v: unknown): v is SidecarDurationBucket { return typeof v === 'string' && DURATION_BUCKETS.has(v as SidecarDurationBucket); }
+const isValidEventName = makeStringSetGuard(EVENT_NAMES);
+const isValidErrCode = makeStringSetGuard(ERR_CODES);
+const isValidPhotoCountBucket = makeStringSetGuard(PHOTO_BUCKETS);
+const isValidBytesBucket = makeStringSetGuard(BYTES_BUCKETS);
+const isValidThroughputBucket = makeStringSetGuard(THROUGHPUT_BUCKETS);
+const isValidDurationBucket = makeStringSetGuard(DURATION_BUCKETS);
 
 /**
  * Default sink: POST a JSON envelope `{ events: [...] }`. Uses
