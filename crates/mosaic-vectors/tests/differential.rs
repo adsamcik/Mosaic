@@ -298,6 +298,13 @@ fn auth_challenge_vector_signs_and_verifies_byte_exact() {
     let vector = AuthChallengeVector::from(&parsed).expect("auth_challenge vector");
 
     // Build transcripts and assert byte-exact reproduction.
+    //
+    // Since deep-04 F5 (Wave 2D), `timestamp_ms` is accepted by the API for
+    // wire compatibility but is advisory only and is NOT mixed into the signed
+    // transcript. Replay protection is provided exclusively by the server-side
+    // single-use AuthChallenge.IsUsed atomic claim (Wave 2A fix 2A-9). The
+    // canonical vector therefore expects the with-ts and no-ts transcripts to
+    // be byte-identical.
     let transcript_no_ts =
         build_auth_challenge_transcript(&vector.username, None, &vector.challenge)
             .expect("build_auth_challenge_transcript no-ts");
@@ -313,7 +320,11 @@ fn auth_challenge_vector_signs_and_verifies_byte_exact() {
     );
     assert_eq!(
         transcript_ts, vector.expected_transcript_with_ts,
-        "transcript (with timestamp) mismatch"
+        "transcript (advisory timestamp) mismatch"
+    );
+    assert_eq!(
+        transcript_ts, transcript_no_ts,
+        "with-ts and no-ts transcripts must match (timestamp is advisory only since deep-04 F5)"
     );
 
     // Build keypair from the captured signing seed and assert public key.
@@ -327,6 +338,8 @@ fn auth_challenge_vector_signs_and_verifies_byte_exact() {
     );
 
     // Ed25519 is RFC 8032 deterministic so signatures reproduce byte-exactly.
+    // With timestamp dropped from the transcript, both signature variants in
+    // the vector are also identical.
     let sig_no_ts = sign_auth_challenge(&transcript_no_ts, &secret);
     let sig_ts = sign_auth_challenge(&transcript_ts, &secret);
     assert_eq!(
@@ -337,7 +350,12 @@ fn auth_challenge_vector_signs_and_verifies_byte_exact() {
     assert_eq!(
         sig_ts.as_bytes().as_slice(),
         vector.expected_signature_with_ts.as_slice(),
-        "signature (with timestamp) mismatch"
+        "signature (advisory timestamp) mismatch"
+    );
+    assert_eq!(
+        sig_ts.as_bytes(),
+        sig_no_ts.as_bytes(),
+        "with-ts and no-ts signatures must match (timestamp is advisory only since deep-04 F5)"
     );
 
     // Verify path round-trips.

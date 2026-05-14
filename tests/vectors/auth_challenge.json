@@ -3,10 +3,10 @@
   "operation": "auth.challenge.sign-verify.v1",
   "protocolVersion": "mosaic-v1",
   "rust_canonical": false,
-  "description": "Sign and verify a LocalAuth challenge transcript. The transcript layout is fixed; Ed25519 signing is deterministic (RFC 8032), so given the same auth signing seed the signature bytes are byte-exact across clients.",
+  "description": "Sign and verify a LocalAuth challenge transcript. The transcript layout is fixed; Ed25519 signing is deterministic (RFC 8032), so given the same auth signing seed the signature bytes are byte-exact across clients. Since deep-04 F5 (Wave 2D), timestamp_ms is accepted by adapters for wire compatibility but is advisory only and is NOT mixed into the signed transcript. Replay protection is provided exclusively by the server-side single-use AuthChallenge.IsUsed atomic claim (Wave 2A fix 2A-9).",
   "algorithms": {
     "signing": "Ed25519 (RFC 8032 deterministic, libsodium crypto_sign_detached)",
-    "transcript": "\"Mosaic_Auth_Challenge_v1\" || u32be(usernameLen) || username_utf8 || [u64be(timestamp_ms)?] || challenge(32)"
+    "transcript": "\"Mosaic_Auth_Challenge_v1\" || u32be(usernameLen) || username_utf8 || challenge(32)"
   },
   "domainLabels": [
     "mosaic.v1.auth.challenge"
@@ -20,9 +20,9 @@
   },
   "expected": {
     "transcriptNoTimestampHex": "4d6f736169635f417574685f4368616c6c656e67655f763100000016746573745f75736572406d6f736169632e6c6f63616cb1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0",
-    "transcriptWithTimestampHex": "4d6f736169635f417574685f4368616c6c656e67655f763100000016746573745f75736572406d6f736169632e6c6f63616c0000018181818181b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0",
+    "transcriptWithTimestampHex": "4d6f736169635f417574685f4368616c6c656e67655f763100000016746573745f75736572406d6f736169632e6c6f63616cb1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0",
     "signatureNoTimestampHex": "b2c05b06c42ab1674252951788e1c671b9bd7350926b7bbc11166aac231ca2311d9f6433b2fcca9bc546516ed5eaf0c1e6858df9b2c86ed772a498cc76cf3802",
-    "signatureWithTimestampHex": "d1d8db20570a5f8a2d309f9b8bb280d2386d18e3423aa8889f94e2c2e4adca9a02458d899d0a239ec590e968e75a0853eb43974c879720711c316ae575ae470a"
+    "signatureWithTimestampHex": "b2c05b06c42ab1674252951788e1c671b9bd7350926b7bbc11166aac231ca2311d9f6433b2fcca9bc546516ed5eaf0c1e6858df9b2c86ed772a498cc76cf3802"
   },
   "negativeCases": [
     {
@@ -36,13 +36,6 @@
       "name": "tampered-challenge",
       "mutations": [
         "flip first byte of inputs.challengeHex before verifying"
-      ],
-      "errorCode": "AUTH_VERIFICATION_FAILED"
-    },
-    {
-      "name": "timestamp-mismatch",
-      "mutations": [
-        "verify signatureWithTimestampHex without supplying timestamp_ms"
       ],
       "errorCode": "AUTH_VERIFICATION_FAILED"
     }

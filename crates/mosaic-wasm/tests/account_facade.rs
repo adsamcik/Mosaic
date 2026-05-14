@@ -179,10 +179,14 @@ fn build_auth_challenge_transcript_is_deterministic() {
     );
     assert_ne!(transcript_a.bytes, transcript_c.bytes);
 
-    // Omitting the timestamp segment shrinks the transcript by 8 bytes.
+    // Since deep-04 F5 (Wave 2D), the timestamp is advisory only and is NOT
+    // mixed into the signed transcript. Omitting the timestamp segment now
+    // produces byte-identical bytes to including it. Replay protection is
+    // provided by the server-side single-use AuthChallenge.IsUsed atomic
+    // claim (Wave 2A fix 2A-9), not by transcript timestamp inclusion.
     let transcript_d = build_auth_challenge_transcript("alice".to_string(), 0, false, challenge);
     assert_eq!(transcript_d.code, 0);
-    assert_eq!(transcript_a.bytes.len(), transcript_d.bytes.len() + 8);
+    assert_eq!(transcript_a.bytes, transcript_d.bytes);
 }
 
 #[test]
