@@ -21,7 +21,12 @@ if [[ "$actual_version" != "$WASM_BINDGEN_VERSION" ]]; then
   exit 1
 fi
 
-cargo build -p mosaic-wasm --target wasm32-unknown-unknown --release --locked
+cargo_features=()
+if [[ -n "${MOSAIC_WASM_CARGO_FEATURES:-}" ]]; then
+  cargo_features=(--features "$MOSAIC_WASM_CARGO_FEATURES")
+fi
+
+cargo build -p mosaic-wasm --target wasm32-unknown-unknown --release --locked "${cargo_features[@]}"
 
 out_dir="$PROJECT_ROOT/target/wasm-bindgen/mosaic-wasm"
 mkdir -p "$out_dir"

@@ -61,9 +61,7 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        # The committed WASM artifact is production-built; keep frontend KDF
-        # selection on production parameters so Rust rejects do not trip E2E auth.
-        VITE_E2E_WEAK_KEYS: "false"
+        VITE_E2E_WEAK_KEYS: "true"
     container_name: mosaic-test-frontend
     ports:
       - "8080:8080"
