@@ -86,6 +86,11 @@ export function MosaicPhotoGrid({
 
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
 
+  const photosById = useMemo(
+    () => new Map(photos.map((photo) => [photo.id, photo])),
+    [photos],
+  );
+
   // Sort photos by createdAt descending to match display order
   // This ensures lightbox navigation follows the visual order
   const sortedPhotos = useMemo(
@@ -330,7 +335,9 @@ export function MosaicPhotoGrid({
                 }}
               >
                 {item.items.map((mosaicItem) => {
-                  const photo = photos.find((p) => p.id === mosaicItem.photoId);
+                  const photo = mosaicItem.photoId
+                    ? photosById.get(mosaicItem.photoId)
+                    : undefined;
                   if (!photo) return null;
 
                   // Check if this photo is pending/syncing in the PhotoStore
