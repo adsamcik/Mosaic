@@ -4,6 +4,10 @@ import qrcode from 'qrcode-generator';
 import { pairSidecarInitiatorBegin, PairingError, type InitiatorPrefix } from '../../lib/sidecar/pairing';
 import { encodeFrame } from '../../lib/sidecar/framing';
 import { chunkPhoto } from '../../lib/sidecar/chunker';
+import {
+  buildSidecarIceServers,
+  buildSidecarSignalingBaseUrl,
+} from '../../lib/sidecar/ice-config';
 import type { SidecarFallbackKind, SidecarPeerHandle } from '../../workers/types';
 import { createLogger } from '../../lib/logger';
 
@@ -11,9 +15,6 @@ const log = createLogger('SidecarPairingModal');
 
 const PAIRING_TTL_MS = 90_000;
 const CODE_LENGTH = 6;
-const DEFAULT_ICE_SERVERS: readonly RTCIceServer[] = [
-  { urls: 'stun:stun.l.google.com:19302' },
-];
 
 // Conservative defaults for chunk sizing. The runtime SCTP max-message-size
 // can be smaller; we subtract AEAD/frame overhead to stay below it.
@@ -63,27 +64,11 @@ function base64UrlEncode(bytes: Uint8Array): string {
 }
 
 function buildSignalingBaseUrl(): string | undefined {
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  const env = (typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined) ?? {};
-  /* eslint-enable @typescript-eslint/no-explicit-any */
-  const override = typeof env['VITE_SIDECAR_SIGNAL_URL'] === 'string' ? String(env['VITE_SIDECAR_SIGNAL_URL']) : '';
-  return override.length > 0 ? override : undefined;
+  return buildSidecarSignalingBaseUrl();
 }
 
 function buildIceServers(): readonly RTCIceServer[] {
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  const env = (typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined) ?? {};
-  /* eslint-enable @typescript-eslint/no-explicit-any */
-  const turnUrl = typeof env['VITE_SIDECAR_TURN_URL'] === 'string' ? String(env['VITE_SIDECAR_TURN_URL']) : '';
-  const turnUser = typeof env['VITE_SIDECAR_TURN_USERNAME'] === 'string' ? String(env['VITE_SIDECAR_TURN_USERNAME']) : '';
-  const turnCred = typeof env['VITE_SIDECAR_TURN_CREDENTIAL'] === 'string' ? String(env['VITE_SIDECAR_TURN_CREDENTIAL']) : '';
-  if (turnUrl.length > 0) {
-    return [
-      ...DEFAULT_ICE_SERVERS,
-      { urls: turnUrl, username: turnUser || undefined, credential: turnCred || undefined } as RTCIceServer,
-    ];
-  }
-  return DEFAULT_ICE_SERVERS;
+  return buildSidecarIceServers();
 }
 
 /** Pretty-print "123 456" for the 6-digit code. */

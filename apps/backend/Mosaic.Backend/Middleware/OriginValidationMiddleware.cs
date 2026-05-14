@@ -1,0 +1,204 @@
+using System.Net;
+
+namespace Mosaic.Backend.Middleware;
+
+/// <summary>
+/// Reject cross-origin state-changing requests (POST / PUT / PATCH /
+/// DELETE) by validating <c>Sec-Fetch-Site</c> and <c>Origin</c>.
+///
+/// Audit "threat-model C-1": Mosaic ships no anti-CSRF token and relies
+/// on the cookie's <c>SameSite=Strict</c> attribute. SameSite is a strong
+/// default but it is NOT a substitute for proper CSRF protection when:
+///   - the deployment uses <c>ProxyAuth</c> (Authelia / similar). The
+///     reverse proxy attaches the <c>Remote-User</c> header to whatever
+///     request the SSO session can prove ownership of — including
+///     requests issued cross-origin via <c>fetch(..., credentials:
+///     'include')</c> from an evil page. SameSite never sees those
+///     requests.
+///   - SameSite is browser-side and a buggy / non-default cookie policy
+///     could weaken it without us noticing.
+///
+/// This middleware enforces a second, server-side check:
+///   - <c>Sec-Fetch-Site</c> (Fetch Metadata Request Headers) must be
+///     either <c>same-origin</c> or <c>none</c> (direct address-bar
+///     navigation) for state-changing methods. <c>cross-site</c> and
+///     <c>same-site</c> are rejected with <c>403</c>.
+///   - For browsers that don't send <c>Sec-Fetch-Site</c> (legacy
+///     desktop Safari before ~16) we fall back to comparing the
+///     <c>Origin</c> header against the request <c>Host</c>. Missing
+///     <c>Origin</c> on a state-changing request is treated as
+///     suspicious and rejected.
+///
+/// Safe (read-only) methods are passed through unchanged because they
+/// are also gated by app-level authorization and bypassing them with a
+/// cross-origin GET would only reveal information the user already
+/// holds.
+///
+/// Exempt paths:
+///   - <c>/api/auth/init</c> and <c>/api/auth/verify</c> — login flow
+///     bootstraps cross-origin metadata before any cookie exists. They
+///     are guarded by the per-IP rate limiter and PAKE.
+///   - <c>/api/sidecar/*</c> — sidecar relay WebSocket; no cookies, no
+///     CSRF surface.
+///   - <c>/api/s/*</c> — anonymous share-link surface; no cookies in
+///     play (the visitor side ships with `credentials: 'omit'` in
+///     practice, and the server is anonymous-only per the LocalAuth
+///     middleware).
+///
+/// On rejection: HTTP <c>403 Forbidden</c> with a stable, opaque body
+/// so a probing page cannot tell whether the route exists.
+/// </summary>
+public sealed class OriginValidationMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<OriginValidationMiddleware> _logger;
+
+    private static readonly string[] ExemptPathPrefixes =
+    {
+        "/api/auth/init",
+        "/api/auth/verify",
+        "/api/auth/register",
+        "/api/sidecar/",
+        "/api/s/",
+        "/health",
+        "/api/health",
+    };
+
+    private static readonly HashSet<string> SafeMethods = new(StringComparer.OrdinalIgnoreCase)
+    {
+        HttpMethods.Get,
+        HttpMethods.Head,
+        HttpMethods.Options,
+        HttpMethods.Trace,
+    };
+
+    public OriginValidationMiddleware(
+        RequestDelegate next,
+        ILogger<OriginValidationMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        if (SafeMethods.Contains(context.Request.Method))
+        {
+            await _next(context);
+            return;
+        }
+
+        var path = context.Request.Path.Value ?? string.Empty;
+        if (IsExempt(path))
+        {
+            await _next(context);
+            return;
+        }
+
+        // Prefer Sec-Fetch-Site when present (Chromium/Firefox >=90,
+        // Safari >=16.4). Values are well-defined; we accept only the
+        // explicitly safe ones.
+        var secFetchSite = context.Request.Headers["Sec-Fetch-Site"].ToString();
+        if (!string.IsNullOrEmpty(secFetchSite))
+        {
+            if (string.Equals(secFetchSite, "same-origin", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(secFetchSite, "none", StringComparison.OrdinalIgnoreCase))
+            {
+                await _next(context);
+                return;
+            }
+
+            _logger.LogWarning(
+                "Rejected state-changing request from {SecFetchSite} for path template {PathPrefix}",
+                secFetchSite,
+                PathPrefix(path));
+            await RejectAsync(context);
+            return;
+        }
+
+        // No Sec-Fetch-Site header. Fall back to Origin/Host comparison.
+        // A state-changing request with no Origin header is rejected
+        // (legitimate browser usage always sets Origin for non-safe
+        // methods); same-origin Origin is accepted.
+        var origin = context.Request.Headers["Origin"].ToString();
+        if (string.IsNullOrEmpty(origin))
+        {
+            _logger.LogWarning(
+                "Rejected state-changing request without Sec-Fetch-Site or Origin header for path template {PathPrefix}",
+                PathPrefix(path));
+            await RejectAsync(context);
+            return;
+        }
+
+        if (!TryParseHost(origin, out var originHost))
+        {
+            _logger.LogWarning(
+                "Rejected state-changing request with malformed Origin header for path template {PathPrefix}",
+                PathPrefix(path));
+            await RejectAsync(context);
+            return;
+        }
+
+        var requestHost = context.Request.Host.Host;
+        if (string.IsNullOrEmpty(requestHost))
+        {
+            _logger.LogWarning(
+                "Rejected state-changing request with empty Host header for path template {PathPrefix}",
+                PathPrefix(path));
+            await RejectAsync(context);
+            return;
+        }
+
+        if (string.Equals(originHost, requestHost, StringComparison.OrdinalIgnoreCase))
+        {
+            await _next(context);
+            return;
+        }
+
+        _logger.LogWarning(
+            "Rejected cross-origin state-changing request for path template {PathPrefix}",
+            PathPrefix(path));
+        await RejectAsync(context);
+    }
+
+    private static bool IsExempt(string path)
+    {
+        foreach (var prefix in ExemptPathPrefixes)
+        {
+            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool TryParseHost(string origin, out string host)
+    {
+        host = string.Empty;
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+        host = uri.Host;
+        return !string.IsNullOrEmpty(host);
+    }
+
+    private static string PathPrefix(string path)
+    {
+        // Redact resource IDs from the log line — only the route
+        // template prefix is supportable / non-sensitive.
+        var firstSegments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (firstSegments.Length >= 2)
+        {
+            return $"/{firstSegments[0]}/{firstSegments[1]}";
+        }
+        return path;
+    }
+
+    private static async Task RejectAsync(HttpContext context)
+    {
+        context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
+        await context.Response.WriteAsJsonAsync(new { error = "Forbidden" });
+    }
+}

@@ -18,6 +18,7 @@ import { getApi } from '../../lib/api';
 import type { User } from '../../lib/api-types';
 import { closeDbClient } from '../../lib/db-client';
 import { clearAllEpochKeys } from '../../lib/epoch-key-store';
+import { clearAllLocalState } from '../../lib/local-purge-all';
 import {
   changeLanguage,
   getCurrentLanguage,
@@ -190,37 +191,25 @@ export function SettingsPage() {
       clearAllCovers();
       clearAllEpochKeys();
 
-      // Close and clear database
+      // Close and clear database before purging OPFS / IDB so any open
+      // handles are released first.
       await closeDbClient();
 
-      // Clear OPFS storage if available
-      if ('storage' in navigator && 'getDirectory' in navigator.storage) {
-        try {
-          const root = await navigator.storage.getDirectory();
-          // Try to remove our database files
-          // FileSystemDirectoryHandle.keys() returns AsyncIterable<string>
-          // Use type assertion as TypeScript's lib.dom.d.ts doesn't include OPFS iteration yet
-          const rootWithIterator = root as FileSystemDirectoryHandle & {
-            keys(): AsyncIterable<string>;
-          };
-          for await (const name of rootWithIterator.keys()) {
-            if (name.startsWith('mosaic')) {
-              await root.removeEntry(name, { recursive: true });
-            }
-          }
-        } catch {
-          // OPFS not available or already cleared
-        }
-      }
-
-      // Clear IndexedDB
-      const databases = await indexedDB.databases?.();
-      if (databases) {
-        for (const db of databases) {
-          if (db.name?.includes('mosaic')) {
-            indexedDB.deleteDatabase(db.name);
-          }
-        }
+      // Exhaustive durable-storage wipe across OPFS, IndexedDB, Cache
+      // Storage, localStorage and sessionStorage. Centralised in
+      // `lib/local-purge-all.ts` so every "forget this device" call site
+      // uses the same recipe. See audit "privacy hygiene" L4–L8.
+      const result = await clearAllLocalState();
+      if (!result.allOk) {
+        const failed = result.steps.filter(
+          (s) => s.status === 'failed' || s.status === 'blocked',
+        );
+        const summary = failed
+          .map((s) => `${s.step}: ${s.status}${s.detail ? ` (${s.detail})` : ''}`)
+          .join('; ');
+        // We still proceed to logout — partial clear is better than
+        // bailing out and leaving keys live in memory.
+        setClearError(`Some local state could not be cleared: ${summary}`);
       }
 
       setShowClearConfirm(false);

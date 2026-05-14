@@ -99,6 +99,8 @@ export function SharedAlbumViewer({
     error,
     albumId,
     accessTier,
+    unwrappedAccessTier,
+    hasTierMismatch,
     tierKeys,
     encryptedName,
     grantToken,
@@ -107,6 +109,10 @@ export function SharedAlbumViewer({
 
   // Memoize tier keys map to prevent unnecessary re-renders
   const tierKeysMap = useMemo(() => tierKeys, [tierKeys]);
+
+  // Effective tier for UI gating: trust the unwrapped keys, not the
+  // server-reported value. Audit "threat-model C-2".
+  const effectiveTier: 1 | 2 | 3 | null = unwrappedAccessTier ?? accessTier;
 
   // Decrypt album name
   const [albumName, setAlbumName] = useState<string | null>(null);
@@ -250,20 +256,42 @@ export function SharedAlbumViewer({
           <span className="shared-badge">Shared Album</span>
         </div>
         <div className="header-right">
-          {accessTier && (
+          {effectiveTier && (
             <span className="access-tier-badge" title="Access level">
-              {getAccessTierName(accessTier)}
+              {getAccessTierName(effectiveTier)}
             </span>
           )}
         </div>
       </header>
 
+      {hasTierMismatch && (
+        <div
+          className="shared-viewer-warning"
+          role="alert"
+          data-testid="shared-viewer-tier-mismatch"
+          style={{
+            padding: '0.75rem 1rem',
+            margin: '0 1rem',
+            background: 'var(--color-warning-bg, #fef3c7)',
+            color: 'var(--color-warning-fg, #92400e)',
+            border: '1px solid var(--color-warning-border, #f59e0b)',
+            borderRadius: '0.375rem',
+            fontSize: '0.875rem',
+          }}
+        >
+          ⚠️ This link's actual access tier ({getAccessTierName(unwrappedAccessTier!)}) is
+          lower than what the server reported ({getAccessTierName(accessTier!)}).
+          The server may be misconfigured or hostile. You will only be able to view
+          and download content at the lower tier.
+        </div>
+      )}
+
       <main id="main-content" className="shared-viewer-main">
-        {albumId && accessTier && (
+        {albumId && effectiveTier && (
           <SharedGallery
             linkId={linkId!}
             albumId={albumId}
-            accessTier={accessTier}
+            accessTier={effectiveTier}
             grantToken={grantToken}
             tierKeys={tierKeysMap}
             isLoadingKeys={isLoading}

@@ -37,8 +37,31 @@ export interface LinkKeyState {
   error: Error | null;
   /** The link ID from URL */
   linkId: string | null;
-  /** Access tier granted by this link */
+  /**
+   * Access tier as claimed by the server in `/api/s/:linkId`. Surfaced
+   * for diagnostics only — do NOT use this to decide which UI affordances
+   * to show. The server is the untrusted party in the zero-knowledge
+   * model and can lie about this number. Use {@link unwrappedAccessTier}
+   * for UI gating.
+   */
   accessTier: AccessTierType | null;
+  /**
+   * Highest tier the visitor could actually unwrap with the URL fragment
+   * secret. Computed locally from {@link tierKeys}. If the server
+   * claimed a higher tier than the visitor could unwrap (server-told
+   * tier-uplift attempt or honest misconfiguration), this value is
+   * strictly lower than {@link accessTier} and the UI should surface
+   * a "server claims X but only Y is available" warning. See audit
+   * "threat-model C-2".
+   */
+  unwrappedAccessTier: AccessTierType | null;
+  /**
+   * True when the server's claimed `accessTier` is strictly greater
+   * than {@link unwrappedAccessTier}. UI should treat this as a
+   * suspicious / misconfigured state and avoid promising the user
+   * tier-3 (full-res) downloads they can't actually obtain.
+   */
+  hasTierMismatch: boolean;
   /** Album ID this link accesses */
   albumId: string | null;
   /** Encrypted album name (base64) */
@@ -100,6 +123,8 @@ export function useLinkKeys(
     error: null,
     linkId: null,
     accessTier: null,
+    unwrappedAccessTier: null,
+    hasTierMismatch: false,
       albumId: null,
       encryptedName: null,
       grantToken: null,
@@ -217,11 +242,38 @@ export function useLinkKeys(
         }
       }
 
+      // Audit "threat-model C-2": compute the tier from keys the visitor
+      // could actually unwrap rather than trusting the server-reported
+      // `accessTier`. A compromised server could claim tier-3 while
+      // only delivering wrapped tier-1 keys, tricking the UI into
+      // promising full-res downloads the visitor cannot produce.
+      let unwrappedAccessTier: AccessTierType | null = null;
+      for (const tiersForEpoch of tierKeys.values()) {
+        for (const tier of tiersForEpoch.keys()) {
+          if (unwrappedAccessTier === null || tier > unwrappedAccessTier) {
+            unwrappedAccessTier = tier;
+          }
+        }
+      }
+      const hasTierMismatch =
+        unwrappedAccessTier !== null && unwrappedAccessTier < linkAccess.accessTier;
+      if (hasTierMismatch) {
+        log.warn(
+          'Share-link tier mismatch: server claims a higher tier than the visitor can unwrap',
+          {
+            serverClaimedTier: linkAccess.accessTier,
+            unwrappedTier: unwrappedAccessTier,
+          },
+        );
+      }
+
       setState({
         isLoading: false,
         error: null,
         linkId,
         accessTier: linkAccess.accessTier,
+        unwrappedAccessTier,
+        hasTierMismatch,
         albumId: linkAccess.albumId,
         encryptedName: linkAccess.encryptedName ?? null,
         grantToken: linkAccess.grantToken ?? null,

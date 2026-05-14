@@ -4,13 +4,10 @@ import { pairSidecar, PairingError } from '../../lib/sidecar/pairing';
 import { decodeFrame } from '../../lib/sidecar/framing';
 import { createSidecarReceiveSink } from '../../lib/sidecar/sink';
 import { detectPerFileStrategy, openPerFileSaveTarget } from '../../lib/save-target';
+import { buildSidecarIceServers } from '../../lib/sidecar/ice-config';
 import { createLogger } from '../../lib/logger';
 
 const log = createLogger('SidecarReceivePage');
-
-const DEFAULT_ICE_SERVERS: readonly RTCIceServer[] = [
-  { urls: 'stun:stun.l.google.com:19302' },
-];
 
 type Status =
   | { readonly tag: 'idle' }
@@ -87,7 +84,7 @@ export function SidecarReceivePage(): JSX.Element {
         role: 'responder',
         code: prefill.code,
         msg1: prefill.msg1,
-        iceServers: DEFAULT_ICE_SERVERS,
+        iceServers: buildSidecarIceServers(),
         abort: ac.signal,
       });
       // Open per-file save target. We don't know the photo list ahead of

@@ -249,6 +249,13 @@ app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseLogScope();
 app.UseMiddleware<RequestTimingMiddleware>();
 
+// Reject cross-origin state-changing requests. Runs BEFORE auth so the
+// rejection happens regardless of whether cookies (LocalAuth) or
+// ProxyAuth headers would have authenticated the request. See
+// `Middleware/OriginValidationMiddleware.cs` for the rationale and the
+// exempt-path list. Audit "threat-model C-1".
+app.UseMiddleware<OriginValidationMiddleware>();
+
 // Use combined auth middleware (supports both LocalAuth and ProxyAuth independently)
 app.Logger.LogInformation(
     "Auth configuration: LocalAuth={LocalAuth}, ProxyAuth={ProxyAuth}",
