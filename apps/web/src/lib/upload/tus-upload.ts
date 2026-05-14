@@ -20,11 +20,22 @@ export function isUploadAuthRequiredError(error: unknown): error is UploadAuthRe
   return error instanceof UploadAuthRequiredError;
 }
 
-function isTusUnauthorizedError(error: Error | tus.DetailedError): boolean {
-  const status = 'originalResponse' in error
+function getTusResponseStatus(error: Error | tus.DetailedError): number | undefined {
+  return 'originalResponse' in error
     ? error.originalResponse?.getStatus()
     : undefined;
+}
+
+function isTusUnauthorizedError(error: Error | tus.DetailedError): boolean {
+  const status = getTusResponseStatus(error);
   return status === 401 || /\b401\b|unauthori[sz]ed/i.test(error.message);
+}
+
+function isTusRetryableError(error: Error | tus.DetailedError): boolean {
+  const status = getTusResponseStatus(error);
+  if (status === undefined) return true;
+  if (status >= 500) return true;
+  return status === 408 || status === 409 || status === 423 || status === 429;
 }
 
 /**
@@ -71,7 +82,7 @@ export async function tusUpload(
           `TUS progress: ${bytesUploaded}/${bytesTotal} (${percentage}%)`,
         );
       },
-      onShouldRetry: (error) => !isTusUnauthorizedError(error),
+      onShouldRetry: (error) => isTusRetryableError(error),
       onError: (error) => {
         log.error(
           `TUS upload failed: albumId=${albumId}, shardIndex=${shardIndex}, error=${error.message}`,
