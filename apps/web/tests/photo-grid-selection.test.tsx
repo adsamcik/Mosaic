@@ -182,7 +182,7 @@ describe('PhotoGrid Selection and Delete', () => {
       root.render(
         createElement(PhotoGrid, {
           albumId,
-          photos: mockPhotos,
+          sortedPhotos: mockPhotos,
           isLoading: false,
           error: null,
           refetch: vi.fn(),

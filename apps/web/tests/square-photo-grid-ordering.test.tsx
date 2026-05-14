@@ -106,20 +106,6 @@ import { SquarePhotoGrid } from '../src/components/Gallery/SquarePhotoGrid';
 
 const photos: PhotoMeta[] = [
   {
-    id: 'photo-oldest',
-    assetId: 'asset-oldest',
-    albumId: 'album-1',
-    filename: 'oldest.jpg',
-    mimeType: 'image/jpeg',
-    width: 100,
-    height: 100,
-    shardIds: ['shard-oldest'],
-    epochId: 1,
-    createdAt: '2024-01-01T00:00:00Z',
-    updatedAt: '2024-01-01T00:00:00Z',
-    tags: [],
-  },
-  {
     id: 'photo-newest',
     assetId: 'asset-newest',
     albumId: 'album-1',
@@ -145,6 +131,20 @@ const photos: PhotoMeta[] = [
     epochId: 1,
     createdAt: '2024-02-01T00:00:00Z',
     updatedAt: '2024-02-01T00:00:00Z',
+    tags: [],
+  },
+  {
+    id: 'photo-oldest',
+    assetId: 'asset-oldest',
+    albumId: 'album-1',
+    filename: 'oldest.jpg',
+    mimeType: 'image/jpeg',
+    width: 100,
+    height: 100,
+    shardIds: ['shard-oldest'],
+    epochId: 1,
+    createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: '2024-01-01T00:00:00Z',
     tags: [],
   },
 ];
@@ -207,13 +207,13 @@ describe('SquarePhotoGrid ordering', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders and opens photos using sorted visual order', () => {
+  it('renders and opens photos preserving the order provided by Gallery', () => {
     act(() => {
       root = createRoot(container);
       root.render(
         createElement(SquarePhotoGrid, {
           albumId: 'album-1',
-          photos,
+          sortedPhotos: photos,
           isLoading: false,
           error: null,
           refetch: vi.fn(),
