@@ -39,8 +39,8 @@ const HEADER_HEIGHT = 44; // Approx 2.5rem + padding
 
 interface PhotoGridProps {
   albumId: string;
-  /** Photos to display (passed from Gallery) */
-  photos: PhotoMeta[];
+  /** Photos sorted by createdAt descending (computed by Gallery) */
+  sortedPhotos: PhotoMeta[];
   /** Whether photos are loading */
   isLoading: boolean;
   /** Error if photo loading failed */
@@ -70,7 +70,7 @@ type LayoutItem =
  */
 export function PhotoGrid({
   albumId,
-  photos,
+  sortedPhotos,
   isLoading,
   error,
   refetch,
@@ -116,17 +116,6 @@ export function PhotoGrid({
   }, []);
 
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
-
-  // Sort photos by createdAt descending to match display order
-  // This ensures lightbox navigation follows the visual order
-  const sortedPhotos = useMemo(
-    () =>
-      [...photos].sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      ),
-    [photos],
-  );
 
   // Memoized list of sorted photo IDs for range selection
   const sortedPhotoIds = useMemo(
@@ -190,11 +179,11 @@ export function PhotoGrid({
   const selectedIds = selection?.selectedIds ?? new Set<string>();
 
   // Compute Layout: Headers and Justified Rows
-  // Note: photos prop already includes pending photos from PhotoStore
+  // Note: sortedPhotos already includes pending photos from PhotoStore
   const layoutItems = useMemo((): LayoutItem[] => {
-    if (containerWidth <= 0 || photos.length === 0) return [];
+    if (containerWidth <= 0 || sortedPhotos.length === 0) return [];
 
-    const grouped = groupPhotosByDate(photos);
+    const grouped = groupPhotosByDate(sortedPhotos);
     const items: LayoutItem[] = [];
     let currentTop = 0;
     // Add top padding
@@ -233,7 +222,7 @@ export function PhotoGrid({
     }
 
     return items;
-  }, [photos, containerWidth, t]);
+  }, [sortedPhotos, containerWidth, t]);
 
   // Get total grid height
   const totalHeight = useMemo(() => {
@@ -368,7 +357,7 @@ export function PhotoGrid({
         onScroll={handleScroll}
         data-testid="photo-grid"
       >
-        {photos.length === 0 ? (
+        {sortedPhotos.length === 0 ? (
           <div className="photo-grid-empty" data-testid="photo-grid-empty">
             {/* Using existing empty state styles */}
             <div className="empty-state-icon">

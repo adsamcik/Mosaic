@@ -33,8 +33,8 @@ const HEADER_HEIGHT = 44;
 
 interface MosaicPhotoGridProps {
   albumId: string;
-  /** Photos to display (passed from Gallery) */
-  photos: PhotoMeta[];
+  /** Photos sorted by createdAt descending (computed by Gallery) */
+  sortedPhotos: PhotoMeta[];
   /** Whether photos are loading */
   isLoading: boolean;
   /** Error if photo loading failed */
@@ -58,7 +58,7 @@ type VirtualItem =
 
 export function MosaicPhotoGrid({
   albumId,
-  photos,
+  sortedPhotos,
   isLoading,
   error,
   refetch,
@@ -87,19 +87,8 @@ export function MosaicPhotoGrid({
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
 
   const photosById = useMemo(
-    () => new Map(photos.map((photo) => [photo.id, photo])),
-    [photos],
-  );
-
-  // Sort photos by createdAt descending to match display order
-  // This ensures lightbox navigation follows the visual order
-  const sortedPhotos = useMemo(
-    () =>
-      [...photos].sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      ),
-    [photos],
+    () => new Map(sortedPhotos.map((photo) => [photo.id, photo])),
+    [sortedPhotos],
   );
 
   // Memoized list of sorted photo IDs for range selection
@@ -186,9 +175,9 @@ export function MosaicPhotoGrid({
   // `computeMosaicLayout` returns items with absolute positions. We can group them by their implicit "rows" based on `top` coordinate.
 
   const virtualRows = useMemo(() => {
-    if (containerWidth <= 0 || photos.length === 0) return [];
+    if (containerWidth <= 0 || sortedPhotos.length === 0) return [];
 
-    const grouped = groupPhotosByDate(photos);
+    const grouped = groupPhotosByDate(sortedPhotos);
     const rows: VirtualItem[] = [];
 
     for (const [dateString, groupPhotos] of grouped) {
@@ -224,7 +213,7 @@ export function MosaicPhotoGrid({
       }
     }
     return rows;
-  }, [photos, containerWidth]);
+  }, [sortedPhotos, containerWidth, t]);
 
   const virtualizer = useVirtualizer({
     count: virtualRows.length,

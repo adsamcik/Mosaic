@@ -660,7 +660,7 @@ export function Gallery({
               {viewMode === 'justified' ? (
                 <PhotoGrid
                   albumId={albumId}
-                  photos={photos}
+                  sortedPhotos={sortedPhotos}
                   isLoading={isLoading}
                   error={error}
                   refetch={reloadPhotos}
@@ -670,7 +670,7 @@ export function Gallery({
               ) : viewMode === 'grid' ? (
                 <SquarePhotoGrid
                   albumId={albumId}
-                  photos={photos}
+                  sortedPhotos={sortedPhotos}
                   isLoading={isLoading}
                   error={error}
                   refetch={reloadPhotos}
@@ -680,7 +680,7 @@ export function Gallery({
               ) : viewMode === 'mosaic' ? (
                 <MosaicPhotoGrid
                   albumId={albumId}
-                  photos={photos}
+                  sortedPhotos={sortedPhotos}
                   isLoading={isLoading}
                   error={error}
                   refetch={reloadPhotos}

@@ -20,8 +20,8 @@ const ROW_HEIGHT = 200;
 
 interface SquarePhotoGridProps {
   albumId: string;
-  /** Photos to display (passed from Gallery) */
-  photos: PhotoMeta[];
+  /** Photos sorted by createdAt descending (computed by Gallery) */
+  sortedPhotos: PhotoMeta[];
   /** Whether photos are loading */
   isLoading: boolean;
   /** Error if photo loading failed */
@@ -41,7 +41,7 @@ interface SquarePhotoGridProps {
  */
 export function SquarePhotoGrid({
   albumId,
-  photos,
+  sortedPhotos,
   isLoading,
   error,
   refetch,
@@ -55,17 +55,6 @@ export function SquarePhotoGrid({
   const observerRef = useRef<ResizeObserver | null>(null);
 
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
-
-  // Sort photos by createdAt descending to match display order
-  // This ensures lightbox navigation follows the visual order
-  const sortedPhotos = useMemo(
-    () =>
-      [...photos].sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      ),
-    [photos],
-  );
 
   // Memoized list of sorted photo IDs for range selection
   const sortedPhotoIds = useMemo(
@@ -218,7 +207,7 @@ export function SquarePhotoGrid({
     );
   }
 
-  if (photos.length === 0) {
+  if (sortedPhotos.length === 0) {
     return (
       <div className="photo-grid-empty">
         <div className="empty-state-icon">
