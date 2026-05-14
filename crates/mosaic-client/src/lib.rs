@@ -1740,11 +1740,8 @@ pub fn decrypt_shard_with_legacy_raw_key_handle(
             )
         })?;
 
-    let plaintext =
-        decrypt_shard_with_legacy_raw_key(record.key_material.epoch_seed(), envelope_bytes)
-            .map_err(client_error_from_crypto)?;
-    emit_telemetry_counter(ClientErrorCode::LegacyRawKeyDecryptFallback);
-    Ok(plaintext)
+    decrypt_shard_with_legacy_raw_key(record.key_material.epoch_seed(), envelope_bytes)
+        .map_err(client_error_from_crypto)
 }
 
 /// Returns whether an opaque identity handle is still open.
@@ -3393,24 +3390,6 @@ fn clone_epoch_seed_for_handle(handle: u64) -> Result<(u32, Zeroizing<Vec<u8>>),
     let mut bytes = Zeroizing::new(vec![0_u8; seed.as_bytes().len()]);
     bytes.copy_from_slice(seed.as_bytes());
     Ok((record.epoch_id, bytes))
-}
-
-/// Local telemetry hook for ADR-021 sunset-tracked client error codes.
-///
-/// Currently a no-op: ADR-018's local telemetry ring-buffer port is not yet
-/// wired into `mosaic-client` (tracked under follow-up ticket R-C3.1). Until
-/// the port lands, callsites such as
-/// `decrypt_shard_with_legacy_raw_key_handle` invoke this with
-/// [`ClientErrorCode::LegacyRawKeyDecryptFallback`] (224) on success, and
-/// emission is silently dropped — meaning the sunset metric ADR-021 was
-/// designed around does not actually fire yet. The hook exists so that
-/// production callers and tests already route through the right surface,
-/// and replacing the body is a single-file change once the ADR-018 port
-/// is available.
-fn emit_telemetry_counter(_code: ClientErrorCode) {
-    // TODO(ADR-018, R-C3.1): wire to the local telemetry ring buffer once
-    // its port surface lands. See `ClientErrorCode::LegacyRawKeyDecryptFallback`
-    // (= 224) for the canonical sunset-tracked code.
 }
 
 /// Resolves an account-key handle and constructs the deterministic LocalAuth
