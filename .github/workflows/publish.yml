@@ -102,6 +102,21 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
+      - name: Setup Rust
+        run: |
+          rustup toolchain install 1.93.1 --profile minimal --target wasm32-unknown-unknown
+          rustup default 1.93.1
+
+      - name: Install wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.118 --locked
+
+      - name: Build weak-key WASM for E2E
+        # E2E sets VITE_E2E_WEAK_KEYS=true on the frontend image; the WASM must be
+        # compiled with the matching `weak-kdf` Cargo feature, otherwise the Rust
+        # core rejects weak Argon2 profiles (KdfProfileTooWeak / code 208). Mirrors
+        # the equivalent step in tests.yml (see commit 29bfa5f).
+        run: MOSAIC_WASM_CARGO_FEATURES=weak-kdf bash ./scripts/build-rust-wasm.sh
+
       - name: Build and start services
         run: |
           docker compose -f docker-compose.test.yml build
