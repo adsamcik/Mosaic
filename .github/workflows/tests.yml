@@ -172,6 +172,19 @@ jobs:
           API_URL: http://localhost:5000
           CI: "true"
         run: npx playwright test --project=smoke --reporter=list
+
+      # Dump backend/frontend logs when E2E tests fail (the earlier "Show logs
+      # on failure" step only runs if service-startup fails, which is too
+      # early to catch test-time symptoms).
+      - name: Show service logs on E2E failure
+        if: failure()
+        run: |
+          echo "=== Backend Logs (last 500 lines) ==="
+          docker logs mosaic-test-backend --tail 500 2>&1 || true
+          echo "=== Frontend Logs (last 200 lines) ==="
+          docker logs mosaic-test-frontend --tail 200 2>&1 || true
+          echo "=== Container Status ==="
+          docker compose -f docker-compose.test.yml ps -a 2>&1 || true
       
       - name: Upload test results
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
