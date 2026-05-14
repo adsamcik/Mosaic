@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   AlbumContentProvider,
@@ -266,6 +273,7 @@ export function Gallery({
   const [renameError, setRenameError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<GalleryViewMode>('justified');
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   // State for bulk photo delete dialog
   const [bulkDeletePhotos, setBulkDeletePhotos] = useState<PhotoMeta[]>([]);
@@ -277,7 +285,7 @@ export function Gallery({
     isLoading,
     error,
     refetch: reloadPhotos,
-  } = usePhotoList(albumId, searchQuery);
+  } = usePhotoList(albumId, deferredSearchQuery);
   const { epochKeys, isLoading: epochKeysLoading } = useAlbumEpochKeys(albumId);
 
   // Get the current (most recent) epoch ID for story content
