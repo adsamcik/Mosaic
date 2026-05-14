@@ -1,7 +1,8 @@
 use mosaic_crypto::{
     AUTH_CHALLENGE_CONTEXT, AuthSignature, AuthSigningPublicKey, AuthSigningSecretKey, KdfProfile,
     MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, MosaicCryptoError, build_auth_challenge_transcript,
-    derive_auth_signing_keypair, sign_auth_challenge, verify_auth_challenge,
+    derive_auth_signing_keypair_from_l0, derive_l0_master, sign_auth_challenge,
+    verify_auth_challenge,
 };
 use zeroize::Zeroizing;
 
@@ -28,11 +29,15 @@ fn minimum_profile() -> KdfProfile {
 }
 
 fn fixed_auth_keypair() -> mosaic_crypto::AuthSigningKeypair {
-    match derive_auth_signing_keypair(
+    let l0_master = match derive_l0_master(
         Zeroizing::new(PASSWORD.to_vec()),
         &USER_SALT,
         minimum_profile(),
     ) {
+        Ok(value) => value,
+        Err(error) => panic!("L0 master should derive: {error:?}"),
+    };
+    match derive_auth_signing_keypair_from_l0(&l0_master, &USER_SALT) {
         Ok(value) => value,
         Err(error) => panic!("auth signing keypair should derive: {error:?}"),
     }
@@ -65,11 +70,11 @@ fn fixed_password_auth_signing_matches_python_vector() {
     );
     assert!(
         hex(&transcript)
-            == "4d6f736169635f417574685f4368616c6c656e67655f763100000011616c696365406578616d706c652e636f6d0000018f1f04974ea0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf"
+            == "4d6f736169635f417574685f4368616c6c656e67655f763100000011616c696365406578616d706c652e636f6da0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf"
     );
     assert!(
         hex(signature.as_bytes())
-            == "3aec13b96c055ec24acb26566bf64dff346c3335835ec2d470802b92f645361c5e880e9d608577df4dd86527b3b1c69bd8d337d752dc0dd6ae00b4fab6f70202"
+            == "aeeeff58d7e18ebcd07f9c4d9747d528278e7f616b308434fff755ae5547c9b49b5ad8005f2a9441acb84e90206e69abac13f2563110762fa9124c9c5c53c608"
     );
     assert!(verify_auth_challenge(
         &transcript,
@@ -105,7 +110,7 @@ fn auth_transcript_without_timestamp_matches_backend_format() {
 }
 
 #[test]
-fn auth_transcript_validates_username_edges_and_timestamp_boundaries() {
+fn auth_transcript_validates_username_edges_and_ignores_advisory_timestamp() {
     assert_eq!(
         build_auth_challenge_transcript("", None, &CHALLENGE),
         Err(MosaicCryptoError::InvalidUsername)
@@ -120,31 +125,16 @@ fn auth_transcript_validates_username_edges_and_timestamp_boundaries() {
     );
 
     let max_username = "a".repeat(256);
-    let expected_len = AUTH_CHALLENGE_CONTEXT.len() + 4 + max_username.len() + 8 + CHALLENGE.len();
+    let expected_len = AUTH_CHALLENGE_CONTEXT.len() + 4 + max_username.len() + CHALLENGE.len();
     let username_len_offset = AUTH_CHALLENGE_CONTEXT.len();
     let username_offset = username_len_offset + 4;
-    let timestamp_offset = username_offset + max_username.len();
+    let challenge_offset = username_offset + max_username.len();
     let expected_username_len = 256_u32.to_be_bytes();
 
     let zero_timestamp = match build_auth_challenge_transcript(&max_username, Some(0), &CHALLENGE) {
         Ok(value) => value,
         Err(error) => panic!("maximum valid username with zero timestamp should build: {error:?}"),
     };
-
-    assert_eq!(zero_timestamp.len(), expected_len);
-    assert_eq!(
-        &zero_timestamp[username_len_offset..username_offset],
-        expected_username_len.as_slice()
-    );
-    assert_eq!(
-        &zero_timestamp[timestamp_offset..timestamp_offset + 8],
-        0_u64.to_be_bytes().as_slice()
-    );
-    assert_eq!(
-        &zero_timestamp[timestamp_offset + 8..],
-        CHALLENGE.as_slice()
-    );
-
     let max_timestamp =
         match build_auth_challenge_transcript(&max_username, Some(u64::MAX), &CHALLENGE) {
             Ok(value) => value,
@@ -152,32 +142,46 @@ fn auth_transcript_validates_username_edges_and_timestamp_boundaries() {
                 panic!("maximum valid username with maximum timestamp should build: {error:?}")
             }
         };
+    let no_timestamp = match build_auth_challenge_transcript(&max_username, None, &CHALLENGE) {
+        Ok(value) => value,
+        Err(error) => panic!("maximum valid username without timestamp should build: {error:?}"),
+    };
 
-    assert_eq!(max_timestamp.len(), expected_len);
+    assert_eq!(zero_timestamp.len(), expected_len);
     assert_eq!(
-        &max_timestamp[timestamp_offset..timestamp_offset + 8],
-        u64::MAX.to_be_bytes().as_slice()
+        &zero_timestamp[username_len_offset..username_offset],
+        expected_username_len.as_slice()
     );
-    assert_eq!(&max_timestamp[timestamp_offset + 8..], CHALLENGE.as_slice());
+    assert_eq!(&zero_timestamp[challenge_offset..], CHALLENGE.as_slice());
+    assert_eq!(zero_timestamp, max_timestamp);
+    assert_eq!(zero_timestamp, no_timestamp);
 }
 
 #[test]
 fn auth_key_derivation_is_deterministic_and_password_salt_bound() {
     let first = fixed_auth_keypair();
     let second = fixed_auth_keypair();
-    let wrong_password = match derive_auth_signing_keypair(
+    let wrong_password_l0 = match derive_l0_master(
         Zeroizing::new(WRONG_PASSWORD.to_vec()),
         &USER_SALT,
         minimum_profile(),
     ) {
         Ok(value) => value,
+        Err(error) => panic!("wrong-password L0 should still derive: {error:?}"),
+    };
+    let wrong_password = match derive_auth_signing_keypair_from_l0(&wrong_password_l0, &USER_SALT) {
+        Ok(value) => value,
         Err(error) => panic!("wrong-password auth keypair should still derive: {error:?}"),
     };
-    let wrong_salt = match derive_auth_signing_keypair(
+    let wrong_salt_l0 = match derive_l0_master(
         Zeroizing::new(PASSWORD.to_vec()),
         &OTHER_USER_SALT,
         minimum_profile(),
     ) {
+        Ok(value) => value,
+        Err(error) => panic!("wrong-salt L0 should still derive: {error:?}"),
+    };
+    let wrong_salt = match derive_auth_signing_keypair_from_l0(&wrong_salt_l0, &OTHER_USER_SALT) {
         Ok(value) => value,
         Err(error) => panic!("wrong-salt auth keypair should still derive: {error:?}"),
     };
@@ -190,11 +194,15 @@ fn auth_key_derivation_is_deterministic_and_password_salt_bound() {
 #[test]
 fn verification_fails_for_tampered_transcript_signature_and_wrong_key() {
     let keypair = fixed_auth_keypair();
-    let wrong_key = match derive_auth_signing_keypair(
+    let wrong_l0 = match derive_l0_master(
         Zeroizing::new(WRONG_PASSWORD.to_vec()),
         &USER_SALT,
         minimum_profile(),
     ) {
+        Ok(value) => value,
+        Err(error) => panic!("wrong-password L0 should derive: {error:?}"),
+    };
+    let wrong_key = match derive_auth_signing_keypair_from_l0(&wrong_l0, &USER_SALT) {
         Ok(value) => value,
         Err(error) => panic!("wrong-password auth keypair should derive: {error:?}"),
     };
@@ -234,7 +242,7 @@ fn verification_fails_for_tampered_transcript_signature_and_wrong_key() {
 
 #[test]
 fn auth_inputs_validate_lengths_username_and_weak_keys() {
-    let short_salt = match derive_auth_signing_keypair(
+    let short_salt = match derive_l0_master(
         Zeroizing::new(PASSWORD.to_vec()),
         &[0_u8; 15],
         minimum_profile(),

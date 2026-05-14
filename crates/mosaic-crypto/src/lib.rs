@@ -1255,15 +1255,17 @@ pub fn derive_auth_signing_keypair(
 /// Builds the canonical LocalAuth challenge transcript verified by the backend.
 ///
 /// Transcript format:
-/// `Mosaic_Auth_Challenge_v1 || username_len_be_u32 || username_utf8 ||
-/// timestamp_be_u64? || challenge_32`.
+/// `Mosaic_Auth_Challenge_v1 || username_len_be_u32 || username_utf8 || challenge_32`.
+///
+/// `timestamp_ms` is accepted for wire compatibility with older adapters but
+/// is advisory only and is not included in the signed transcript.
 ///
 /// # Errors
 /// Returns `InvalidUsername` for empty or whitespace-only usernames, or
 /// `InvalidInputLength` if the challenge is not exactly 32 bytes.
 pub fn build_auth_challenge_transcript(
     username: &str,
-    timestamp_ms: Option<u64>,
+    _timestamp_ms: Option<u64>,
     challenge: &[u8],
 ) -> Result<Vec<u8>, MosaicCryptoError> {
     let username_bytes = validate_auth_username(username)?;
@@ -1278,15 +1280,11 @@ pub fn build_auth_challenge_transcript(
             actual: username_bytes.len(),
         })?;
 
-    let timestamp_len = if timestamp_ms.is_some() { 8 } else { 0 };
-    let capacity = AUTH_CHALLENGE_CONTEXT.len() + 4 + username_bytes.len() + timestamp_len + 32;
+    let capacity = AUTH_CHALLENGE_CONTEXT.len() + 4 + username_bytes.len() + 32;
     let mut transcript = Vec::with_capacity(capacity);
     transcript.extend_from_slice(AUTH_CHALLENGE_CONTEXT);
     transcript.extend_from_slice(&username_len.to_be_bytes());
     transcript.extend_from_slice(username_bytes);
-    if let Some(value) = timestamp_ms {
-        transcript.extend_from_slice(&value.to_be_bytes());
-    }
     transcript.extend_from_slice(challenge);
     Ok(transcript)
 }

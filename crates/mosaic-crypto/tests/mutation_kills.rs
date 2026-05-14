@@ -9,8 +9,8 @@ use mosaic_crypto::{
     ACCOUNT_DATA_AAD, AUTH_CHALLENGE_CONTEXT, BundleValidationContext, EpochKeyBundle,
     IdentityKeypair, KdfProfile, MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, ManifestSigningPublicKey,
     ManifestSigningSecretKey, MosaicCryptoError, SecretKey, build_auth_challenge_transcript,
-    crate_name, derive_auth_signing_keypair, derive_identity_keypair, encrypt_content,
-    encrypt_shard, generate_identity_seed, seal_and_sign_bundle, sha256_base64url,
+    crate_name, derive_auth_signing_keypair_from_l0, derive_identity_keypair, derive_l0_master,
+    encrypt_content, encrypt_shard, generate_identity_seed, seal_and_sign_bundle, sha256_base64url,
     sign_auth_challenge, verify_and_open_bundle, verify_auth_challenge, wrap_secret_with_aad,
 };
 use mosaic_domain::ShardTier;
@@ -24,7 +24,7 @@ const CHALLENGE: [u8; 32] = [
 // --- Section 3: build_auth_challenge_transcript capacity ---
 
 #[test]
-fn auth_transcript_capacity_matches_exact_formula_with_timestamp() {
+fn auth_transcript_capacity_ignores_advisory_timestamp() {
     let username = "alice";
     let transcript = match build_auth_challenge_transcript(username, Some(123_456_789), &CHALLENGE)
     {
@@ -32,12 +32,8 @@ fn auth_transcript_capacity_matches_exact_formula_with_timestamp() {
         Err(error) => panic!("auth transcript should build: {error:?}"),
     };
 
-    // Original formula:
-    //   AUTH_CHALLENGE_CONTEXT.len() + 4 + username_bytes.len() + timestamp_len + 32
-    // For "alice" + Some(timestamp) + 32-byte challenge:
-    //   24 + 4 + 5 + 8 + 32 = 73
-    let expected_capacity = AUTH_CHALLENGE_CONTEXT.len() + 4 + username.len() + 8 + 32;
-    assert_eq!(expected_capacity, 73);
+    let expected_capacity = AUTH_CHALLENGE_CONTEXT.len() + 4 + username.len() + 32;
+    assert_eq!(expected_capacity, 65);
 
     // Vec<u8>::with_capacity(n) on the default allocator returns exactly `n`
     // for sizes in this range. If any additive term in the capacity formula is
@@ -56,10 +52,7 @@ fn auth_transcript_capacity_matches_exact_formula_without_timestamp() {
         Err(error) => panic!("auth transcript without timestamp should build: {error:?}"),
     };
 
-    // Without timestamp: timestamp_len = 0
-    //   24 + 4 + 5 + 0 + 32 = 65
-    let timestamp_len: usize = 0;
-    let expected_capacity = AUTH_CHALLENGE_CONTEXT.len() + 4 + username.len() + timestamp_len + 32;
+    let expected_capacity = AUTH_CHALLENGE_CONTEXT.len() + 4 + username.len() + 32;
     assert_eq!(expected_capacity, 65);
     assert_eq!(transcript.len(), expected_capacity);
     assert_eq!(transcript.capacity(), expected_capacity);
@@ -68,17 +61,15 @@ fn auth_transcript_capacity_matches_exact_formula_without_timestamp() {
 #[test]
 fn auth_transcript_capacity_matches_exact_formula_for_long_username() {
     // 256-byte username (policy max) exposes overflow-shaped mutations that
-    // pass with short usernames (e.g. `*` with timestamp_len silently produces
-    // a different but still plausibly-sized capacity).
+    // pass with short usernames.
     let username = "a".repeat(256);
     let transcript = match build_auth_challenge_transcript(&username, Some(u64::MAX), &CHALLENGE) {
         Ok(value) => value,
         Err(error) => panic!("auth transcript with long username should build: {error:?}"),
     };
 
-    // 24 + 4 + 256 + 8 + 32 = 324
-    let expected_capacity = AUTH_CHALLENGE_CONTEXT.len() + 4 + username.len() + 8 + 32;
-    assert_eq!(expected_capacity, 324);
+    let expected_capacity = AUTH_CHALLENGE_CONTEXT.len() + 4 + username.len() + 32;
+    assert_eq!(expected_capacity, 316);
     assert_eq!(transcript.len(), expected_capacity);
     assert_eq!(transcript.capacity(), expected_capacity);
 }
@@ -203,11 +194,15 @@ fn verify_auth_challenge_returns_true_for_freshly_signed_transcript() {
     };
 
     let salt = [0x42_u8; 16];
-    let keypair = match derive_auth_signing_keypair(
+    let l0_master = match derive_l0_master(
         Zeroizing::new(b"correct horse battery staple".to_vec()),
         &salt,
         profile,
     ) {
+        Ok(value) => value,
+        Err(error) => panic!("L0 master should derive: {error:?}"),
+    };
+    let keypair = match derive_auth_signing_keypair_from_l0(&l0_master, &salt) {
         Ok(value) => value,
         Err(error) => panic!("auth signing keypair should derive: {error:?}"),
     };
