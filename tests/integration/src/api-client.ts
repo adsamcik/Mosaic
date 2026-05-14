@@ -41,6 +41,12 @@ export class ApiClient {
   ): Promise<{ status: number; data: T; headers: Headers }> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      // OriginValidationMiddleware rejects state-changing requests (POST/PUT/
+      // PATCH/DELETE) without Origin or Sec-Fetch-Site. The integration test
+      // client is the legitimate same-origin caller, so spell out the Origin
+      // explicitly to mirror what a real browser fetch from the same origin
+      // would send.
+      Origin: this.baseUrl,
       ...options.headers,
     };
 
