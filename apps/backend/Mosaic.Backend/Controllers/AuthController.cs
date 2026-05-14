@@ -252,9 +252,7 @@ public partial class AuthController : ControllerBase
         }
 
         // Look up and validate challenge
-        var authChallenge = await _db.AuthChallenges
-            .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == request.ChallengeId);
+        var authChallenge = await _db.AuthChallenges.FindAsync(request.ChallengeId);
         if (authChallenge == null)
         {
             return Problem(
@@ -269,21 +267,23 @@ public partial class AuthController : ControllerBase
                 statusCode: StatusCodes.Status401Unauthorized);
         }
 
-        var now = DateTime.UtcNow;
-        var challengeClaimed = await TryClaimAuthChallengeAsync(request.ChallengeId, now);
-        if (!challengeClaimed)
+        if (authChallenge.IsUsed)
         {
-            var currentChallenge = await _db.AuthChallenges
-                .AsNoTracking()
-                .FirstOrDefaultAsync(c => c.Id == request.ChallengeId);
-            var detail = currentChallenge?.IsUsed == true
-                ? "Challenge already used"
-                : "Challenge expired";
-
             return Problem(
-                detail: detail,
+                detail: "Challenge already used",
                 statusCode: StatusCodes.Status401Unauthorized);
         }
+
+        if (authChallenge.ExpiresAt < DateTime.UtcNow)
+        {
+            return Problem(
+                detail: "Challenge expired",
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        // Mark challenge as used (single-use)
+        authChallenge.IsUsed = true;
+        await _db.SaveChangesAsync();
 
         // Look up user
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == request.Username);
@@ -692,28 +692,6 @@ public partial class AuthController : ControllerBase
                iterations >= 1 &&
                parallelism >= 1 &&
                algVersion == DefaultKdfAlgVersion;
-    }
-
-    private async Task<bool> TryClaimAuthChallengeAsync(Guid challengeId, DateTime now)
-    {
-        if (_db.Database.IsRelational())
-        {
-            var affected = await _db.AuthChallenges
-                .Where(c => c.Id == challengeId && !c.IsUsed && c.ExpiresAt > now)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(c => c.IsUsed, true));
-
-            return affected == 1;
-        }
-
-        var challenge = await _db.AuthChallenges.FirstOrDefaultAsync(c => c.Id == challengeId);
-        if (challenge == null || challenge.IsUsed || challenge.ExpiresAt <= now)
-        {
-            return false;
-        }
-
-        challenge.IsUsed = true;
-        await _db.SaveChangesAsync();
-        return true;
     }
 
     private byte[]? GetSessionToken()
