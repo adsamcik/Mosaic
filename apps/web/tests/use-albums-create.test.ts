@@ -59,6 +59,15 @@ vi.mock('../src/lib/album-metadata-service', () => ({
 }));
 
 vi.mock('../src/lib/epoch-key-service', () => ({
+  EpochKeyError: class EpochKeyError extends Error {},
+  EpochKeyErrorCode: {
+    FETCH_FAILED: 'FETCH_FAILED',
+    NO_KEYS_AVAILABLE: 'NO_KEYS_AVAILABLE',
+    IDENTITY_NOT_DERIVED: 'IDENTITY_NOT_DERIVED',
+    SIGNATURE_INVALID: 'SIGNATURE_INVALID',
+    DECRYPTION_FAILED: 'DECRYPTION_FAILED',
+    CONTEXT_MISMATCH: 'CONTEXT_MISMATCH',
+  },
   ensureEpochKeysLoaded: vi.fn(() => Promise.resolve(true)),
 }));
 
