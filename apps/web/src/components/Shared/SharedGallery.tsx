@@ -23,6 +23,7 @@ import { useVisitorDownloadDisclosure } from '../../hooks/useVisitorDownloadDisc
 import { SharedMosaicPhotoGrid } from './SharedMosaicPhotoGrid';
 import { SharedPhotoGrid } from './SharedPhotoGrid';
 import { VisitorDownloadDisclosure } from './VisitorDownloadDisclosure';
+import { toSafeErrorMessage } from '../../lib/error-messages';
 
 const log = createLogger('SharedGallery');
 
@@ -223,7 +224,7 @@ export function SharedGallery({
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err : new Error(String(err)));
+          setError(new Error(toSafeErrorMessage(err)));
         }
       } finally {
         if (!cancelled) {

@@ -6,6 +6,7 @@ import {
 } from '../lib/photo-service';
 import { createLogger } from '../lib/logger';
 import type { EpochHandleId } from '../workers/types';
+import { toSafeErrorMessage } from '../lib/error-messages';
 
 const log = createLogger('useThumbnailShard');
 
@@ -95,7 +96,7 @@ export function useThumbnailShard({
         if (!cancelled) {
           setState({
             status: 'error',
-            error: error instanceof Error ? error : new Error(String(error)),
+            error: new Error(toSafeErrorMessage(error)),
           });
         }
       }

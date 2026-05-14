@@ -14,6 +14,7 @@ import { createLogger } from '../lib/logger';
 import { purgeLocalAlbum } from '../lib/local-purge';
 import { syncEngine } from '../lib/sync-engine';
 import type { EpochHandleId } from '../workers/types';
+import { toSafeErrorMessage } from '../lib/error-messages';
 
 const log = createLogger('useAlbums');
 
@@ -154,7 +155,7 @@ export function useAlbums() {
       // Decrypt album names asynchronously
       await decryptAlbumNames(transformedAlbums);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error(String(err)));
+      setError(new Error(toSafeErrorMessage(err)));
       setIsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

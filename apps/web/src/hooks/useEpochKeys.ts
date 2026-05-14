@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { getOrFetchEpochKey } from '../lib/epoch-key-service';
 import { createLogger } from '../lib/logger';
 import type { EpochHandleId } from '../workers/types';
+import { toSafeErrorMessage } from '../lib/error-messages';
 
 const log = createLogger('useEpochKeys');
 
@@ -32,7 +33,7 @@ export function useEpochKey(albumId: string, epochId: number) {
         `Failed to get epoch key ${epochId} for album ${albumId}:`,
         err,
       );
-      setError(err instanceof Error ? err : new Error(String(err)));
+      setError(new Error(toSafeErrorMessage(err)));
     } finally {
       setIsLoading(false);
     }
@@ -77,7 +78,7 @@ export function useAlbumEpochKeys(albumId: string) {
       setEpochKeys(keysMap);
     } catch (err) {
       log.error(`Failed to load epoch keys for album ${albumId}:`, err);
-      setError(err instanceof Error ? err : new Error(String(err)));
+      setError(new Error(toSafeErrorMessage(err)));
     } finally {
       setIsLoading(false);
     }

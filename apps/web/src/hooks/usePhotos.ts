@@ -5,6 +5,7 @@ import {
   searchAllAlbumPhotos,
 } from '../lib/photo-query-pagination';
 import type { PhotoMeta } from '../workers/types';
+import { toSafeErrorMessage } from '../lib/error-messages';
 
 /**
  * Hook to fetch photos for an album
@@ -43,7 +44,7 @@ export function usePhotos(albumId: string, searchQuery?: string) {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err : new Error(String(err)));
+          setError(new Error(toSafeErrorMessage(err)));
         }
       } finally {
         if (!cancelled) {

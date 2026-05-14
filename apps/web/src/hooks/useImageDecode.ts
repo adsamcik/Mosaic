@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { toSafeErrorMessage } from '../lib/error-messages';
 
 /**
  * Result of the useImageDecode hook
@@ -82,7 +83,7 @@ export function useImageDecode(
         // Only update state if still mounted and URL hasn't changed
         if (isMountedRef.current && currentUrlRef.current === url) {
           setIsDecoded(false);
-          setError(err instanceof Error ? err : new Error(String(err)));
+          setError(new Error(toSafeErrorMessage(err)));
         }
       });
 

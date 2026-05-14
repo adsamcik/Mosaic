@@ -23,6 +23,7 @@ import {
 } from '../lib/link-tier-key-store';
 import { createLogger } from '../lib/logger';
 import type { LinkDecryptionKey } from '../workers/types';
+import { toSafeErrorMessage } from '../lib/error-messages';
 
 const log = createLogger('useLinkKeys');
 
@@ -284,7 +285,7 @@ export function useLinkKeys(
       setState((prev) => ({
         ...prev,
         isLoading: false,
-        error: err instanceof Error ? err : new Error(String(err)),
+        error: new Error(toSafeErrorMessage(err)),
         isValid: false,
       }));
     } finally {

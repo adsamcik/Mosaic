@@ -25,6 +25,7 @@ import { getActiveLocale } from '../../lib/i18n-locale';
 import { createLogger } from '../../lib/logger';
 import { rotatePhoto, updatePhotoDescription } from '../../lib/photo-edit-service';
 import type { EpochHandleId, PhotoMeta } from '../../workers/types';
+import { toSafeErrorMessage } from '../../lib/error-messages';
 
 const log = createLogger('PhotoLightbox');
 
@@ -272,7 +273,7 @@ export function PhotoLightbox({
           setLoadState({
             status: 'error',
             photoId: photo.id,
-            error: error instanceof Error ? error : new Error(String(error)),
+            error: new Error(toSafeErrorMessage(error)),
           });
         }
       }
@@ -327,7 +328,7 @@ export function PhotoLightbox({
         setLoadState({
           status: 'error',
           photoId: photo.id,
-          error: error instanceof Error ? error : new Error(String(error)),
+          error: new Error(toSafeErrorMessage(error)),
         }),
       );
   }, [fullResPhotoId, originalShards, photo.id, photo.mimeType, epochReadKey, embeddedThumbnailUrl]);
