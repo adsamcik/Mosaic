@@ -79,4 +79,49 @@ public class ShardExpirationAccessTests
 
         Assert.IsType<ForbidResult>(result);
     }
+
+    [Theory]
+    [InlineData(false, false, "forbid")]
+    [InlineData(false, true, "forbid")]
+    [InlineData(true, false, "not-found")]
+    [InlineData(true, true, "file")]
+    public async Task Download_PreservesMemberReferenceAndExpirationSemantics(
+        bool hasMemberReference,
+        bool hasUnexpiredAccess,
+        string expectedResult)
+    {
+        using var db = TestDbContextFactory.Create();
+        var storage = new MockStorageService();
+        var now = new DateTimeOffset(2026, 4, 28, 12, 0, 0, TimeSpan.Zero);
+        var builder = new TestDataBuilder(db);
+        var uploader = await builder.CreateUserAsync(UploaderAuthSub);
+        var viewer = await builder.CreateUserAsync("member-access-viewer");
+        var album = await builder.CreateAlbumAsync(uploader);
+        var shard = await builder.CreateShardAsync(uploader, ShardStatus.ACTIVE);
+        storage.AddFile(shard.StorageKey);
+
+        if (hasMemberReference)
+        {
+            await builder.AddMemberAsync(album, viewer, "viewer", uploader);
+        }
+
+        var manifest = await builder.CreateManifestAsync(album, [shard]);
+        manifest.ExpiresAt = hasUnexpiredAccess ? now.AddMinutes(1) : now;
+        await db.SaveChangesAsync();
+
+        var result = await CreateController(db, storage, new FakeTimeProvider(now), viewer.AuthSub).Download(shard.Id);
+
+        switch (expectedResult)
+        {
+            case "forbid":
+                Assert.IsType<ForbidResult>(result);
+                break;
+            case "not-found":
+                Assert.IsType<NotFoundResult>(result);
+                break;
+            case "file":
+                Assert.IsType<FileStreamResult>(result);
+                break;
+        }
+    }
 }

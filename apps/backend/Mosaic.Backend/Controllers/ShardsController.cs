@@ -52,12 +52,13 @@ public class ShardsController : ControllerBase
             return NotFound();
         }
 
-        if (!await HasMemberReferenceAsync(shardId, user.Id))
+        var access = await GetMemberAccessAsync(shardId, user.Id);
+        if (!access.HasMemberReference)
         {
             return Forbid();
         }
 
-        if (!await HasUnexpiredMemberAccessAsync(shardId, user.Id))
+        if (!access.HasUnexpiredMemberAccess)
         {
             return NotFound();
         }
@@ -98,12 +99,13 @@ public class ShardsController : ControllerBase
 
         if (shard.Status == ShardStatus.ACTIVE)
         {
-            if (!await HasMemberReferenceAsync(shardId, user.Id))
+            var access = await GetMemberAccessAsync(shardId, user.Id);
+            if (!access.HasMemberReference)
             {
                 return Forbid();
             }
 
-            if (!await HasUnexpiredMemberAccessAsync(shardId, user.Id))
+            if (!access.HasUnexpiredMemberAccess)
             {
                 return NotFound();
             }
@@ -121,28 +123,29 @@ public class ShardsController : ControllerBase
             shard.Sha256));
     }
 
-    private Task<bool> HasMemberReferenceAsync(Guid shardId, Guid userId)
-    {
-        return _db.ManifestShards
-            .Where(ms => ms.ShardId == shardId)
-            .AnyAsync(ms => !ms.Manifest.IsDeleted
-                && _db.AlbumMembers.Any(am =>
-                    am.AlbumId == ms.Manifest.AlbumId
-                    && am.UserId == userId
-                    && am.RevokedAt == null));
-    }
-
-    private Task<bool> HasUnexpiredMemberAccessAsync(Guid shardId, Guid userId)
+    private async Task<MemberAccessResult> GetMemberAccessAsync(Guid shardId, Guid userId)
     {
         var now = _timeProvider.GetUtcNow();
-        return _db.ManifestShards
+        var access = await _db.ManifestShards
             .Where(ms => ms.ShardId == shardId)
-            .AnyAsync(ms => !ms.Manifest.IsDeleted
-                && (ms.Manifest.ExpiresAt == null || ms.Manifest.ExpiresAt > now)
-                && (ms.Manifest.Album.ExpiresAt == null || ms.Manifest.Album.ExpiresAt > now)
-                && _db.AlbumMembers.Any(am =>
-                    am.AlbumId == ms.Manifest.AlbumId
-                    && am.UserId == userId
-                    && am.RevokedAt == null));
+            .GroupBy(_ => 1)
+            .Select(group => new MemberAccessResult(
+                group.Any(ms => !ms.Manifest.IsDeleted
+                    && _db.AlbumMembers.Any(am =>
+                        am.AlbumId == ms.Manifest.AlbumId
+                        && am.UserId == userId
+                        && am.RevokedAt == null)),
+                group.Any(ms => !ms.Manifest.IsDeleted
+                    && (ms.Manifest.ExpiresAt == null || ms.Manifest.ExpiresAt > now)
+                    && (ms.Manifest.Album.ExpiresAt == null || ms.Manifest.Album.ExpiresAt > now)
+                    && _db.AlbumMembers.Any(am =>
+                        am.AlbumId == ms.Manifest.AlbumId
+                        && am.UserId == userId
+                        && am.RevokedAt == null))))
+            .SingleOrDefaultAsync();
+
+        return access ?? new MemberAccessResult(false, false);
     }
+
+    private sealed record MemberAccessResult(bool HasMemberReference, bool HasUnexpiredMemberAccess);
 }
