@@ -13,10 +13,9 @@ use mosaic_crypto::{
     IdentitySignature, IdentitySigningPublicKey, KdfProfile, LinkKeys, ManifestSignature,
     ManifestSigningKeypair, ManifestSigningPublicKey, ManifestSigningSecretKey, MosaicCryptoError,
     SealedBundle, SecretKey, WrappedTierKey, build_auth_challenge_transcript, decrypt_content,
-    decrypt_shard, decrypt_shard_with_legacy_raw_key, derive_account_key,
-    derive_auth_signing_keypair, derive_content_key, derive_epoch_key_material,
-    derive_identity_keypair, derive_link_keys as crypto_derive_link_keys, encrypt_content,
-    encrypt_shard, generate_epoch_key_material, generate_identity_seed,
+    decrypt_shard, decrypt_shard_with_legacy_raw_key, derive_account_key, derive_content_key,
+    derive_epoch_key_material, derive_identity_keypair, derive_link_keys as crypto_derive_link_keys,
+    encrypt_content, encrypt_shard, generate_epoch_key_material, generate_identity_seed,
     generate_link_secret as crypto_generate_link_secret,
     generate_manifest_signing_keypair as crypto_generate_manifest_signing_keypair, get_tier_key,
     seal_and_sign_bundle as crypto_seal_and_sign_bundle, sign_auth_challenge,
@@ -3444,7 +3443,8 @@ fn derive_auth_signing_keypair_from_password(
     let profile = KdfProfile::new(kdf_memory_kib, kdf_iterations, kdf_parallelism)
         .map_err(client_error_from_crypto)?;
     #[allow(deprecated)]
-    derive_auth_signing_keypair(password_copy, user_salt, profile).map_err(client_error_from_crypto)
+    mosaic_crypto::derive_auth_signing_keypair(password_copy, user_salt, profile)
+        .map_err(client_error_from_crypto)
 }
 
 fn account_secret_key_from_handle(handle: u64) -> Result<SecretKey, ClientError> {

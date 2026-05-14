@@ -1,8 +1,10 @@
 use mosaic_crypto::{
     ACCOUNT_KEY_WRAP_AAD, KdfProfile, MAX_KDF_ITERATIONS, MAX_KDF_MEMORY_KIB, MAX_KDF_PARALLELISM,
-    MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, MosaicCryptoError, derive_account_key, derive_root_key,
-    unwrap_account_key, wrap_secret_with_aad,
+    MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, MosaicCryptoError, derive_account_key,
+    derive_l0_master, derive_l1_root, unwrap_account_key, wrap_secret_with_aad,
 };
+#[cfg(feature = "weak-kdf")]
+use std::time::Instant;
 use zeroize::Zeroizing;
 
 const PASSWORD: &[u8] = b"correct horse battery staple";
@@ -97,36 +99,65 @@ fn kdf_profile_reports_weak_profiles_before_costly_profiles() {
 fn root_key_derivation_is_deterministic_and_account_salt_bound() {
     let profile = minimum_profile();
 
-    let first = match derive_root_key(
-        Zeroizing::new(PASSWORD.to_vec()),
-        &USER_SALT,
-        &ACCOUNT_SALT,
-        profile,
-    ) {
-        Ok(value) => value,
-        Err(error) => panic!("root key should derive: {error:?}"),
-    };
-    let second = match derive_root_key(
-        Zeroizing::new(PASSWORD.to_vec()),
-        &USER_SALT,
-        &ACCOUNT_SALT,
-        profile,
-    ) {
-        Ok(value) => value,
-        Err(error) => panic!("root key should derive deterministically: {error:?}"),
-    };
-    let different_account = match derive_root_key(
-        Zeroizing::new(PASSWORD.to_vec()),
-        &USER_SALT,
-        &OTHER_ACCOUNT_SALT,
-        profile,
-    ) {
-        Ok(value) => value,
-        Err(error) => panic!("root key should derive with alternate account salt: {error:?}"),
-    };
+    let first_l0 = l0_or_panic(PASSWORD, &USER_SALT, profile);
+    let first = l1_or_panic(&first_l0, &ACCOUNT_SALT);
+    let second_l0 = l0_or_panic(PASSWORD, &USER_SALT, profile);
+    let second = l1_or_panic(&second_l0, &ACCOUNT_SALT);
+    let different_account = l1_or_panic(&first_l0, &OTHER_ACCOUNT_SALT);
 
     assert!(first.as_bytes() == second.as_bytes());
     assert!(first.as_bytes() != different_account.as_bytes());
+}
+
+#[test]
+#[allow(deprecated)]
+fn l0_then_l1_matches_deprecated_root_key_path() {
+    let profile = minimum_profile();
+    let l0_master = l0_or_panic(PASSWORD, &USER_SALT, profile);
+    let new_root = l1_or_panic(&l0_master, &ACCOUNT_SALT);
+    let old_root = match mosaic_crypto::derive_root_key(
+        Zeroizing::new(PASSWORD.to_vec()),
+        &USER_SALT,
+        &ACCOUNT_SALT,
+        profile,
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("deprecated root key path should derive: {error:?}"),
+    };
+
+    assert_eq!(new_root.as_bytes(), old_root.as_bytes());
+}
+
+#[test]
+#[cfg(feature = "weak-kdf")]
+fn login_l0_reuse_is_faster_than_two_argon2_passes() {
+    let profile = minimum_profile();
+
+    let old_start = Instant::now();
+    let old_l0_for_root = l0_or_panic(PASSWORD, &USER_SALT, profile);
+    let _old_root = l1_or_panic(&old_l0_for_root, &ACCOUNT_SALT);
+    let old_l0_for_auth = l0_or_panic(PASSWORD, &USER_SALT, profile);
+    let _old_auth =
+        match mosaic_crypto::derive_auth_signing_keypair_from_l0(&old_l0_for_auth, &USER_SALT) {
+            Ok(value) => value,
+            Err(error) => panic!("auth keypair should derive from L0: {error:?}"),
+        };
+    let old_duration = old_start.elapsed();
+
+    let new_start = Instant::now();
+    let l0_master = l0_or_panic(PASSWORD, &USER_SALT, profile);
+    let _new_root = l1_or_panic(&l0_master, &ACCOUNT_SALT);
+    let _new_auth = match mosaic_crypto::derive_auth_signing_keypair_from_l0(&l0_master, &USER_SALT)
+    {
+        Ok(value) => value,
+        Err(error) => panic!("auth keypair should derive from shared L0: {error:?}"),
+    };
+    let new_duration = new_start.elapsed();
+
+    assert!(
+        new_duration < old_duration,
+        "expected one Argon2 + two HKDFs to beat two Argon2 + two HKDFs; old={old_duration:?}, new={new_duration:?}"
+    );
 }
 
 #[test]
@@ -186,12 +217,7 @@ fn account_key_unwrap_rejects_wrong_password_and_bad_salts() {
     };
     assert_eq!(wrong_password, MosaicCryptoError::AuthenticationFailed);
 
-    let bad_salt = match derive_root_key(
-        Zeroizing::new(PASSWORD.to_vec()),
-        &[0_u8; 15],
-        &ACCOUNT_SALT,
-        profile,
-    ) {
+    let bad_salt = match derive_l0_master(Zeroizing::new(PASSWORD.to_vec()), &[0_u8; 15], profile) {
         Ok(_) => panic!("short user salt should fail"),
         Err(error) => error,
     };
@@ -204,15 +230,8 @@ fn account_key_unwrap_rejects_wrong_password_and_bad_salts() {
 #[test]
 fn account_key_unwrap_rejects_authenticated_payloads_with_wrong_account_key_length() {
     let profile = minimum_profile();
-    let root_key = match derive_root_key(
-        Zeroizing::new(PASSWORD.to_vec()),
-        &USER_SALT,
-        &ACCOUNT_SALT,
-        profile,
-    ) {
-        Ok(value) => value,
-        Err(error) => panic!("root key should derive: {error:?}"),
-    };
+    let l0_master = l0_or_panic(PASSWORD, &USER_SALT, profile);
+    let root_key = l1_or_panic(&l0_master, &ACCOUNT_SALT);
 
     for payload_len in [31_usize, 33] {
         let payload = vec![0x5a_u8; payload_len];
@@ -244,5 +263,22 @@ fn minimum_profile() -> KdfProfile {
     match KdfProfile::new(MIN_KDF_MEMORY_KIB, MIN_KDF_ITERATIONS, 1) {
         Ok(value) => value,
         Err(error) => panic!("minimum Mosaic profile should be valid: {error:?}"),
+    }
+}
+
+fn l0_or_panic(password: &[u8], user_salt: &[u8], profile: KdfProfile) -> mosaic_crypto::SecretKey {
+    match derive_l0_master(Zeroizing::new(password.to_vec()), user_salt, profile) {
+        Ok(value) => value,
+        Err(error) => panic!("L0 master should derive: {error:?}"),
+    }
+}
+
+fn l1_or_panic(
+    l0_master: &mosaic_crypto::SecretKey,
+    account_salt: &[u8],
+) -> mosaic_crypto::SecretKey {
+    match derive_l1_root(l0_master, account_salt) {
+        Ok(value) => value,
+        Err(error) => panic!("L1 root should derive: {error:?}"),
     }
 }

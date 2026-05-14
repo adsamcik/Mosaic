@@ -1039,18 +1039,59 @@ pub fn derive_session_master_key(
         .map_err(|_| MosaicCryptoError::KdfFailure)?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params.clone());
 
-    let mut master_key = Zeroizing::new([0_u8; KEY_BYTES]);
+    let mut master_key = Zeroizing::new(vec![0_u8; KEY_BYTES]);
     let mut memory_blocks = Zeroizing::new(vec![Block::default(); argon_params.block_count()]);
     argon2
         .hash_password_into_with_memory(
             password.as_slice(),
             salt,
-            &mut master_key[..],
+            master_key.as_mut_slice(),
             memory_blocks.as_mut_slice(),
         )
         .map_err(|_| MosaicCryptoError::KdfFailure)?;
 
-    SecretKey::from_bytes(&mut master_key[..])
+    SecretKey::from_bytes(master_key.as_mut_slice())
+}
+
+/// Derives the L0 master key once from a password and user salt.
+///
+/// L0 is the only Argon2id output in the login hierarchy. Derive all
+/// password-rooted L1+ material from the returned key with HKDF helpers such as
+/// [`derive_l1_root`] and [`derive_auth_signing_keypair_from_l0`].
+///
+/// # Errors
+/// - `InvalidSaltLength` if `user_salt` is not exactly 16 bytes.
+/// - `KdfProfileTooWeak` if the profile is below policy.
+/// - `KdfProfileTooCostly` if the profile exceeds resource limits.
+/// - `KdfFailure` if Argon2id rejects the parameters or derivation fails.
+pub fn derive_l0_master(
+    password: Zeroizing<Vec<u8>>,
+    user_salt: &[u8],
+    profile: KdfProfile,
+) -> Result<SecretKey, MosaicCryptoError> {
+    validate_salt(user_salt)?;
+
+    let argon_params = Params::new(
+        profile.memory_kib(),
+        profile.iterations(),
+        profile.parallelism(),
+        Some(profile.output_len()),
+    )
+    .map_err(|_| MosaicCryptoError::KdfFailure)?;
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params.clone());
+
+    let mut master_key = Zeroizing::new(vec![0_u8; KEY_BYTES]);
+    let mut memory_blocks = Zeroizing::new(vec![Block::default(); argon_params.block_count()]);
+    argon2
+        .hash_password_into_with_memory(
+            password.as_slice(),
+            user_salt,
+            master_key.as_mut_slice(),
+            memory_blocks.as_mut_slice(),
+        )
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
+
+    SecretKey::from_bytes(master_key.as_mut_slice())
 }
 
 impl EpochKeyMaterial {
@@ -1105,6 +1146,28 @@ impl EpochKeyMaterial {
     }
 }
 
+/// Derives the L1 root key from an already-derived L0 master key.
+///
+/// This is HKDF-only and must not invoke Argon2id. Drop or zeroize `l0_master`
+/// as soon as all login-time L1+ derivations are complete.
+///
+/// # Errors
+/// - `InvalidSaltLength` if `account_salt` is not exactly 16 bytes.
+/// - `KdfFailure` if HKDF reports an error.
+pub fn derive_l1_root(
+    l0_master: &SecretKey,
+    account_salt: &[u8],
+) -> Result<SecretKey, MosaicCryptoError> {
+    validate_salt(account_salt)?;
+
+    let mut root_key = Zeroizing::new(vec![0_u8; KEY_BYTES]);
+    Hkdf::<Sha256>::new(Some(account_salt), l0_master.as_bytes())
+        .expand(ROOT_KEY_INFO, root_key.as_mut_slice())
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
+
+    SecretKey::from_bytes(root_key.as_mut_slice())
+}
+
 /// Derives the L1 root key from password, user salt, and account salt.
 ///
 /// This is an internal building block for account-key unwrap and test vectors.
@@ -1116,41 +1179,15 @@ impl EpochKeyMaterial {
 /// - `KdfProfileTooWeak` if the profile is below policy.
 /// - `KdfProfileTooCostly` if the profile exceeds resource limits.
 /// - `KdfFailure` if Argon2id/HKDF reports an error.
+#[deprecated(note = "derive L0 once with derive_l0_master, then call derive_l1_root")]
 pub fn derive_root_key(
     password: Zeroizing<Vec<u8>>,
     user_salt: &[u8],
     account_salt: &[u8],
     profile: KdfProfile,
 ) -> Result<SecretKey, MosaicCryptoError> {
-    validate_salt(user_salt)?;
-    validate_salt(account_salt)?;
-
-    let argon_params = Params::new(
-        profile.memory_kib(),
-        profile.iterations(),
-        profile.parallelism(),
-        Some(profile.output_len()),
-    )
-    .map_err(|_| MosaicCryptoError::KdfFailure)?;
-    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params.clone());
-
-    let mut master_key = Zeroizing::new([0_u8; KEY_BYTES]);
-    let mut memory_blocks = Zeroizing::new(vec![Block::default(); argon_params.block_count()]);
-    argon2
-        .hash_password_into_with_memory(
-            password.as_slice(),
-            user_salt,
-            &mut master_key[..],
-            memory_blocks.as_mut_slice(),
-        )
-        .map_err(|_| MosaicCryptoError::KdfFailure)?;
-
-    let mut root_key = Zeroizing::new([0_u8; KEY_BYTES]);
-    Hkdf::<Sha256>::new(Some(account_salt), &master_key[..])
-        .expand(ROOT_KEY_INFO, &mut root_key[..])
-        .map_err(|_| MosaicCryptoError::KdfFailure)?;
-
-    SecretKey::from_bytes(&mut root_key[..])
+    let l0_master = derive_l0_master(password, user_salt, profile)?;
+    derive_l1_root(&l0_master, account_salt)
 }
 
 /// Derives a fresh L2 account key and wraps it with the password-derived L1 key.
@@ -1163,7 +1200,8 @@ pub fn derive_account_key(
     account_salt: &[u8],
     profile: KdfProfile,
 ) -> Result<AccountKeyMaterial, MosaicCryptoError> {
-    let root_key = derive_root_key(password, user_salt, account_salt, profile)?;
+    let l0_master = derive_l0_master(password, user_salt, profile)?;
+    let root_key = derive_l1_root(&l0_master, account_salt)?;
 
     let mut account_key_bytes = Zeroizing::new(vec![0_u8; KEY_BYTES]);
     getrandom::fill(account_key_bytes.as_mut_slice()).map_err(|_| MosaicCryptoError::RngFailure)?;
@@ -1188,7 +1226,8 @@ pub fn unwrap_account_key(
     wrapped_account_key: &[u8],
     profile: KdfProfile,
 ) -> Result<SecretKey, MosaicCryptoError> {
-    let root_key = derive_root_key(password, user_salt, account_salt, profile)?;
+    let l0_master = derive_l0_master(password, user_salt, profile)?;
+    let root_key = derive_l1_root(&l0_master, account_salt)?;
     let mut account_key_bytes =
         unwrap_secret_with_aad(wrapped_account_key, &root_key, ACCOUNT_KEY_WRAP_AAD)?;
 
@@ -1201,45 +1240,21 @@ pub fn unwrap_account_key(
     SecretKey::from_bytes(account_key_bytes.as_mut_slice())
 }
 
-/// Derives the password-rooted LocalAuth signing keypair.
+/// Derives the password-rooted LocalAuth signing keypair from an L0 master key.
 ///
-/// This is separate from the L1/L2 account-key hierarchy: it exists only to
-/// authenticate account unlock before the server returns wrapped account state.
+/// This is HKDF-only and must not invoke Argon2id.
 ///
 /// # Errors
 /// - `InvalidSaltLength` if `user_salt` is not exactly 16 bytes.
-/// - `KdfProfileTooWeak` if the profile is below policy.
-/// - `KdfProfileTooCostly` if the profile exceeds resource limits.
-/// - `KdfFailure` if Argon2id/HKDF reports an error.
-pub fn derive_auth_signing_keypair(
-    password: Zeroizing<Vec<u8>>,
+/// - `KdfFailure` if HKDF reports an error.
+pub fn derive_auth_signing_keypair_from_l0(
+    l0_master: &SecretKey,
     user_salt: &[u8],
-    profile: KdfProfile,
 ) -> Result<AuthSigningKeypair, MosaicCryptoError> {
     validate_salt(user_salt)?;
 
-    let argon_params = Params::new(
-        profile.memory_kib(),
-        profile.iterations(),
-        profile.parallelism(),
-        Some(profile.output_len()),
-    )
-    .map_err(|_| MosaicCryptoError::KdfFailure)?;
-    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params.clone());
-
-    let mut master_key = Zeroizing::new([0_u8; KEY_BYTES]);
-    let mut memory_blocks = Zeroizing::new(vec![Block::default(); argon_params.block_count()]);
-    argon2
-        .hash_password_into_with_memory(
-            password.as_slice(),
-            user_salt,
-            &mut master_key[..],
-            memory_blocks.as_mut_slice(),
-        )
-        .map_err(|_| MosaicCryptoError::KdfFailure)?;
-
     let mut auth_seed = Zeroizing::new([0_u8; SIGNING_SEED_BYTES]);
-    Hkdf::<Sha256>::new(Some(user_salt), &master_key[..])
+    Hkdf::<Sha256>::new(Some(user_salt), l0_master.as_bytes())
         .expand(AUTH_SIGNING_KEY_INFO, &mut auth_seed[..])
         .map_err(|_| MosaicCryptoError::KdfFailure)?;
 
@@ -1250,6 +1265,28 @@ pub fn derive_auth_signing_keypair(
         secret_key,
         public_key,
     })
+}
+
+/// Derives the password-rooted LocalAuth signing keypair.
+///
+/// This is separate from the L1/L2 account-key hierarchy: it exists only to
+/// authenticate account unlock before the server returns wrapped account state.
+///
+/// # Errors
+/// - `InvalidSaltLength` if `user_salt` is not exactly 16 bytes.
+/// - `KdfProfileTooWeak` if the profile is below policy.
+/// - `KdfProfileTooCostly` if the profile exceeds resource limits.
+/// - `KdfFailure` if Argon2id/HKDF reports an error.
+#[deprecated(
+    note = "derive L0 once with derive_l0_master, then call derive_auth_signing_keypair_from_l0"
+)]
+pub fn derive_auth_signing_keypair(
+    password: Zeroizing<Vec<u8>>,
+    user_salt: &[u8],
+    profile: KdfProfile,
+) -> Result<AuthSigningKeypair, MosaicCryptoError> {
+    let l0_master = derive_l0_master(password, user_salt, profile)?;
+    derive_auth_signing_keypair_from_l0(&l0_master, user_salt)
 }
 
 /// Builds the canonical LocalAuth challenge transcript verified by the backend.
@@ -1622,7 +1659,8 @@ pub fn wrap_account_key(
     account_key: &SecretKey,
     profile: KdfProfile,
 ) -> Result<Vec<u8>, MosaicCryptoError> {
-    let root_key = derive_root_key(password, user_salt, account_salt, profile)?;
+    let l0_master = derive_l0_master(password, user_salt, profile)?;
+    let root_key = derive_l1_root(&l0_master, account_salt)?;
     wrap_secret_with_aad(account_key.as_bytes(), &root_key, ACCOUNT_KEY_WRAP_AAD)
 }
 
