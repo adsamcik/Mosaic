@@ -880,6 +880,7 @@ export class RustHandleFacade {
     epochId: number;
     shardIndex: number;
     tier: number;
+    nonce: Uint8Array;
   } {
     const result = rustWasm.parseEnvelopeHeader(
       headerBytes.subarray(0, ENVELOPE_HEADER_BYTES),
@@ -888,6 +889,7 @@ export class RustHandleFacade {
       epochId: r.epochId,
       shardIndex: r.shardIndex,
       tier: r.tier,
+      nonce: copyBytes(r.nonce),
     }));
   }
 }
