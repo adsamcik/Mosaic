@@ -45,8 +45,8 @@ public record AuthRegisterRequest(
     [MaxLength(128)] string AccountSalt,
     [MaxLength(2048)] string? WrappedAccountKey = null,
     [MaxLength(2048)] string? WrappedIdentitySeed = null,
-    int KdfMemoryKib = 65536,
-    int KdfIterations = 3,
-    int KdfParallelism = 1,
+    [Range(8192, 1_048_576)] long KdfMemoryKib = 65536,
+    [Range(1, 32)] int KdfIterations = 3,
+    [Range(1, 16)] int KdfParallelism = 1,
     byte KdfAlgVersion = 0x13
 );

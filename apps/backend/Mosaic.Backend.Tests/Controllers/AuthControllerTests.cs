@@ -2,10 +2,13 @@ using System.Security.Cryptography;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.Auth;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Tests.Helpers;
@@ -234,6 +237,65 @@ public class AuthControllerTests
         Assert.True(response.Success);
         Assert.Equal(user.Id, response.UserId);
         Assert.Equal(Convert.ToBase64String(accountSalt), response.AccountSalt);
+    }
+
+    [Fact]
+    public async Task VerifyAuth_AllowsOnlyOneConcurrentClaimForSameChallenge()
+    {
+        var connectionString = $"Data Source=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        await using var rootConnection = new SqliteConnection(connectionString);
+        await rootConnection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<Data.MosaicDbContext>()
+            .UseSqlite(connectionString)
+            .Options;
+
+        var (publicKey, secretKey) = GenerateEd25519Keypair();
+        var challenge = RandomNumberGenerator.GetBytes(32);
+        var challengeId = Guid.CreateVersion7();
+
+        await using (var setupDb = new Data.MosaicDbContext(options))
+        {
+            await setupDb.Database.EnsureCreatedAsync();
+            setupDb.Users.Add(new User
+            {
+                Id = Guid.CreateVersion7(),
+                AuthSub = "alice-concurrent",
+                IdentityPubkey = "identity-pubkey",
+                AuthPubkey = Convert.ToBase64String(publicKey),
+                UserSalt = RandomNumberGenerator.GetBytes(16),
+                AccountSalt = RandomNumberGenerator.GetBytes(16)
+            });
+            setupDb.AuthChallenges.Add(new AuthChallenge
+            {
+                Id = challengeId,
+                Username = "alice-concurrent",
+                Challenge = challenge,
+                CreatedAt = DateTime.UtcNow,
+                ExpiresAt = DateTime.UtcNow.AddMinutes(1)
+            });
+            await setupDb.SaveChangesAsync();
+        }
+
+        var signature = SignChallenge(challenge, "alice-concurrent", secretKey);
+
+        async Task<IActionResult> VerifyWithNewContextAsync()
+        {
+            await using var db = new Data.MosaicDbContext(options);
+            var controller = CreateController(db);
+            return await controller.VerifyAuth(new AuthVerifyRequest(
+                "alice-concurrent",
+                challengeId,
+                signature));
+        }
+
+        var results = await Task.WhenAll(
+            VerifyWithNewContextAsync(),
+            VerifyWithNewContextAsync());
+
+        Assert.Equal(1, results.Count(result => result is OkObjectResult));
+        Assert.Equal(1, results.Count(result => result is ObjectResult objectResult
+            && objectResult.StatusCode == StatusCodes.Status401Unauthorized));
     }
 
     [Fact]
@@ -559,6 +621,28 @@ public class AuthControllerTests
             KdfIterations: iterations,
             KdfParallelism: parallelism,
             KdfAlgVersion: algVersion
+        ));
+
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("Invalid KDF profile", ProblemDetailsAssertions.GetDetail(badRequest));
+    }
+
+    [Fact]
+    public async Task Register_RejectsKdfProfileAboveResourceCeiling()
+    {
+        using var db = TestDbContextFactory.Create();
+        var controller = CreateController(db);
+
+        var result = await controller.Register(new AuthRegisterRequest(
+            "newuser",
+            "auth-pubkey-base64",
+            "identity-pubkey-base64",
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            KdfMemoryKib: 9_999_999_999L,
+            KdfIterations: 3,
+            KdfParallelism: 1,
+            KdfAlgVersion: 0x13
         ));
 
         var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
