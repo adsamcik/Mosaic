@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   },
   api: {
     fromBase64: vi.fn(),
+    apiRequest: vi.fn(),
   },
   linkEncoding: {
     decodeLinkSecret: vi.fn(),
@@ -71,6 +72,8 @@ vi.mock('../src/lib/crypto-client', () => ({
 // `lib/api` exposes the base64 helpers the hook uses to decode wire-format
 // nonces / encrypted keys.
 vi.mock('../src/lib/api', () => ({
+  apiRequest: (...args: unknown[]) =>
+    mocks.api.apiRequest(...(args as [string, RequestInit?])),
   fromBase64: (s: string) => mocks.api.fromBase64(s),
   toBase64: (arr: Uint8Array) => btoa(String.fromCharCode(...arr)),
 }));
@@ -277,6 +280,18 @@ describe('useLinkKeys', () => {
       if (s === 'test-signpubkey') return new Uint8Array(32).fill(6);
       return new Uint8Array(32);
     });
+    mocks.api.apiRequest.mockImplementation(
+      async (path: string, init?: RequestInit) => {
+        const response =
+          init === undefined
+            ? await mocks.fetch(`/api${path}`)
+            : await mocks.fetch(`/api${path}`, init);
+        if (!response.ok) {
+          throw new Error(`HTTP ${String(response.status)}`);
+        }
+        return response.json();
+      },
+    );
 
   });
 
@@ -410,11 +425,11 @@ describe('useLinkKeys', () => {
       expect(mocks.fetch).toHaveBeenNthCalledWith(
         2,
         '/api/s/test-link-id/keys',
-        {
-          headers: {
+        expect.objectContaining({
+          headers: expect.objectContaining({
             'X-Share-Grant': 'grant-token-123',
-          },
-        },
+          }),
+        }),
       );
 
       cleanup();
@@ -475,11 +490,11 @@ describe('useLinkKeys', () => {
       expect(mocks.fetch).toHaveBeenNthCalledWith(
         2,
         '/api/s/test-link-id/keys',
-        {
-          headers: {
+        expect.objectContaining({
+          headers: expect.objectContaining({
             'X-Share-Grant': 'grant-token-123',
-          },
-        },
+          }),
+        }),
       );
       expect(linkTierKeyStore.getTierKeys).not.toHaveBeenCalled();
 

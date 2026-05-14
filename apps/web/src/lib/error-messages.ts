@@ -12,7 +12,6 @@
 
 import { WorkerCryptoError, WorkerCryptoErrorCode } from '../workers/types';
 import { UploadError, UploadErrorCode } from './upload-errors';
-import { ApiError } from './api';
 import { EpochKeyError, EpochKeyErrorCode } from './epoch-key-service';
 
 /**
@@ -262,6 +261,18 @@ const HTTP_STATUS_MESSAGES: Record<number, string> = {
   504: 'Request timed out. Please try again.',
 };
 
+function isApiErrorLike(error: unknown): error is {
+  readonly status: number;
+  readonly problem?: { readonly detail?: unknown };
+} {
+  return (
+    error instanceof Error &&
+    error.name === 'ApiError' &&
+    'status' in error &&
+    typeof (error as { status: unknown }).status === 'number'
+  );
+}
+
 /**
  * Converts an error to a safe, user-friendly message.
  *
@@ -300,7 +311,7 @@ export function toSafeErrorMessage(
   }
 
   // Handle API errors based on HTTP status
-  if (error instanceof ApiError) {
+  if (isApiErrorLike(error)) {
     if (
       typeof error.problem?.detail === 'string' &&
       error.problem.detail.trim().length > 0
@@ -370,7 +381,7 @@ export function getSafeErrorInfo(error: unknown): { type: string; code?: string 
     }
   }
 
-  if (error instanceof ApiError) {
+  if (isApiErrorLike(error)) {
     return { type, code: String(error.status) };
   }
 

@@ -41,6 +41,68 @@ import { normalizePasswordForKdf } from '../lib/local-auth-normalization';
 const log = createLogger('CryptoWorker');
 
 const ENVELOPE_VERSION_V03 = 0x03;
+const ENVELOPE_VERSION_V04 = 0x04;
+const STREAM_ENVELOPE_HEADER_BYTES = 30;
+const STREAM_FRAME_SIZE_BYTES = 65_536;
+
+function readU32Le(bytes: Uint8Array, offset: number): number {
+  return (
+    bytes[offset]! |
+    (bytes[offset + 1]! << 8) |
+    (bytes[offset + 2]! << 16) |
+    (bytes[offset + 3]! << 24)
+  ) >>> 0;
+}
+
+function parseStreamingEnvelopeHeader(envelope: Uint8Array): EnvelopeHeader {
+  if (envelope.length < STREAM_ENVELOPE_HEADER_BYTES) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidHeaderLength,
+      'streaming envelope header is too short',
+    );
+  }
+  if (
+    envelope[0] !== 0x53 ||
+    envelope[1] !== 0x47 ||
+    envelope[2] !== 0x7a ||
+    envelope[3] !== 0x6b
+  ) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidMagic,
+      'streaming envelope magic is invalid',
+    );
+  }
+  const tier = envelope[5]!;
+  if (tier < 1 || tier > 3) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidTier,
+      'streaming envelope tier is invalid',
+    );
+  }
+  const frameCount = readU32Le(envelope, 22);
+  const finalFrameSize = readU32Le(envelope, 26);
+  if (
+    frameCount === 0 ||
+    finalFrameSize === 0 ||
+    finalFrameSize > STREAM_FRAME_SIZE_BYTES
+  ) {
+    throw new WorkerCryptoError(
+      WorkerCryptoErrorCode.InvalidEnvelope,
+      'streaming envelope frame metadata is invalid',
+    );
+  }
+
+  return {
+    magic: 'SGzk',
+    version: ENVELOPE_VERSION_V04,
+    epoch: 0,
+    shard: 0,
+    tier,
+    streamSalt: new Uint8Array(envelope.subarray(6, 22)),
+    frameCount,
+    finalFrameSize,
+  };
+}
 
 function ensureNonNullRawEpochHandle(epochHandleId: bigint): void {
   if (epochHandleId === 0n) {
@@ -1749,6 +1811,10 @@ class CryptoWorker implements CryptoWorkerApi {
   }
 
   async peekEnvelopeHeader(envelope: Uint8Array): Promise<EnvelopeHeader> {
+    if (envelope[4] === ENVELOPE_VERSION_V04) {
+      return parseStreamingEnvelopeHeader(envelope);
+    }
+
     const facade = await getRustFacade();
     const parsed = facade.parseEnvelopeHeader(envelope);
     return {
