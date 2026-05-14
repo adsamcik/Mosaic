@@ -623,10 +623,9 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   }
 
   /** List non-terminal jobs that should surface in the resume prompt. */
-  // TODO(p3-visitor-resume-prompt): when surfacing a resumable visitor
-  // job whose linkId/grant the user no longer has client-side keys for, the
-  // restore prompt must offer "discard" only, not "resume", so the user is
-  // not stuck staring at a download they cannot complete.
+  // NOTE(p3-visitor-resume-prompt): discard-only visitor resume needs the
+  // resume prompt contract to carry source availability. Until that UI/API
+  // contract lands, paused-no-source visitor jobs are flagged below.
   async listResumableJobs(): Promise<ResumableJobSummary[]> {
     this.assertInitialized();
     await this.reconcilePersistedJobs();

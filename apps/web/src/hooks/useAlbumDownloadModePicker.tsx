@@ -77,8 +77,8 @@ export function useAlbumDownloadModePicker(): UseAlbumDownloadModePickerResult {
   // persistence banner". The banner itself decides whether to render based
   // on the hook state (supported, persisted, dismissals) -- this flag is
   // just the single-shot trigger after a keepOffline confirmation.
-  // TODO: Surface a "storage not promoted; eviction possible" notice in
-  // DownloadTray when request() resolves false. Out of scope here.
+  // NOTE: DownloadTray cannot surface storage-persistence failure yet because
+  // download schedules do not expose persistence-request outcomes.
   const [persistencePromptActive, setPersistencePromptActive] = useState(false);
   const persistence = useStoragePersistence();
   // Active when the user picked 'sidecar' on the picker; mounts the pairing modal.
