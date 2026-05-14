@@ -234,6 +234,7 @@ public class GarbageCollectionServiceTests
         var expiredLink = await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(-31));
         var recentExpiredLink = await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(-29));
         var activeLink = await builder.CreateShareLinkAsync(album, expiresAt: DateTimeOffset.UtcNow.AddDays(2));
+        var neverExpiringLink = await builder.CreateShareLinkAsync(album, expiresAt: null);
 
         var count = await service.CleanExpiredShareLinksAsync();
 
@@ -241,6 +242,7 @@ public class GarbageCollectionServiceTests
         Assert.Null(await db.ShareLinks.FindAsync(expiredLink.Id));
         Assert.NotNull(await db.ShareLinks.FindAsync(recentExpiredLink.Id));
         Assert.NotNull(await db.ShareLinks.FindAsync(activeLink.Id));
+        Assert.NotNull(await db.ShareLinks.FindAsync(neverExpiringLink.Id));
     }
 
     [Fact]

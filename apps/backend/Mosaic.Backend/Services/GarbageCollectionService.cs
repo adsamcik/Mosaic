@@ -282,37 +282,43 @@ public class GarbageCollectionService : BackgroundService
         // Delete share links that expired 30+ days ago in batches
         while (true)
         {
-            List<ShareLink> longExpiredLinks;
+            var longExpiredLinkIds = await db.ShareLinks
+                .Where(sl => sl.ExpiresAt != null && sl.ExpiresAt <= expirationCutoff)
+                .OrderBy(sl => sl.ExpiresAt)
+                .Select(sl => sl.Id)
+                .Take(CleanupBatchSize)
+                .ToListAsync();
 
-            if (db.UsesLiteProvider())
-            {
-                longExpiredLinks = (await db.ShareLinks
-                    .Where(sl => sl.ExpiresAt != null)
-                    .ToListAsync())
-                    .Where(sl => sl.ExpiresAt <= expirationCutoff)
-                    .OrderBy(sl => sl.ExpiresAt)
-                    .Take(CleanupBatchSize)
-                    .ToList();
-            }
-            else
-            {
-                longExpiredLinks = await db.ShareLinks
-                    .Where(sl => sl.ExpiresAt != null && sl.ExpiresAt <= expirationCutoff)
-                    .OrderBy(sl => sl.ExpiresAt)
-                    .Take(CleanupBatchSize)
-                    .ToListAsync();
-            }
-
-            if (longExpiredLinks.Count == 0)
+            if (longExpiredLinkIds.Count == 0)
             {
                 break;
             }
 
-            db.ShareLinks.RemoveRange(longExpiredLinks);
-            await db.SaveChangesAsync();
+            int deleted;
+            if (db.Database.IsRelational())
+            {
+                deleted = await db.ShareLinks
+                    .Where(sl => longExpiredLinkIds.Contains(sl.Id))
+                    .ExecuteDeleteAsync();
+            }
+            else
+            {
+                var longExpiredLinks = await db.ShareLinks
+                    .Where(sl => longExpiredLinkIds.Contains(sl.Id))
+                    .ToListAsync();
 
-            totalDeleted += longExpiredLinks.Count;
-            _logger.ExpiredLinksCleaned(longExpiredLinks.Count);
+                db.ShareLinks.RemoveRange(longExpiredLinks);
+                await db.SaveChangesAsync();
+                deleted = longExpiredLinks.Count;
+            }
+
+            totalDeleted += deleted;
+            _logger.ExpiredLinksCleaned(deleted);
+
+            if (deleted < longExpiredLinkIds.Count)
+            {
+                break;
+            }
         }
 
         return totalDeleted;
@@ -328,33 +334,42 @@ public class GarbageCollectionService : BackgroundService
 
         while (true)
         {
-            List<ShareLinkGrant> expiredGrants;
+            var expiredGrantIds = await db.ShareLinkGrants
+                .Where(grant => grant.ExpiresAt <= expirationCutoff)
+                .OrderBy(grant => grant.ExpiresAt)
+                .Select(grant => grant.Id)
+                .Take(CleanupBatchSize)
+                .ToListAsync();
 
-            if (db.UsesLiteProvider())
-            {
-                expiredGrants = (await db.ShareLinkGrants.ToListAsync())
-                    .Where(grant => grant.ExpiresAt <= expirationCutoff)
-                    .OrderBy(grant => grant.ExpiresAt)
-                    .Take(CleanupBatchSize)
-                    .ToList();
-            }
-            else
-            {
-                expiredGrants = await db.ShareLinkGrants
-                    .Where(grant => grant.ExpiresAt <= expirationCutoff)
-                    .OrderBy(grant => grant.ExpiresAt)
-                    .Take(CleanupBatchSize)
-                    .ToListAsync();
-            }
-
-            if (expiredGrants.Count == 0)
+            if (expiredGrantIds.Count == 0)
             {
                 break;
             }
 
-            db.ShareLinkGrants.RemoveRange(expiredGrants);
-            await db.SaveChangesAsync();
-            totalDeleted += expiredGrants.Count;
+            int deleted;
+            if (db.Database.IsRelational())
+            {
+                deleted = await db.ShareLinkGrants
+                    .Where(grant => expiredGrantIds.Contains(grant.Id))
+                    .ExecuteDeleteAsync();
+            }
+            else
+            {
+                var expiredGrants = await db.ShareLinkGrants
+                    .Where(grant => expiredGrantIds.Contains(grant.Id))
+                    .ToListAsync();
+
+                db.ShareLinkGrants.RemoveRange(expiredGrants);
+                await db.SaveChangesAsync();
+                deleted = expiredGrants.Count;
+            }
+
+            totalDeleted += deleted;
+
+            if (deleted < expiredGrantIds.Count)
+            {
+                break;
+            }
         }
 
         return totalDeleted;
