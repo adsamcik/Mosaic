@@ -312,55 +312,6 @@ export interface BundleValidationContext {
 }
 
 // =============================================================================
-// Error Types
-// =============================================================================
-
-/**
- * Crypto operation error with context.
- */
-export class CryptoError extends Error {
-  constructor(
-    message: string,
-    public readonly code: CryptoErrorCode,
-    public readonly cause?: unknown,
-  ) {
-    super(message);
-    this.name = 'CryptoError';
-  }
-}
-
-export enum CryptoErrorCode {
-  /** libsodium not initialized */
-  NOT_INITIALIZED = 'NOT_INITIALIZED',
-  /** Invalid key length */
-  INVALID_KEY_LENGTH = 'INVALID_KEY_LENGTH',
-  /** Decryption failed (wrong key or tampered) */
-  DECRYPTION_FAILED = 'DECRYPTION_FAILED',
-  /** Signature verification failed */
-  SIGNATURE_INVALID = 'SIGNATURE_INVALID',
-  /** Envelope format error */
-  INVALID_ENVELOPE = 'INVALID_ENVELOPE',
-  /** Reserved bytes not zero */
-  RESERVED_NOT_ZERO = 'RESERVED_NOT_ZERO',
-  /** Hash mismatch */
-  INTEGRITY_FAILED = 'INTEGRITY_FAILED',
-  /** Bundle context mismatch */
-  CONTEXT_MISMATCH = 'CONTEXT_MISMATCH',
-  /** Ed25519 to X25519 conversion failed */
-  KEY_CONVERSION_FAILED = 'KEY_CONVERSION_FAILED',
-  /** Invalid input (wrong size or format) */
-  INVALID_INPUT = 'INVALID_INPUT',
-  /** Manifest transcript: encrypted_meta is empty (mirrors Rust ManifestTranscriptError::EmptyEncryptedMeta) */
-  EMPTY_ENCRYPTED_META = 'EMPTY_ENCRYPTED_META',
-  /** Manifest transcript: shards array is empty (mirrors Rust ManifestTranscriptError::EmptyShardList) */
-  EMPTY_SHARD_LIST = 'EMPTY_SHARD_LIST',
-  /** Manifest transcript: shard chunk indices are not exactly 0,1,2,...,n-1 (mirrors Rust ManifestTranscriptError::NonSequentialShardIndex) */
-  NON_SEQUENTIAL_SHARD_INDEX = 'NON_SEQUENTIAL_SHARD_INDEX',
-  /** Manifest transcript: a u32 length prefix would overflow (mirrors Rust ManifestTranscriptError::LengthTooLarge) */
-  LENGTH_TOO_LARGE = 'LENGTH_TOO_LARGE',
-}
-
-// =============================================================================
 // Constants
 // =============================================================================
 

@@ -7,8 +7,6 @@ describe('public TypeScript crypto compatibility surface', () => {
       'ARGON2_PRESETS',
       'AccessTier',
       'BUNDLE_SIGN_CONTEXT',
-      'CryptoError',
-      'CryptoErrorCode',
       'ENVELOPE_HEADER_SIZE',
       'ENVELOPE_MAGIC',
       'ENVELOPE_VERSION',

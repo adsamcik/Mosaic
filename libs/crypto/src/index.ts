@@ -24,8 +24,6 @@ export type {
 export {
   AccessTier,
   BUNDLE_SIGN_CONTEXT,
-  CryptoError,
-  CryptoErrorCode,
   ENVELOPE_HEADER_SIZE,
   ENVELOPE_MAGIC,
   ENVELOPE_VERSION,
