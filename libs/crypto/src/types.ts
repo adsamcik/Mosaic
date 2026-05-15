@@ -22,54 +22,6 @@ export interface DeriveKeysResult {
 }
 
 /**
- * Full key hierarchy from derivation (internal/testing only).
- * L0 (master) and L1 (root) are NEVER persisted - callers MUST call memzero() after use.
- *
- * @deprecated Account key derivation is Rust-owned. Do not introduce new
- * TypeScript consumers of raw L0/L1/L2 key material.
- *
- * @internal This type is exported for testing purposes only.
- * Production code should use DeriveKeysResult from deriveKeys().
- */
-export interface DerivedKeys {
-  /** L0: Argon2id(password, salt) - NEVER stored, MUST be zeroed after use */
-  masterKey: Uint8Array;
-  /** L1: HKDF(L0, account_salt) - NEVER stored, MUST be zeroed after use */
-  rootKey: Uint8Array;
-  /** L2: random(32) - stored wrapped by L1 */
-  accountKey: Uint8Array;
-  /** L2 encrypted with L1 for storage */
-  accountKeyWrapped: Uint8Array;
-}
-
-/**
- * Per-album epoch key set with tiered access keys.
- * Each tier has a separate HKDF-derived key for cryptographic separation.
- *
- * @deprecated Epoch keys are Rust-handle owned. This type remains only for
- * legacy web compatibility code that has not yet moved behind WASM handles.
- */
-export interface EpochKey {
-  /** Epoch identifier (increments on key rotation) */
-  epochId: number;
-  /** 32 bytes - Master seed for deriving tier keys */
-  epochSeed: Uint8Array;
-  /** 32 bytes - XChaCha20 key for thumbnail shards (600px) */
-  thumbKey: Uint8Array;
-  /** 32 bytes - XChaCha20 key for preview shards (1200px) */
-  previewKey: Uint8Array;
-  /** 32 bytes - XChaCha20 key for original shards (full resolution) */
-  fullKey: Uint8Array;
-  /** Ed25519 keypair for signing manifests */
-  signKeypair: {
-    /** 32 bytes - public verification key */
-    publicKey: Uint8Array;
-    /** 64 bytes - secret signing key */
-    secretKey: Uint8Array;
-  };
-}
-
-/**
  * Content tier for shard encryption.
  * Each tier uses a different derived key.
  */

@@ -11,7 +11,7 @@ import {
   UploadErrorCode,
 } from '../src/contexts/UploadContext';
 import { UploadErrorToast } from '../src/components/Upload/UploadErrorToast';
-import { uploadQueue } from '../src/lib/upload-queue';
+import { uploadQueue } from '../src/lib/upload';
 import { getCurrentOrFetchEpochKey } from '../src/lib/epoch-key-service';
 import { getEpochKey } from '../src/lib/epoch-key-store';
 import { createManifestForUpload } from '../src/lib/manifest-service';
@@ -88,7 +88,7 @@ vi.mock('../src/lib/rust-core/wasm-upload-adapter-port', () => ({
   WasmUploadAdapterPort: vi.fn(),
 }));
 
-vi.mock('../src/lib/upload-queue', () => ({
+vi.mock('../src/lib/upload', () => ({
   createUuidV7: vi.fn(() => '018f0000-0000-7000-8000-000000000777'),
   uploadQueue: {
     init: vi.fn().mockResolvedValue(undefined),

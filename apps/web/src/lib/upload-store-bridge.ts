@@ -19,7 +19,7 @@ import { usePhotoStore } from '../stores/photo-store';
 import type { TieredShardIds } from '../workers/types';
 import { createLogger } from './logger';
 import { syncCoordinator } from './sync-coordinator';
-import { uploadQueue, type UploadTask } from './upload-queue';
+import { uploadQueue, type UploadTask } from './upload';
 
 const log = createLogger('UploadStoreBridge');
 

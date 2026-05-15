@@ -10,7 +10,7 @@ import {
   getRegisteredSyncCoordinatorPurge,
   type SyncCoordinatorPurge,
 } from './sync-types';
-import { uploadQueue } from './upload-queue';
+import { uploadQueue } from './upload';
 import { usePhotoStore, type AlbumPhotoState } from '../stores/photo-store';
 
 export type LocalPurgeReason =

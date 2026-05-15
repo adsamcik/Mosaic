@@ -1,5 +1,5 @@
 import { memo, useMemo, useEffect, useState } from 'react';
-import type { UploadTask } from '../../lib/upload-queue';
+import type { UploadTask } from '../../lib/upload';
 
 interface PendingPhotoThumbnailProps {
   task: UploadTask;

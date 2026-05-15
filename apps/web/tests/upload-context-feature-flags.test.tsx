@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FeatureFlagsManager } from '../src/lib/feature-flags';
 import { UploadProvider, useUploadContext } from '../src/contexts/UploadContext';
-import { uploadQueue } from '../src/lib/upload-queue';
+import { uploadQueue } from '../src/lib/upload';
 
 const mocks = vi.hoisted(() => ({
   uploadQueueInit: vi.fn(async () => undefined),
@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock('../src/lib/upload-queue', () => ({
+vi.mock('../src/lib/upload', () => ({
   uploadQueue: {
     init: mocks.uploadQueueInit,
     add: mocks.uploadQueueAdd,

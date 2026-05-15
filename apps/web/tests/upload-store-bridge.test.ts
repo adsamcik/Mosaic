@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { uploadQueue, type UploadTask } from '../src/lib/upload-queue';
+import { uploadQueue, type UploadTask } from '../src/lib/upload';
 import {
   cancelUploadInStore,
   dismissFailedUpload,

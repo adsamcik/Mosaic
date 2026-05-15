@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { PhotoMeta } from '../src/workers/types';
-import type { UploadTask } from '../src/lib/upload-queue';
+import type { UploadTask } from '../src/lib/upload';
 
 // Capture the PhotoMeta passed to encryptManifestWithEpoch (decoded from JSON
 // bytes) and the epochHandleId argument so tests can assert the Slice 4

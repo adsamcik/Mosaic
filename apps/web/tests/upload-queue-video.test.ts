@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import type { UploadTask, VideoUploadMetadata } from '../src/lib/upload-queue';
+import type { UploadTask, VideoUploadMetadata } from '../src/lib/upload';
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks — vi.hoisted runs before vi.mock, so these are available
@@ -160,7 +160,7 @@ vi.mock('@mosaic/crypto', () => ({
 // ---------------------------------------------------------------------------
 // Import after mocks
 // ---------------------------------------------------------------------------
-import { uploadQueue } from '../src/lib/upload-queue';
+import { uploadQueue } from '../src/lib/upload';
 import { isSupportedImageType } from '../src/lib/thumbnail-generator';
 
 // ---------------------------------------------------------------------------

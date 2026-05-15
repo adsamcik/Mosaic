@@ -5,7 +5,7 @@ import {
   type ErrorCallback,
   type PersistedTask,
   type ProgressCallback,
-} from './upload-queue';
+} from './upload';
 import type { EpochHandleId } from '../workers/types';
 
 export const DEFAULT_WEB_CLIENT_CORE_ADAPTER_ID =

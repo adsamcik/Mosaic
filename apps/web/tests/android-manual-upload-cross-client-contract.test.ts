@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EpochKeyBundle } from '../src/lib/epoch-key-store';
-import type { UploadTask } from '../src/lib/upload-queue';
+import type { UploadTask } from '../src/lib/upload';
 import type { TieredShardIds } from '../src/workers/types';
 
 interface ContractShard {

@@ -4,7 +4,7 @@ import type {
   ErrorCallback,
   PersistedTask,
   ProgressCallback,
-} from '../src/lib/upload-queue';
+} from '../src/lib/upload';
 
 interface MockUploadQueue {
   onProgress?: ProgressCallback;
@@ -139,7 +139,7 @@ const mocks = vi.hoisted(() => {
   return { uploadQueue, syncEngine };
 });
 
-vi.mock('../src/lib/upload-queue', () => ({
+vi.mock('../src/lib/upload', () => ({
   uploadQueue: mocks.uploadQueue,
 }));
 

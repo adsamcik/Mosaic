@@ -9,9 +9,7 @@
 export type {
   Argon2Params,
   DeriveKeysResult,
-  DerivedKeys,
   EncryptedShard,
-  EpochKey,
   EpochKeyBundle,
   IdentityKeypair,
   ManifestEnvelope,

@@ -1,4 +1,4 @@
-// Barrel export — preserves the original public API from lib/upload-queue.ts
+// Barrel export for the upload module public API.
 export { uploadQueue } from './upload-queue';
 export {
   LegacyUploadQueueDrainer,

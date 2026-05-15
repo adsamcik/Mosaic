@@ -5,7 +5,7 @@ import { createLogger } from '../lib/logger';
 import { createManifestForUpload } from '../lib/manifest-service';
 import { syncEngine } from '../lib/sync-engine';
 import { UploadError, UploadErrorCode } from '../lib/upload-errors';
-import { uploadQueue } from '../lib/upload-queue';
+import { uploadQueue } from '../lib/upload';
 
 // Re-export for consumers
 export { UploadError, UploadErrorCode } from '../lib/upload-errors';

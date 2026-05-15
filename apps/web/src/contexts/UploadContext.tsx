@@ -24,7 +24,7 @@ import {
   createUuidV7,
   uploadQueue,
   type UploadTask,
-} from '../lib/upload-queue';
+} from '../lib/upload';
 import { initUploadStoreBridge } from '../lib/upload-store-bridge';
 import { session, subscribeToSessionExpired } from '../lib/session';
 import { useOptionalToast } from './ToastContext';

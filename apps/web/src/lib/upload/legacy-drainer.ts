@@ -4,8 +4,9 @@ import {
   UPLOAD_QUEUE_DB_NAME,
   UPLOAD_QUEUE_DB_VERSION,
 } from '../content-hash';
-import { SNAPSHOT_VERSION } from './constants';
 import { isObject } from '../type-guards';
+import { SNAPSHOT_VERSION } from './constants';
+import type { UploadQueueDB } from './types';
 
 export { SNAPSHOT_VERSION };
 
@@ -318,10 +319,6 @@ export class LegacyUploadQueueDrainer {
   }
 }
 
-export function legacyRecordFromUnknown(value: unknown): LegacyUploadRecord | null {
-  return isObject(value) ? value : null;
-}
-
 export class IndexedDbLegacyUploadQueueStore implements LegacyUploadQueueStoreAdapter {
   private dbPromise: Promise<IDBPDatabase<unknown>> | null = null;
 
@@ -331,7 +328,7 @@ export class IndexedDbLegacyUploadQueueStore implements LegacyUploadQueueStoreAd
       // and reset operate on the same persisted upload records.
       this.dbPromise = openDB(UPLOAD_QUEUE_DB_NAME, UPLOAD_QUEUE_DB_VERSION, {
         upgrade(db) {
-          ensureContentHashStores(db as IDBPDatabase<import('./types').UploadQueueDB>);
+          ensureContentHashStores(db as IDBPDatabase<UploadQueueDB>);
         },
       });
     }
@@ -342,7 +339,7 @@ export class IndexedDbLegacyUploadQueueStore implements LegacyUploadQueueStoreAd
     const db = await this.db();
     const values = await db.getAll('tasks');
     return values.flatMap((value) => {
-      const record = legacyRecordFromUnknown(value);
+      const record = isObject(value) ? value : null;
       return record === null ? [] : [record];
     });
   }

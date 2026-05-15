@@ -83,7 +83,6 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
       rationale: 'tiered image encryption compatibility pending Rust media facade',
       allowedSymbols: [
         'EncryptedShard',
-        'EpochKey',
         'ShardTier',
         'deriveTierKeys',
         'encryptShard',
@@ -644,4 +643,3 @@ describe('Rust cutover slice retirement guards', () => {
     });
   }
 });
-
