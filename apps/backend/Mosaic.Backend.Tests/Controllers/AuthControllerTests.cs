@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Mosaic.Backend.Crypto;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.Auth;
@@ -67,22 +68,7 @@ public class AuthControllerTests
 
     private static string SignChallenge(byte[] challenge, string username, byte[] secretKey, long? timestamp = null)
     {
-        // Must match VerifySignature in AuthController: since deep-04 F5 (Wave 2D),
-        // the timestamp_ms is advisory only and is NOT mixed into the signed
-        // transcript. The `timestamp` parameter is kept for backward-compatible
-        // call sites and is intentionally ignored here, mirroring the server.
-        _ = timestamp;
-        const string context = "Mosaic_Auth_Challenge_v1";
-        var contextBytes = System.Text.Encoding.UTF8.GetBytes(context);
-        var usernameBytes = System.Text.Encoding.UTF8.GetBytes(username);
-        var usernameLenBytes = new byte[4];
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(usernameLenBytes, (uint)usernameBytes.Length);
-
-        byte[] message = contextBytes
-            .Concat(usernameLenBytes)
-            .Concat(usernameBytes)
-            .Concat(challenge)
-            .ToArray();
+        var message = AuthChallengeTranscriptBuilder.BuildTranscript(username, challenge, timestamp);
 
         var algorithm = SignatureAlgorithm.Ed25519;
         using var key = Key.Import(algorithm, secretKey, KeyBlobFormat.RawPrivateKey);

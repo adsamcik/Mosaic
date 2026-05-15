@@ -1,9 +1,9 @@
-using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Mosaic.Backend.Crypto;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.Auth;
 using Mosaic.Backend.Data.Entities;
@@ -35,8 +35,6 @@ public partial class AuthController : ControllerBase
     // Session absolute maximum: 30 days
     private static readonly TimeSpan SessionAbsoluteExpiry = TimeSpan.FromDays(30);
 
-    // Domain separation context (must match TypeScript implementation)
-    private const string AuthChallengeContext = "Mosaic_Auth_Challenge_v1";
     private const int DefaultKdfMemoryKib = 65536;
     private const int DefaultKdfIterations = 3;
     private const int DefaultKdfParallelism = 1;
@@ -816,27 +814,7 @@ public partial class AuthController : ControllerBase
             return false;
         }
 
-        // Build transcript: context || username_length(4 bytes BE) || username || challenge
-        //
-        // Since deep-04 F5 (Wave 2D, commit 27f192c), the `timestamp_ms` parameter
-        // is advisory only and is NOT mixed into the signed transcript. The
-        // Rust client passes the parameter through `build_auth_challenge_transcript`
-        // which intentionally ignores it. Replay protection is provided
-        // exclusively by the server-side single-use AuthChallenge.IsUsed atomic
-        // claim (Wave 2A fix 2A-9). The `timestamp` parameter is accepted by
-        // this method for wire compatibility with older callers but is no
-        // longer mixed into the verify message.
-        _ = timestamp; // intentionally unused — see comment above
-        var context = System.Text.Encoding.UTF8.GetBytes(AuthChallengeContext);
-        var usernameBytes = System.Text.Encoding.UTF8.GetBytes(username);
-        var usernameLenBytes = new byte[4];
-        BinaryPrimitives.WriteUInt32BigEndian(usernameLenBytes, (uint)usernameBytes.Length);
-
-        byte[] message = context
-            .Concat(usernameLenBytes)
-            .Concat(usernameBytes)
-            .Concat(challenge)
-            .ToArray();
+        var message = AuthChallengeTranscriptBuilder.BuildTranscript(username, challenge, timestamp);
 
         // Verify Ed25519 signature using NSec
         var algorithm = SignatureAlgorithm.Ed25519;
