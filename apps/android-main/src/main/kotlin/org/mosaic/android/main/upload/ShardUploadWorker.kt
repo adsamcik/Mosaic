@@ -7,8 +7,6 @@ import androidx.work.Logger
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import java.io.File
-import java.io.FileInputStream
-import java.security.MessageDigest
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -248,20 +246,7 @@ data class ShardUploadManifestEntry(
   val uploadedBytes: Long,
 )
 
-private fun uploadStateId(shardId: String): String = "upload-${sha256Hex(shardId.toByteArray(Charsets.UTF_8))}"
+private fun uploadStateId(shardId: String): String =
+  "upload-${RustContentHasher.sha256Hex(shardId.toByteArray(Charsets.UTF_8))}"
 
-private fun sha256Hex(bytes: ByteArray): String =
-  MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { byte -> "%02x".format(byte) }
-
-private fun File.sha256Hex(): String {
-  val digest = MessageDigest.getInstance("SHA-256")
-  FileInputStream(this).use { input ->
-    val buffer = ByteArray(64 * 1024)
-    while (true) {
-      val read = input.read(buffer)
-      if (read <= 0) break
-      digest.update(buffer, 0, read)
-    }
-  }
-  return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
-}
+private fun File.sha256Hex(): String = RustContentHasher.sha256Hex(this)
