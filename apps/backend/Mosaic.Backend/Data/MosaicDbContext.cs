@@ -25,6 +25,7 @@ public class MosaicDbContext : DbContext
     public DbSet<AlbumLimits> AlbumLimits => Set<AlbumLimits>();
     public DbSet<AlbumContent> AlbumContents => Set<AlbumContent>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+    public DbSet<AuditLogEntry> AuditLogEntries => Set<AuditLogEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -301,6 +302,21 @@ public class MosaicDbContext : DbContext
                 .HasDatabaseName("ix_auth_challenges_ip_created");
             e.HasIndex(ac => new { ac.IpAddress, ac.IsUsed, ac.CreatedAt })
                 .HasDatabaseName("ix_auth_challenges_ip_used_created");
+        });
+
+        // AuditLogEntry (batch 7 — D1, audit observability D-1).
+        // Append-only — no service is allowed to UPDATE or DELETE rows.
+        // Indexed for incident-response time-range queries and per-actor
+        // / per-target lookups.
+        modelBuilder.Entity<AuditLogEntry>(e =>
+        {
+            e.HasIndex(a => a.OccurredAt);
+            e.HasIndex(a => new { a.ActorUserId, a.OccurredAt })
+                .HasDatabaseName("ix_audit_log_entries_actor_time");
+            e.HasIndex(a => new { a.EventType, a.OccurredAt })
+                .HasDatabaseName("ix_audit_log_entries_event_time");
+            e.HasIndex(a => new { a.TargetType, a.TargetId })
+                .HasDatabaseName("ix_audit_log_entries_target");
         });
 
         // Use snake_case for PostgreSQL
