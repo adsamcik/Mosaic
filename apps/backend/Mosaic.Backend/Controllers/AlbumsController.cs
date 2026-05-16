@@ -82,6 +82,14 @@ public class AlbumsController : ControllerBase
                 am.Album.EncryptedDescription,
                 am.Album.ExpiresAt,
                 am.Album.ExpirationWarningDays,
+                // C2 audit "threat-model C-3": surface the owner-signed
+                // member-roster signature so the visitor can verify role
+                // labels before rendering. NULL for albums whose owner has
+                // not yet published a signed roster (pre-C2 backfill or
+                // newly-created with no role changes yet).
+                am.Album.MemberRosterSignature,
+                am.Album.MemberRosterSignerEpochId,
+                am.Album.MemberRosterVersion,
                 am.Role
             })
             .ToListAsync();
@@ -240,7 +248,11 @@ public class AlbumsController : ControllerBase
                 album.EncryptedName,
                 album.EncryptedDescription,
                 album.ExpiresAt,
-                album.ExpirationWarningDays
+                album.ExpirationWarningDays,
+                // C2: roster fields are NULL on a freshly-created album.
+                album.MemberRosterSignature,
+                album.MemberRosterSignerEpochId,
+                album.MemberRosterVersion
             });
         }
         catch
@@ -287,6 +299,12 @@ public class AlbumsController : ControllerBase
             album.EncryptedDescription,
             album.ExpiresAt,
             album.ExpirationWarningDays,
+            // C2 audit "threat-model C-3": signed roster surface for the
+            // visitor's pre-render verification path. NULL when the owner
+            // has not yet published a signed roster.
+            album.MemberRosterSignature,
+            album.MemberRosterSignerEpochId,
+            album.MemberRosterVersion,
             membership!.Role
         });
     }

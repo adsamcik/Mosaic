@@ -40,6 +40,34 @@ public class Album
     /// </summary>
     public uint RowVersion { get; set; }
 
+    /// <summary>
+    /// Owner-signed Ed25519 signature over the canonical roster transcript
+    /// (mosaic-domain: <c>Mosaic_MemberRoster_v1 || version || album_id ||
+    /// epoch_id || roster_version || member_count || sort(member_id ||
+    /// role_byte)</c>). NULL when the album has no roster signature yet
+    /// (newly-created album or pre-C2 row). The visitor verifies this
+    /// signature against the album's published epoch signing pubkey before
+    /// trusting role badges in the UI — a compromised server can no longer
+    /// fabricate admin / editor labels (audit
+    /// <c>threat-model C-3</c>).
+    /// </summary>
+    public byte[]? MemberRosterSignature { get; set; }
+
+    /// <summary>
+    /// Epoch ID under which <see cref="MemberRosterSignature"/> was produced.
+    /// The visitor uses this to look up the correct signing pubkey to verify
+    /// against. NULL when no roster signature is present.
+    /// </summary>
+    public int? MemberRosterSignerEpochId { get; set; }
+
+    /// <summary>
+    /// Monotonically increasing per-album roster version. The signed
+    /// transcript binds this value so an older signed roster cannot be
+    /// replayed after a role change. NULL when no roster signature is
+    /// present.
+    /// </summary>
+    public long? MemberRosterVersion { get; set; }
+
     // Navigation
     public User Owner { get; set; } = null!;
     public ICollection<AlbumMember> Members { get; set; } = [];
