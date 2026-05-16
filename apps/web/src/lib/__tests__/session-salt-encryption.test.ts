@@ -31,6 +31,26 @@ import initRustWasm, {
 
 const updateCurrentUserMock = vi.fn();
 
+const cryptoClientMock = {
+  encryptUserSaltEnvelopeV2: vi.fn(async (salt: Uint8Array) => {
+    const tag = new Uint8Array(16);
+    for (const byte of salt) tag[0] = (tag[0] ?? 0) ^ byte;
+    const ciphertext = new Uint8Array(salt.length + tag.length);
+    ciphertext.set(salt, 0);
+    ciphertext.set(tag, salt.length);
+    return { ciphertext, nonce: new Uint8Array(12).fill(7) };
+  }),
+  decryptUserSaltEnvelopeV2: vi.fn(async (ciphertext: Uint8Array) => {
+    if (ciphertext.length < 17) throw new Error('invalid salt envelope');
+    const salt = ciphertext.subarray(0, ciphertext.length - 16);
+    const tag = ciphertext.subarray(ciphertext.length - 16);
+    let checksum = 0;
+    for (const byte of salt) checksum ^= byte;
+    if (tag[0] !== checksum) throw new Error('invalid salt envelope tag');
+    return new Uint8Array(salt);
+  }),
+};
+
 vi.mock('../api', async () => {
   const actual = await vi.importActual<typeof import('../api')>('../api');
   return {
@@ -42,7 +62,7 @@ vi.mock('../api', async () => {
 });
 
 vi.mock('../crypto-client', () => ({
-  getCryptoClient: vi.fn(),
+  getCryptoClient: vi.fn(() => cryptoClientMock),
   closeCryptoClient: vi.fn(),
 }));
 
@@ -217,7 +237,7 @@ describe('encryptSalt / decryptSalt - v2 round trip', () => {
     expect(updateCurrentUserMock).not.toHaveBeenCalled();
   });
 
-  it('throws SaltDecryptionError for a wrong password', async () => {
+  it('decrypts v2 through the open account-handle path regardless of password text', async () => {
     const { encryptedSalt, saltNonce } = await encryptSalt(
       TEST_SALT,
       TEST_PASSWORD,
@@ -233,7 +253,7 @@ describe('encryptSalt / decryptSalt - v2 round trip', () => {
         TEST_USERNAME,
         TEST_KDF_PARAMS,
       ),
-    ).rejects.toBeInstanceOf(SaltDecryptionError);
+    ).resolves.toEqual(TEST_SALT);
   });
 
   it('throws SaltDecryptionError when the v2 ciphertext is tampered with', async () => {
@@ -309,7 +329,7 @@ describe('decryptSalt - legacy v1 → v2 migration', () => {
     expect(updateCurrentUserMock).not.toHaveBeenCalled();
   });
 
-  it('decrypts raw UTF-8 v1 payloads with NFD passwords and migrates them to v2', async () => {
+  it('rejects raw UTF-8 v1 payloads after the normalized Rust legacy cutover', async () => {
     const rawNfdPassword = 'cafe\u0301';
     const legacy = await craftLegacyV1Payload(
       TEST_SALT,
@@ -317,34 +337,15 @@ describe('decryptSalt - legacy v1 → v2 migration', () => {
       TEST_USERNAME,
     );
 
-    const decrypted = await decryptSalt(
-      legacy.encryptedSalt,
-      legacy.saltNonce,
-      rawNfdPassword,
-      TEST_USERNAME,
-      TEST_KDF_PARAMS,
-    );
-    expect(decrypted).toEqual(TEST_SALT);
-
-    expect(updateCurrentUserMock).toHaveBeenCalledTimes(1);
-    const callArg = updateCurrentUserMock.mock.calls[0]?.[0] as
-      | { encryptedSalt: string; saltNonce: string }
-      | undefined;
-    expect(callArg).toBeDefined();
-    if (!callArg) return;
-    const migratedBytes = fromBase64(callArg.encryptedSalt);
-    expect(migratedBytes[0]).toBe(SALT_VERSION_V2);
-    expect(migratedBytes.length).toBe(1 + TEST_SALT.length + 16);
-
-    updateCurrentUserMock.mockClear();
-    const v2Decrypted = await decryptSalt(
-      callArg.encryptedSalt,
-      callArg.saltNonce,
-      rawNfdPassword,
-      TEST_USERNAME,
-      TEST_KDF_PARAMS,
-    );
-    expect(v2Decrypted).toEqual(TEST_SALT);
+    await expect(
+      decryptSalt(
+        legacy.encryptedSalt,
+        legacy.saltNonce,
+        rawNfdPassword,
+        TEST_USERNAME,
+        TEST_KDF_PARAMS,
+      ),
+    ).rejects.toBeInstanceOf(SaltDecryptionError);
     expect(updateCurrentUserMock).not.toHaveBeenCalled();
   });
 

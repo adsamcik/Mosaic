@@ -1,15 +1,12 @@
 import * as Comlink from 'comlink';
-import sodium from 'libsodium-wrappers-sumo';
 import {
   parseServerArgon2Params,
   type Argon2Params,
 } from '@mosaic/crypto';
 import initRustWasm, {
-  consumeMasterKeyHandleForAesGcm,
-  deriveMasterKeyFromPassword,
-  deriveSessionSaltFromUsername,
+  decryptUserSaltV1Legacy as rustDecryptUserSaltV1Legacy,
+  generateUserSaltBytes as rustGenerateUserSaltBytes,
 } from '../generated/mosaic-wasm/mosaic_wasm.js';
-import { toArrayBufferView } from './buffer-utils';
 import { clearAllCovers } from './album-cover-service';
 import { clearAllCachedMetadata } from './album-metadata-service';
 import {
@@ -35,10 +32,6 @@ import {
 } from './key-cache';
 import { clearLinkKeyEncryption } from './link-tier-key-store';
 import { localAuthLogin, localAuthRegister } from './local-auth';
-import {
-  encodeLegacyPasswordForKdfCompatibility,
-  normalizePasswordForKdf,
-} from './local-auth-normalization';
 import { createLogger } from './logger';
 import { getIdleTimeoutMs, subscribeToSettings } from './settings-service';
 import { syncCoordinator } from './sync-coordinator';
@@ -131,11 +124,6 @@ export { subscribeToSessionExpired } from './api';
  */
 const SALT_ENCRYPTION_VERSION_V2 = 0x02;
 
-/** Domain-separation prefix for the Argon2id salt to prevent cross-protocol reuse. */
-const SALT_ENCRYPTION_DOMAIN_V2 = 'mosaic-salt-encryption-v2|';
-
-/** Legacy PBKDF2 iteration count - retained for backward-compatible v1 decryption only. */
-const LEGACY_SALT_ENCRYPTION_PBKDF2_ITERATIONS = 100000;
 
 type SessionListener = () => void;
 
@@ -231,156 +219,34 @@ export class WrappedKeyConflictError extends Error {
   }
 }
 
-/**
- * Derive a 16-byte Argon2id salt from the username.
- *
- * Argon2id's memory cost makes targeted attacks on per-user salts uneconomic,
- * so deriving the salt deterministically from the username is acceptable.
- * The fixed Mosaic-specific domain-separation prefix prevents cross-protocol
- * reuse against any other system that might also use this username.
- *
- * Hash output is 16 bytes which matches `crypto_pwhash_SALTBYTES`.
- */
-async function deriveArgon2SaltForUser(username: string): Promise<Uint8Array> {
-  await ensureRustWasmInitialized();
-  return deriveSessionSaltFromUsername(SALT_ENCRYPTION_DOMAIN_V2, username);
-}
-
-/**
- * Derive the v2 AES-GCM key from the password using Rust-core Argon2id.
- *
- * Rust keeps the L0 master key behind an opaque handle until the WebCrypto
- * import handoff. `consumeMasterKeyHandleForAesGcm` removes and zeroizes the
- * Rust handle, returns one short-lived 32-byte buffer, then this function
- * imports it as a non-extractable AES-GCM key and zeroizes the JS buffer.
- */
-async function deriveSaltEncryptionKeyV2(
-  password: string,
-  username: string,
-  argon2Params: Argon2Params,
-): Promise<CryptoKey> {
-  await sodium.ready;
-  await ensureRustWasmInitialized();
-  const argonSalt = await deriveArgon2SaltForUser(username);
-  const passwordBytes = normalizePasswordForKdf(password);
-
-  let derivedForAesImport: Uint8Array | null = null;
+function consumeWasmBytesResult(
+  result: { readonly code: number; readonly bytes: Uint8Array; free(): void },
+  label: string,
+): Uint8Array {
   try {
-    const masterKeyHandle = deriveMasterKeyFromPassword(
-      passwordBytes,
-      argonSalt,
-      argon2Params.iterations,
-      argon2Params.memory,
-    );
-    derivedForAesImport = consumeMasterKeyHandleForAesGcm(masterKeyHandle);
-
-    // importKey copies the bytes internally; we can safely zero the handoff buffer after.
-    return await crypto.subtle.importKey(
-      'raw',
-      toArrayBufferView(derivedForAesImport),
-      'AES-GCM',
-      false,
-      ['encrypt', 'decrypt'],
-    );
-  } finally {
-    sodium.memzero(passwordBytes);
-    if (derivedForAesImport) {
-      sodium.memzero(derivedForAesImport);
+    if (result.code !== 0) {
+      throw new Error(`${label} failed (rust code ${String(result.code)})`);
     }
-    sodium.memzero(argonSalt);
-  }
-}
-
-/**
- * Derive the legacy v1 AES-GCM key (PBKDF2-100k with username as salt).
- *
- * Retained ONLY so existing users with v1 payloads can still log in. Any
- * successful v1 decryption immediately triggers a re-encryption with v2
- * via {@link migrateLegacySaltToV2}.
- */
-async function deriveSaltEncryptionKeyV1FromPasswordBytes(
-  passwordBytes: Uint8Array,
-  username: string,
-): Promise<CryptoKey> {
-  try {
-    const passwordKey = await crypto.subtle.importKey(
-      'raw',
-      toArrayBufferView(passwordBytes),
-      'PBKDF2',
-      false,
-      ['deriveKey'],
-    );
-
-    const usernameSalt = new TextEncoder().encode(username);
-
-    return await crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: usernameSalt,
-        iterations: LEGACY_SALT_ENCRYPTION_PBKDF2_ITERATIONS,
-        hash: 'SHA-256',
-      },
-      passwordKey,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['decrypt'],
-    );
+    return new Uint8Array(result.bytes);
   } finally {
-    sodium.memzero(passwordBytes);
+    result.free();
   }
-}
-
-async function deriveSaltEncryptionKeyV1Legacy(
-  password: string,
-  username: string,
-): Promise<CryptoKey> {
-  await sodium.ready;
-  return deriveSaltEncryptionKeyV1FromPasswordBytes(
-    normalizePasswordForKdf(password),
-    username,
-  );
-}
-
-async function deriveSaltEncryptionKeyV1RawLegacyCompatibility(
-  password: string,
-  username: string,
-): Promise<CryptoKey> {
-  await sodium.ready;
-  return deriveSaltEncryptionKeyV1FromPasswordBytes(
-    encodeLegacyPasswordForKdfCompatibility(password),
-    username,
-  );
-}
-
-function isAesGcmDecryptionFailure(error: unknown): boolean {
-  if (error instanceof DOMException) {
-    return error.name === 'OperationError';
-  }
-
-  if (typeof error !== 'object' || error === null || !('name' in error)) {
-    return false;
-  }
-
-  return (error as { name?: unknown }).name === 'OperationError';
 }
 
 async function tryDecryptV1Salt(
-  key: CryptoKey,
+  password: string,
+  username: string,
   nonce: Uint8Array,
   envelope: Uint8Array,
 ): Promise<Uint8Array | null> {
+  await ensureRustWasmInitialized();
   try {
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
-      key,
-      toArrayBufferView(envelope),
+    return consumeWasmBytesResult(
+      rustDecryptUserSaltV1Legacy(password, username, envelope, nonce),
+      'decryptUserSaltV1Legacy',
     );
-    return new Uint8Array(decrypted);
-  } catch (error) {
-    if (isAesGcmDecryptionFailure(error)) {
-      return null;
-    }
-    throw error;
+  } catch {
+    return null;
   }
 }
 
@@ -433,17 +299,15 @@ export async function encryptSalt(
   username: string,
   argon2Params: Argon2Params = defaultKdfProfile(),
 ): Promise<{ encryptedSalt: string; saltNonce: string }> {
-  const key = await deriveSaltEncryptionKeyV2(password, username, argon2Params);
-
-  const nonce = crypto.getRandomValues(new Uint8Array(12));
-
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
-    key,
-    toArrayBufferView(salt),
-  );
-
-  const envelope = encodeV2Envelope(new Uint8Array(ciphertext));
+  void password;
+  void username;
+  void argon2Params;
+  const cryptoClient = await getCryptoClient();
+  const { ciphertext, nonce } = await cryptoClient.encryptUserSaltEnvelopeV2(salt);
+  const envelope =
+    ciphertext[0] === SALT_ENCRYPTION_VERSION_V2
+      ? ciphertext
+      : encodeV2Envelope(ciphertext);
 
   return {
     encryptedSalt: toBase64(envelope),
@@ -469,6 +333,7 @@ export async function decryptSalt(
   password: string,
   username: string,
   argon2Params: Argon2Params = defaultKdfProfile(),
+  migrateLegacy: boolean = true,
 ): Promise<Uint8Array> {
   const envelope = fromBase64(encryptedSaltBase64);
   const nonce = fromBase64(saltNonceBase64);
@@ -476,37 +341,20 @@ export async function decryptSalt(
   // --- Try v2 first ---
   if (envelope.length > 1 && envelope[0] === SALT_ENCRYPTION_VERSION_V2) {
     try {
-      const key = await deriveSaltEncryptionKeyV2(password, username, argon2Params);
+      void password;
+      void username;
+      void argon2Params;
+      const cryptoClient = await getCryptoClient();
       const ciphertext = envelope.subarray(1);
-      const decrypted = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
-        key,
-        toArrayBufferView(ciphertext),
-      );
-      return new Uint8Array(decrypted);
-    } catch (error) {
-      if (!isAesGcmDecryptionFailure(error)) {
-        throw error;
-      }
+      return await cryptoClient.decryptUserSaltEnvelopeV2(ciphertext, nonce);
+    } catch {
       // Fall through to v1 in case the version byte happens to coincide
       // with a legacy ciphertext's first byte (1-in-256 chance).
     }
   }
 
   // --- Try legacy v1 (PBKDF2-100k(username)) ---
-  const normalizedLegacyKey = await deriveSaltEncryptionKeyV1Legacy(
-    password,
-    username,
-  );
-  let salt = await tryDecryptV1Salt(normalizedLegacyKey, nonce, envelope);
-
-  if (!salt) {
-    const rawLegacyKey = await deriveSaltEncryptionKeyV1RawLegacyCompatibility(
-      password,
-      username,
-    );
-    salt = await tryDecryptV1Salt(rawLegacyKey, nonce, envelope);
-  }
+  const salt = await tryDecryptV1Salt(password, username, nonce, envelope);
 
   if (!salt) {
     throw new SaltDecryptionError();
@@ -514,7 +362,9 @@ export async function decryptSalt(
 
   // v1 succeeded — transparently upgrade the server-stored payload to v2.
   // This MUST NOT throw: a failed migration upload still allows login.
-  await migrateLegacySaltToV2(salt, password, username, argon2Params);
+  if (migrateLegacy) {
+    await migrateLegacySaltToV2(salt, password, username, argon2Params);
+  }
 
   return salt;
 }
@@ -955,6 +805,7 @@ class SessionManager {
 
       // Get user salt - server should have it if user logged in before
       let userSalt: Uint8Array;
+      let shouldUploadUserSalt = false;
       const username = this._currentUser.authSub;
       const kdfParams = resolveKdfProfile(this._currentUser);
       const workerKdfParams = toWorkerKdfParams(kdfParams);
@@ -962,12 +813,15 @@ class SessionManager {
       if (this._currentUser.encryptedSalt && this._currentUser.saltNonce) {
         // Server has salt - decrypt it with password
         // If decryption fails, password is wrong - throw error
+        shouldUploadUserSalt =
+          fromBase64(this._currentUser.encryptedSalt)[0] !== SALT_ENCRYPTION_VERSION_V2;
         userSalt = await decryptSalt(
           this._currentUser.encryptedSalt,
           this._currentUser.saltNonce,
           password,
           username,
           kdfParams,
+          false,
         );
         // Store locally for faster subsequent operations
         localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
@@ -1003,6 +857,16 @@ class SessionManager {
 
       // Derive identity keypair for epoch key operations
       await cryptoClient.deriveIdentity();
+
+      if (shouldUploadUserSalt) {
+        const { encryptedSalt, saltNonce } = await encryptSalt(
+          userSalt,
+          password,
+          username,
+          kdfParams,
+        );
+        await api.updateCurrentUser({ encryptedSalt, saltNonce });
+      }
 
       // Slice 8: bridge OPFS snapshot wrap/unwrap through the crypto
       // worker — the DB worker no longer holds raw key bytes.
@@ -1054,6 +918,7 @@ class SessionManager {
       // 2. If yes: decrypt with password+username key, use for main key derivation
       // 3. If no: use local salt or generate new, encrypt and upload to server
       let userSalt: Uint8Array;
+      let shouldUploadUserSalt = false;
       const username = this._currentUser.authSub;
       const kdfParams = resolveKdfProfile(this._currentUser);
       const workerKdfParams = toWorkerKdfParams(kdfParams);
@@ -1061,12 +926,15 @@ class SessionManager {
       if (this._currentUser.encryptedSalt && this._currentUser.saltNonce) {
         // Server has salt - decrypt it (new device or returning user)
         // If decryption fails, password is wrong - throw error
+        shouldUploadUserSalt =
+          fromBase64(this._currentUser.encryptedSalt)[0] !== SALT_ENCRYPTION_VERSION_V2;
         userSalt = await decryptSalt(
           this._currentUser.encryptedSalt,
           this._currentUser.saltNonce,
           password,
           username,
           kdfParams,
+          false,
         );
         // Store locally for faster subsequent logins
         localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
@@ -1078,18 +946,15 @@ class SessionManager {
           userSalt = fromBase64(storedSalt);
         } else {
           // First login ever - generate a new salt
-          userSalt = crypto.getRandomValues(new Uint8Array(16));
+          await ensureRustWasmInitialized();
+          userSalt = consumeWasmBytesResult(
+            rustGenerateUserSaltBytes(),
+            'generateUserSaltBytes',
+          );
           localStorage.setItem(USER_SALT_KEY, toBase64(userSalt));
         }
 
-        // Encrypt and upload salt to server for multi-device sync
-        const { encryptedSalt, saltNonce } = await encryptSalt(
-          userSalt,
-          password,
-          username,
-          kdfParams,
-        );
-        await api.updateCurrentUser({ encryptedSalt, saltNonce });
+        shouldUploadUserSalt = true;
       }
 
       const accountSalt = resolveAccountSalt(this._currentUser);
@@ -1151,6 +1016,16 @@ class SessionManager {
       // Derive identity keypair for epoch key operations
       // This is needed to open sealed epoch key bundles
       await cryptoClient.deriveIdentity();
+
+      if (shouldUploadUserSalt) {
+        const { encryptedSalt, saltNonce } = await encryptSalt(
+          userSalt,
+          password,
+          username,
+          kdfParams,
+        );
+        await api.updateCurrentUser({ encryptedSalt, saltNonce });
+      }
 
       // Slice 8: bridge OPFS snapshot wrap/unwrap through the crypto
       // worker — the DB worker no longer holds raw key bytes.

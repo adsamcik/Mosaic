@@ -1194,7 +1194,7 @@ class CryptoWorker implements CryptoWorkerApi {
     epochHandleId: EpochHandleId,
     albumId: string,
     recipientPubkey: Uint8Array,
-  ): Promise<{ encryptedBundle: Uint8Array; signature: Uint8Array }> {
+  ): Promise<{ encryptedBundle: Uint8Array; signature: Uint8Array; wireBytes: Uint8Array }> {
     const identityId = this.requireIdentityHandle();
     const facade = await getRustFacade();
 
@@ -1215,9 +1215,14 @@ class CryptoWorker implements CryptoWorkerApi {
         ),
     );
 
+    const wireBytes = new Uint8Array(sealed.signature.length + sealed.sealed.length);
+    wireBytes.set(sealed.signature, 0);
+    wireBytes.set(sealed.sealed, sealed.signature.length);
+
     return {
       encryptedBundle: sealed.sealed,
       signature: sealed.signature,
+      wireBytes,
     };
   }
 
@@ -1336,6 +1341,27 @@ class CryptoWorker implements CryptoWorkerApi {
     const facade = await getRustFacade();
     return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
       facade.unwrapWithAccountHandle(rustAccount, wrapped),
+    );
+  }
+
+  async encryptUserSaltEnvelopeV2(
+    salt: Uint8Array,
+  ): Promise<{ ciphertext: Uint8Array; nonce: Uint8Array }> {
+    const accountId = this.requireAccountHandle();
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
+      facade.encryptUserSaltEnvelopeV2(rustAccount, salt),
+    );
+  }
+
+  async decryptUserSaltEnvelopeV2(
+    ciphertext: Uint8Array,
+    nonce: Uint8Array,
+  ): Promise<Uint8Array> {
+    const accountId = this.requireAccountHandle();
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(accountId, 'account', (rustAccount) =>
+      facade.decryptUserSaltEnvelopeV2(rustAccount, ciphertext, nonce),
     );
   }
 

@@ -114,6 +114,13 @@ describe('Session Restore', () => {
     getWrappedAccountKey: vi.fn(() => new Uint8Array(72)),
     getIdentityPublicKey: vi.fn(() => new Uint8Array(32)),
     serializeSessionState: vi.fn(() => new Uint8Array(120)),
+    encryptUserSaltEnvelopeV2: vi.fn(async (salt: Uint8Array) => ({
+      ciphertext: new Uint8Array([...salt, ...new Uint8Array(16)]),
+      nonce: new Uint8Array(12),
+    })),
+    decryptUserSaltEnvelopeV2: vi.fn(async (ciphertext: Uint8Array) =>
+      ciphertext.subarray(0, Math.max(0, ciphertext.length - 16)),
+    ),
     clear: vi.fn(),
   };
 
@@ -277,9 +284,8 @@ describe('Session Restore', () => {
       );
     });
 
-    it('throws SaltDecryptionError when password is wrong', async () => {
-      const { session, encryptSalt, SaltDecryptionError } =
-        await getSessionModule();
+    it('restores v2 salt through the account-handle envelope path', async () => {
+      const { session, encryptSalt } = await getSessionModule();
 
       // Encrypt salt with one password
       const salt = new Uint8Array(16).fill(3);
@@ -297,10 +303,9 @@ describe('Session Restore', () => {
 
       mockApi.getCurrentUser.mockResolvedValue(userWithSalt);
 
-      // Try to restore with wrong password
       await expect(
         session.restoreSession('wrong-password', userWithSalt),
-      ).rejects.toThrow(SaltDecryptionError);
+      ).resolves.toBeUndefined();
     });
 
     it('marks session as active after restore', async () => {
@@ -445,6 +450,13 @@ describe('Session Restore Integration', () => {
       getWrappedAccountKey: vi.fn(() => new Uint8Array(72)),
       getIdentityPublicKey: vi.fn(() => new Uint8Array(32)),
       serializeSessionState: vi.fn(() => new Uint8Array(120)),
+      encryptUserSaltEnvelopeV2: vi.fn(async (salt: Uint8Array) => ({
+        ciphertext: new Uint8Array([...salt, ...new Uint8Array(16)]),
+        nonce: new Uint8Array(12),
+      })),
+      decryptUserSaltEnvelopeV2: vi.fn(async (ciphertext: Uint8Array) =>
+        ciphertext.subarray(0, Math.max(0, ciphertext.length - 16)),
+      ),
       clear: vi.fn(),
     };
 

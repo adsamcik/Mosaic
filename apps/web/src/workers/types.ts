@@ -610,7 +610,7 @@ export interface CryptoWorkerApi {
     epochHandleId: EpochHandleId,
     albumId: string,
     recipientPubkey: Uint8Array,
-  ): Promise<{ encryptedBundle: Uint8Array; signature: Uint8Array }>;
+  ): Promise<{ encryptedBundle: Uint8Array; signature: Uint8Array; wireBytes: Uint8Array }>;
 
   /**
    * Generate a new epoch key for album creation or rotation.
@@ -701,6 +701,15 @@ export interface CryptoWorkerApi {
    * @returns Unwrapped data
    */
   unwrapWithAccountKey(wrapped: Uint8Array): Promise<Uint8Array>;
+
+  encryptUserSaltEnvelopeV2(
+    salt: Uint8Array,
+  ): Promise<{ ciphertext: Uint8Array; nonce: Uint8Array }>;
+
+  decryptUserSaltEnvelopeV2(
+    ciphertext: Uint8Array,
+    nonce: Uint8Array,
+  ): Promise<Uint8Array>;
 
   // =========================================================================
   // LocalAuth Authentication Methods

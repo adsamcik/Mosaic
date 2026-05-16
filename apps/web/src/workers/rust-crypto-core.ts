@@ -827,6 +827,28 @@ export class RustHandleFacade {
     }));
   }
 
+  encryptUserSaltEnvelopeV2(
+    accountHandle: bigint,
+    salt: Uint8Array,
+  ): { ciphertext: Uint8Array; nonce: Uint8Array } {
+    const result = rustWasm.encryptUserSaltEnvelopeV2(accountHandle, salt);
+    return consumeResult(result, 'encryptUserSaltEnvelopeV2', (r) => ({
+      ciphertext: copyBytes(r.ciphertext),
+      nonce: copyBytes(r.nonce),
+    }));
+  }
+
+  decryptUserSaltEnvelopeV2(
+    accountHandle: bigint,
+    ciphertext: Uint8Array,
+    nonce: Uint8Array,
+  ): Uint8Array {
+    const result = rustWasm.decryptUserSaltEnvelopeV2(accountHandle, ciphertext, nonce);
+    return consumeResult(result, 'decryptUserSaltEnvelopeV2', (r) =>
+      copyBytes(r.bytes),
+    );
+  }
+
   // ---- Account-handle-keyed wrap/unwrap (Slice 2 + Slice 6 + Slice 8) ----
 
   /**

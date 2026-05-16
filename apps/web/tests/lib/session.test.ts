@@ -221,6 +221,13 @@ describe('session', () => {
     getWrappedAccountKey: vi.fn(() => new Uint8Array(72)),
     getIdentityPublicKey: vi.fn(() => new Uint8Array(32)),
     serializeSessionState: vi.fn(() => new Uint8Array(120)),
+    encryptUserSaltEnvelopeV2: vi.fn(async (salt: Uint8Array) => ({
+      ciphertext: new Uint8Array([...salt, ...new Uint8Array(16)]),
+      nonce: new Uint8Array(12),
+    })),
+    decryptUserSaltEnvelopeV2: vi.fn(async (ciphertext: Uint8Array) =>
+      ciphertext.subarray(0, Math.max(0, ciphertext.length - 16)),
+    ),
     clear: vi.fn(),
   };
 
