@@ -101,6 +101,7 @@ const SESSION_BROADCAST_CHANNEL = 'mosaic-session';
 
 /** Salt storage key in localStorage */
 const USER_SALT_KEY = 'mosaic:userSalt';
+const USER_SALT_LENGTH_BYTES = 16;
 
 /** Session state stored in sessionStorage for page reload detection */
 const SESSION_STATE_KEY = 'mosaic:sessionState';
@@ -272,7 +273,16 @@ function requireCachedV2BootstrapSalt(): Uint8Array {
       'Cannot decrypt v2 user salt before the Rust account handle is open',
     );
   }
-  return fromBase64(storedSalt);
+  let decodedSalt: Uint8Array;
+  try {
+    decodedSalt = fromBase64(storedSalt);
+  } catch {
+    throw new SaltDecryptionError('Cached v2 user salt is corrupt');
+  }
+  if (decodedSalt.length !== USER_SALT_LENGTH_BYTES) {
+    throw new SaltDecryptionError('Cached v2 user salt has invalid length');
+  }
+  return decodedSalt;
 }
 
 function assertSaltMatchesServerEnvelope(
@@ -848,6 +858,10 @@ class SessionManager {
     }
   }
 
+  private async clearWorkerStateAfterPostInitVerificationFailure(): Promise<void> {
+    await this.clearCorruptedSession();
+  }
+
   /**
    * Restore an existing session with password.
    * Use this after page reload when the session cookie is still valid
@@ -933,15 +947,20 @@ class SessionManager {
         this._currentUser.saltNonce &&
         !shouldUploadUserSalt
       ) {
-        const serverSalt = await decryptSalt(
-          this._currentUser.encryptedSalt,
-          this._currentUser.saltNonce,
-          password,
-          username,
-          kdfParams,
-          false,
-        );
-        assertSaltMatchesServerEnvelope(userSalt, serverSalt);
+        try {
+          const serverSalt = await decryptSalt(
+            this._currentUser.encryptedSalt,
+            this._currentUser.saltNonce,
+            password,
+            username,
+            kdfParams,
+            false,
+          );
+          assertSaltMatchesServerEnvelope(userSalt, serverSalt);
+        } catch (error) {
+          await this.clearWorkerStateAfterPostInitVerificationFailure();
+          throw error;
+        }
       }
 
       if (shouldUploadUserSalt) {
@@ -1110,15 +1129,20 @@ class SessionManager {
         this._currentUser.saltNonce &&
         !shouldUploadUserSalt
       ) {
-        const serverSalt = await decryptSalt(
-          this._currentUser.encryptedSalt,
-          this._currentUser.saltNonce,
-          password,
-          username,
-          kdfParams,
-          false,
-        );
-        assertSaltMatchesServerEnvelope(userSalt, serverSalt);
+        try {
+          const serverSalt = await decryptSalt(
+            this._currentUser.encryptedSalt,
+            this._currentUser.saltNonce,
+            password,
+            username,
+            kdfParams,
+            false,
+          );
+          assertSaltMatchesServerEnvelope(userSalt, serverSalt);
+        } catch (error) {
+          await this.clearWorkerStateAfterPostInitVerificationFailure();
+          throw error;
+        }
       }
 
       if (shouldUploadUserSalt) {

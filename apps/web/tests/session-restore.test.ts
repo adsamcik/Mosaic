@@ -56,7 +56,7 @@ vi.mock('../src/lib/settings-service', () => ({
 
 // Import after mocks are set up
 import { getApi } from '../src/lib/api';
-import { getCryptoClient } from '../src/lib/crypto-client';
+import { closeCryptoClient, getCryptoClient } from '../src/lib/crypto-client';
 import { getDbClient } from '../src/lib/db-client';
 import type { User } from '../src/lib/api-types';
 
@@ -314,6 +314,85 @@ describe('Session Restore', () => {
       await expect(
         session.restoreSession('wrong-password', userWithSalt),
       ).resolves.toBeUndefined();
+    });
+
+    it('rejects corrupt cached v2 bootstrap salt before opening crypto worker', async () => {
+      const { session, encryptSalt, SaltDecryptionError } = await getSessionModule();
+
+      const serverSalt = new Uint8Array(16).fill(9);
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        serverSalt,
+        'test-password',
+        mockUser.authSub,
+      );
+      localStorage.setItem('mosaic:userSalt', 'not base64!');
+
+      await expect(
+        session.restoreSession('test-password', {
+          ...mockUser,
+          encryptedSalt,
+          saltNonce,
+        }),
+      ).rejects.toBeInstanceOf(SaltDecryptionError);
+
+      expect(mockCryptoClient.init).not.toHaveBeenCalled();
+      expect(mockCryptoClient.initWithWrappedKey).not.toHaveBeenCalled();
+    });
+
+    it('rejects wrong-length cached v2 bootstrap salt before opening crypto worker', async () => {
+      const { session, encryptSalt, SaltDecryptionError } = await getSessionModule();
+
+      const serverSalt = new Uint8Array(16).fill(10);
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        serverSalt,
+        'test-password',
+        mockUser.authSub,
+      );
+      const shortCachedSalt = new Uint8Array(15).fill(10);
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...shortCachedSalt)),
+      );
+
+      await expect(
+        session.restoreSession('test-password', {
+          ...mockUser,
+          encryptedSalt,
+          saltNonce,
+        }),
+      ).rejects.toBeInstanceOf(SaltDecryptionError);
+
+      expect(mockCryptoClient.init).not.toHaveBeenCalled();
+      expect(mockCryptoClient.initWithWrappedKey).not.toHaveBeenCalled();
+    });
+
+    it('closes crypto worker state when post-init v2 salt verification fails', async () => {
+      const { session, encryptSalt, SaltDecryptionError } = await getSessionModule();
+
+      const cachedSalt = new Uint8Array(16).fill(11);
+      const serverSalt = new Uint8Array(16).fill(12);
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...cachedSalt)),
+      );
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        serverSalt,
+        'test-password',
+        mockUser.authSub,
+      );
+
+      await expect(
+        session.restoreSession('test-password', {
+          ...mockUser,
+          encryptedSalt,
+          saltNonce,
+        }),
+      ).rejects.toBeInstanceOf(SaltDecryptionError);
+
+      expect(mockCryptoClient.init).toHaveBeenCalled();
+      expect(closeCryptoClient).toHaveBeenCalledOnce();
+      expect(session.isLoggedIn).toBe(false);
+      expect(session.currentUser).toBeNull();
     });
 
     it('marks session as active after restore', async () => {
