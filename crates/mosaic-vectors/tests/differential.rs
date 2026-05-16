@@ -881,7 +881,11 @@ fn manifest_signature_v2_vector_locks_transcript_and_ed25519_signature() {
     );
     let vector = ManifestSignatureV2Vector::from(&parsed).expect("manifest_signature_v2 vector");
 
-    assert_eq!(vector.signing_seed.len(), 32, "signing_seed must be 32 bytes");
+    assert_eq!(
+        vector.signing_seed.len(),
+        32,
+        "signing_seed must be 32 bytes"
+    );
     assert_eq!(vector.album_id.len(), 16, "album_id must be 16 bytes");
     assert!(!vector.shards.is_empty(), "shards must be non-empty");
 

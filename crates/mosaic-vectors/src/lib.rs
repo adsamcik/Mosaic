@@ -1364,8 +1364,7 @@ pub mod vectors {
         /// Returns [`VectorLoadError`] on missing fields or invalid hex.
         pub fn from(parsed: &ParsedVector) -> Result<Self, VectorLoadError> {
             let inputs: ManifestV2Inputs = extract(&parsed.document, "inputs", &parsed.path)?;
-            let expected: ManifestV2Expected =
-                extract(&parsed.document, "expected", &parsed.path)?;
+            let expected: ManifestV2Expected = extract(&parsed.document, "expected", &parsed.path)?;
             let mut shards = alloc::vec::Vec::with_capacity(inputs.shards.len());
             for shard in inputs.shards {
                 shards.push(ManifestShardEntry {
