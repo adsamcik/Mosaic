@@ -408,6 +408,101 @@ pub mod vectors {
         }
     }
 
+    /// `link.wrap-tier-key.v2` parsed inputs/outputs.
+    ///
+    /// v2 wraps bind the AEAD AAD to `(link_id, tier_byte, epoch_id)`. The
+    /// wrap nonce is non-deterministic (24 random bytes) so this vector
+    /// locks the deterministic AAD construction and the unwrapped plaintext;
+    /// callers verify byte-equality of the computed AAD and round-trip the
+    /// wrap/unwrap via [`mosaic_crypto::wrap_tier_key_for_link_v2`] and
+    /// [`mosaic_crypto::unwrap_tier_key_from_link_v2`]. Closes audit
+    /// `share-link-create C1`.
+    pub struct TierKeyWrapV2Vector {
+        pub link_secret: alloc::vec::Vec<u8>,
+        pub tier_key: alloc::vec::Vec<u8>,
+        pub tier_byte: u8,
+        pub epoch_id: u32,
+        pub expected_link_id: alloc::vec::Vec<u8>,
+        pub expected_aad_prefix: alloc::vec::Vec<u8>,
+        pub expected_aad_full: alloc::vec::Vec<u8>,
+        pub expected_aad_length: usize,
+        pub expected_unwrapped_key: alloc::vec::Vec<u8>,
+    }
+
+    #[derive(Deserialize)]
+    struct TierKeyWrapV2Inputs {
+        #[serde(rename = "linkSecretHex")]
+        link_secret_hex: alloc::string::String,
+        #[serde(rename = "tierKeyHex")]
+        tier_key_hex: alloc::string::String,
+        #[serde(rename = "tierByte")]
+        tier_byte: u8,
+        #[serde(rename = "epochId")]
+        epoch_id: u32,
+    }
+    #[derive(Deserialize)]
+    struct TierKeyWrapV2Expected {
+        tier: u8,
+        #[serde(rename = "linkIdHex")]
+        link_id_hex: alloc::string::String,
+        #[serde(rename = "aadPrefixHex")]
+        aad_prefix_hex: alloc::string::String,
+        #[serde(rename = "aadFullHex")]
+        aad_full_hex: alloc::string::String,
+        #[serde(rename = "aadLength")]
+        aad_length: usize,
+        #[serde(rename = "unwrappedKeyHex")]
+        unwrapped_key_hex: alloc::string::String,
+    }
+
+    impl TierKeyWrapV2Vector {
+        /// # Errors
+        /// Returns [`VectorLoadError`] on missing fields, invalid hex, or
+        /// inconsistent tier bytes between inputs and expected.
+        pub fn from(parsed: &ParsedVector) -> Result<Self, VectorLoadError> {
+            let inputs: TierKeyWrapV2Inputs = extract(&parsed.document, "inputs", &parsed.path)?;
+            let expected: TierKeyWrapV2Expected =
+                extract(&parsed.document, "expected", &parsed.path)?;
+            if inputs.tier_byte != expected.tier {
+                return Err(VectorLoadError::Invariant {
+                    path: parsed.path.clone(),
+                    message: alloc::format!(
+                        "inputs.tierByte {} != expected.tier {}",
+                        inputs.tier_byte,
+                        expected.tier
+                    ),
+                });
+            }
+            Ok(Self {
+                link_secret: decode_hex(&inputs.link_secret_hex, "linkSecretHex", &parsed.path)?,
+                tier_key: decode_hex(&inputs.tier_key_hex, "tierKeyHex", &parsed.path)?,
+                tier_byte: inputs.tier_byte,
+                epoch_id: inputs.epoch_id,
+                expected_link_id: decode_hex(
+                    &expected.link_id_hex,
+                    "expected.linkIdHex",
+                    &parsed.path,
+                )?,
+                expected_aad_prefix: decode_hex(
+                    &expected.aad_prefix_hex,
+                    "expected.aadPrefixHex",
+                    &parsed.path,
+                )?,
+                expected_aad_full: decode_hex(
+                    &expected.aad_full_hex,
+                    "expected.aadFullHex",
+                    &parsed.path,
+                )?,
+                expected_aad_length: expected.aad_length,
+                expected_unwrapped_key: decode_hex(
+                    &expected.unwrapped_key_hex,
+                    "expected.unwrappedKeyHex",
+                    &parsed.path,
+                )?,
+            })
+        }
+    }
+
     /// `identity.derive-from-seed.v1` parsed inputs/outputs.
     pub struct IdentityVector {
         pub identity_seed: alloc::vec::Vec<u8>,

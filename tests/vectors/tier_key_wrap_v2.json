@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "operation": "link.wrap-tier-key.v2",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": true,
+  "description": "v2 link-tier wrap binds the AEAD AAD to (link_id, tier, epoch_id) so a malicious server cannot substitute wrap rows across tiers, links, or epochs. The AAD is the byte-exact concatenation 'mosaic:l3-link-tier-key:v2' (26 bytes) || link_id (16 bytes) || tier_byte (1 byte) || epoch_id_be (4 bytes) = 47 bytes total. Rust is the canonical reference; WASM and UniFFI exports call the same crypto-core function. Wrap is non-deterministic (24-byte random nonce); this vector locks the AAD construction bytes (which deterministically derive from inputs) and exercises round-trip wrap+unwrap via the v2 API. Closes audit 'share-link-create C1'.",
+  "algorithms": {
+    "cipher": "XChaCha20-Poly1305 (RustCrypto chacha20poly1305 v0.10)",
+    "keyDerivation": "wrappingKey = BLAKE2b-256(key=link_secret, msg='mosaic:link:wrap:v1')",
+    "linkId": "BLAKE2b-128(key=link_secret, msg='mosaic:link:id:v1')",
+    "aad": "concat('mosaic:l3-link-tier-key:v2', link_id, tier_byte, epoch_id_be)"
+  },
+  "domainLabels": [
+    "mosaic.v1.link.id",
+    "mosaic.v1.link.wrap",
+    "mosaic.l3-link-tier-key.v2"
+  ],
+  "inputs": {
+    "linkSecretHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "tierKeyHex": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+    "tierByte": 3,
+    "epochId": 42
+  },
+  "expected": {
+    "tier": 3,
+    "linkIdHex": "0bf33461e2803351e36ef8f8b3e57ac0",
+    "aadPrefixHex": "6d6f736169633a6c332d6c696e6b2d746965722d6b65793a7632",
+    "aadFullHex": "6d6f736169633a6c332d6c696e6b2d746965722d6b65793a76320bf33461e2803351e36ef8f8b3e57ac0030000002a",
+    "aadLength": 47,
+    "unwrappedKeyHex": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
+  },
+  "negativeCases": [
+    {
+      "name": "tier-mismatch",
+      "mutations": [
+        "wrap with tier=3 then unwrap with expected_tier=2"
+      ],
+      "errorCode": "LINK_TIER_MISMATCH"
+    },
+    {
+      "name": "wrong-epoch-id",
+      "mutations": [
+        "wrap with epoch_id=42 then unwrap with epoch_id=43"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "The v2 AAD includes epoch_id_be — a server presenting a wrap from a different epoch fails the AEAD check."
+    },
+    {
+      "name": "wrong-link-id",
+      "mutations": [
+        "wrap with link_secret A then unwrap with derived link_id from link_secret B"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "The v2 AAD includes the 16-byte link_id — a server cross-mounting a wrap from another share link fails the AEAD check."
+    },
+    {
+      "name": "tier-substitution-attack",
+      "mutations": [
+        "wrap tier=3 (full) under link X, then present the same ciphertext labelled tier=1 (thumb) to a thumb-only visitor"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "The v2 AAD includes tier_byte — a server substituting a higher-tier wrap fails the visitor's AEAD check (audit 'share-link-create C1')."
+    },
+    {
+      "name": "v1-reader-rejects-v2-wrap",
+      "mutations": [
+        "call unwrap_tier_key_from_link (v1) on a v2-bound ciphertext"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "No-silent-downgrade mirror property — a stale v1-only client must not transparently accept v2 wraps."
+    }
+  ],
+  "compatibility": {
+    "dualAccept": "v2 unwrap (unwrap_tier_key_from_link_v2) dual-accepts v1 wraps for back-compat with pre-A1 share links. v1 unwrap rejects v2 wraps."
+  },
+  "serverBoundOutputs": [
+    {
+      "name": "wrappedTierKey",
+      "classification": "encrypted",
+      "reason": "Wrapped tier key is stored on the server alongside the link record."
+    },
+    {
+      "name": "tier",
+      "classification": "operational-metadata",
+      "reason": "Access tier byte is part of the link manifest record."
+    },
+    {
+      "name": "epochId",
+      "classification": "operational-metadata",
+      "reason": "Epoch identifier is part of the album manifest and visible to the server."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "tierKey",
+      "reason": "Plaintext tier keys must never appear server-side.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    },
+    {
+      "name": "wrappingKey",
+      "reason": "Derived wrapping key must stay client-side.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}

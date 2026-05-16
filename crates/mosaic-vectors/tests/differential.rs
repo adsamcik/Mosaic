@@ -14,10 +14,11 @@ use std::path::PathBuf;
 
 use mosaic_crypto::{
     AuthSignature, AuthSigningPublicKey, AuthSigningSecretKey, IdentitySignature,
-    IdentitySigningPublicKey, ManifestSigningPublicKey, SecretKey, build_auth_challenge_transcript,
-    decrypt_content, decrypt_shard, derive_identity_keypair, derive_link_keys, sign_auth_challenge,
-    sign_manifest_with_identity, unwrap_tier_key_from_link, verify_auth_challenge,
-    verify_manifest_identity_signature,
+    IdentitySigningPublicKey, LINK_TIER_KEY_AAD, ManifestSigningPublicKey, SecretKey,
+    build_auth_challenge_transcript, decrypt_content, decrypt_shard, derive_identity_keypair,
+    derive_link_keys, link_tier_key_aad_v2, sign_auth_challenge, sign_manifest_with_identity,
+    unwrap_tier_key_from_link, unwrap_tier_key_from_link_v2, verify_auth_challenge,
+    verify_manifest_identity_signature, wrap_tier_key_for_link_v2,
 };
 use mosaic_crypto::{
     BundleValidationContext, SealedBundle, WrappedTierKey, generate_link_secret,
@@ -32,7 +33,8 @@ use mosaic_vectors::{
     vectors::{
         AccountUnlockVector, AuthChallengeVector, AuthKeypairVector, ContentEncryptVector,
         ContentHashVector, EpochDeriveVector, IdentityVector, LinkKeysVector,
-        ManifestTranscriptVector, SealedBundleVector, ShardEnvelopeVector, TierKeyWrapVector,
+        ManifestTranscriptVector, SealedBundleVector, ShardEnvelopeVector, TierKeyWrapV2Vector,
+        TierKeyWrapVector,
     },
 };
 use sha2::{Digest, Sha256};
@@ -158,6 +160,115 @@ fn tier_key_wrap_vector_unwrap_currently_diverges() {
         vector.expected_unwrapped_key.as_slice(),
         "tier-key wrap is now cross-client byte-exact: clear the #[ignore] and update deviations.md"
     );
+}
+
+#[test]
+fn tier_key_wrap_v2_vector_locks_aad_construction_and_round_trips() {
+    // Cross-client lock for the v2 AAD binding (audit `share-link-create C1`).
+    // The wrap nonce is randomized so we cannot lock the ciphertext bytes,
+    // but the AAD is purely deterministic from inputs — locking it here
+    // surfaces any silent change to the AAD layout immediately. Then we
+    // round-trip wrap+unwrap through the public Rust API to prove the
+    // top-level v2 functions match the locked AAD.
+    let parsed = load("tier_key_wrap_v2.json");
+    let vector = TierKeyWrapV2Vector::from(&parsed).expect("tier_key_wrap_v2 vector");
+
+    // 1. link_id derivation must match the vector.
+    let link_keys = derive_link_keys(&vector.link_secret).expect("derive_link_keys");
+    assert_eq!(
+        link_keys.link_id.as_slice(),
+        vector.expected_link_id.as_slice(),
+        "link_id derivation drifted — both v1 and v2 share derive_link_keys"
+    );
+
+    let tier = ShardTier::try_from(vector.tier_byte).expect("tier byte in 1..=3");
+
+    // 2. AAD layout is byte-exact (prefix + link_id + tier + epoch_id_be).
+    let computed_aad = link_tier_key_aad_v2(&link_keys.link_id, tier.to_byte(), vector.epoch_id);
+    assert_eq!(
+        computed_aad.len(),
+        vector.expected_aad_length,
+        "v2 AAD length drifted from 47 bytes"
+    );
+    assert_eq!(
+        computed_aad.as_slice(),
+        vector.expected_aad_full.as_slice(),
+        "v2 AAD bytes drifted — cross-client wrap/unwrap will break silently \
+         until the vector is regenerated"
+    );
+    assert!(
+        computed_aad.starts_with(&vector.expected_aad_prefix),
+        "v2 AAD must start with `mosaic:l3-link-tier-key:v2`"
+    );
+
+    // 3. Round-trip wrap + unwrap via the public v2 API.
+    let mut tier_key_buf = vector.tier_key.clone();
+    let wrapped = wrap_tier_key_for_link_v2(
+        &mut tier_key_buf,
+        tier,
+        &link_keys.link_id,
+        vector.epoch_id,
+        &link_keys.wrapping_key,
+    )
+    .expect("wrap_tier_key_for_link_v2");
+    assert_eq!(wrapped.tier, tier);
+    assert_eq!(wrapped.nonce.len(), 24);
+    assert_eq!(wrapped.encrypted_key.len(), 32 + 16);
+
+    let unwrapped = unwrap_tier_key_from_link_v2(
+        &wrapped,
+        tier,
+        &link_keys.link_id,
+        vector.epoch_id,
+        &link_keys.wrapping_key,
+    )
+    .expect("unwrap_tier_key_from_link_v2");
+    assert_eq!(
+        unwrapped.as_slice(),
+        vector.expected_unwrapped_key.as_slice(),
+        "v2 round-trip failed to recover the original tier key"
+    );
+
+    // 4. Negative: wrong epoch_id must fail.
+    let wrong_epoch = vector.epoch_id.wrapping_add(1);
+    assert!(
+        unwrap_tier_key_from_link_v2(
+            &wrapped,
+            tier,
+            &link_keys.link_id,
+            wrong_epoch,
+            &link_keys.wrapping_key,
+        )
+        .is_err(),
+        "v2 unwrap with wrong epoch_id must fail (server epoch substitution attack)"
+    );
+
+    // 5. Negative: tier substitution. Wrap as tier=3 was bound to tier=3;
+    // a thumb-only (tier=1) visitor must NOT be able to decrypt.
+    let mut substituted = wrapped.clone();
+    substituted.tier = ShardTier::Thumbnail;
+    assert!(
+        unwrap_tier_key_from_link_v2(
+            &substituted,
+            ShardTier::Thumbnail,
+            &link_keys.link_id,
+            vector.epoch_id,
+            &link_keys.wrapping_key,
+        )
+        .is_err(),
+        "v2 unwrap with substituted lower tier must fail (audit `share-link-create C1`)"
+    );
+
+    // 6. No-silent-downgrade: v1 reader on the v2 ciphertext must fail.
+    // Restore the original tier on the wrap (substituted was a local clone)
+    // and verify the v1 unwrap rejects v2 AAD bytes outright.
+    assert!(
+        unwrap_tier_key_from_link(&wrapped, tier, &link_keys.wrapping_key).is_err(),
+        "v1 reader MUST reject v2 wraps — no silent downgrade"
+    );
+
+    // 7. v1 AAD constant is unchanged.
+    assert_eq!(LINK_TIER_KEY_AAD, b"mosaic:l3-link-tier-key:v1");
 }
 
 #[test]
