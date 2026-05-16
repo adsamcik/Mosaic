@@ -457,11 +457,11 @@ export function PhotoGrid({
                 <circle cx="12" cy="13" r="3" />
               </svg>
             </div>
-            <h3>No photos yet</h3>
+            <h3>{t('gallery.gridView.emptyTitle')}</h3>
             {permissions.canUpload ? (
-              <p>Upload some photos to get started</p>
+              <p>{t('gallery.gridView.emptyDescription')}</p>
             ) : (
-              <p>This album is empty</p>
+              <p>{t('gallery.gridView.emptyReadonly')}</p>
             )}
           </div>
         ) : (

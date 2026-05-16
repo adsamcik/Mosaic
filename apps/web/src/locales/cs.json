@@ -275,6 +275,7 @@
     "gridView": {
       "emptyTitle": "Zatím žádné fotky",
       "emptyDescription": "Nahrajte několik fotek pro začátek",
+      "emptyReadonly": "Toto album je prázdné",
       "syncing": "Synchronizace",
       "queued": "Ve frontě"
     },
