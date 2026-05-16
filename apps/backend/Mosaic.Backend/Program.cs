@@ -54,6 +54,7 @@ builder.Services.AddOptions<IdempotencyOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<IdempotencyOptions>, IdempotencyOptionsValidator>();
 builder.Services.AddScoped<IAlbumExpirationService, AlbumExpirationService>();
+builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddSingleton<RustCoreHost>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHostedService<GarbageCollectionService>();
