@@ -23,8 +23,8 @@ services:
   # .NET Backend API
   backend:
     build:
-      context: ./apps/backend/Mosaic.Backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/backend/Mosaic.Backend/Dockerfile
     container_name: mosaic-test-backend
     environment:
       ASPNETCORE_ENVIRONMENT: Testing

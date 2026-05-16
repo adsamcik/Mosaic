@@ -253,7 +253,7 @@ if [ -n "$PLATFORM" ]; then
         # Add context and dockerfile based on service
         if [ "$svc" = "backend" ]; then
             buildx_args+=("-f" "apps/backend/Mosaic.Backend/Dockerfile")
-            buildx_args+=("apps/backend/Mosaic.Backend")
+            buildx_args+=(".")
         else
             buildx_args+=("-f" "apps/web/Dockerfile")
             buildx_args+=(".")

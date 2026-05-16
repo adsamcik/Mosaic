@@ -9,12 +9,19 @@ ARG TARGETARCH
 ARG MOSAIC_BUILD_VERSION=0.0.0-dev
 WORKDIR /src
 
-# Copy project file and restore dependencies for target architecture
-COPY Mosaic.Backend.csproj ./
+# Copy project file and restore dependencies for target architecture.
+# Build context is the repo root so the canonical Rust/WASM artifact at
+# apps/web/src/generated/mosaic-wasm/ is reachable by the csproj's
+# <Content Include="..\..\web\src\generated\mosaic-wasm\..."> directive
+# (RustCoreHost loads it via Wasmtime at runtime).
+COPY apps/backend/Mosaic.Backend/Mosaic.Backend.csproj ./
 RUN dotnet restore -a $TARGETARCH
 
-# Copy source and publish for target architecture
-COPY . .
+# Copy backend source plus the canonical WASM artifact tree expected by
+# the csproj's relative <Content Include> path (../../web/src/generated/...
+# from /src/ resolves to /web/src/generated/...).
+COPY apps/backend/Mosaic.Backend/ ./
+COPY apps/web/src/generated/mosaic-wasm/ /web/src/generated/mosaic-wasm/
 RUN dotnet publish -c Release -a $TARGETARCH --no-restore -o /app/publish -p:MosaicBuildVersion=$MOSAIC_BUILD_VERSION
 
 # Runtime stage

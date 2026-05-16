@@ -168,7 +168,7 @@ update.
 - [ ] Tests pass in CI (check GitHub Actions)
 - [ ] Docker images build successfully locally:
   ```bash
-  docker build -t mosaic-backend-test -f apps/backend/Mosaic.Backend/Dockerfile apps/backend/Mosaic.Backend
+  docker build -t mosaic-backend-test -f apps/backend/Mosaic.Backend/Dockerfile .
   docker build -t mosaic-frontend-test -f apps/web/Dockerfile .
   ```
 - [ ] Full stack smoke test:
@@ -287,7 +287,7 @@ echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
 docker buildx build --platform linux/amd64,linux/arm64 \
   -t ghcr.io/adsamcik/mosaic-backend:0.0.1 \
   -f apps/backend/Mosaic.Backend/Dockerfile \
-  apps/backend/Mosaic.Backend --push
+  . --push
 
 docker buildx build --platform linux/amd64,linux/arm64 \
   -t ghcr.io/adsamcik/mosaic-frontend:0.0.1 \

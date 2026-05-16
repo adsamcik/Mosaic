@@ -244,7 +244,7 @@ try {
             if ($svc -eq "backend") {
                 $buildxArgs += "-f"
                 $buildxArgs += "apps/backend/Mosaic.Backend/Dockerfile"
-                $buildxArgs += "apps/backend/Mosaic.Backend"
+                $buildxArgs += "."
             }
             else {
                 $buildxArgs += "-f"
