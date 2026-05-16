@@ -10,11 +10,11 @@ use std::sync::{Mutex, OnceLock};
 use mosaic_crypto::{
     ACCOUNT_DATA_AAD, AuthSigningSecretKey, BundleValidationContext, EPOCH_SEED_AAD,
     EncryptedContent, EpochKeyBundle, EpochKeyMaterial, IDENTITY_SEED_AAD, IdentityKeypair,
-    IdentitySignature, IdentitySigningPublicKey, KdfProfile, LinkKeys, ManifestSignature,
-    ManifestSigningKeypair, ManifestSigningPublicKey, ManifestSigningSecretKey, MosaicCryptoError,
-    SealedBundle, SecretKey, WrappedTierKey, build_auth_challenge_transcript, decrypt_content,
-    decrypt_shard, decrypt_shard_with_legacy_raw_key, decrypt_user_salt_envelope_v2,
-    derive_account_key, derive_content_key,
+    IdentitySignature, IdentitySigningPublicKey, KdfProfile, LINK_ID_BYTES, LinkKeys,
+    ManifestSignature, ManifestSigningKeypair, ManifestSigningPublicKey, ManifestSigningSecretKey,
+    MosaicCryptoError, SealedBundle, SecretKey, WrappedTierKey, build_auth_challenge_transcript,
+    decrypt_content, decrypt_shard, decrypt_shard_with_legacy_raw_key,
+    decrypt_user_salt_envelope_v2, derive_account_key, derive_content_key,
     derive_enumeration_defense_salt as crypto_derive_enumeration_defense_salt,
     derive_epoch_key_material, derive_identity_keypair,
     derive_link_keys as crypto_derive_link_keys, encrypt_content, encrypt_shard,
@@ -28,10 +28,12 @@ use mosaic_crypto::{
     unwrap_cache_blob as crypto_unwrap_cache_blob,
     unwrap_link_tier_blob as crypto_unwrap_link_tier_blob, unwrap_secret_with_aad,
     unwrap_tier_key_from_link as crypto_unwrap_tier_key_from_link,
+    unwrap_tier_key_from_link_v2 as crypto_unwrap_tier_key_from_link_v2,
     verify_and_open_bundle as crypto_verify_and_open_bundle, verify_manifest_identity_signature,
     verify_manifest_transcript as crypto_verify_manifest_transcript,
     wrap_cache_blob as crypto_wrap_cache_blob, wrap_link_tier_blob as crypto_wrap_link_tier_blob,
     wrap_secret_with_aad, wrap_tier_key_for_link as crypto_wrap_tier_key_for_link,
+    wrap_tier_key_for_link_v2 as crypto_wrap_tier_key_for_link_v2,
 };
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader, ShardTier};
 use subtle::ConstantTimeEq;
@@ -2365,6 +2367,60 @@ pub fn wrap_tier_key_for_link_with_epoch_handle(
     }
 }
 
+/// v2 binding variant of [`wrap_tier_key_for_link_with_epoch_handle`].
+///
+/// Emits a wrap whose AEAD AAD is bound to the caller-supplied `link_id`,
+/// the wrapped tier, and the wrapped epoch. A server that swaps the wrap
+/// row across tiers, links, or epochs makes the visitor's v2 unwrap fail
+/// (closing audit `share-link-create C1`). v1 wrap functions remain
+/// available for callers that have not yet migrated.
+///
+/// `link_id_bytes` must be exactly [`LINK_ID_BYTES`] long (the 16-byte
+/// blake2b-keyed link identifier derived from the URL-fragment token).
+#[must_use]
+pub fn wrap_tier_key_for_link_with_epoch_handle_v2(
+    epoch_handle: u64,
+    tier_byte: u8,
+    link_id_bytes: &[u8],
+    wrapping_key_bytes: &[u8],
+) -> WrappedTierKeyResult {
+    let tier = match ShardTier::try_from(tier_byte) {
+        Ok(value) => value,
+        Err(error) => return WrappedTierKeyResult::error(map_domain_error(error)),
+    };
+    if link_id_bytes.len() != LINK_ID_BYTES {
+        return WrappedTierKeyResult::error(ClientErrorCode::InvalidInputLength);
+    }
+    let mut link_id = [0_u8; LINK_ID_BYTES];
+    link_id.copy_from_slice(link_id_bytes);
+
+    let (epoch_id, tier_key_bytes) = match clone_tier_key_for_handle(epoch_handle, tier) {
+        Ok(value) => value,
+        Err(error) => return WrappedTierKeyResult::error(error.code),
+    };
+
+    let mut wrapping_buf = Zeroizing::new(wrapping_key_bytes.to_vec());
+    let wrapping_key = match SecretKey::from_bytes(wrapping_buf.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => return WrappedTierKeyResult::error(map_crypto_error(error)),
+    };
+
+    match crypto_wrap_tier_key_for_link_v2(
+        tier_key_bytes.as_slice(),
+        tier,
+        &link_id,
+        epoch_id,
+        &wrapping_key,
+    ) {
+        Ok(WrappedTierKey {
+            tier,
+            nonce,
+            encrypted_key,
+        }) => WrappedTierKeyResult::ok(tier.to_byte(), nonce.to_vec(), encrypted_key),
+        Err(error) => WrappedTierKeyResult::error(map_crypto_error(error)),
+    }
+}
+
 /// Unwraps a tier key previously produced by `wrap_tier_key_for_link`.
 ///
 /// Returns the 32-byte tier key bytes; callers MUST memzero the buffer
@@ -2407,6 +2463,63 @@ pub fn unwrap_tier_key_from_link_bytes(
     }
 }
 
+/// v2 binding variant of [`unwrap_tier_key_from_link_bytes`].
+///
+/// Tries the v2 AAD (bound to `link_id`, `tier`, `epoch_id`) first; on
+/// authentication failure falls back to v1 (so a visitor that holds a
+/// pre-A1 share link can still decrypt). Other errors surface
+/// immediately. A v1-only mismatched-tier substitution wrap that happens
+/// to authenticate under v1 is permitted on this path **only because v1
+/// already exposed that property** — the security improvement comes from
+/// the writer migrating to v2 wraps, which v1 readers reject (the
+/// no-silent-downgrade property is enforced inside `mosaic-crypto`).
+///
+/// `link_id_bytes` must be exactly [`LINK_ID_BYTES`] long.
+#[must_use]
+pub fn unwrap_tier_key_from_link_bytes_v2(
+    nonce: &[u8],
+    encrypted_key: &[u8],
+    tier_byte: u8,
+    link_id_bytes: &[u8],
+    epoch_id: u32,
+    wrapping_key_bytes: &[u8],
+) -> BytesResult {
+    let tier = match ShardTier::try_from(tier_byte) {
+        Ok(value) => value,
+        Err(error) => return bytes_error_code(map_domain_error(error)),
+    };
+    if nonce.len() != 24 {
+        return bytes_error_code(ClientErrorCode::InvalidInputLength);
+    }
+    if link_id_bytes.len() != LINK_ID_BYTES {
+        return bytes_error_code(ClientErrorCode::InvalidInputLength);
+    }
+    let mut nonce_array = [0_u8; 24];
+    nonce_array.copy_from_slice(nonce);
+    let mut link_id = [0_u8; LINK_ID_BYTES];
+    link_id.copy_from_slice(link_id_bytes);
+
+    let mut wrapping_buf = Zeroizing::new(wrapping_key_bytes.to_vec());
+    let wrapping_key = match SecretKey::from_bytes(wrapping_buf.as_mut_slice()) {
+        Ok(value) => value,
+        Err(error) => return bytes_error_code(map_crypto_error(error)),
+    };
+
+    let wrapped = WrappedTierKey {
+        tier,
+        nonce: nonce_array,
+        encrypted_key: encrypted_key.to_vec(),
+    };
+
+    match crypto_unwrap_tier_key_from_link_v2(&wrapped, tier, &link_id, epoch_id, &wrapping_key) {
+        Ok(bytes) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: bytes.to_vec(),
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
 /// Creates a share-link handle and wraps the first tier key without exposing
 /// the derived per-link wrapping key across FFI.
 ///
@@ -2420,6 +2533,24 @@ pub fn create_link_share_handle(
     tier_byte: u8,
 ) -> CreateLinkShareHandleResult {
     match create_link_share_handle_result(epoch_handle, tier_byte) {
+        Ok(result) => result,
+        Err(error) => CreateLinkShareHandleResult::error(error.code),
+    }
+}
+
+/// v2 binding variant of [`create_link_share_handle`].
+///
+/// Identical FFI shape but the embedded first-tier wrap is v2-bound to
+/// `(link_id, tier, epoch_id)`. New share links created on this path
+/// cannot have their wrap rows substituted across tiers by a malicious
+/// server (closes audit `share-link-create C1`).
+#[must_use]
+pub fn create_link_share_handle_v2(
+    _album_id: String,
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> CreateLinkShareHandleResult {
+    match create_link_share_handle_v2_result(epoch_handle, tier_byte) {
         Ok(result) => result,
         Err(error) => CreateLinkShareHandleResult::error(error.code),
     }
@@ -2448,6 +2579,19 @@ pub fn wrap_link_tier_handle(
     }
 }
 
+/// v2 binding variant of [`wrap_link_tier_handle`].
+#[must_use]
+pub fn wrap_link_tier_handle_v2(
+    link_share_handle: u64,
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> WrappedTierKeyResult {
+    match wrap_link_tier_handle_v2_result(link_share_handle, epoch_handle, tier_byte) {
+        Ok(result) => result,
+        Err(error) => WrappedTierKeyResult::error(error.code),
+    }
+}
+
 /// Imports a share-link wrapped tier key into an opaque tier handle.
 #[must_use]
 pub fn import_link_tier_handle(
@@ -2463,6 +2607,33 @@ pub fn import_link_tier_handle(
         encrypted_key,
         album_id,
         tier_byte,
+    ) {
+        Ok(result) => result,
+        Err(error) => LinkTierHandleResult::error(error.code),
+    }
+}
+
+/// v2 binding variant of [`import_link_tier_handle`].
+///
+/// The visitor passes the `epoch_id` they parsed from the album manifest;
+/// the v2 unwrap fails (after dual-accepting v1) if the server-supplied
+/// wrap row was substituted across `(tier, link_id, epoch_id)`.
+#[must_use]
+pub fn import_link_tier_handle_v2(
+    link_url_token: &[u8],
+    wrapped_nonce: &[u8],
+    encrypted_key: &[u8],
+    album_id: String,
+    tier_byte: u8,
+    epoch_id: u32,
+) -> LinkTierHandleResult {
+    match import_link_tier_handle_v2_result(
+        link_url_token,
+        wrapped_nonce,
+        encrypted_key,
+        album_id,
+        tier_byte,
+        epoch_id,
     ) {
         Ok(result) => result,
         Err(error) => LinkTierHandleResult::error(error.code),
@@ -2660,6 +2831,112 @@ fn import_link_tier_handle_result(
     };
     let key_bytes = crypto_unwrap_tier_key_from_link(&wrapped, tier, &wrapping_key)
         .map_err(client_error_from_crypto)?;
+    let handle = insert_link_tier_handle(album_id, Some(tier), key_bytes.as_slice())?;
+    Ok(LinkTierHandleResult::ok(
+        handle,
+        link_id.to_vec(),
+        tier.to_byte(),
+    ))
+}
+
+fn clone_link_token_and_wrap_for_handle(
+    handle: u64,
+) -> Result<(Zeroizing<Vec<u8>>, Zeroizing<Vec<u8>>), ClientError> {
+    let registry = link_share_registry();
+    let guard = registry.lock().map_err(|_| {
+        ClientError::new(
+            ClientErrorCode::InternalStatePoisoned,
+            "link share registry lock was poisoned",
+        )
+    })?;
+    let record = guard
+        .get(&handle)
+        .filter(|record| record.open)
+        .ok_or_else(|| {
+            ClientError::new(
+                ClientErrorCode::SecretHandleNotFound,
+                "link share handle is not open",
+            )
+        })?;
+    Ok((
+        Zeroizing::new(record.link_url_token.to_vec()),
+        Zeroizing::new(record.link_wrap_bytes.to_vec()),
+    ))
+}
+
+fn create_link_share_handle_v2_result(
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> Result<CreateLinkShareHandleResult, ClientError> {
+    let secret = crypto_generate_link_secret().map_err(client_error_from_crypto)?;
+    let link_url_token = secret.as_slice().to_vec();
+    let LinkKeys {
+        link_id,
+        wrapping_key,
+    } = crypto_derive_link_keys(secret.as_slice()).map_err(client_error_from_crypto)?;
+    let handle = insert_link_share_handle(link_url_token.clone(), wrapping_key.as_bytes())?;
+    let wrapped = wrap_link_tier_handle_v2_result(handle, epoch_handle, tier_byte)?;
+    Ok(CreateLinkShareHandleResult::ok(
+        handle,
+        link_id.to_vec(),
+        link_url_token,
+        wrapped,
+    ))
+}
+
+fn wrap_link_tier_handle_v2_result(
+    link_share_handle: u64,
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> Result<WrappedTierKeyResult, ClientError> {
+    let (link_url_token, mut link_wrap_bytes) =
+        clone_link_token_and_wrap_for_handle(link_share_handle)?;
+    let LinkKeys {
+        link_id,
+        wrapping_key: _,
+    } = crypto_derive_link_keys(link_url_token.as_slice()).map_err(client_error_from_crypto)?;
+    let result = wrap_tier_key_for_link_with_epoch_handle_v2(
+        epoch_handle,
+        tier_byte,
+        &link_id,
+        link_wrap_bytes.as_mut_slice(),
+    );
+    if result.code == ClientErrorCode::Ok {
+        Ok(result)
+    } else {
+        Err(ClientError::new(result.code, "failed to wrap link tier"))
+    }
+}
+
+fn import_link_tier_handle_v2_result(
+    link_url_token: &[u8],
+    wrapped_nonce: &[u8],
+    encrypted_key: &[u8],
+    album_id: String,
+    tier_byte: u8,
+    epoch_id: u32,
+) -> Result<LinkTierHandleResult, ClientError> {
+    let tier = ShardTier::try_from(tier_byte).map_err(client_error_from_domain)?;
+    let LinkKeys {
+        link_id,
+        wrapping_key,
+    } = crypto_derive_link_keys(link_url_token).map_err(client_error_from_crypto)?;
+    if wrapped_nonce.len() != 24 {
+        return Err(ClientError::new(
+            ClientErrorCode::InvalidInputLength,
+            "link tier nonce must be 24 bytes",
+        ));
+    }
+    let mut nonce = [0_u8; 24];
+    nonce.copy_from_slice(wrapped_nonce);
+    let wrapped = WrappedTierKey {
+        tier,
+        nonce,
+        encrypted_key: encrypted_key.to_vec(),
+    };
+    let key_bytes =
+        crypto_unwrap_tier_key_from_link_v2(&wrapped, tier, &link_id, epoch_id, &wrapping_key)
+            .map_err(client_error_from_crypto)?;
     let handle = insert_link_tier_handle(album_id, Some(tier), key_bytes.as_slice())?;
     Ok(LinkTierHandleResult::ok(
         handle,
