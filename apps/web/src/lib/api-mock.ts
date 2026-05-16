@@ -594,6 +594,32 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       }
     },
 
+    async publishSignedRoster(albumId, body): Promise<void> {
+      // C2c-4 mock: store signature + version on the album record so
+      // subsequent getAlbum() reads return the same surface the real
+      // backend would. Enforces strict monotonicity to match the
+      // backend's 409 Conflict guard.
+      await delay();
+      const album = store.albums.get(albumId);
+      if (!album) {
+        throw new Error(`Album not found: ${albumId}`);
+      }
+      const currentVersion = (album as { memberRosterVersion?: number })
+        .memberRosterVersion;
+      if (currentVersion != null && body.rosterVersion <= currentVersion) {
+        throw new Error(
+          `rosterVersion must strictly increase (current=${currentVersion}, requested=${body.rosterVersion})`,
+        );
+      }
+      (album as { memberRosterSignature?: string }).memberRosterSignature =
+        body.signature;
+      (album as { memberRosterSignerEpochId?: number }).memberRosterSignerEpochId =
+        body.signerEpochId;
+      (album as { memberRosterVersion?: number }).memberRosterVersion =
+        body.rosterVersion;
+      album.updatedAt = new Date().toISOString();
+    },
+
     // =========================================================================
     // Epoch Keys
     // =========================================================================

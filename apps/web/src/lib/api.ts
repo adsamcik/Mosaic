@@ -726,6 +726,29 @@ export function createApiClient(): MosaicApi {
       );
     },
 
+    /**
+     * Publish an owner-signed member roster (audit `threat-model C-3`,
+     * batch C2c-4). The body is the canonical
+     * `PublishSignedRosterRequest` shape from the backend:
+     * `{ rosterVersion, signerEpochId, signature (base64),
+     *    members: [{ userId, roleByte }] }`. Server validates the
+     * version is strictly monotonic and the signature is 64 bytes.
+     */
+    async publishSignedRoster(
+      albumId: string,
+      body: {
+        rosterVersion: number;
+        signerEpochId: number;
+        signature: string;
+        members: Array<{ userId: string; roleByte: number }>;
+      },
+    ): Promise<void> {
+      return apiRequest(`/albums/${albumId}/members/roster`, {
+        method: 'POST',
+        body,
+      });
+    },
+
     // =========================================================================
     // Epoch Keys
     // =========================================================================

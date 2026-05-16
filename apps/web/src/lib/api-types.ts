@@ -108,6 +108,10 @@ export interface Album {
   expiresAt?: string | null;
   /** Days before expiration to show warning (default: 7) */
   expirationWarningDays?: number;
+  /** C2 audit `threat-model C-3`: owner-signed roster fields (NULL on pre-C2 albums). */
+  memberRosterSignature?: string | null;
+  memberRosterSignerEpochId?: number | null;
+  memberRosterVersion?: number | null;
 }
 
 export interface CreateAlbumRequest {
@@ -597,6 +601,24 @@ export interface MosaicApi {
     albumId: string,
     userId: string,
     request: RemoveAndRotateRequest,
+  ): Promise<void>;
+
+  /**
+   * Publish an owner-signed member roster (audit `threat-model C-3`,
+   * batch C2c-4). Body shape matches the backend
+   * `PublishSignedRosterRequest`: monotonic `rosterVersion`, 64-byte
+   * `signature` (base64), and the canonical `[{userId, roleByte}]`
+   * member list. The server stores the signature on the Album row
+   * and emits it back on subsequent album reads.
+   */
+  publishSignedRoster(
+    albumId: string,
+    body: {
+      rosterVersion: number;
+      signerEpochId: number;
+      signature: string;
+      members: Array<{ userId: string; roleByte: number }>;
+    },
   ): Promise<void>;
 
   // Epoch Keys
