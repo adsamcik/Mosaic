@@ -247,6 +247,13 @@ app.UseForwardedHeaders();
 app.UseRateLimiter();
 app.UseWebSockets();
 app.UseExceptionHandler();
+// D2 (batch 7, audit observability D-2): make framework-returned status
+// codes (401/403/404/etc. from routing or auth pipeline that have no
+// response body) carry an RFC 7807 ProblemDetails JSON body. Action-
+// method returns from controllers that already use `Problem(...)` are
+// unchanged. Combined with AddProblemDetails() (Program.cs) this means
+// EVERY error response from the API is now ProblemDetails-shaped.
+app.UseStatusCodePages();
 app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseLogScope();
