@@ -1,5 +1,6 @@
 package org.mosaic.android.main.sync
 
+import android.content.Context
 import androidx.room.withTransaction
 import androidx.work.Logger
 import androidx.work.WorkManager
@@ -12,6 +13,15 @@ class AlbumPurger(
   private val database: UploadQueueDatabase,
   private val workManager: WorkManager? = null,
 ) {
+  /**
+   * Whether this purger will broadcast work-cancellation through
+   * [androidx.work.WorkManager]. Production wiring sets this; in-memory
+   * unit tests that mock the WorkManager separately may set this to
+   * `false` to stay off the global singleton.
+   */
+  val hasWorkManager: Boolean
+    get() = workManager != null
+
   suspend fun purgeRemoteAlbumDeletion(albumId: AlbumId): PurgeResult {
     val purge = database.withTransaction {
       val jobIds = database.uploadQueueDao().jobIdsForAlbum(albumId.value)
@@ -39,8 +49,17 @@ class AlbumPurger(
     return purge.result
   }
 
-  private companion object {
-    const val TAG = "AlbumPurger"
+  companion object {
+    private const val TAG = "AlbumPurger"
+
+    /**
+     * Production factory wiring an [AlbumPurger] against the process-wide
+     * [WorkManager] singleton. Unit tests should instantiate
+     * [AlbumPurger] directly so they can inject a test [WorkManager] (or
+     * none at all).
+     */
+    fun production(context: Context, database: UploadQueueDatabase): AlbumPurger =
+      AlbumPurger(database, WorkManager.getInstance(context))
   }
 }
 

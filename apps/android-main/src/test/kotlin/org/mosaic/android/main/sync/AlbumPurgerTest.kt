@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -101,6 +102,13 @@ class AlbumPurgerTest {
     assertEquals(WorkInfo.State.CANCELLED, workInfoForJob("jobA1").state)
     assertEquals(WorkInfo.State.CANCELLED, workInfoForJob("jobA2").state)
     assertEquals(WorkInfo.State.ENQUEUED, workInfoForJob("jobB1").state)
+  }
+
+  @Test
+  fun productionFactoryWiresWorkManager() {
+    val purger = AlbumPurger.production(context, db)
+
+    assertTrue(purger.hasWorkManager)
   }
 
   private fun taggedWork(jobId: String) = OneTimeWorkRequestBuilder<NoOpWorker>()
