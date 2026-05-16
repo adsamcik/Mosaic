@@ -341,6 +341,11 @@ version = "0.3.1"
 criteria = "safe-to-deploy"
 notes = "Phase 3 production crypto slice backlog exemption pending formal audit. Tiny helper macro that redacts Debug output for crypto types."
 
+[[exemptions.pbkdf2]]
+version = "0.12.2"
+criteria = "safe-to-deploy"
+notes = "Wave 4A backlog exemption pending formal audit. RustCrypto PBKDF2 implementation used by decrypt_user_salt_v1_legacy for the legacy 100k-iteration AES-GCM unlock path (replaces the WebCrypto PBKDF2 path in session.ts). Pinned to the hmac 0.12 stack."
+
 [[exemptions.pin-project-lite]]
 version = "0.2.17"
 criteria = "safe-to-deploy"
@@ -349,11 +354,6 @@ criteria = "safe-to-deploy"
 version = "0.10.2"
 criteria = "safe-to-deploy"
 notes = "Phase 3 manifest signing slice backlog exemption after four-auditor dependency review found no malicious behavior. PKCS#8 metadata dependency pulled by the Ed25519 package graph; Mosaic does not expose PKCS#8 key import/export in this slice."
-
-[[exemptions.pbkdf2]]
-version = "0.12.2"
-criteria = "safe-to-deploy"
-notes = "Wave 4A backlog exemption pending formal audit. RustCrypto PBKDF2 implementation used by decrypt_user_salt_v1_legacy for the legacy 100k-iteration AES-GCM unlock path (replaces the WebCrypto PBKDF2 path in session.ts). Pinned to the hmac 0.12 stack."
 
 [[exemptions.poly1305]]
 version = "0.8.0"

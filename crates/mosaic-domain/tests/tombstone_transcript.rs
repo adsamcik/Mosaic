@@ -40,11 +40,17 @@ fn tombstone_transcript_has_stable_64_byte_layout() {
     assert_eq!(bytes.len(), 64, "tombstone transcript must be 64 bytes");
 
     // Context bytes match the documented domain prefix.
-    assert_eq!(&bytes[..TOMBSTONE_SIGN_CONTEXT.len()], TOMBSTONE_SIGN_CONTEXT);
+    assert_eq!(
+        &bytes[..TOMBSTONE_SIGN_CONTEXT.len()],
+        TOMBSTONE_SIGN_CONTEXT
+    );
     assert_eq!(TOMBSTONE_SIGN_CONTEXT, b"Mosaic_Tombstone_v1");
 
     // Version byte directly after the context.
-    assert_eq!(bytes[TOMBSTONE_SIGN_CONTEXT.len()], TOMBSTONE_TRANSCRIPT_VERSION);
+    assert_eq!(
+        bytes[TOMBSTONE_SIGN_CONTEXT.len()],
+        TOMBSTONE_TRANSCRIPT_VERSION
+    );
     assert_eq!(TOMBSTONE_TRANSCRIPT_VERSION, 1);
 
     // Album, epoch_le, photo, version_created_le packed in that order.

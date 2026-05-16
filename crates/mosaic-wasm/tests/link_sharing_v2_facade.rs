@@ -14,7 +14,8 @@ use mosaic_wasm::{
     close_link_share_handle, close_link_tier_handle, create_epoch_key_handle,
     create_link_share_handle, create_link_share_handle_v2, decrypt_shard_with_link_tier_handle,
     encrypt_shard_with_epoch_handle, import_link_share_handle, import_link_tier_handle,
-    import_link_tier_handle_v2, unlock_account_key, wrap_link_tier_handle, wrap_link_tier_handle_v2,
+    import_link_tier_handle_v2, unlock_account_key, wrap_link_tier_handle,
+    wrap_link_tier_handle_v2,
 };
 
 const PASSWORD: &[u8] = b"correct horse battery staple";
@@ -77,7 +78,8 @@ fn create_v2_round_trips_through_import_v2_via_wasm() {
     assert_eq!(imported.tier, 2);
     assert_eq!(imported.link_id, created.link_id);
 
-    let encrypted = encrypt_shard_with_epoch_handle(epoch.handle, b"wasm v2 preview".to_vec(), 5, 2);
+    let encrypted =
+        encrypt_shard_with_epoch_handle(epoch.handle, b"wasm v2 preview".to_vec(), 5, 2);
     assert_eq!(encrypted.code, 0);
     let decrypted = decrypt_shard_with_link_tier_handle(imported.handle, encrypted.envelope_bytes);
     assert_eq!(decrypted.code, 0);
