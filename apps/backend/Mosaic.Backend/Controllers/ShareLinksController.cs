@@ -17,15 +17,18 @@ public class ShareLinksController : ControllerBase
 {
     private readonly MosaicDbContext _db;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IAuditLogService _auditLog;
     private readonly TimeProvider _timeProvider;
 
     public ShareLinksController(
         MosaicDbContext db,
         ICurrentUserService currentUserService,
+        IAuditLogService auditLog,
         TimeProvider? timeProvider = null)
     {
         _db = db;
         _currentUserService = currentUserService;
+        _auditLog = auditLog;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -157,6 +160,24 @@ public class ShareLinksController : ControllerBase
 
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
+
+            // D1 audit (batch 7): record share-link creation for incident
+            // response. ZK-safe: we log the opaque link Guid (not the
+            // secret) plus operational metadata only.
+            await _auditLog.WriteAsync(
+                AuditEventTypes.ShareLinkCreated,
+                AuditOutcomes.Success,
+                HttpContext,
+                actorUserId: user.Id,
+                targetType: "share-link",
+                targetId: shareLink.Id.ToString(),
+                details: new
+                {
+                    albumId,
+                    accessTier = request.AccessTier,
+                    hasExpiry = request.ExpiresAt.HasValue,
+                    maxUses = request.MaxUses,
+                });
 
             return Created($"/api/share-links/{shareLink.Id}", new ShareLinkResponse
             {
@@ -310,6 +331,15 @@ public class ShareLinksController : ControllerBase
         }
         if (shareLink.Album.OwnerId != user.Id)
         {
+            // D1 audit: record the denied attempt so a malicious
+            // probe of "guess a link id then revoke" leaves a trace.
+            await _auditLog.WriteAsync(
+                AuditEventTypes.ShareLinkRevoked,
+                AuditOutcomes.Denied,
+                HttpContext,
+                actorUserId: user.Id,
+                targetType: "share-link",
+                targetId: id.ToString());
             return Problem(
                 detail: "Not authorized to revoke this share link",
                 statusCode: StatusCodes.Status403Forbidden);
@@ -317,6 +347,17 @@ public class ShareLinksController : ControllerBase
 
         shareLink.IsRevoked = true;
         await _db.SaveChangesAsync();
+
+        // D1 audit (batch 7): record successful revocation. ZK-safe:
+        // we log the opaque link Guid + album id only.
+        await _auditLog.WriteAsync(
+            AuditEventTypes.ShareLinkRevoked,
+            AuditOutcomes.Success,
+            HttpContext,
+            actorUserId: user.Id,
+            targetType: "share-link",
+            targetId: shareLink.Id.ToString(),
+            details: new { albumId = shareLink.AlbumId });
 
         return NoContent();
     }
