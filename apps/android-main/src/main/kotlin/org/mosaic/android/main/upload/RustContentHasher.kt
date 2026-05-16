@@ -1,14 +1,14 @@
 package org.mosaic.android.main.upload
 
 import org.mosaic.android.main.bridge.AndroidRustCoreLibraryLoader
+import uniffi.mosaic_uniffi.Sha256Hasher
 import uniffi.mosaic_uniffi.sha256OfBytes as rustSha256OfBytes
 import java.io.File
-import java.security.MessageDigest
+import java.io.InputStream
 
 object RustContentHasher {
   private const val SHA256_BYTES: Int = 32
-  private const val MAX_SINGLE_SHOT_BYTES: Long = 32L * 1024L * 1024L
-  private const val STREAM_BUFFER_BYTES: Int = 1024 * 1024
+  private const val STREAM_BUFFER_BYTES: Int = 64 * 1024
   private val HEX_DIGITS = charArrayOf(
     '0', '1', '2', '3', '4', '5', '6', '7',
     '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
@@ -21,24 +21,42 @@ object RustContentHasher {
     return digest.toLowerHex()
   }
 
-  fun sha256Hex(file: File): String =
-    if (file.length() <= MAX_SINGLE_SHOT_BYTES) {
-      sha256Hex(file.readBytes())
-    } else {
-      sha256HexStreaming(file)
-    }
+  fun sha256Hex(file: File): String = file.inputStream().use { input -> sha256Hex(input) }
 
-  private fun sha256HexStreaming(file: File): String {
-    val digest = MessageDigest.getInstance("SHA-256")
-    file.inputStream().buffered().use { input ->
-      val buffer = ByteArray(STREAM_BUFFER_BYTES)
-      while (true) {
-        val read = input.read(buffer)
-        if (read < 0) break
-        if (read > 0) digest.update(buffer, 0, read)
+  fun sha256Hex(input: InputStream): String {
+    AndroidRustCoreLibraryLoader.warmUp()
+    val hasher = Sha256Hasher()
+    try {
+      input.buffered().use { stream ->
+        val buffer = ByteArray(STREAM_BUFFER_BYTES)
+        var read = stream.read(buffer)
+        while (read >= 0) {
+          if (read > 0) hasher.update(buffer.copyOf(read))
+          read = stream.read(buffer)
+        }
       }
+      return hasher.finalizeHex()
+    } finally {
+      hasher.close()
     }
-    return digest.digest().toLowerHex()
+  }
+
+  fun sha256Bytes(input: InputStream): ByteArray {
+    AndroidRustCoreLibraryLoader.warmUp()
+    val hasher = Sha256Hasher()
+    try {
+      input.buffered().use { stream ->
+        val buffer = ByteArray(STREAM_BUFFER_BYTES)
+        var read = stream.read(buffer)
+        while (read >= 0) {
+          if (read > 0) hasher.update(buffer.copyOf(read))
+          read = stream.read(buffer)
+        }
+      }
+      return hasher.finalizeBytes()
+    } finally {
+      hasher.close()
+    }
   }
 
   private fun ByteArray.toLowerHex(): String = buildString(size * 2) {
