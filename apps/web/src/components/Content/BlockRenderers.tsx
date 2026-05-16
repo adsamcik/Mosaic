@@ -143,17 +143,11 @@ export const PhotoBlockRenderer = memo(function PhotoBlockRenderer({
 
   return (
     <figure className="block-photo">
-      <div
+      <button
+        type="button"
         className="block-photo-container"
         onClick={() => onPhotoClick?.(block.manifestId)}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onPhotoClick?.(block.manifestId);
-          }
-        }}
+        aria-label={block.caption ? 'View photo' : 'View photo'}
       >
         {thumbnailUrl ? (
           <img
@@ -167,7 +161,7 @@ export const PhotoBlockRenderer = memo(function PhotoBlockRenderer({
             <span>Photo</span>
           </div>
         )}
-      </div>
+      </button>
       {block.caption && block.caption.length > 0 && (
         <figcaption className="block-photo-caption">
           <RichText segments={block.caption} />
@@ -201,18 +195,12 @@ export const PhotoGroupBlockRenderer = memo(function PhotoGroupBlockRenderer({
       {block.manifestIds.map((manifestId: string) => {
         const thumbnailUrl = getThumbnailUrl?.(manifestId);
         return (
-          <div
+          <button
             key={manifestId}
+            type="button"
             className="block-photo-group-item"
             onClick={() => onPhotoClick?.(manifestId)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onPhotoClick?.(manifestId);
-              }
-            }}
+            aria-label="View photo"
           >
             {thumbnailUrl ? (
               <img
@@ -224,7 +212,7 @@ export const PhotoGroupBlockRenderer = memo(function PhotoGroupBlockRenderer({
             ) : (
               <div className="block-photo-group-placeholder" />
             )}
-          </div>
+          </button>
         );
       })}
     </div>
