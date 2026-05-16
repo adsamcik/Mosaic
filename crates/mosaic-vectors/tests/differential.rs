@@ -26,16 +26,18 @@ use mosaic_crypto::{
     verify_and_open_bundle,
 };
 use mosaic_domain::{
-    EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, ShardTier,
-    TombstoneTranscript, canonical_manifest_transcript_bytes, canonical_tombstone_transcript_bytes,
+    EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, MemberRole,
+    MemberRosterEntry, MemberRosterTranscript, ShardTier, TombstoneTranscript,
+    canonical_manifest_transcript_bytes, canonical_member_roster_transcript_bytes,
+    canonical_tombstone_transcript_bytes,
 };
 use mosaic_vectors::{
     ParsedVector, default_corpus_dir, load_all, load_vector,
     vectors::{
         AccountUnlockVector, AuthChallengeVector, AuthKeypairVector, ContentEncryptVector,
         ContentHashVector, EpochDeriveVector, IdentityVector, LinkKeysVector,
-        ManifestTranscriptVector, SealedBundleVector, ShardEnvelopeVector, TierKeyWrapV2Vector,
-        TierKeyWrapVector, TombstoneSignatureVector,
+        ManifestTranscriptVector, MemberRosterSignatureVector, SealedBundleVector,
+        ShardEnvelopeVector, TierKeyWrapV2Vector, TierKeyWrapVector, TombstoneSignatureVector,
     },
 };
 use sha2::{Digest, Sha256};
@@ -733,6 +735,117 @@ fn tombstone_signature_vector_locks_transcript_and_ed25519_signature() {
     assert!(
         !verify_manifest_transcript(&tampered_bytes, &signature, &pubkey),
         "verify must reject a tombstone signature against a tampered transcript"
+    );
+
+    // 6. Negative: wrong pubkey rejected.
+    let wrong_pubkey_bytes = [0x55_u8; 32];
+    let wrong_pubkey = ManifestSigningPublicKey::from_bytes(&wrong_pubkey_bytes)
+        .expect("from_bytes accepts 32 bytes");
+    assert!(
+        !verify_manifest_transcript(&transcript_bytes, &signature, &wrong_pubkey),
+        "verify must reject the locked signature against a wrong pubkey"
+    );
+}
+
+
+#[test]
+fn member_roster_signature_vector_locks_transcript_and_ed25519_signature() {
+    // Cross-client lock for audit `threat-model C-3` (batch C2d).
+    // Mirrors the tombstone vector test but exercises the roster
+    // transcript producer and the wire-pinned role byte set
+    // (1=owner, 2=editor, 3=viewer).
+    let parsed = load("member_roster_signature.json");
+    let vector =
+        MemberRosterSignatureVector::from(&parsed).expect("member_roster_signature vector");
+
+    assert_eq!(vector.signing_seed.len(), 32, "signing seed must be 32 bytes");
+    assert_eq!(vector.album_id.len(), 16, "album_id must be 16 bytes");
+
+    let mut album_id = [0_u8; 16];
+    album_id.copy_from_slice(&vector.album_id);
+
+    let mut roster_entries = Vec::with_capacity(vector.members.len());
+    for entry in &vector.members {
+        assert_eq!(entry.member_id.len(), 16, "member_id must be 16 bytes");
+        let mut member_id = [0_u8; 16];
+        member_id.copy_from_slice(&entry.member_id);
+        let role = MemberRole::try_from_byte(entry.role_byte).expect("known role byte");
+        roster_entries.push(MemberRosterEntry { member_id, role });
+    }
+    let transcript = MemberRosterTranscript::new(
+        album_id,
+        vector.epoch_id,
+        vector.roster_version,
+        roster_entries,
+    )
+    .expect("roster transcript");
+
+    // 1. Transcript bytes are byte-exact.
+    let transcript_bytes =
+        canonical_member_roster_transcript_bytes(&transcript).expect("canonical bytes");
+    assert_eq!(
+        transcript_bytes.len(),
+        vector.expected_transcript_length,
+        "transcript length drift"
+    );
+    assert_eq!(
+        hex(&transcript_bytes),
+        hex(&vector.expected_transcript),
+        "roster transcript bytes drift — cross-client signature will silently break"
+    );
+
+    // 2. Pubkey derived from the seed matches.
+    let mut seed = vector.signing_seed.clone();
+    let secret = ManifestSigningSecretKey::from_seed(&mut seed).expect("from_seed");
+    let pubkey = secret.public_key();
+    assert_eq!(
+        hex(pubkey.as_bytes()),
+        hex(&vector.expected_signing_pubkey),
+        "signing pubkey derivation drift"
+    );
+
+    // 3. Signature is byte-exact (Ed25519 deterministic).
+    let signature = sign_manifest_transcript(&transcript_bytes, &secret);
+    assert_eq!(
+        hex(signature.as_bytes()),
+        hex(&vector.expected_signature),
+        "roster signature drift — cross-client clients will reject this roster"
+    );
+
+    // 4. Strict verify accepts the locked signature.
+    assert!(
+        verify_manifest_transcript(&transcript_bytes, &signature, &pubkey),
+        "verify_manifest_transcript must accept the locked roster signature"
+    );
+
+    // 5. Negative: tampering the role byte (escalate viewer -> owner)
+    // MUST cause verification to fail. This is the canonical C-3 attack
+    // — a compromised server cannot trick the visitor into rendering
+    // a fake admin badge.
+    let mut tampered_entries = Vec::new();
+    for (i, entry) in vector.members.iter().enumerate() {
+        let mut member_id = [0_u8; 16];
+        member_id.copy_from_slice(&entry.member_id);
+        let role = if i == 0 {
+            // flip first member's role to something different
+            if entry.role_byte == 1 {
+                MemberRole::Editor
+            } else {
+                MemberRole::Owner
+            }
+        } else {
+            MemberRole::try_from_byte(entry.role_byte).expect("known role byte")
+        };
+        tampered_entries.push(MemberRosterEntry { member_id, role });
+    }
+    let tampered =
+        MemberRosterTranscript::new(album_id, vector.epoch_id, vector.roster_version, tampered_entries)
+            .expect("roster with tampered role");
+    let tampered_bytes =
+        canonical_member_roster_transcript_bytes(&tampered).expect("canonical bytes");
+    assert!(
+        !verify_manifest_transcript(&tampered_bytes, &signature, &pubkey),
+        "verify must reject a roster signature against a role-tampered transcript"
     );
 
     // 6. Negative: wrong pubkey rejected.

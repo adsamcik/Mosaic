@@ -1209,6 +1209,111 @@ pub mod vectors {
             })
         }
     }
+
+    /// `member-roster.sign-transcript.v1` parsed inputs/outputs (batch C2d).
+    ///
+    /// Locks the byte-exact owner-signed member-roster transcript AND
+    /// the Ed25519 signature/pubkey derived from a known 32-byte seed.
+    /// Cross-client implementations (Rust, WASM, UniFFI) MUST produce
+    /// the same bytes. Closes audit `threat-model C-3` cross-client
+    /// surface.
+    pub struct MemberRosterSignatureVector {
+        pub signing_seed: alloc::vec::Vec<u8>,
+        pub album_id: alloc::vec::Vec<u8>,
+        pub epoch_id: u32,
+        pub roster_version: i64,
+        pub members: alloc::vec::Vec<MemberRosterVectorEntry>,
+        pub expected_transcript: alloc::vec::Vec<u8>,
+        pub expected_transcript_length: usize,
+        pub expected_signing_pubkey: alloc::vec::Vec<u8>,
+        pub expected_signature: alloc::vec::Vec<u8>,
+    }
+
+    /// One entry in the cross-client member-roster signature vector.
+    pub struct MemberRosterVectorEntry {
+        pub member_id: alloc::vec::Vec<u8>,
+        pub role_byte: u8,
+    }
+
+    #[derive(Deserialize)]
+    struct MemberRosterInputEntry {
+        #[serde(rename = "memberIdHex")]
+        member_id_hex: alloc::string::String,
+        #[serde(rename = "roleByte")]
+        role_byte: u8,
+    }
+    #[derive(Deserialize)]
+    struct MemberRosterInputs {
+        #[serde(rename = "signingSeedHex")]
+        signing_seed_hex: alloc::string::String,
+        #[serde(rename = "albumIdHex")]
+        album_id_hex: alloc::string::String,
+        #[serde(rename = "epochId")]
+        epoch_id: u32,
+        #[serde(rename = "rosterVersion")]
+        roster_version: i64,
+        members: alloc::vec::Vec<MemberRosterInputEntry>,
+    }
+    #[derive(Deserialize)]
+    struct MemberRosterExpected {
+        #[serde(rename = "transcriptLength")]
+        transcript_length: usize,
+        #[serde(rename = "transcriptHex")]
+        transcript_hex: alloc::string::String,
+        #[serde(rename = "signingPubkeyHex")]
+        signing_pubkey_hex: alloc::string::String,
+        #[serde(rename = "signatureHex")]
+        signature_hex: alloc::string::String,
+    }
+
+    impl MemberRosterSignatureVector {
+        /// # Errors
+        /// Returns [`VectorLoadError`] on missing fields or invalid hex.
+        pub fn from(parsed: &ParsedVector) -> Result<Self, VectorLoadError> {
+            let inputs: MemberRosterInputs =
+                extract(&parsed.document, "inputs", &parsed.path)?;
+            let expected: MemberRosterExpected =
+                extract(&parsed.document, "expected", &parsed.path)?;
+            let mut members = alloc::vec::Vec::with_capacity(inputs.members.len());
+            for entry in inputs.members {
+                members.push(MemberRosterVectorEntry {
+                    member_id: decode_hex(
+                        &entry.member_id_hex,
+                        "members[].memberIdHex",
+                        &parsed.path,
+                    )?,
+                    role_byte: entry.role_byte,
+                });
+            }
+            Ok(Self {
+                signing_seed: decode_hex(
+                    &inputs.signing_seed_hex,
+                    "signingSeedHex",
+                    &parsed.path,
+                )?,
+                album_id: decode_hex(&inputs.album_id_hex, "albumIdHex", &parsed.path)?,
+                epoch_id: inputs.epoch_id,
+                roster_version: inputs.roster_version,
+                members,
+                expected_transcript: decode_hex(
+                    &expected.transcript_hex,
+                    "expected.transcriptHex",
+                    &parsed.path,
+                )?,
+                expected_transcript_length: expected.transcript_length,
+                expected_signing_pubkey: decode_hex(
+                    &expected.signing_pubkey_hex,
+                    "expected.signingPubkeyHex",
+                    &parsed.path,
+                )?,
+                expected_signature: decode_hex(
+                    &expected.signature_hex,
+                    "expected.signatureHex",
+                    &parsed.path,
+                )?,
+            })
+        }
+    }
 }
 
 #[cfg(test)]

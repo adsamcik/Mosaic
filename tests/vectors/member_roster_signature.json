@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "operation": "member-roster.sign-transcript.v1",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": true,
+  "description": "Cross-client owner-signed member-roster signature lock. The album owner signs the canonical 106-byte roster transcript (mosaic-domain: 'Mosaic_MemberRoster_v1' || version || album_id || epoch_id_le || roster_version_le_i64 || member_count_le_u32 || sorted([(member_id, role_byte)])) with the per-epoch Ed25519 ManifestSigningSecretKey. The visitor recomputes the transcript from the live members list and verifies the signature against the album's published signing pubkey before rendering role badges (audit 'threat-model C-3 (server-controlled member roles)' / batch C2). Ed25519 (RFC 8032) is deterministic, so Rust, WASM, and UniFFI clients MUST produce the exact signature bytes locked here.",
+  "algorithms": {
+    "transcript": "mosaic_domain::canonical_member_roster_transcript_bytes",
+    "signing": "Ed25519 (RFC 8032 deterministic), 32-byte seed -> 32-byte pubkey + 64-byte signature",
+    "verify": "mosaic_crypto::verify_manifest_transcript (Ed25519 strict)",
+    "roleBytes": "1=owner, 2=editor, 3=viewer (wire-pinned v1 freeze surface)"
+  },
+  "domainLabels": [
+    "mosaic.v1.member-roster"
+  ],
+  "inputs": {
+    "signingSeedHex": "4242424242424242424242424242424242424242424242424242424242424242",
+    "albumIdHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+    "epochId": 7,
+    "rosterVersion": 42,
+    "members": [
+      {
+        "memberIdHex": "101112131415161718191a1b1c1d1e1f",
+        "role": "owner",
+        "roleByte": 1
+      },
+      {
+        "memberIdHex": "202122232425262728292a2b2c2d2e2f",
+        "role": "editor",
+        "roleByte": 2
+      },
+      {
+        "memberIdHex": "303132333435363738393a3b3c3d3e3f",
+        "role": "viewer",
+        "roleByte": 3
+      }
+    ]
+  },
+  "expected": {
+    "transcriptLength": 106,
+    "transcriptHex": "4d6f736169635f4d656d626572526f737465725f763101a0a1a2a3a4a5a6a7a8a9aaabacadaeaf070000002a0000000000000003000000101112131415161718191a1b1c1d1e1f01202122232425262728292a2b2c2d2e2f02303132333435363738393a3b3c3d3e3f03",
+    "signingPubkeyHex": "2152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12",
+    "signatureHex": "76f4927cf3af7408b59e221ceb93a3b3b1e482abaa0f869a5f45f53e47f19a0ef95d859c62e7686bb7d1fa369f6db21827e87e2d3748764e039bed50ab1c7100"
+  },
+  "negativeCases": [
+    {
+      "name": "tampered-album-id",
+      "mutations": ["flip first byte of inputs.albumIdHex"],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "Roster is scoped to album_id; a server cross-mounting a roster fails verification."
+    },
+    {
+      "name": "tampered-epoch-id",
+      "mutations": ["change inputs.epochId from 7 to 8"],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "Epoch binding prevents replaying a roster from a previous epoch after rotation."
+    },
+    {
+      "name": "tampered-roster-version",
+      "mutations": ["change inputs.rosterVersion from 42 to 41 or 43"],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "Monotonic version binding prevents rollback of role revocations."
+    },
+    {
+      "name": "tampered-role-byte",
+      "mutations": ["change member X's roleByte from 1 (owner) to 2 (editor)"],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "Role-escalation attack: server cannot smuggle a different role label under the same signature."
+    },
+    {
+      "name": "added-member",
+      "mutations": ["append a 4th member to inputs.members"],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "member_count + per-member bytes are in the signed transcript; a server cannot smuggle additional members."
+    },
+    {
+      "name": "removed-member",
+      "mutations": ["drop member Y from inputs.members"],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "Server cannot hide a member from the visitor's view without invalidating the signature."
+    },
+    {
+      "name": "swapped-member-id",
+      "mutations": ["replace member X with a different member_id but keep the same role byte"],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "Server cannot substitute another user_id under a role label that the owner signed for a different user."
+    },
+    {
+      "name": "wrong-pubkey",
+      "mutations": ["verify with a different 32-byte pubkey (e.g. all-0x55)"],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "Cross-key substitution must fail — the visitor only trusts the album's published epoch signing pubkey."
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "transcriptBytes",
+      "classification": "opaque-protocol-data",
+      "reason": "The transcript embeds server-visible fields (album_id, epoch_id, roster_version, member_ids, role_bytes)."
+    },
+    {
+      "name": "signature",
+      "classification": "public-cryptographic",
+      "reason": "Ed25519 signature is stored in the albums.member_roster_signature column and emitted in album responses."
+    },
+    {
+      "name": "signerEpochId",
+      "classification": "operational-metadata",
+      "reason": "Signer epoch is needed by the visitor to look up the correct pubkey."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "signingSeed",
+      "reason": "The per-epoch signing seed never leaves the client — only its derived pubkey is published.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}
