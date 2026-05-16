@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "operation": "tus-patch-idempotency-key.v1",
+  "protocolVersion": "mosaic-v1",
+  "description": "Canonical TUS PATCH idempotency key fixture: mosaic-tus-patch- || base64url(SHA256('tus-patch\\0' || job_id || '\\0' || shard_id)[0..18]).",
+  "inputs": {
+    "jobId": "job-123",
+    "shardId": "shard-456"
+  },
+  "expected": {
+    "idempotencyKey": "mosaic-tus-patch-oEcT48mRg-HSAGGHuUKrreds"
+  }
+}

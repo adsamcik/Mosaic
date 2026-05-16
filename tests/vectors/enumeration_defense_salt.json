@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "operation": "enumeration-defense-salt.v1",
+  "protocolVersion": "mosaic-v1",
+  "description": "Backend-compatible fake salt fixture for username enumeration defense: SHA256(server_secret || 'fake_salt' || username)[0..16].",
+  "inputs": {
+    "serverSecretHex": "7365727665722d736563726574",
+    "username": "alice"
+  },
+  "expected": {
+    "saltHex": "13b52799bef3eb6dcb61d6dd9d5c3271"
+  }
+}

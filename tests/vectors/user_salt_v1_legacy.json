@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "operation": "user-salt-legacy.v1",
+  "protocolVersion": "mosaic-v1",
+  "description": "Legacy user salt unwrap fixture for PBKDF2-HMAC-SHA256(password, username, 100000) plus AES-256-GCM. Wire format is raw ciphertext || tag, nonce stored separately, AAD empty.",
+  "inputs": {
+    "password": "correct horse battery staple",
+    "username": "alice",
+    "nonceHex": "444444444444444444444444",
+    "ciphertextHex": "d64b77f1b095927e513596d34b20289a86597b12d08dae3f6c5541c39bdf07c0"
+  },
+  "expected": {
+    "saltHex": "33333333333333333333333333333333"
+  }
+}

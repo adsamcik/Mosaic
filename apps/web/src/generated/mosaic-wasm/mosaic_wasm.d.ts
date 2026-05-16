@@ -558,6 +558,27 @@ export class ProgressResult {
 }
 
 /**
+ * WASM-bindgen class for user-salt envelope encryption results.
+ */
+export class SaltEnvelopeResult {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Versioned ciphertext envelope.
+     */
+    readonly ciphertext: Uint8Array;
+    /**
+     * Stable error code. Zero means success.
+     */
+    readonly code: number;
+    /**
+     * 12-byte AES-GCM nonce stored separately by the server.
+     */
+    readonly nonce: Uint8Array;
+}
+
+/**
  * WASM-bindgen class for sealed bundle results.
  */
 export class SealedBundleResult {
@@ -589,6 +610,26 @@ export class SerializeSnapshotResult {
     readonly body: Uint8Array;
     readonly checksum: Uint8Array;
     readonly code: number;
+}
+
+/**
+ * WASM streaming SHA-256 hasher.
+ */
+export class Sha256StreamingHasher {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Finalizes and returns lowercase hex.
+     */
+    finalize_hex(): string;
+    /**
+     * Creates a new streaming SHA-256 hasher.
+     */
+    constructor();
+    /**
+     * Adds bytes to the digest.
+     */
+    update(bytes: Uint8Array): void;
 }
 
 /**
@@ -965,6 +1006,16 @@ export function closeLinkShareHandle(handle: bigint): number;
 export function closeLinkTierHandle(handle: bigint): number;
 
 /**
+ * Closes a link-tier blob AES wrap handle through WASM.
+ */
+export function closeLinkTierWrapHandle(handle: bigint): number;
+
+/**
+ * Closes a session-cache AES wrap handle through WASM.
+ */
+export function closeSessionCacheWrapHandle(handle: bigint): number;
+
+/**
  * Computes client-local SHA-256 of original plaintext media bytes as lowercase hex.
  */
 export function computePlaintextContentHash(bytes: Uint8Array): string;
@@ -1001,6 +1052,16 @@ export function createIdentityHandle(account_key_handle: bigint): IdentityHandle
  * Creates a share-link handle and first wrapped tier through WASM.
  */
 export function createLinkShareHandle(album_id: string, epoch_handle: bigint, tier_byte: number): CreateLinkShareHandleResult;
+
+/**
+ * Creates a link-tier blob AES wrap handle through WASM.
+ */
+export function createLinkTierWrapHandle(): bigint;
+
+/**
+ * Creates a session-cache AES wrap handle through WASM.
+ */
+export function createSessionCacheWrapHandle(): bigint;
 
 /**
  * Returns deterministic public crypto/domain golden vectors through WASM.
@@ -1045,6 +1106,16 @@ export function decryptShardWithSeedV1(envelope: Uint8Array, key: Uint8Array): D
 export function decryptShardWithTier(handle: bigint, envelope_bytes: Uint8Array): BytesResult;
 
 /**
+ * Decrypts a user salt envelope through WASM.
+ */
+export function decryptUserSaltEnvelopeV2(account_handle: bigint, ciphertext: Uint8Array, nonce: Uint8Array): BytesResult;
+
+/**
+ * Decrypts a legacy PBKDF2 user salt envelope through WASM.
+ */
+export function decryptUserSaltV1Legacy(password: string, username: string, ciphertext: Uint8Array, nonce: Uint8Array): BytesResult;
+
+/**
  * Derives the 16-byte deterministic LocalAuth account salt.
  */
 export function deriveAccountSalt(user_salt: Uint8Array): Uint8Array;
@@ -1062,6 +1133,11 @@ export function deriveAuthKeypairFromAccount(account_handle: bigint): AuthKeypai
  * key crosses the WASM boundary.
  */
 export function deriveAuthKeypairFromPassword(password: Uint8Array, user_salt: Uint8Array, kdf_memory_kib: number, kdf_iterations: number, kdf_parallelism: number): AuthKeypairResult;
+
+/**
+ * Derives the backend-compatible fake user salt for enumeration defense.
+ */
+export function deriveEnumerationDefenseSalt(server_secret: Uint8Array, username: string): Uint8Array;
 
 /**
  * Derives the session L0 master key and stores it behind an opaque handle.
@@ -1129,6 +1205,11 @@ export function encryptShardWithEpochHandle(handle: bigint, plaintext: Uint8Arra
 export function encryptShardWithTier(handle: bigint, plaintext: Uint8Array, shard_index: number, tier: ShardTier): EncryptedShardResult;
 
 /**
+ * Encrypts a user salt envelope through WASM.
+ */
+export function encryptUserSaltEnvelopeV2(account_handle: bigint, salt: Uint8Array): SaltEnvelopeResult;
+
+/**
  * Returns epoch-key handle status through WASM.
  */
 export function epochKeyHandleIsOpen(handle: bigint): EpochKeyHandleStatusResult;
@@ -1137,6 +1218,11 @@ export function epochKeyHandleIsOpen(handle: bigint): EpochKeyHandleStatusResult
  * Returns the ADR-022 canonical manifest-finalize idempotency key through WASM.
  */
 export function finalizeIdempotencyKey(job_id: string): string;
+
+/**
+ * Generates a fresh 16-byte user salt.
+ */
+export function generateUserSaltBytes(): BytesResult;
 
 /**
  * Returns the LocalAuth Ed25519 public key for an account-key handle through WASM.
@@ -1333,9 +1419,24 @@ export function stripVideoMetadata(input_bytes: Uint8Array): StripResult;
 export function stripWebpMetadata(input_bytes: Uint8Array): StripResult;
 
 /**
+ * Returns the canonical TUS PATCH idempotency key through WASM.
+ */
+export function tusPatchIdempotencyKey(job_id: string, shard_id: string): string;
+
+/**
  * Unwraps an account key through the generated WASM binding surface.
  */
 export function unlockAccountKey(password: Uint8Array, user_salt: Uint8Array, account_salt: Uint8Array, wrapped_account_key: Uint8Array, kdf_memory_kib: number, kdf_iterations: number, kdf_parallelism: number): AccountUnlockResult;
+
+/**
+ * Unwraps a link-tier blob through WASM.
+ */
+export function unwrapLinkTierBlob(handle: bigint, envelope: Uint8Array): BytesResult;
+
+/**
+ * Unwraps a session-cache blob through WASM.
+ */
+export function unwrapSessionCacheBlob(handle: bigint, envelope: Uint8Array): BytesResult;
 
 /**
  * Unwraps `wrapped` with the L2 account key referenced by `account_handle`
@@ -1347,6 +1448,15 @@ export function unwrapWithAccountHandle(account_handle: bigint, wrapped: Uint8Ar
  * Verifies and imports a sealed epoch key bundle through WASM.
  */
 export function verifyAndImportEpochBundle(identity_handle: bigint, sealed: Uint8Array, signature: Uint8Array, sharer_pubkey: Uint8Array, expected_album_id: string, expected_min_epoch: number, allow_legacy_empty: boolean): EpochKeyHandleResult;
+
+/**
+ * Verifies a canonical LocalAuth challenge transcript signature through WASM.
+ *
+ * Used by the .NET backend hosted via Wasmtime to replace the in-process
+ * NSec.Cryptography Ed25519 verify path. Routes through the canonical
+ * `mosaic_crypto::verify_auth_challenge` implementation.
+ */
+export function verifyAuthChallengeSignature(transcript_bytes: Uint8Array, signature: Uint8Array, public_key: Uint8Array): number;
 
 /**
  * Verifies manifest transcript bytes with a per-epoch manifest signing
@@ -1370,9 +1480,19 @@ export function verifyShardIntegritySha256(envelope_bytes: Uint8Array, expected_
 export function verifyShardIntegrityV1(envelope: Uint8Array, expected_hash: Uint8Array): VerifyShardResult;
 
 /**
+ * Wraps a link-tier blob through WASM.
+ */
+export function wrapLinkTierBlob(handle: bigint, plaintext: Uint8Array): BytesResult;
+
+/**
  * Wraps an epoch tier for an existing share-link handle through WASM.
  */
 export function wrapLinkTierHandle(link_share_handle: bigint, epoch_handle: bigint, tier_byte: number): WrappedTierKeyResult;
+
+/**
+ * Wraps a session-cache blob through WASM.
+ */
+export function wrapSessionCacheBlob(handle: bigint, plaintext: Uint8Array): BytesResult;
 
 /**
  * Wraps `plaintext` with the L2 account key referenced by `account_handle`
@@ -1402,6 +1522,7 @@ export interface InitOutput {
     readonly __wbg_progressevent_free: (a: number, b: number) => void;
     readonly __wbg_progressresult_free: (a: number, b: number) => void;
     readonly __wbg_sealedbundleresult_free: (a: number, b: number) => void;
+    readonly __wbg_sha256streaminghasher_free: (a: number, b: number) => void;
     readonly __wbg_sidecarpakeresponderresult_free: (a: number, b: number) => void;
     readonly __wbg_streamingenveloperesult_free: (a: number, b: number) => void;
     readonly __wbg_streamingsharddecryptor_free: (a: number, b: number) => void;
@@ -1435,12 +1556,16 @@ export interface InitOutput {
     readonly closeIdentityHandle: (a: bigint) => number;
     readonly closeLinkShareHandle: (a: bigint) => number;
     readonly closeLinkTierHandle: (a: bigint) => number;
+    readonly closeLinkTierWrapHandle: (a: bigint) => number;
+    readonly closeSessionCacheWrapHandle: (a: bigint) => number;
     readonly computePlaintextContentHash: (a: number, b: number, c: number) => void;
     readonly consumeMasterKeyHandleForAesGcm: (a: number, b: bigint) => void;
     readonly createAccount: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly createEpochKeyHandle: (a: bigint, b: number) => number;
     readonly createIdentityHandle: (a: bigint) => number;
     readonly createLinkShareHandle: (a: number, b: number, c: bigint, d: number) => number;
+    readonly createLinkTierWrapHandle: (a: number) => void;
+    readonly createSessionCacheWrapHandle: (a: number) => void;
     readonly createaccountresult_code: (a: number) => number;
     readonly createaccountresult_handle: (a: number) => bigint;
     readonly createaccountresult_wrappedAccountKey: (a: number, b: number) => void;
@@ -1470,11 +1595,14 @@ export interface InitOutput {
     readonly decryptShardWithLinkTierHandle: (a: bigint, b: number, c: number) => number;
     readonly decryptShardWithSeedV1: (a: number, b: number, c: number, d: number) => number;
     readonly decryptShardWithTier: (a: bigint, b: number, c: number) => number;
+    readonly decryptUserSaltEnvelopeV2: (a: bigint, b: number, c: number, d: number, e: number) => number;
+    readonly decryptUserSaltV1Legacy: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
     readonly decryptshardresult_code: (a: number) => number;
     readonly decryptshardresult_plaintext: (a: number, b: number) => void;
     readonly deriveAccountSalt: (a: number, b: number, c: number) => void;
     readonly deriveAuthKeypairFromAccount: (a: bigint) => number;
     readonly deriveAuthKeypairFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly deriveEnumerationDefenseSalt: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly deriveMasterKeyFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly deriveSessionSaltFromUsername: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly deriveSidecarRoomId: (a: number, b: number, c: number) => void;
@@ -1488,6 +1616,7 @@ export interface InitOutput {
     readonly encryptMetadataSidecarWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly encryptShardWithEpochHandle: (a: bigint, b: number, c: number, d: number, e: number) => number;
     readonly encryptShardWithTier: (a: bigint, b: number, c: number, d: number, e: number) => number;
+    readonly encryptUserSaltEnvelopeV2: (a: bigint, b: number, c: number) => number;
     readonly encryptedcontentresult_ciphertext: (a: number, b: number) => void;
     readonly encryptedcontentresult_code: (a: number) => number;
     readonly epochKeyHandleIsOpen: (a: bigint) => number;
@@ -1497,6 +1626,7 @@ export interface InitOutput {
     readonly epochkeyhandleresult_signPublicKey: (a: number, b: number) => void;
     readonly epochkeyhandleresult_wrappedEpochSeed: (a: number, b: number) => void;
     readonly finalizeIdempotencyKey: (a: number, b: number, c: number) => void;
+    readonly generateUserSaltBytes: () => number;
     readonly getAuthPublicKeyFromAccount: (a: bigint) => number;
     readonly getAuthPublicKeyFromPassword: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
     readonly headerresult_code: (a: number) => number;
@@ -1564,6 +1694,9 @@ export interface InitOutput {
     readonly sealedbundleresult_sharerPubkey: (a: number, b: number) => void;
     readonly sealedbundleresult_signature: (a: number, b: number) => void;
     readonly sha256OfBytes: (a: number, b: number, c: number) => void;
+    readonly sha256streaminghasher_finalize_hex: (a: number, b: number) => void;
+    readonly sha256streaminghasher_new: () => number;
+    readonly sha256streaminghasher_update: (a: number, b: number, c: number, d: number) => void;
     readonly shardTierByte: (a: number) => number;
     readonly shardTierFromByte: (a: number, b: number) => void;
     readonly sidecarPakeInitiatorCloseV1: (a: number) => number;
@@ -1605,9 +1738,13 @@ export interface InitOutput {
     readonly stripPngMetadata: (a: number, b: number) => number;
     readonly stripVideoMetadata: (a: number, b: number) => number;
     readonly stripWebpMetadata: (a: number, b: number) => number;
+    readonly tusPatchIdempotencyKey: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly unlockAccountKey: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
+    readonly unwrapLinkTierBlob: (a: bigint, b: number, c: number) => number;
+    readonly unwrapSessionCacheBlob: (a: bigint, b: number, c: number) => number;
     readonly unwrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly verifyAndImportEpochBundle: (a: bigint, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
+    readonly verifyAuthChallengeSignature: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly verifyManifestWithEpoch: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly verifyManifestWithIdentity: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly verifyShardIntegritySha256: (a: number, b: number, c: number, d: number, e: number) => void;
@@ -1622,80 +1759,86 @@ export interface InitOutput {
     readonly videoinspectresult_orientation: (a: number, b: number) => void;
     readonly videoinspectresult_videoCodec: (a: number, b: number) => void;
     readonly videoinspectresult_widthPx: (a: number) => number;
+    readonly wrapLinkTierBlob: (a: bigint, b: number, c: number) => number;
     readonly wrapLinkTierHandle: (a: bigint, b: bigint, c: number) => number;
+    readonly wrapSessionCacheBlob: (a: bigint, b: number, c: number) => number;
     readonly wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly wrappedtierkeyresult_tier: (a: number) => number;
     readonly __wbg_linktierhandleresult_free: (a: number, b: number) => void;
     readonly sha256HexOfBytes: (a: number, b: number, c: number) => void;
-    readonly __wbg_sidecarpakeresponderfinishresult_free: (a: number, b: number) => void;
     readonly __wbg_sidecartunnelopenresult_free: (a: number, b: number) => void;
     readonly __wbg_streamingshardopenresult_free: (a: number, b: number) => void;
+    readonly __wbg_sidecarpakeresponderfinishresult_free: (a: number, b: number) => void;
     readonly __wbg_epochkeyhandlestatusresult_free: (a: number, b: number) => void;
-    readonly __wbg_encryptedcontentresult_free: (a: number, b: number) => void;
-    readonly __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
-    readonly __wbg_serializesnapshotresult_free: (a: number, b: number) => void;
-    readonly __wbg_sidecartunnelsealresult_free: (a: number, b: number) => void;
-    readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
-    readonly __wbg_stripresult_free: (a: number, b: number) => void;
-    readonly __wbg_sidecarpakestartresult_free: (a: number, b: number) => void;
-    readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
-    readonly __wbg_sidecarpakeinitiatorfinishresult_free: (a: number, b: number) => void;
-    readonly __wbg_commitsnapshotresult_free: (a: number, b: number) => void;
     readonly __wbg_encryptedshardresult_free: (a: number, b: number) => void;
-    readonly __wbg_bytesresult_free: (a: number, b: number) => void;
+    readonly __wbg_wrappedtierkeyresult_free: (a: number, b: number) => void;
+    readonly __wbg_encryptedcontentresult_free: (a: number, b: number) => void;
+    readonly __wbg_serializesnapshotresult_free: (a: number, b: number) => void;
+    readonly __wbg_commitsnapshotresult_free: (a: number, b: number) => void;
+    readonly __wbg_saltenveloperesult_free: (a: number, b: number) => void;
+    readonly __wbg_decryptedcontentresult_free: (a: number, b: number) => void;
+    readonly __wbg_decryptedshardresult_free: (a: number, b: number) => void;
+    readonly __wbg_sidecartunnelsealresult_free: (a: number, b: number) => void;
+    readonly __wbg_streamingshardchunkresult_free: (a: number, b: number) => void;
+    readonly __wbg_stripresult_free: (a: number, b: number) => void;
     readonly __wbg_sidecartunnelopenmsgresult_free: (a: number, b: number) => void;
     readonly __wbg_streamingframeresult_free: (a: number, b: number) => void;
-    readonly __wbg_streamingshardchunkresult_free: (a: number, b: number) => void;
+    readonly __wbg_sidecarpakestartresult_free: (a: number, b: number) => void;
+    readonly __wbg_bytesresult_free: (a: number, b: number) => void;
+    readonly __wbg_sidecarpakeinitiatorfinishresult_free: (a: number, b: number) => void;
     readonly __wbg_authkeypairresult_free: (a: number, b: number) => void;
-    readonly streamingshardchunkresult_plaintext: (a: number, b: number) => void;
-    readonly streamingshardchunkresult_code: (a: number) => number;
-    readonly verifysnapshotresult_code: (a: number) => number;
-    readonly sidecarpakeresponderfinishresult_materialHandleId: (a: number) => number;
-    readonly sidecarpakeresponderfinishresult_code: (a: number) => number;
-    readonly sidecartunnelopenresult_sendHandleId: (a: number) => number;
-    readonly sidecartunnelopenresult_code: (a: number) => number;
+    readonly serializesnapshotresult_code: (a: number) => number;
+    readonly serializesnapshotresult_body: (a: number, b: number) => void;
     readonly streamingshardopenresult_handleId: (a: number) => number;
+    readonly sidecartunnelopenresult_code: (a: number) => number;
     readonly streamingshardopenresult_code: (a: number) => number;
+    readonly sidecartunnelopenresult_sendHandleId: (a: number) => number;
     readonly streamingshardopenresult_chunkSizeBytes: (a: number) => number;
+    readonly verifysnapshotresult_code: (a: number) => number;
+    readonly sidecarpakeresponderfinishresult_code: (a: number) => number;
+    readonly sidecarpakeresponderfinishresult_materialHandleId: (a: number) => number;
     readonly epochkeyhandlestatusresult_isOpen: (a: number) => number;
     readonly epochkeyhandlestatusresult_code: (a: number) => number;
-    readonly encryptedcontentresult_nonce: (a: number, b: number) => void;
-    readonly wrappedtierkeyresult_code: (a: number) => number;
+    readonly encryptedshardresult_sha256: (a: number, b: number) => void;
+    readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
     readonly wrappedtierkeyresult_nonce: (a: number, b: number) => void;
-    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
-    readonly serializesnapshotresult_body: (a: number, b: number) => void;
     readonly serializesnapshotresult_checksum: (a: number, b: number) => void;
-    readonly serializesnapshotresult_code: (a: number) => number;
+    readonly wrappedtierkeyresult_code: (a: number) => number;
+    readonly encryptedshardresult_code: (a: number) => number;
+    readonly saltenveloperesult_nonce: (a: number, b: number) => void;
+    readonly encryptedcontentresult_nonce: (a: number, b: number) => void;
     readonly commitsnapshotresult_checksum: (a: number, b: number) => void;
-    readonly linktierhandleresult_linkId: (a: number, b: number) => void;
-    readonly linktierhandleresult_code: (a: number) => number;
-    readonly linktierhandleresult_handle: (a: number) => bigint;
-    readonly decryptedshardresult_code: (a: number) => number;
-    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
-    readonly sidecarpakestartresult_msg1: (a: number, b: number) => void;
-    readonly sidecarpakeinitiatorfinishresult_code: (a: number) => number;
-    readonly sidecarpakestartresult_handleId: (a: number) => number;
-    readonly stripresult_strippedBytes: (a: number, b: number) => void;
-    readonly sidecarpakestartresult_code: (a: number) => number;
-    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
+    readonly saltenveloperesult_code: (a: number) => number;
+    readonly saltenveloperesult_ciphertext: (a: number, b: number) => void;
+    readonly wrappedtierkeyresult_encryptedKey: (a: number, b: number) => void;
     readonly decryptedcontentresult_code: (a: number) => number;
-    readonly sidecarpakeinitiatorfinishresult_initiatorConfirm: (a: number, b: number) => void;
-    readonly sidecarpakeinitiatorfinishresult_materialHandleId: (a: number) => number;
-    readonly stripresult_removedMetadataCount: (a: number) => number;
+    readonly decryptedcontentresult_plaintext: (a: number, b: number) => void;
+    readonly decryptedshardresult_code: (a: number) => number;
+    readonly decryptedshardresult_plaintext: (a: number, b: number) => void;
     readonly sidecartunnelsealresult_code: (a: number) => number;
     readonly sidecartunnelsealresult_sealed: (a: number, b: number) => void;
-    readonly encryptedshardresult_envelopeBytes: (a: number, b: number) => void;
-    readonly encryptedshardresult_sha256: (a: number, b: number) => void;
-    readonly encryptedshardresult_code: (a: number) => number;
-    readonly bytesresult_code: (a: number) => number;
-    readonly bytesresult_bytes: (a: number, b: number) => void;
+    readonly streamingshardchunkresult_plaintext: (a: number, b: number) => void;
     readonly sidecartunnelopenmsgresult_code: (a: number) => number;
+    readonly stripresult_removedMetadataCount: (a: number) => number;
+    readonly sidecarpakestartresult_msg1: (a: number, b: number) => void;
+    readonly sidecarpakestartresult_handleId: (a: number) => number;
     readonly sidecartunnelopenmsgresult_plaintext: (a: number, b: number) => void;
+    readonly streamingshardchunkresult_code: (a: number) => number;
     readonly streamingframeresult_bytes: (a: number, b: number) => void;
+    readonly sidecarpakestartresult_code: (a: number) => number;
+    readonly sidecarpakeinitiatorfinishresult_materialHandleId: (a: number) => number;
+    readonly sidecarpakeinitiatorfinishresult_code: (a: number) => number;
+    readonly sidecarpakeinitiatorfinishresult_initiatorConfirm: (a: number, b: number) => void;
+    readonly commitsnapshotresult_code: (a: number) => number;
+    readonly bytesresult_bytes: (a: number, b: number) => void;
+    readonly stripresult_strippedBytes: (a: number, b: number) => void;
     readonly stripresult_code: (a: number) => number;
     readonly streamingframeresult_frameIndex: (a: number) => number;
+    readonly bytesresult_code: (a: number) => number;
     readonly authkeypairresult_authPublicKey: (a: number, b: number) => void;
-    readonly commitsnapshotresult_code: (a: number) => number;
+    readonly linktierhandleresult_handle: (a: number) => bigint;
+    readonly linktierhandleresult_code: (a: number) => number;
+    readonly linktierhandleresult_linkId: (a: number, b: number) => void;
     readonly __wbindgen_export: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export2: (a: number, b: number) => number;

@@ -108,6 +108,11 @@ record BytesResult
   code: u16
   bytes: Vec<u8>
 end
+record SaltEnvelopeResult
+  code: u16
+  ciphertext: Vec<u8>
+  nonce: Vec<u8>
+end
 record SidecarPakeStartResult
   code: u32
   handle_id: u32
@@ -414,9 +419,18 @@ record MediaTierLayoutResult
 end
 export pub fn protocol_version() -> String
 export pub fn finalize_idempotency_key(job_id: String) -> Result<String, MosaicError>
+export pub fn tus_patch_idempotency_key(job_id: String, shard_id: String) -> String
 object StreamingEncryptor
 end
 object StreamingDecryptor
+end
+object Sha256Hasher
+end
+impl Sha256Hasher
+  constructor pub fn new() -> Self
+  method pub fn update(&self, bytes: Vec<u8>) -> Result<(), MosaicError>
+  method pub fn finalize_hex(&self) -> Result<String, MosaicError>
+  method pub fn finalize_bytes(&self) -> Result<Vec<u8>, MosaicError>
 end
 impl StreamingEncryptor
   constructor pub fn new( epoch_handle_id: u64, tier: u8, expected_frame_count: Option<u32>, ) -> Result<Self, MosaicError>
@@ -434,6 +448,8 @@ export pub fn android_progress_probe(total_steps: u32, cancel_after: Option<u32>
 export pub fn derive_session_salt_from_username( domain: String, username: String, ) -> Result<Vec<u8>, MosaicError>
 export pub fn derive_account_salt(user_salt: Vec<u8>) -> Vec<u8>
 export pub fn derive_sidecar_room_id(msg1: Vec<u8>) -> Vec<u8>
+export pub fn generate_user_salt_bytes() -> BytesResult
+export pub fn derive_enumeration_defense_salt(server_secret: Vec<u8>, username: String) -> Vec<u8>
 export pub fn sidecar_pake_initiator_start_v1(code: Vec<u8>) -> SidecarPakeStartResult
 export pub fn sidecar_pake_responder_v1(code: Vec<u8>, msg1: Vec<u8>) -> SidecarPakeResponderResult
 export pub fn sidecar_pake_initiator_finish_v1( handle_id: u32, msg2: Vec<u8>, responder_confirm: Vec<u8>, ) -> SidecarPakeInitiatorFinishResult
@@ -446,6 +462,17 @@ export pub fn sidecar_pake_initiator_close_v1(handle_id: u32) -> u32
 export pub fn sidecar_pake_responder_close_v1(handle_id: u32) -> u32
 export pub fn derive_master_key_from_password( password: Vec<u8>, salt: Vec<u8>, ops_limit: u32, mem_limit_kib: u32, ) -> Result<u64, MosaicError>
 export pub fn consume_master_key_handle_for_aes_gcm(handle: u64) -> Result<Vec<u8>, MosaicError>
+export pub fn encrypt_user_salt_envelope_v2(account_handle: u64, salt: Vec<u8>) -> SaltEnvelopeResult
+export pub fn decrypt_user_salt_envelope_v2( account_handle: u64, ciphertext: Vec<u8>, nonce: Vec<u8>, ) -> BytesResult
+export pub fn decrypt_user_salt_v1_legacy( password: String, username: String, ciphertext: Vec<u8>, nonce: Vec<u8>, ) -> BytesResult
+export pub fn create_session_cache_wrap_handle() -> Result<u64, MosaicError>
+export pub fn wrap_session_cache_blob(handle: u64, plaintext: Vec<u8>) -> BytesResult
+export pub fn unwrap_session_cache_blob(handle: u64, envelope: Vec<u8>) -> BytesResult
+export pub fn close_session_cache_wrap_handle(handle: u64) -> u16
+export pub fn create_link_tier_wrap_handle() -> Result<u64, MosaicError>
+export pub fn wrap_link_tier_blob(handle: u64, plaintext: Vec<u8>) -> BytesResult
+export pub fn unwrap_link_tier_blob(handle: u64, envelope: Vec<u8>) -> BytesResult
+export pub fn close_link_tier_wrap_handle(handle: u64) -> u16
 export pub fn unlock_account_key(password: Vec<u8>, request: AccountUnlockRequest) -> AccountUnlockResult
 export pub fn wrap_with_account_handle(account_handle: u64, plaintext: Vec<u8>) -> BytesResult
 export pub fn unwrap_with_account_handle(account_handle: u64, wrapped: Vec<u8>) -> BytesResult

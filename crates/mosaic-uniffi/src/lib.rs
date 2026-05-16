@@ -385,6 +385,24 @@ impl fmt::Debug for BytesResult {
     }
 }
 
+/// UniFFI record for user-salt envelope encryption results.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SaltEnvelopeResult {
+    pub code: u16,
+    pub ciphertext: Vec<u8>,
+    pub nonce: Vec<u8>,
+}
+
+impl fmt::Debug for SaltEnvelopeResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SaltEnvelopeResult")
+            .field("code", &self.code)
+            .field("ciphertext_len", &self.ciphertext.len())
+            .field("nonce_len", &self.nonce.len())
+            .finish()
+    }
+}
+
 /// UniFFI record for sidecar PAKE initiator start results.
 #[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SidecarPakeStartResult {
@@ -971,6 +989,13 @@ pub fn finalize_idempotency_key(job_id: String) -> Result<String, MosaicError> {
     Ok(mosaic_client::finalize_idempotency_key(&uuid))
 }
 
+/// Returns the canonical TUS PATCH idempotency key.
+#[uniffi::export]
+#[must_use]
+pub fn tus_patch_idempotency_key(job_id: String, shard_id: String) -> String {
+    mosaic_client::tus_patch_idempotency_key(&job_id, &shard_id)
+}
+
 /// Returns the historical UniFFI API changelog label for diagnostics.
 ///
 /// This string is documentation only. The authoritative API-shape lock is
@@ -1003,6 +1028,66 @@ pub struct StreamingEncryptor {
 #[derive(uniffi::Object)]
 pub struct StreamingDecryptor {
     inner: Mutex<Option<StreamingDecryptorCell>>,
+}
+
+/// Stateful UniFFI wrapper around SHA-256 for large files.
+#[derive(uniffi::Object)]
+pub struct Sha256Hasher {
+    inner: Mutex<Option<mosaic_crypto::Sha256Hasher>>,
+}
+
+#[uniffi::export]
+impl Sha256Hasher {
+    /// Creates a new streaming SHA-256 hasher.
+    #[uniffi::constructor]
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            inner: Mutex::new(Some(mosaic_crypto::Sha256Hasher::new())),
+        }
+    }
+
+    /// Adds bytes to the digest.
+    pub fn update(&self, bytes: Vec<u8>) -> Result<(), MosaicError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| MosaicError::InternalStatePoisoned)?;
+        guard
+            .as_mut()
+            .ok_or(MosaicError::AlreadyFinalized)?
+            .update(&bytes)
+            .map_err(mosaic_error_from_crypto)
+    }
+
+    /// Finalizes the digest and returns lowercase hex.
+    pub fn finalize_hex(&self) -> Result<String, MosaicError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| MosaicError::InternalStatePoisoned)?;
+        let mut hasher = guard.take().ok_or(MosaicError::AlreadyFinalized)?;
+        hasher.finalize_hex().map_err(mosaic_error_from_crypto)
+    }
+
+    /// Finalizes the digest and returns raw bytes.
+    pub fn finalize_bytes(&self) -> Result<Vec<u8>, MosaicError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| MosaicError::InternalStatePoisoned)?;
+        let mut hasher = guard.take().ok_or(MosaicError::AlreadyFinalized)?;
+        hasher
+            .finalize_bytes()
+            .map(|bytes| bytes.to_vec())
+            .map_err(mosaic_error_from_crypto)
+    }
+}
+
+impl Default for Sha256Hasher {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[uniffi::export]
@@ -1175,6 +1260,20 @@ pub fn derive_account_salt(user_salt: Vec<u8>) -> Vec<u8> {
 #[must_use]
 pub fn derive_sidecar_room_id(msg1: Vec<u8>) -> Vec<u8> {
     mosaic_crypto::derive_sidecar_room_id(&msg1).to_vec()
+}
+
+/// Generates a fresh 16-byte user salt.
+#[uniffi::export]
+#[must_use]
+pub fn generate_user_salt_bytes() -> BytesResult {
+    bytes_result_from_client(mosaic_client::generate_user_salt_bytes())
+}
+
+/// Derives the backend-compatible fake user salt for enumeration defense.
+#[uniffi::export]
+#[must_use]
+pub fn derive_enumeration_defense_salt(server_secret: Vec<u8>, username: String) -> Vec<u8> {
+    mosaic_client::derive_enumeration_defense_salt(&server_secret, &username)
 }
 
 fn sidecar_error_code(error: SidecarError) -> u32 {
@@ -1703,6 +1802,111 @@ pub fn consume_master_key_handle_for_aes_gcm(handle: u64) -> Result<Vec<u8>, Mos
     let bytes = key.as_bytes().to_vec();
     key.zeroize_in_place();
     Ok(bytes)
+}
+
+/// Encrypts a user salt with an account-key handle.
+#[uniffi::export]
+#[must_use]
+pub fn encrypt_user_salt_envelope_v2(account_handle: u64, salt: Vec<u8>) -> SaltEnvelopeResult {
+    salt_envelope_result_from_client(
+        mosaic_client::encrypt_user_salt_envelope_v2_with_account_handle(account_handle, &salt),
+    )
+}
+
+/// Decrypts a v2 user salt envelope with an account-key handle.
+#[uniffi::export]
+#[must_use]
+pub fn decrypt_user_salt_envelope_v2(
+    account_handle: u64,
+    ciphertext: Vec<u8>,
+    nonce: Vec<u8>,
+) -> BytesResult {
+    bytes_result_from_client(
+        mosaic_client::decrypt_user_salt_envelope_v2_with_account_handle(
+            account_handle,
+            &ciphertext,
+            &nonce,
+        ),
+    )
+}
+
+/// Decrypts a legacy PBKDF2/AES-GCM user salt envelope.
+#[uniffi::export]
+#[must_use]
+pub fn decrypt_user_salt_v1_legacy(
+    password: String,
+    username: String,
+    ciphertext: Vec<u8>,
+    nonce: Vec<u8>,
+) -> BytesResult {
+    bytes_result_from_client(mosaic_client::decrypt_user_salt_v1_legacy(
+        &password,
+        &username,
+        &ciphertext,
+        &nonce,
+    ))
+}
+
+/// Creates a session-cache AES wrap handle.
+#[uniffi::export]
+pub fn create_session_cache_wrap_handle() -> Result<u64, MosaicError> {
+    mosaic_client::create_session_cache_wrap_handle().map_err(mosaic_error_from_client)
+}
+
+/// Wraps a session cache blob.
+#[uniffi::export]
+#[must_use]
+pub fn wrap_session_cache_blob(handle: u64, plaintext: Vec<u8>) -> BytesResult {
+    let plaintext = Zeroizing::new(plaintext);
+    bytes_result_from_client(mosaic_client::wrap_session_cache_blob(handle, &plaintext))
+}
+
+/// Unwraps a session cache blob.
+#[uniffi::export]
+#[must_use]
+pub fn unwrap_session_cache_blob(handle: u64, envelope: Vec<u8>) -> BytesResult {
+    bytes_result_from_client(mosaic_client::unwrap_session_cache_blob(handle, &envelope))
+}
+
+/// Closes a session-cache AES wrap handle.
+#[uniffi::export]
+#[must_use]
+pub fn close_session_cache_wrap_handle(handle: u64) -> u16 {
+    match mosaic_client::close_session_cache_wrap_handle(handle) {
+        Ok(()) => mosaic_client::ClientErrorCode::Ok.as_u16(),
+        Err(error) => error.code.as_u16(),
+    }
+}
+
+/// Creates a link-tier blob AES wrap handle.
+#[uniffi::export]
+pub fn create_link_tier_wrap_handle() -> Result<u64, MosaicError> {
+    mosaic_client::create_link_tier_wrap_handle().map_err(mosaic_error_from_client)
+}
+
+/// Wraps a link-tier key-store blob.
+#[uniffi::export]
+#[must_use]
+pub fn wrap_link_tier_blob(handle: u64, plaintext: Vec<u8>) -> BytesResult {
+    let plaintext = Zeroizing::new(plaintext);
+    bytes_result_from_client(mosaic_client::wrap_link_tier_blob(handle, &plaintext))
+}
+
+/// Unwraps a link-tier key-store blob.
+#[uniffi::export]
+#[must_use]
+pub fn unwrap_link_tier_blob(handle: u64, envelope: Vec<u8>) -> BytesResult {
+    bytes_result_from_client(mosaic_client::unwrap_link_tier_blob(handle, &envelope))
+}
+
+/// Closes a link-tier blob AES wrap handle.
+#[uniffi::export]
+#[must_use]
+pub fn close_link_tier_wrap_handle(handle: u64) -> u16 {
+    match mosaic_client::close_link_tier_wrap_handle(handle) {
+        Ok(()) => mosaic_client::ClientErrorCode::Ok.as_u16(),
+        Err(error) => error.code.as_u16(),
+    }
 }
 
 /// Unwraps an account key into a Rust-owned opaque account-key handle.
@@ -2576,6 +2780,16 @@ fn bytes_result_from_client(result: mosaic_client::BytesResult) -> BytesResult {
     BytesResult {
         code: result.code.as_u16(),
         bytes: result.bytes,
+    }
+}
+
+fn salt_envelope_result_from_client(
+    result: mosaic_client::SaltEnvelopeResult,
+) -> SaltEnvelopeResult {
+    SaltEnvelopeResult {
+        code: result.code.as_u16(),
+        ciphertext: result.ciphertext,
+        nonce: result.nonce,
     }
 }
 

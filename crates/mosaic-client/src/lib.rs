@@ -13,19 +13,25 @@ use mosaic_crypto::{
     IdentitySignature, IdentitySigningPublicKey, KdfProfile, LinkKeys, ManifestSignature,
     ManifestSigningKeypair, ManifestSigningPublicKey, ManifestSigningSecretKey, MosaicCryptoError,
     SealedBundle, SecretKey, WrappedTierKey, build_auth_challenge_transcript, decrypt_content,
-    decrypt_shard, decrypt_shard_with_legacy_raw_key, derive_account_key, derive_content_key,
+    decrypt_shard, decrypt_shard_with_legacy_raw_key, decrypt_user_salt_envelope_v2,
+    derive_account_key, derive_content_key,
+    derive_enumeration_defense_salt as crypto_derive_enumeration_defense_salt,
     derive_epoch_key_material, derive_identity_keypair,
     derive_link_keys as crypto_derive_link_keys, encrypt_content, encrypt_shard,
-    generate_epoch_key_material, generate_identity_seed,
-    generate_link_secret as crypto_generate_link_secret,
-    generate_manifest_signing_keypair as crypto_generate_manifest_signing_keypair, get_tier_key,
+    encrypt_user_salt_envelope_v2, generate_cache_wrap_key, generate_epoch_key_material,
+    generate_identity_seed, generate_link_secret as crypto_generate_link_secret,
+    generate_manifest_signing_keypair as crypto_generate_manifest_signing_keypair,
+    generate_user_salt_bytes as crypto_generate_user_salt_bytes, get_tier_key,
     seal_and_sign_bundle as crypto_seal_and_sign_bundle, sign_auth_challenge,
     sign_manifest_transcript as crypto_sign_manifest_transcript,
     sign_manifest_with_identity as crypto_sign_manifest_with_identity, unwrap_account_key,
-    unwrap_secret_with_aad, unwrap_tier_key_from_link as crypto_unwrap_tier_key_from_link,
+    unwrap_cache_blob as crypto_unwrap_cache_blob,
+    unwrap_link_tier_blob as crypto_unwrap_link_tier_blob, unwrap_secret_with_aad,
+    unwrap_tier_key_from_link as crypto_unwrap_tier_key_from_link,
     verify_and_open_bundle as crypto_verify_and_open_bundle, verify_manifest_identity_signature,
-    verify_manifest_transcript as crypto_verify_manifest_transcript, wrap_secret_with_aad,
-    wrap_tier_key_for_link as crypto_wrap_tier_key_for_link,
+    verify_manifest_transcript as crypto_verify_manifest_transcript,
+    wrap_cache_blob as crypto_wrap_cache_blob, wrap_link_tier_blob as crypto_wrap_link_tier_blob,
+    wrap_secret_with_aad, wrap_tier_key_for_link as crypto_wrap_tier_key_for_link,
 };
 use mosaic_domain::{MosaicDomainError, ShardEnvelopeHeader, ShardTier};
 use subtle::ConstantTimeEq;
@@ -44,7 +50,7 @@ pub use snapshot_schema::{
 };
 pub use state_machine::*;
 
-pub use mosaic_crypto::{ShardIntegrityError, ShardSha256, verify_shard_integrity};
+pub use mosaic_crypto::{Sha256Hasher, ShardIntegrityError, ShardSha256, verify_shard_integrity};
 
 /// Stable client error codes exported through FFI facades.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,6 +179,10 @@ pub type SecretHandleId = u64;
 pub type EpochHandleId = u64;
 /// Opaque derived share-link wrapping-key handle identifier.
 pub type LinkHandleId = SecretHandleId;
+/// Opaque session-cache AES wrap handle identifier.
+pub type CacheWrapHandleId = SecretHandleId;
+/// Opaque link-tier blob AES wrap handle identifier.
+pub type LinkTierBlobWrapHandleId = SecretHandleId;
 /// Opaque share-link wrapping-state handle identifier.
 pub type LinkShareHandleId = u64;
 /// Opaque imported share-link tier-key handle identifier.
@@ -344,6 +354,24 @@ impl fmt::Debug for BytesResult {
         f.debug_struct("BytesResult")
             .field("code", &self.code)
             .field("bytes_len", &self.bytes.len())
+            .finish()
+    }
+}
+
+/// FFI-safe user-salt envelope encryption result.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SaltEnvelopeResult {
+    pub code: ClientErrorCode,
+    pub ciphertext: Vec<u8>,
+    pub nonce: Vec<u8>,
+}
+
+impl fmt::Debug for SaltEnvelopeResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SaltEnvelopeResult")
+            .field("code", &self.code)
+            .field("ciphertext_len", &self.ciphertext.len())
+            .field("nonce_len", &self.nonce.len())
             .finish()
     }
 }
@@ -1242,6 +1270,30 @@ pub fn finalize_idempotency_key(job_id: &Uuid) -> String {
     )
 }
 
+/// Returns the canonical TUS PATCH idempotency key for a shard upload.
+#[must_use]
+pub fn tus_patch_idempotency_key(job_id: &str, shard_id: &str) -> String {
+    mosaic_crypto::tus_patch_idempotency_key(job_id, shard_id)
+}
+
+/// Generates a fresh 16-byte user salt.
+#[must_use]
+pub fn generate_user_salt_bytes() -> BytesResult {
+    match crypto_generate_user_salt_bytes() {
+        Ok(salt) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: salt.to_vec(),
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Derives the backend-compatible fake user salt for enumeration defense.
+#[must_use]
+pub fn derive_enumeration_defense_salt(server_secret: &[u8], username: &str) -> Vec<u8> {
+    crypto_derive_enumeration_defense_salt(server_secret, username).to_vec()
+}
+
 fn format_uuid_for_url(uuid: &Uuid) -> String {
     let bytes = uuid.as_bytes();
     format!(
@@ -1573,6 +1625,159 @@ pub fn unwrap_with_account_handle(handle: u64, wrapped: &[u8]) -> BytesResult {
         },
         Err(error) => bytes_error_code(map_crypto_error(error)),
     }
+}
+
+/// Encrypts a user salt with an account-key handle without exporting derived AES material.
+#[must_use]
+pub fn encrypt_user_salt_envelope_v2_with_account_handle(
+    account_handle: u64,
+    salt: &[u8],
+) -> SaltEnvelopeResult {
+    let account_key = match account_secret_key_from_handle(account_handle) {
+        Ok(value) => value,
+        Err(error) => {
+            return SaltEnvelopeResult {
+                code: error.code,
+                ciphertext: Vec::new(),
+                nonce: Vec::new(),
+            };
+        }
+    };
+    match encrypt_user_salt_envelope_v2(&account_key, salt) {
+        Ok((ciphertext, nonce)) => SaltEnvelopeResult {
+            code: ClientErrorCode::Ok,
+            ciphertext,
+            nonce: nonce.to_vec(),
+        },
+        Err(error) => SaltEnvelopeResult {
+            code: map_crypto_error(error),
+            ciphertext: Vec::new(),
+            nonce: Vec::new(),
+        },
+    }
+}
+
+/// Decrypts a v2 user salt envelope with an account-key handle.
+#[must_use]
+pub fn decrypt_user_salt_envelope_v2_with_account_handle(
+    account_handle: u64,
+    ciphertext: &[u8],
+    nonce: &[u8],
+) -> BytesResult {
+    let account_key = match account_secret_key_from_handle(account_handle) {
+        Ok(value) => value,
+        Err(error) => return bytes_error(error),
+    };
+    match decrypt_user_salt_envelope_v2(&account_key, ciphertext, nonce) {
+        Ok(salt) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: salt.to_vec(),
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Decrypts a legacy v1 user salt envelope using PBKDF2-HMAC-SHA256 + AES-GCM.
+#[must_use]
+pub fn decrypt_user_salt_v1_legacy(
+    password: &str,
+    username: &str,
+    ciphertext: &[u8],
+    nonce: &[u8],
+) -> BytesResult {
+    match mosaic_crypto::decrypt_user_salt_v1_legacy(password, username, ciphertext, nonce) {
+        Ok(salt) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: salt.to_vec(),
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Creates a Rust-owned session cache wrap handle.
+pub fn create_session_cache_wrap_handle() -> Result<CacheWrapHandleId, ClientError> {
+    let key = generate_cache_wrap_key().map_err(client_error_from_crypto)?;
+    open_secret_handle(key.as_bytes())
+}
+
+/// Wraps a session cache blob with the referenced wrap handle.
+#[must_use]
+pub fn wrap_session_cache_blob(handle: CacheWrapHandleId, plaintext: &[u8]) -> BytesResult {
+    let wrap_key = match account_secret_key_from_handle(handle) {
+        Ok(value) => value,
+        Err(error) => return bytes_error(error),
+    };
+    match crypto_wrap_cache_blob(&wrap_key, plaintext) {
+        Ok(bytes) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes,
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Unwraps a session cache blob with the referenced wrap handle.
+#[must_use]
+pub fn unwrap_session_cache_blob(handle: CacheWrapHandleId, envelope: &[u8]) -> BytesResult {
+    let wrap_key = match account_secret_key_from_handle(handle) {
+        Ok(value) => value,
+        Err(error) => return bytes_error(error),
+    };
+    match crypto_unwrap_cache_blob(&wrap_key, envelope) {
+        Ok(bytes) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: bytes.to_vec(),
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Closes and wipes a session cache wrap handle.
+pub fn close_session_cache_wrap_handle(handle: CacheWrapHandleId) -> Result<(), ClientError> {
+    close_secret_handle(handle)
+}
+
+/// Creates a Rust-owned link-tier blob wrap handle.
+pub fn create_link_tier_wrap_handle() -> Result<LinkTierBlobWrapHandleId, ClientError> {
+    let key = generate_cache_wrap_key().map_err(client_error_from_crypto)?;
+    open_secret_handle(key.as_bytes())
+}
+
+/// Wraps a link-tier key-store blob with the referenced wrap handle.
+#[must_use]
+pub fn wrap_link_tier_blob(handle: LinkTierBlobWrapHandleId, plaintext: &[u8]) -> BytesResult {
+    let wrap_key = match account_secret_key_from_handle(handle) {
+        Ok(value) => value,
+        Err(error) => return bytes_error(error),
+    };
+    match crypto_wrap_link_tier_blob(&wrap_key, plaintext) {
+        Ok(bytes) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes,
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Unwraps a link-tier key-store blob with the referenced wrap handle.
+#[must_use]
+pub fn unwrap_link_tier_blob(handle: LinkTierBlobWrapHandleId, envelope: &[u8]) -> BytesResult {
+    let wrap_key = match account_secret_key_from_handle(handle) {
+        Ok(value) => value,
+        Err(error) => return bytes_error(error),
+    };
+    match crypto_unwrap_link_tier_blob(&wrap_key, envelope) {
+        Ok(bytes) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes: bytes.to_vec(),
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Closes and wipes a link-tier blob wrap handle.
+pub fn close_link_tier_wrap_handle(handle: LinkTierBlobWrapHandleId) -> Result<(), ClientError> {
+    close_secret_handle(handle)
 }
 
 /// Builds the canonical LocalAuth challenge transcript byte string the

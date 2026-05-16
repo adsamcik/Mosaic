@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+use aes_gcm::{Aes256Gcm, Nonce as AesGcmNonce};
 use argon2::{Algorithm, Argon2, Block, Params, Version};
 use blake2::{Blake2b, Blake2bMac, Blake2bVar, digest::consts::U16};
 use chacha20poly1305::{
@@ -17,6 +18,7 @@ use mosaic_domain::{
     SHARD_ENVELOPE_VERSION_V04, STREAMING_SHARD_ENVELOPE_HEADER_LEN, STREAMING_SHARD_FRAME_SIZE,
     STREAMING_SHARD_SALT_LEN, ShardEnvelopeHeader, ShardTier, StreamingShardEnvelopeHeader,
 };
+use pbkdf2::pbkdf2_hmac;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use unicode_normalization::UnicodeNormalization;
@@ -135,6 +137,15 @@ pub const ACCOUNT_SALT_HMAC_INFO: &[u8] = b"mosaic_account_salt";
 /// HKDF-SHA-256 info label for deterministic Sidecar signaling room IDs.
 pub const SIDECAR_ROOM_HKDF_INFO: &[u8] = b"mosaic.sidecar.v1.room";
 
+/// HKDF-SHA256 label for user-salt envelope AES-GCM keys derived from L2.
+pub const USER_SALT_ENVELOPE_V2_INFO: &[u8] = b"mosaic:user-salt-envelope:v2";
+
+/// HKDF-SHA256 label for session-cache AES-GCM wrap keys derived from random handle material.
+pub const SESSION_CACHE_WRAP_INFO: &[u8] = b"mosaic:session-cache-wrap:v1";
+
+/// HKDF-SHA256 label for link-tier AES-GCM wrap keys derived from random handle material.
+pub const LINK_TIER_BLOB_WRAP_INFO: &[u8] = b"mosaic:link-tier-blob-wrap:v1";
+
 /// Length of a share-link secret in bytes (256-bit security, matches the
 /// TypeScript `LINK_SECRET_SIZE`).
 pub const LINK_SECRET_BYTES: usize = 32;
@@ -142,6 +153,12 @@ pub const LINK_SECRET_BYTES: usize = 32;
 /// Length of a server-visible share-link ID in bytes (128-bit lookup
 /// identifier, matches the TypeScript `LINK_ID_SIZE`).
 pub const LINK_ID_BYTES: usize = 16;
+
+/// AES-GCM nonce length used by browser-compatible envelopes.
+pub const AES_GCM_NONCE_BYTES: usize = 12;
+
+/// AES-GCM authentication tag length appended by RustCrypto/WebCrypto.
+pub const AES_GCM_TAG_BYTES: usize = 16;
 
 /// Ed25519 signing seed length.
 const SIGNING_SEED_BYTES: usize = 32;
@@ -1005,6 +1022,281 @@ pub fn derive_sidecar_room_id(msg1: &[u8]) -> [u8; SESSION_SALT_BYTES] {
     #[allow(clippy::expect_used)]
     hk.expand(SIDECAR_ROOM_HKDF_INFO, &mut out)
         .expect("16 bytes is within HKDF cap");
+    out
+}
+
+/// Generates a fresh 16-byte user salt with the OS CSPRNG.
+///
+/// This is the Rust-owned replacement for browser `crypto.getRandomValues(new
+/// Uint8Array(16))` and backend `RandomNumberGenerator.GetBytes(16)`.
+///
+/// # Errors
+/// Returns `RngFailure` if the platform CSPRNG is unavailable.
+pub fn generate_user_salt_bytes() -> Result<[u8; SESSION_SALT_BYTES], MosaicCryptoError> {
+    let mut salt = [0_u8; SESSION_SALT_BYTES];
+    getrandom::fill(&mut salt).map_err(|_| MosaicCryptoError::RngFailure)?;
+    Ok(salt)
+}
+
+fn derive_aes_gcm_key_from_secret(
+    secret: &SecretKey,
+    info: &[u8],
+) -> Result<SecretKey, MosaicCryptoError> {
+    let hk = Hkdf::<Sha256>::new(None, secret.as_bytes());
+    let mut key = Zeroizing::new(vec![0_u8; KEY_BYTES]);
+    hk.expand(info, key.as_mut_slice())
+        .map_err(|_| MosaicCryptoError::KdfFailure)?;
+    SecretKey::from_bytes(key.as_mut_slice())
+}
+
+fn aes_gcm_encrypt_with_nonce(
+    key: &SecretKey,
+    plaintext: &[u8],
+    nonce: &[u8],
+) -> Result<Vec<u8>, MosaicCryptoError> {
+    if plaintext.is_empty() || plaintext.len() > MAX_SHARD_BYTES {
+        return Err(MosaicCryptoError::InvalidInputLength {
+            actual: plaintext.len(),
+        });
+    }
+    if nonce.len() != AES_GCM_NONCE_BYTES {
+        return Err(MosaicCryptoError::InvalidInputLength {
+            actual: nonce.len(),
+        });
+    }
+    let mut nonce_bytes = [0_u8; AES_GCM_NONCE_BYTES];
+    nonce_bytes.copy_from_slice(nonce);
+    let cipher = Aes256Gcm::new_from_slice(key.as_bytes()).map_err(|_| {
+        MosaicCryptoError::InvalidKeyLength {
+            actual: key.as_bytes().len(),
+        }
+    })?;
+    cipher
+        .encrypt(
+            &AesGcmNonce::from(nonce_bytes),
+            Payload {
+                msg: plaintext,
+                aad: &[],
+            },
+        )
+        .map_err(|_| MosaicCryptoError::AuthenticationFailed)
+}
+
+fn aes_gcm_decrypt(
+    key: &SecretKey,
+    ciphertext: &[u8],
+    nonce: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, MosaicCryptoError> {
+    if ciphertext.len() < AES_GCM_TAG_BYTES {
+        return Err(MosaicCryptoError::WrappedKeyTooShort {
+            actual: ciphertext.len(),
+        });
+    }
+    if nonce.len() != AES_GCM_NONCE_BYTES {
+        return Err(MosaicCryptoError::InvalidInputLength {
+            actual: nonce.len(),
+        });
+    }
+    let mut nonce_bytes = [0_u8; AES_GCM_NONCE_BYTES];
+    nonce_bytes.copy_from_slice(nonce);
+    let cipher = Aes256Gcm::new_from_slice(key.as_bytes()).map_err(|_| {
+        MosaicCryptoError::InvalidKeyLength {
+            actual: key.as_bytes().len(),
+        }
+    })?;
+    cipher
+        .decrypt(
+            &AesGcmNonce::from(nonce_bytes),
+            Payload {
+                msg: ciphertext,
+                aad: &[],
+            },
+        )
+        .map(Zeroizing::new)
+        .map_err(|_| MosaicCryptoError::AuthenticationFailed)
+}
+
+/// Encrypts a user salt using an L2-account-key-derived AES-256-GCM key.
+///
+/// Wire format matches the existing web storage split:
+/// - `nonce`: 12-byte AES-GCM nonce stored separately by callers.
+/// - `ciphertext`: `0x02 || AES-GCM(salt)` where AES-GCM returns
+///   `ciphertext || 16-byte tag`.
+/// - AAD is empty, matching WebCrypto's historic salt envelope.
+///
+/// The AES key is HKDF-SHA256(L2 account key, info =
+/// `mosaic:user-salt-envelope:v2`) and never leaves Rust.
+///
+/// # Errors
+/// Returns salt length, RNG, KDF, or authentication errors from the underlying operations.
+pub fn encrypt_user_salt_envelope_v2(
+    account_key: &SecretKey,
+    salt: &[u8],
+) -> Result<(Vec<u8>, [u8; AES_GCM_NONCE_BYTES]), MosaicCryptoError> {
+    let mut nonce = [0_u8; AES_GCM_NONCE_BYTES];
+    getrandom::fill(&mut nonce).map_err(|_| MosaicCryptoError::RngFailure)?;
+    let ciphertext = encrypt_user_salt_envelope_v2_with_nonce(account_key, salt, &nonce)?;
+    Ok((ciphertext, nonce))
+}
+
+/// Deterministic v2 user-salt envelope helper for cross-client vectors.
+///
+/// See [`encrypt_user_salt_envelope_v2`] for the wire format.
+pub fn encrypt_user_salt_envelope_v2_with_nonce(
+    account_key: &SecretKey,
+    salt: &[u8],
+    nonce: &[u8],
+) -> Result<Vec<u8>, MosaicCryptoError> {
+    validate_salt(salt)?;
+    let aes_key = derive_aes_gcm_key_from_secret(account_key, USER_SALT_ENVELOPE_V2_INFO)?;
+    let encrypted = aes_gcm_encrypt_with_nonce(&aes_key, salt, nonce)?;
+    let mut envelope = Vec::with_capacity(1 + encrypted.len());
+    envelope.push(0x02);
+    envelope.extend_from_slice(&encrypted);
+    Ok(envelope)
+}
+
+/// Decrypts a v2 user-salt envelope produced by [`encrypt_user_salt_envelope_v2`].
+///
+/// # Errors
+/// Returns `InvalidEnvelope` for a missing v2 marker or AEAD/KDF errors on tampering.
+pub fn decrypt_user_salt_envelope_v2(
+    account_key: &SecretKey,
+    ciphertext: &[u8],
+    nonce: &[u8],
+) -> Result<[u8; SESSION_SALT_BYTES], MosaicCryptoError> {
+    if ciphertext.first().copied() != Some(0x02) {
+        return Err(MosaicCryptoError::InvalidEnvelope);
+    }
+    let aes_key = derive_aes_gcm_key_from_secret(account_key, USER_SALT_ENVELOPE_V2_INFO)?;
+    let plaintext = aes_gcm_decrypt(&aes_key, &ciphertext[1..], nonce)?;
+    let mut salt = [0_u8; SESSION_SALT_BYTES];
+    if plaintext.len() != SESSION_SALT_BYTES {
+        return Err(MosaicCryptoError::InvalidSaltLength {
+            actual: plaintext.len(),
+        });
+    }
+    salt.copy_from_slice(&plaintext);
+    Ok(salt)
+}
+
+/// Decrypts the legacy v1 user salt envelope.
+///
+/// Wire format: caller supplies the 12-byte AES-GCM nonce separately and
+/// `ciphertext` is raw `AES-GCM(salt) == ciphertext || 16-byte tag` with no
+/// version byte and empty AAD. The AES-256-GCM key is derived with
+/// PBKDF2-HMAC-SHA256(password UTF-8 bytes, username UTF-8 bytes, 100000).
+///
+/// # Errors
+/// Returns KDF, nonce length, authentication, or salt-length errors.
+pub fn decrypt_user_salt_v1_legacy(
+    password: &str,
+    username: &str,
+    ciphertext: &[u8],
+    nonce: &[u8],
+) -> Result<[u8; SESSION_SALT_BYTES], MosaicCryptoError> {
+    let password = Zeroizing::new(normalize_password_for_kdf(password));
+    let mut key = Zeroizing::new(vec![0_u8; KEY_BYTES]);
+    pbkdf2_hmac::<Sha256>(password.as_slice(), username.as_bytes(), 100_000, &mut key);
+    let aes_key = SecretKey::from_bytes(key.as_mut_slice())?;
+    let plaintext = aes_gcm_decrypt(&aes_key, ciphertext, nonce)?;
+    let mut salt = [0_u8; SESSION_SALT_BYTES];
+    if plaintext.len() != SESSION_SALT_BYTES {
+        return Err(MosaicCryptoError::InvalidSaltLength {
+            actual: plaintext.len(),
+        });
+    }
+    salt.copy_from_slice(&plaintext);
+    Ok(salt)
+}
+
+/// Generates a Rust-owned AES-256-GCM wrap key for session-local cache blobs.
+pub fn generate_cache_wrap_key() -> Result<SecretKey, MosaicCryptoError> {
+    let mut key = Zeroizing::new(vec![0_u8; KEY_BYTES]);
+    getrandom::fill(key.as_mut_slice()).map_err(|_| MosaicCryptoError::RngFailure)?;
+    SecretKey::from_bytes(key.as_mut_slice())
+}
+
+/// Wraps a session cache blob as `nonce(12) || ciphertext || tag(16)`.
+pub fn wrap_cache_blob(
+    wrap_key: &SecretKey,
+    plaintext: &[u8],
+) -> Result<Vec<u8>, MosaicCryptoError> {
+    wrap_aes_gcm_blob(wrap_key, SESSION_CACHE_WRAP_INFO, plaintext)
+}
+
+/// Unwraps a session cache blob produced by [`wrap_cache_blob`].
+pub fn unwrap_cache_blob(
+    wrap_key: &SecretKey,
+    envelope: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, MosaicCryptoError> {
+    unwrap_aes_gcm_blob(wrap_key, SESSION_CACHE_WRAP_INFO, envelope)
+}
+
+/// Wraps a link-tier blob as `nonce(12) || ciphertext || tag(16)`.
+pub fn wrap_link_tier_blob(
+    wrap_key: &SecretKey,
+    plaintext: &[u8],
+) -> Result<Vec<u8>, MosaicCryptoError> {
+    wrap_aes_gcm_blob(wrap_key, LINK_TIER_BLOB_WRAP_INFO, plaintext)
+}
+
+/// Unwraps a link-tier blob produced by [`wrap_link_tier_blob`].
+pub fn unwrap_link_tier_blob(
+    wrap_key: &SecretKey,
+    envelope: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, MosaicCryptoError> {
+    unwrap_aes_gcm_blob(wrap_key, LINK_TIER_BLOB_WRAP_INFO, envelope)
+}
+
+fn wrap_aes_gcm_blob(
+    wrap_key: &SecretKey,
+    info: &[u8],
+    plaintext: &[u8],
+) -> Result<Vec<u8>, MosaicCryptoError> {
+    let aes_key = derive_aes_gcm_key_from_secret(wrap_key, info)?;
+    let mut nonce = [0_u8; AES_GCM_NONCE_BYTES];
+    getrandom::fill(&mut nonce).map_err(|_| MosaicCryptoError::RngFailure)?;
+    let ciphertext = aes_gcm_encrypt_with_nonce(&aes_key, plaintext, &nonce)?;
+    let mut envelope = Vec::with_capacity(AES_GCM_NONCE_BYTES + ciphertext.len());
+    envelope.extend_from_slice(&nonce);
+    envelope.extend_from_slice(&ciphertext);
+    Ok(envelope)
+}
+
+fn unwrap_aes_gcm_blob(
+    wrap_key: &SecretKey,
+    info: &[u8],
+    envelope: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, MosaicCryptoError> {
+    if envelope.len() < AES_GCM_NONCE_BYTES + AES_GCM_TAG_BYTES {
+        return Err(MosaicCryptoError::WrappedKeyTooShort {
+            actual: envelope.len(),
+        });
+    }
+    let aes_key = derive_aes_gcm_key_from_secret(wrap_key, info)?;
+    aes_gcm_decrypt(
+        &aes_key,
+        &envelope[AES_GCM_NONCE_BYTES..],
+        &envelope[..AES_GCM_NONCE_BYTES],
+    )
+}
+
+/// Derives the backend-compatible fake user salt for enumeration defense.
+///
+/// Format: `SHA256(server_secret || "fake_salt" || username)[0..16]`.
+#[must_use]
+pub fn derive_enumeration_defense_salt(
+    server_secret: &[u8],
+    username: &str,
+) -> [u8; SESSION_SALT_BYTES] {
+    let mut hasher = Sha256::new();
+    hasher.update(server_secret);
+    hasher.update(b"fake_salt");
+    hasher.update(username.as_bytes());
+    let digest = hasher.finalize();
+    let mut out = [0_u8; SESSION_SALT_BYTES];
+    out.copy_from_slice(&digest[..SESSION_SALT_BYTES]);
     out
 }
 
@@ -2428,6 +2720,64 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// Stateful streaming SHA-256 hasher for FFI facades.
+pub struct Sha256Hasher {
+    inner: Option<Sha256>,
+}
+
+impl Sha256Hasher {
+    /// Creates a new streaming SHA-256 hasher.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            inner: Some(Sha256::new()),
+        }
+    }
+
+    /// Adds bytes to the digest.
+    ///
+    /// # Errors
+    /// Returns `InvalidEnvelope` after the hasher has already been finalized.
+    pub fn update(&mut self, bytes: &[u8]) -> Result<(), MosaicCryptoError> {
+        let hasher = self
+            .inner
+            .as_mut()
+            .ok_or(MosaicCryptoError::InvalidEnvelope)?;
+        hasher.update(bytes);
+        Ok(())
+    }
+
+    /// Finalizes the digest and returns raw bytes.
+    ///
+    /// # Errors
+    /// Returns `InvalidEnvelope` if called more than once.
+    pub fn finalize_bytes(&mut self) -> Result<[u8; 32], MosaicCryptoError> {
+        let hasher = self
+            .inner
+            .take()
+            .ok_or(MosaicCryptoError::InvalidEnvelope)?;
+        let digest = hasher.finalize();
+        let mut out = [0_u8; 32];
+        out.copy_from_slice(&digest);
+        Ok(out)
+    }
+
+    /// Finalizes the digest and returns lowercase hex.
+    ///
+    /// # Errors
+    /// Returns `InvalidEnvelope` if called more than once.
+    pub fn finalize_hex(&mut self) -> Result<String, MosaicCryptoError> {
+        self.finalize_bytes()
+            .map(|bytes| bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+    }
+}
+
+impl Default for Sha256Hasher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Writes an unkeyed variable-length BLAKE2b digest of `data` into `out`.
 ///
 /// `out` must be between 1 and 64 bytes, matching BLAKE2b's variable-output bounds.
@@ -2459,6 +2809,21 @@ pub fn blake2b_var_chunks(out: &mut [u8], chunks: &[&[u8]]) -> Result<(), Mosaic
 pub fn sha256_base64url(bytes: &[u8]) -> String {
     let digest = sha256_bytes(bytes);
     base64url_no_pad(&digest)
+}
+
+/// Returns the Android-compatible TUS PATCH idempotency key.
+///
+/// Format: `"mosaic-tus-patch-" || base64url(SHA256("tus-patch\0" ||
+/// job_id || "\0" || shard_id)[0..18])`.
+#[must_use]
+pub fn tus_patch_idempotency_key(job_id: &str, shard_id: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"tus-patch\0");
+    hasher.update(job_id.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(shard_id.as_bytes());
+    let digest = hasher.finalize();
+    format!("mosaic-tus-patch-{}", base64url_no_pad(&digest[..18]))
 }
 
 /// Encodes `bytes` as base64url with no padding characters (RFC 4648 §5, no `=`).

@@ -140,6 +140,24 @@ impl fmt::Debug for BytesResult {
     }
 }
 
+/// Rust-side WASM facade result for user-salt envelope encryption.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SaltEnvelopeResult {
+    pub code: u16,
+    pub ciphertext: Vec<u8>,
+    pub nonce: Vec<u8>,
+}
+
+impl fmt::Debug for SaltEnvelopeResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SaltEnvelopeResult")
+            .field("code", &self.code)
+            .field("ciphertext_len", &self.ciphertext.len())
+            .field("nonce_len", &self.nonce.len())
+            .finish()
+    }
+}
+
 /// Rust-side WASM facade result for metadata stripping.
 #[derive(Clone, PartialEq, Eq)]
 pub struct StripResult {
@@ -1057,6 +1075,80 @@ impl JsBytesResult {
     #[must_use]
     pub fn bytes(&self) -> Vec<u8> {
         self.bytes.clone()
+    }
+}
+
+/// WASM-bindgen class for user-salt envelope encryption results.
+#[wasm_bindgen(js_name = SaltEnvelopeResult)]
+pub struct JsSaltEnvelopeResult {
+    code: u16,
+    ciphertext: Vec<u8>,
+    nonce: Vec<u8>,
+}
+
+/// WASM streaming SHA-256 hasher.
+#[wasm_bindgen(js_name = Sha256StreamingHasher)]
+pub struct Sha256StreamingHasher {
+    inner: Option<mosaic_crypto::Sha256Hasher>,
+}
+
+#[wasm_bindgen(js_class = Sha256StreamingHasher)]
+impl Sha256StreamingHasher {
+    /// Creates a new streaming SHA-256 hasher.
+    #[wasm_bindgen(constructor)]
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            inner: Some(mosaic_crypto::Sha256Hasher::new()),
+        }
+    }
+
+    /// Adds bytes to the digest.
+    pub fn update(&mut self, bytes: Vec<u8>) -> Result<(), JsError> {
+        self.inner
+            .as_mut()
+            .ok_or_else(|| JsError::new("SHA-256 hasher already finalized"))?
+            .update(&bytes)
+            .map_err(js_error_from_crypto)
+    }
+
+    /// Finalizes and returns lowercase hex.
+    pub fn finalize_hex(&mut self) -> Result<String, JsError> {
+        let mut hasher = self
+            .inner
+            .take()
+            .ok_or_else(|| JsError::new("SHA-256 hasher already finalized"))?;
+        hasher.finalize_hex().map_err(js_error_from_crypto)
+    }
+}
+
+impl Default for Sha256StreamingHasher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[wasm_bindgen(js_class = SaltEnvelopeResult)]
+impl JsSaltEnvelopeResult {
+    /// Stable error code. Zero means success.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn code(&self) -> u16 {
+        self.code
+    }
+
+    /// Versioned ciphertext envelope.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn ciphertext(&self) -> Vec<u8> {
+        self.ciphertext.clone()
+    }
+
+    /// 12-byte AES-GCM nonce stored separately by the server.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn nonce(&self) -> Vec<u8> {
+        self.nonce.clone()
     }
 }
 
@@ -2600,6 +2692,22 @@ pub fn derive_sidecar_room_id(msg1: Vec<u8>) -> Vec<u8> {
     mosaic_crypto::derive_sidecar_room_id(&msg1).to_vec()
 }
 
+/// Generates a fresh 16-byte user salt.
+#[wasm_bindgen(js_name = generateUserSaltBytes)]
+#[must_use]
+pub fn generate_user_salt_bytes() -> JsBytesResult {
+    js_bytes_result_from_rust(bytes_result_from_client(
+        mosaic_client::generate_user_salt_bytes(),
+    ))
+}
+
+/// Derives the backend-compatible fake user salt for enumeration defense.
+#[wasm_bindgen(js_name = deriveEnumerationDefenseSalt)]
+#[must_use]
+pub fn derive_enumeration_defense_salt(server_secret: Vec<u8>, username: String) -> Vec<u8> {
+    mosaic_client::derive_enumeration_defense_salt(&server_secret, &username)
+}
+
 /// Derives the session L0 master key and stores it behind an opaque handle.
 #[wasm_bindgen(js_name = deriveMasterKeyFromPassword)]
 pub fn derive_master_key_from_password(
@@ -2686,6 +2794,100 @@ pub fn wrap_with_account_handle(account_handle: u64, plaintext: Vec<u8>) -> Byte
 pub fn unwrap_with_account_handle(account_handle: u64, wrapped: Vec<u8>) -> BytesResult {
     let result = mosaic_client::unwrap_with_account_handle(account_handle, &wrapped);
     bytes_result_from_client(result)
+}
+
+/// Encrypts a user salt with an account-key handle.
+#[must_use]
+pub fn encrypt_user_salt_envelope_v2(account_handle: u64, salt: Vec<u8>) -> SaltEnvelopeResult {
+    salt_envelope_result_from_client(
+        mosaic_client::encrypt_user_salt_envelope_v2_with_account_handle(account_handle, &salt),
+    )
+}
+
+/// Decrypts a v2 user salt envelope with an account-key handle.
+#[must_use]
+pub fn decrypt_user_salt_envelope_v2(
+    account_handle: u64,
+    ciphertext: Vec<u8>,
+    nonce: Vec<u8>,
+) -> BytesResult {
+    bytes_result_from_client(
+        mosaic_client::decrypt_user_salt_envelope_v2_with_account_handle(
+            account_handle,
+            &ciphertext,
+            &nonce,
+        ),
+    )
+}
+
+/// Decrypts a legacy PBKDF2/AES-GCM user salt envelope.
+#[must_use]
+pub fn decrypt_user_salt_v1_legacy(
+    password: String,
+    username: String,
+    ciphertext: Vec<u8>,
+    nonce: Vec<u8>,
+) -> BytesResult {
+    bytes_result_from_client(mosaic_client::decrypt_user_salt_v1_legacy(
+        &password,
+        &username,
+        &ciphertext,
+        &nonce,
+    ))
+}
+
+/// Creates a session-cache AES wrap handle.
+pub fn create_session_cache_wrap_handle() -> Result<u64, u16> {
+    mosaic_client::create_session_cache_wrap_handle().map_err(|error| error.code.as_u16())
+}
+
+/// Wraps a session cache blob.
+#[must_use]
+pub fn wrap_session_cache_blob(handle: u64, plaintext: Vec<u8>) -> BytesResult {
+    let plaintext = Zeroizing::new(plaintext);
+    bytes_result_from_client(mosaic_client::wrap_session_cache_blob(handle, &plaintext))
+}
+
+/// Unwraps a session cache blob.
+#[must_use]
+pub fn unwrap_session_cache_blob(handle: u64, envelope: Vec<u8>) -> BytesResult {
+    bytes_result_from_client(mosaic_client::unwrap_session_cache_blob(handle, &envelope))
+}
+
+/// Closes a session-cache AES wrap handle.
+#[must_use]
+pub fn close_session_cache_wrap_handle(handle: u64) -> u16 {
+    match mosaic_client::close_session_cache_wrap_handle(handle) {
+        Ok(()) => mosaic_client::ClientErrorCode::Ok.as_u16(),
+        Err(error) => error.code.as_u16(),
+    }
+}
+
+/// Creates a link-tier blob AES wrap handle.
+pub fn create_link_tier_wrap_handle() -> Result<u64, u16> {
+    mosaic_client::create_link_tier_wrap_handle().map_err(|error| error.code.as_u16())
+}
+
+/// Wraps a link-tier key-store blob.
+#[must_use]
+pub fn wrap_link_tier_blob(handle: u64, plaintext: Vec<u8>) -> BytesResult {
+    let plaintext = Zeroizing::new(plaintext);
+    bytes_result_from_client(mosaic_client::wrap_link_tier_blob(handle, &plaintext))
+}
+
+/// Unwraps a link-tier key-store blob.
+#[must_use]
+pub fn unwrap_link_tier_blob(handle: u64, envelope: Vec<u8>) -> BytesResult {
+    bytes_result_from_client(mosaic_client::unwrap_link_tier_blob(handle, &envelope))
+}
+
+/// Closes a link-tier blob AES wrap handle.
+#[must_use]
+pub fn close_link_tier_wrap_handle(handle: u64) -> u16 {
+    match mosaic_client::close_link_tier_wrap_handle(handle) {
+        Ok(()) => mosaic_client::ClientErrorCode::Ok.as_u16(),
+        Err(error) => error.code.as_u16(),
+    }
 }
 
 /// Builds the canonical LocalAuth challenge transcript byte string.
@@ -2775,6 +2977,37 @@ pub fn verify_manifest_with_identity(
 ) -> u16 {
     mosaic_client::verify_manifest_with_identity(&transcript_bytes, &signature, &public_key)
         .as_u16()
+}
+
+/// Verifies a canonical LocalAuth challenge transcript signature with the
+/// caller's password-rooted Ed25519 public key.
+///
+/// Returns `ClientErrorCode::Ok` (0) when the signature is valid, or
+/// `AuthenticationFailed` for any rejection (wrong key, tampered transcript,
+/// tampered signature, malformed inputs). Used by the .NET backend through
+/// Wasmtime to replace the in-process NSec Ed25519 verify path.
+#[must_use]
+pub fn verify_auth_challenge_signature(
+    transcript_bytes: Vec<u8>,
+    signature: Vec<u8>,
+    public_key: Vec<u8>,
+) -> u16 {
+    use mosaic_crypto::{AuthSignature, AuthSigningPublicKey};
+
+    let signature = match AuthSignature::from_bytes(&signature) {
+        Ok(value) => value,
+        Err(_) => return mosaic_client::ClientErrorCode::AuthenticationFailed.as_u16(),
+    };
+    let public_key = match AuthSigningPublicKey::from_bytes(&public_key) {
+        Ok(value) => value,
+        Err(_) => return mosaic_client::ClientErrorCode::AuthenticationFailed.as_u16(),
+    };
+
+    if mosaic_crypto::verify_auth_challenge(&transcript_bytes, &signature, &public_key) {
+        mosaic_client::ClientErrorCode::Ok.as_u16()
+    } else {
+        mosaic_client::ClientErrorCode::AuthenticationFailed.as_u16()
+    }
 }
 
 /// Signs manifest transcript bytes with the per-epoch manifest signing key
@@ -4543,6 +4776,101 @@ pub fn close_account_key_handle_js(handle: u64) -> u16 {
     close_account_key_handle(handle)
 }
 
+/// Encrypts a user salt envelope through WASM.
+#[wasm_bindgen(js_name = encryptUserSaltEnvelopeV2)]
+#[must_use]
+pub fn encrypt_user_salt_envelope_v2_js(
+    account_handle: u64,
+    salt: Vec<u8>,
+) -> JsSaltEnvelopeResult {
+    js_salt_envelope_result_from_rust(encrypt_user_salt_envelope_v2(account_handle, salt))
+}
+
+/// Decrypts a user salt envelope through WASM.
+#[wasm_bindgen(js_name = decryptUserSaltEnvelopeV2)]
+#[must_use]
+pub fn decrypt_user_salt_envelope_v2_js(
+    account_handle: u64,
+    ciphertext: Vec<u8>,
+    nonce: Vec<u8>,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(decrypt_user_salt_envelope_v2(
+        account_handle,
+        ciphertext,
+        nonce,
+    ))
+}
+
+/// Decrypts a legacy PBKDF2 user salt envelope through WASM.
+#[wasm_bindgen(js_name = decryptUserSaltV1Legacy)]
+#[must_use]
+pub fn decrypt_user_salt_v1_legacy_js(
+    password: String,
+    username: String,
+    ciphertext: Vec<u8>,
+    nonce: Vec<u8>,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(decrypt_user_salt_v1_legacy(
+        password, username, ciphertext, nonce,
+    ))
+}
+
+/// Creates a session-cache AES wrap handle through WASM.
+#[wasm_bindgen(js_name = createSessionCacheWrapHandle)]
+pub fn create_session_cache_wrap_handle_js() -> Result<u64, JsError> {
+    create_session_cache_wrap_handle()
+        .map_err(|code| JsError::new(&format!("Mosaic client error code {code}")))
+}
+
+/// Wraps a session-cache blob through WASM.
+#[wasm_bindgen(js_name = wrapSessionCacheBlob)]
+#[must_use]
+pub fn wrap_session_cache_blob_js(handle: u64, plaintext: Vec<u8>) -> JsBytesResult {
+    js_bytes_result_from_rust(wrap_session_cache_blob(handle, plaintext))
+}
+
+/// Unwraps a session-cache blob through WASM.
+#[wasm_bindgen(js_name = unwrapSessionCacheBlob)]
+#[must_use]
+pub fn unwrap_session_cache_blob_js(handle: u64, envelope: Vec<u8>) -> JsBytesResult {
+    js_bytes_result_from_rust(unwrap_session_cache_blob(handle, envelope))
+}
+
+/// Closes a session-cache AES wrap handle through WASM.
+#[wasm_bindgen(js_name = closeSessionCacheWrapHandle)]
+#[must_use]
+pub fn close_session_cache_wrap_handle_js(handle: u64) -> u16 {
+    close_session_cache_wrap_handle(handle)
+}
+
+/// Creates a link-tier blob AES wrap handle through WASM.
+#[wasm_bindgen(js_name = createLinkTierWrapHandle)]
+pub fn create_link_tier_wrap_handle_js() -> Result<u64, JsError> {
+    create_link_tier_wrap_handle()
+        .map_err(|code| JsError::new(&format!("Mosaic client error code {code}")))
+}
+
+/// Wraps a link-tier blob through WASM.
+#[wasm_bindgen(js_name = wrapLinkTierBlob)]
+#[must_use]
+pub fn wrap_link_tier_blob_js(handle: u64, plaintext: Vec<u8>) -> JsBytesResult {
+    js_bytes_result_from_rust(wrap_link_tier_blob(handle, plaintext))
+}
+
+/// Unwraps a link-tier blob through WASM.
+#[wasm_bindgen(js_name = unwrapLinkTierBlob)]
+#[must_use]
+pub fn unwrap_link_tier_blob_js(handle: u64, envelope: Vec<u8>) -> JsBytesResult {
+    js_bytes_result_from_rust(unwrap_link_tier_blob(handle, envelope))
+}
+
+/// Closes a link-tier blob AES wrap handle through WASM.
+#[wasm_bindgen(js_name = closeLinkTierWrapHandle)]
+#[must_use]
+pub fn close_link_tier_wrap_handle_js(handle: u64) -> u16 {
+    close_link_tier_wrap_handle(handle)
+}
+
 /// Creates a new identity handle through the generated WASM binding surface.
 #[wasm_bindgen(js_name = createIdentityHandle)]
 #[must_use]
@@ -4593,6 +4921,21 @@ pub fn verify_manifest_with_identity_js(
     public_key: Vec<u8>,
 ) -> u16 {
     verify_manifest_with_identity(transcript_bytes, signature, public_key)
+}
+
+/// Verifies a canonical LocalAuth challenge transcript signature through WASM.
+///
+/// Used by the .NET backend hosted via Wasmtime to replace the in-process
+/// NSec.Cryptography Ed25519 verify path. Routes through the canonical
+/// `mosaic_crypto::verify_auth_challenge` implementation.
+#[wasm_bindgen(js_name = verifyAuthChallengeSignature)]
+#[must_use]
+pub fn verify_auth_challenge_signature_js(
+    transcript_bytes: Vec<u8>,
+    signature: Vec<u8>,
+    public_key: Vec<u8>,
+) -> u16 {
+    verify_auth_challenge_signature(transcript_bytes, signature, public_key)
 }
 
 /// Signs manifest transcript bytes with the per-epoch manifest signing key
@@ -4673,6 +5016,13 @@ pub fn manifest_transcript_bytes_js(
 #[wasm_bindgen(js_name = finalizeIdempotencyKey)]
 pub fn finalize_idempotency_key_js(job_id: String) -> Result<String, JsError> {
     finalize_idempotency_key(job_id).map_err(|_| JsError::new("invalid UUIDv7"))
+}
+
+/// Returns the canonical TUS PATCH idempotency key through WASM.
+#[wasm_bindgen(js_name = tusPatchIdempotencyKey)]
+#[must_use]
+pub fn tus_patch_idempotency_key_js(job_id: String, shard_id: String) -> String {
+    mosaic_client::tus_patch_idempotency_key(&job_id, &shard_id)
 }
 
 /// Encrypts metadata sidecar bytes with an epoch handle through WASM.
@@ -5459,6 +5809,16 @@ fn bytes_result_from_client(result: mosaic_client::BytesResult) -> BytesResult {
     BytesResult {
         code: result.code.as_u16(),
         bytes: result.bytes,
+    }
+}
+
+fn salt_envelope_result_from_client(
+    result: mosaic_client::SaltEnvelopeResult,
+) -> SaltEnvelopeResult {
+    SaltEnvelopeResult {
+        code: result.code.as_u16(),
+        ciphertext: result.ciphertext,
+        nonce: result.nonce,
     }
 }
 
@@ -7360,6 +7720,14 @@ fn js_bytes_result_from_rust(result: BytesResult) -> JsBytesResult {
     JsBytesResult {
         code: result.code,
         bytes: result.bytes,
+    }
+}
+
+fn js_salt_envelope_result_from_rust(result: SaltEnvelopeResult) -> JsSaltEnvelopeResult {
+    JsSaltEnvelopeResult {
+        code: result.code,
+        ciphertext: result.ciphertext,
+        nonce: result.nonce,
     }
 }
 

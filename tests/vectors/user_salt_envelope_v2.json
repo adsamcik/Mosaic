@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "operation": "user-salt-envelope.v2",
+  "protocolVersion": "mosaic-v1",
+  "description": "Deterministic v2 user salt envelope fixture using an L2 account-key-derived AES-GCM key. Wire format is 0x02 || ciphertext || tag, nonce stored separately, AAD empty.",
+  "inputs": {
+    "accountKeyHex": "4242424242424242424242424242424242424242424242424242424242424242",
+    "saltHex": "11111111111111111111111111111111",
+    "nonceHex": "222222222222222222222222"
+  },
+  "expected": {
+    "ciphertextHex": "02007c97bb04fd97d8f791e0f78416dc410da5ee6e0be8f4ff7eb6ad37aa108f3f",
+    "decryptedSaltHex": "11111111111111111111111111111111"
+  }
+}

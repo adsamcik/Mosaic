@@ -1,6 +1,8 @@
 use ciborium::value::Value;
 use mosaic_client::ClientErrorCode;
-use mosaic_crypto::{KdfProfile, MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, derive_account_key};
+use mosaic_crypto::{
+    KdfProfile, MIN_KDF_ITERATIONS, MIN_KDF_MEMORY_KIB, SecretKey, derive_account_key,
+};
 use mosaic_domain::{
     SHARD_ENVELOPE_VERSION_V04, STREAMING_SHARD_FRAME_SIZE, ShardTier, metadata_field_tags,
 };
@@ -16,7 +18,7 @@ use mosaic_uniffi::{
     ClientCoreUploadShardRef as UniUploadShardRef, DownloadInitInput, DownloadPlanEntryInput,
     DownloadPlanInput, DownloadPlanShardInput, MediaFormat as UniMediaFormat,
 };
-use mosaic_vectors::{default_corpus_dir, load_vector, vectors::ContentHashVector};
+use mosaic_vectors::{ParsedVector, default_corpus_dir, load_vector, vectors::ContentHashVector};
 use mosaic_wasm::{
     AccountUnlockRequest as WasmAccountUnlockRequest,
     ClientCoreAlbumSyncEffect as WasmAlbumSyncEffect,
@@ -91,6 +93,108 @@ fn finalize_idempotency_key_parity() {
         from_wasm,
         "mosaic-finalize-01950000-0000-7000-8000-000000000000"
     );
+}
+
+#[test]
+fn tus_patch_idempotency_key_vector_matches_crypto_wasm_and_uniffi() {
+    let parsed = load_named_vector("tus_patch_idempotency_key.json");
+    let job_id = json_str(&parsed, "inputs", "jobId");
+    let shard_id = json_str(&parsed, "inputs", "shardId");
+    let expected = json_str(&parsed, "expected", "idempotencyKey");
+
+    let crypto = mosaic_crypto::tus_patch_idempotency_key(job_id, shard_id);
+    let wasm = mosaic_wasm::tus_patch_idempotency_key_js(job_id.to_owned(), shard_id.to_owned());
+    let uniffi = mosaic_uniffi::tus_patch_idempotency_key(job_id.to_owned(), shard_id.to_owned());
+
+    assert_eq!(crypto, expected);
+    assert_eq!(wasm, expected);
+    assert_eq!(uniffi, expected);
+}
+
+#[test]
+fn enumeration_defense_salt_vector_matches_crypto_wasm_and_uniffi() {
+    let parsed = load_named_vector("enumeration_defense_salt.json");
+    let server_secret = hex_to_bytes(json_str(&parsed, "inputs", "serverSecretHex"));
+    let username = json_str(&parsed, "inputs", "username");
+    let expected = hex_to_bytes(json_str(&parsed, "expected", "saltHex"));
+
+    let crypto = mosaic_crypto::derive_enumeration_defense_salt(&server_secret, username).to_vec();
+    let wasm =
+        mosaic_wasm::derive_enumeration_defense_salt(server_secret.clone(), username.to_owned());
+    let uniffi = mosaic_uniffi::derive_enumeration_defense_salt(server_secret, username.to_owned());
+
+    assert_eq!(crypto, expected);
+    assert_eq!(wasm, expected);
+    assert_eq!(uniffi, expected);
+}
+
+#[test]
+fn user_salt_v1_legacy_vector_matches_crypto_wasm_and_uniffi() {
+    let parsed = load_named_vector("user_salt_v1_legacy.json");
+    let password = json_str(&parsed, "inputs", "password");
+    let username = json_str(&parsed, "inputs", "username");
+    let ciphertext = hex_to_bytes(json_str(&parsed, "inputs", "ciphertextHex"));
+    let nonce = hex_to_bytes(json_str(&parsed, "inputs", "nonceHex"));
+    let expected = hex_to_bytes(json_str(&parsed, "expected", "saltHex"));
+
+    let crypto =
+        mosaic_crypto::decrypt_user_salt_v1_legacy(password, username, &ciphertext, &nonce)
+            .expect("crypto decrypt")
+            .to_vec();
+    let wasm = mosaic_wasm::decrypt_user_salt_v1_legacy(
+        password.to_owned(),
+        username.to_owned(),
+        ciphertext.clone(),
+        nonce.clone(),
+    );
+    let uniffi = mosaic_uniffi::decrypt_user_salt_v1_legacy(
+        password.to_owned(),
+        username.to_owned(),
+        ciphertext,
+        nonce,
+    );
+
+    assert_eq!(crypto, expected);
+    assert_eq!(wasm.code, ClientErrorCode::Ok.as_u16());
+    assert_eq!(wasm.bytes, expected);
+    assert_eq!(uniffi.code, ClientErrorCode::Ok.as_u16());
+    assert_eq!(uniffi.bytes, expected);
+}
+
+#[test]
+fn user_salt_envelope_v2_vector_matches_crypto_wasm_and_uniffi() {
+    let parsed = load_named_vector("user_salt_envelope_v2.json");
+    let mut account_key_bytes = hex_to_bytes(json_str(&parsed, "inputs", "accountKeyHex"));
+    let salt = hex_to_bytes(json_str(&parsed, "inputs", "saltHex"));
+    let nonce = hex_to_bytes(json_str(&parsed, "inputs", "nonceHex"));
+    let expected_ciphertext = hex_to_bytes(json_str(&parsed, "expected", "ciphertextHex"));
+    let expected_salt = hex_to_bytes(json_str(&parsed, "expected", "decryptedSaltHex"));
+
+    let account_key = SecretKey::from_bytes(&mut account_key_bytes).expect("account key");
+    let crypto_ciphertext =
+        mosaic_crypto::encrypt_user_salt_envelope_v2_with_nonce(&account_key, &salt, &nonce)
+            .expect("crypto encrypt");
+    assert_eq!(crypto_ciphertext, expected_ciphertext);
+    assert_eq!(
+        mosaic_crypto::decrypt_user_salt_envelope_v2(&account_key, &expected_ciphertext, &nonce)
+            .expect("crypto decrypt")
+            .to_vec(),
+        expected_salt
+    );
+
+    let handle = mosaic_client::open_secret_handle(account_key.as_bytes()).expect("open handle");
+    let wasm = mosaic_wasm::decrypt_user_salt_envelope_v2(
+        handle,
+        expected_ciphertext.clone(),
+        nonce.clone(),
+    );
+    let uniffi = mosaic_uniffi::decrypt_user_salt_envelope_v2(handle, expected_ciphertext, nonce);
+    mosaic_client::close_secret_handle(handle).expect("close handle");
+
+    assert_eq!(wasm.code, ClientErrorCode::Ok.as_u16());
+    assert_eq!(wasm.bytes, expected_salt);
+    assert_eq!(uniffi.code, ClientErrorCode::Ok.as_u16());
+    assert_eq!(uniffi.bytes, expected_salt);
 }
 
 #[test]
@@ -2980,6 +3084,29 @@ fn content_hash_dedup_vector() -> ContentHashVector {
         ContentHashVector::from(&parsed),
         "parse content_hash_dedup vector",
     )
+}
+
+fn load_named_vector(name: &str) -> ParsedVector {
+    let mut path = default_corpus_dir();
+    path.push(name);
+    must(load_vector(&path), "load named vector")
+}
+
+fn json_str<'a>(parsed: &'a ParsedVector, section: &str, field: &str) -> &'a str {
+    parsed.document[section][field]
+        .as_str()
+        .unwrap_or_else(|| panic!("{}.{} must be a string", section, field))
+}
+
+fn hex_to_bytes(value: &str) -> Vec<u8> {
+    assert_eq!(value.len() % 2, 0, "hex length must be even");
+    (0..value.len())
+        .step_by(2)
+        .map(|index| {
+            u8::from_str_radix(&value[index..index + 2], 16)
+                .unwrap_or_else(|_| panic!("invalid hex at byte {}", index / 2))
+        })
+        .collect()
 }
 
 fn contains_subsequence(bytes: &[u8], needle: &[u8]) -> bool {
