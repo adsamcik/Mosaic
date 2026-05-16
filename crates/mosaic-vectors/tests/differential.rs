@@ -14,11 +14,12 @@ use std::path::PathBuf;
 
 use mosaic_crypto::{
     AuthSignature, AuthSigningPublicKey, AuthSigningSecretKey, IdentitySignature,
-    IdentitySigningPublicKey, LINK_TIER_KEY_AAD, ManifestSigningPublicKey, SecretKey,
-    build_auth_challenge_transcript, decrypt_content, decrypt_shard, derive_identity_keypair,
-    derive_link_keys, link_tier_key_aad_v2, sign_auth_challenge, sign_manifest_with_identity,
+    IdentitySigningPublicKey, LINK_TIER_KEY_AAD, ManifestSigningPublicKey,
+    ManifestSigningSecretKey, SecretKey, build_auth_challenge_transcript, decrypt_content,
+    decrypt_shard, derive_identity_keypair, derive_link_keys, link_tier_key_aad_v2,
+    sign_auth_challenge, sign_manifest_transcript, sign_manifest_with_identity,
     unwrap_tier_key_from_link, unwrap_tier_key_from_link_v2, verify_auth_challenge,
-    verify_manifest_identity_signature, wrap_tier_key_for_link_v2,
+    verify_manifest_identity_signature, verify_manifest_transcript, wrap_tier_key_for_link_v2,
 };
 use mosaic_crypto::{
     BundleValidationContext, SealedBundle, WrappedTierKey, generate_link_secret,
@@ -26,7 +27,8 @@ use mosaic_crypto::{
 };
 use mosaic_domain::{
     EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, ShardTier,
-    canonical_manifest_transcript_bytes,
+    TombstoneTranscript, canonical_manifest_transcript_bytes,
+    canonical_tombstone_transcript_bytes,
 };
 use mosaic_vectors::{
     ParsedVector, default_corpus_dir, load_all, load_vector,
@@ -34,7 +36,7 @@ use mosaic_vectors::{
         AccountUnlockVector, AuthChallengeVector, AuthKeypairVector, ContentEncryptVector,
         ContentHashVector, EpochDeriveVector, IdentityVector, LinkKeysVector,
         ManifestTranscriptVector, SealedBundleVector, ShardEnvelopeVector, TierKeyWrapV2Vector,
-        TierKeyWrapVector,
+        TierKeyWrapVector, TombstoneSignatureVector,
     },
 };
 use sha2::{Digest, Sha256};
@@ -656,5 +658,91 @@ fn manifest_transcript_vector_matches_rust_canonical_bytes() {
         hex(&bytes),
         hex(&vector.expected_transcript),
         "manifest transcript bytes mismatch"
+    );
+}
+
+
+#[test]
+fn tombstone_signature_vector_locks_transcript_and_ed25519_signature() {
+    // Cross-client lock for audit `sync C2` (batch 5e — A2). The Ed25519
+    // signature is deterministic given a fixed seed + message (RFC 8032),
+    // so all three client implementations (Rust core, WASM, UniFFI) MUST
+    // produce identical bytes. The vector also locks the 64-byte
+    // canonical transcript, the derived 32-byte pubkey, and verifies
+    // the signature with the strict Ed25519 verifier.
+    let parsed = load("tombstone_signature.json");
+    let vector = TombstoneSignatureVector::from(&parsed).expect("tombstone_signature vector");
+
+    assert_eq!(vector.signing_seed.len(), 32, "signing seed must be 32 bytes");
+    assert_eq!(vector.album_id.len(), 16, "album_id must be 16 bytes");
+    assert_eq!(vector.photo_id.len(), 16, "photo_id must be 16 bytes");
+
+    // 1. Transcript is byte-exact.
+    let mut album_id = [0_u8; 16];
+    album_id.copy_from_slice(&vector.album_id);
+    let mut photo_id = [0_u8; 16];
+    photo_id.copy_from_slice(&vector.photo_id);
+    let transcript = TombstoneTranscript::new(
+        album_id,
+        vector.epoch_id,
+        photo_id,
+        vector.version_created,
+    );
+    let transcript_bytes = canonical_tombstone_transcript_bytes(&transcript);
+    assert_eq!(
+        transcript_bytes.len(),
+        vector.expected_transcript_length,
+        "transcript length drift"
+    );
+    assert_eq!(
+        hex(&transcript_bytes),
+        hex(&vector.expected_transcript),
+        "tombstone transcript bytes drift (cross-client signature will silently break)"
+    );
+
+    // 2. Pubkey derived from the seed matches.
+    let mut seed = vector.signing_seed.clone();
+    let secret = ManifestSigningSecretKey::from_seed(&mut seed).expect("from_seed");
+    let pubkey = secret.public_key();
+    assert_eq!(
+        hex(pubkey.as_bytes()),
+        hex(&vector.expected_signing_pubkey),
+        "signing pubkey derivation drift"
+    );
+
+    // 3. Signature is byte-exact (Ed25519 is deterministic).
+    let signature = sign_manifest_transcript(&transcript_bytes, &secret);
+    assert_eq!(
+        hex(signature.as_bytes()),
+        hex(&vector.expected_signature),
+        "tombstone signature drift — cross-client clients will reject this tombstone"
+    );
+
+    // 4. Strict verify accepts the locked signature.
+    assert!(
+        verify_manifest_transcript(&transcript_bytes, &signature, &pubkey),
+        "verify_manifest_transcript must accept the locked tombstone signature"
+    );
+
+    // 5. Negative: tampered transcript (mutate epoch_id) is rejected.
+    let tampered = TombstoneTranscript::new(
+        album_id,
+        vector.epoch_id.wrapping_add(1),
+        photo_id,
+        vector.version_created,
+    );
+    let tampered_bytes = canonical_tombstone_transcript_bytes(&tampered);
+    assert!(
+        !verify_manifest_transcript(&tampered_bytes, &signature, &pubkey),
+        "verify must reject a tombstone signature against a tampered transcript"
+    );
+
+    // 6. Negative: wrong pubkey rejected.
+    let wrong_pubkey_bytes = [0x55_u8; 32];
+    let wrong_pubkey = ManifestSigningPublicKey::from_bytes(&wrong_pubkey_bytes)
+        .expect("from_bytes accepts 32 bytes");
+    assert!(
+        !verify_manifest_transcript(&transcript_bytes, &signature, &wrong_pubkey),
+        "verify must reject the locked signature against a wrong pubkey"
     );
 }

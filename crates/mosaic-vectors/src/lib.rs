@@ -1135,6 +1135,81 @@ pub mod vectors {
             })
         }
     }
+    /// `tombstone.sign-transcript.v1` parsed inputs/outputs.
+    ///
+    /// Locks the byte-exact tombstone transcript bytes AND the Ed25519
+    /// signature/pubkey derived from a known 32-byte seed. Cross-client
+    /// implementations (Rust, WASM, UniFFI) MUST produce the same bytes.
+    /// Closes audit `sync C2` cross-client surface for batch 5.
+    pub struct TombstoneSignatureVector {
+        pub signing_seed: alloc::vec::Vec<u8>,
+        pub album_id: alloc::vec::Vec<u8>,
+        pub epoch_id: u32,
+        pub photo_id: alloc::vec::Vec<u8>,
+        pub version_created: i64,
+        pub expected_transcript: alloc::vec::Vec<u8>,
+        pub expected_transcript_length: usize,
+        pub expected_signing_pubkey: alloc::vec::Vec<u8>,
+        pub expected_signature: alloc::vec::Vec<u8>,
+    }
+
+    #[derive(Deserialize)]
+    struct TombstoneInputs {
+        #[serde(rename = "signingSeedHex")]
+        signing_seed_hex: alloc::string::String,
+        #[serde(rename = "albumIdHex")]
+        album_id_hex: alloc::string::String,
+        #[serde(rename = "epochId")]
+        epoch_id: u32,
+        #[serde(rename = "photoIdHex")]
+        photo_id_hex: alloc::string::String,
+        #[serde(rename = "versionCreated")]
+        version_created: i64,
+    }
+    #[derive(Deserialize)]
+    struct TombstoneExpected {
+        #[serde(rename = "transcriptLength")]
+        transcript_length: usize,
+        #[serde(rename = "transcriptHex")]
+        transcript_hex: alloc::string::String,
+        #[serde(rename = "signingPubkeyHex")]
+        signing_pubkey_hex: alloc::string::String,
+        #[serde(rename = "signatureHex")]
+        signature_hex: alloc::string::String,
+    }
+
+    impl TombstoneSignatureVector {
+        /// # Errors
+        /// Returns [`VectorLoadError`] on missing fields or invalid hex.
+        pub fn from(parsed: &ParsedVector) -> Result<Self, VectorLoadError> {
+            let inputs: TombstoneInputs = extract(&parsed.document, "inputs", &parsed.path)?;
+            let expected: TombstoneExpected =
+                extract(&parsed.document, "expected", &parsed.path)?;
+            Ok(Self {
+                signing_seed: decode_hex(&inputs.signing_seed_hex, "signingSeedHex", &parsed.path)?,
+                album_id: decode_hex(&inputs.album_id_hex, "albumIdHex", &parsed.path)?,
+                epoch_id: inputs.epoch_id,
+                photo_id: decode_hex(&inputs.photo_id_hex, "photoIdHex", &parsed.path)?,
+                version_created: inputs.version_created,
+                expected_transcript: decode_hex(
+                    &expected.transcript_hex,
+                    "expected.transcriptHex",
+                    &parsed.path,
+                )?,
+                expected_transcript_length: expected.transcript_length,
+                expected_signing_pubkey: decode_hex(
+                    &expected.signing_pubkey_hex,
+                    "expected.signingPubkeyHex",
+                    &parsed.path,
+                )?,
+                expected_signature: decode_hex(
+                    &expected.signature_hex,
+                    "expected.signatureHex",
+                    &parsed.path,
+                )?,
+            })
+        }
+    }
 }
 
 #[cfg(test)]

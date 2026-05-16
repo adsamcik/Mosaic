@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "operation": "tombstone.sign-transcript.v1",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": true,
+  "description": "Cross-client tombstone (soft-delete) signature lock. The editor signs the canonical 64-byte tombstone transcript (mosaic-domain: 'Mosaic_Tombstone_v1' || version || album_id || epoch_id_le || photo_id || version_created_le) with the per-epoch Ed25519 ManifestSigningSecretKey. The sync visitor recomputes the transcript from authoritative server fields and verifies the signature against the album's published epoch signing pubkey before purging local state — without a valid signature, the visitor refuses to honor the tombstone (audit 'sync C2 (unauthenticated tombstones)' / batch 5). Ed25519 (RFC 8032) is deterministic given a fixed seed + message, so all three client implementations (Rust, WASM, UniFFI) MUST produce the exact signature bytes locked here.",
+  "algorithms": {
+    "transcript": "mosaic_domain::canonical_tombstone_transcript_bytes",
+    "signing": "Ed25519 (RFC 8032 deterministic), 32-byte seed -> 32-byte pubkey + 64-byte signature",
+    "verify": "mosaic_crypto::verify_manifest_transcript (Ed25519 strict)"
+  },
+  "domainLabels": [
+    "mosaic.v1.tombstone"
+  ],
+  "inputs": {
+    "signingSeedHex": "4242424242424242424242424242424242424242424242424242424242424242",
+    "albumIdHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+    "epochId": 7,
+    "photoIdHex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+    "versionCreated": 42
+  },
+  "expected": {
+    "transcriptLength": 64,
+    "transcriptHex": "4d6f736169635f546f6d6273746f6e655f763101a0a1a2a3a4a5a6a7a8a9aaabacadaeaf07000000c0c1c2c3c4c5c6c7c8c9cacbcccdcecf2a00000000000000",
+    "signingPubkeyHex": "2152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12",
+    "signatureHex": "209b66f8780ed06656c3533ee58e1a95cd5a5f62dc3cd9edcfb7cc08e0c559f6561b8d96545bea5aa391abd53b88ec01a065f2e79f8927ea2027a027a66a1403"
+  },
+  "negativeCases": [
+    {
+      "name": "tampered-transcript-album-id",
+      "mutations": [
+        "flip first byte of inputs.albumIdHex"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "The Ed25519 signature is bound to the album_id; a server cross-mounting a tombstone fails verification."
+    },
+    {
+      "name": "tampered-transcript-epoch-id",
+      "mutations": [
+        "change inputs.epochId from 7 to 8"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "epoch_id is little-endian-encoded into the transcript so a stale-epoch deletion replay fails verification."
+    },
+    {
+      "name": "tampered-transcript-photo-id",
+      "mutations": [
+        "flip first byte of inputs.photoIdHex"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "photo_id binding prevents a server from cross-mounting one photo's tombstone onto another."
+    },
+    {
+      "name": "tampered-transcript-version-created",
+      "mutations": [
+        "change inputs.versionCreated from 42 to 43"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "version_created prevents a stale tombstone from being replayed against a re-uploaded photo."
+    },
+    {
+      "name": "tampered-signature",
+      "mutations": [
+        "flip first byte of expected.signatureHex"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "Ed25519 strict verify rejects any modification of the signature bytes."
+    },
+    {
+      "name": "wrong-pubkey",
+      "mutations": [
+        "verify with a different 32-byte pubkey (e.g. all-0x55)"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "Cross-key substitution must fail — the visitor only trusts the album's published epoch signing pubkey."
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "transcriptBytes",
+      "classification": "opaque-protocol-data",
+      "reason": "The transcript embeds server-visible fields (album_id, epoch_id, photo_id, version_created) and is reconstructed server-side only as a verification input."
+    },
+    {
+      "name": "signature",
+      "classification": "public-cryptographic",
+      "reason": "Ed25519 signature is stored in the manifests.tombstone_signature column and re-emitted in sync responses."
+    },
+    {
+      "name": "signerEpochId",
+      "classification": "operational-metadata",
+      "reason": "Signer epoch is needed by the visitor to look up the correct pubkey."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "signingSeed",
+      "reason": "The per-epoch signing seed never leaves the client — only its derived pubkey is published.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}
