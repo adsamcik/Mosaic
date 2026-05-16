@@ -2845,9 +2845,7 @@ fn import_link_tier_handle_result(
 /// both secret components in `Zeroizing` containers that wipe on drop.
 type LinkTokenAndWrap = (Zeroizing<Vec<u8>>, Zeroizing<Vec<u8>>);
 
-fn clone_link_token_and_wrap_for_handle(
-    handle: u64,
-) -> Result<LinkTokenAndWrap, ClientError> {
+fn clone_link_token_and_wrap_for_handle(handle: u64) -> Result<LinkTokenAndWrap, ClientError> {
     let registry = link_share_registry();
     let guard = registry.lock().map_err(|_| {
         ClientError::new(
