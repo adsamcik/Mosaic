@@ -45,6 +45,21 @@ pub const MANIFEST_SIGN_CONTEXT: &[u8] = b"Mosaic_Manifest_v1";
 /// Current manifest signing transcript format version.
 pub const MANIFEST_TRANSCRIPT_VERSION: u8 = 1;
 
+/// Domain separation context for v2 manifest transcripts with the
+/// `manifest_seq` freshness field (batch A3 / audit `crypto-correctness
+/// H-1`). v2 binds a monotonically increasing per-(album, epoch)
+/// sequence number into the signed bytes so a server cannot replay an
+/// older signed manifest after a newer one has been published —
+/// otherwise the client would silently rewind to stale photo state.
+///
+/// Byte-distinct from `MANIFEST_SIGN_CONTEXT` so a v1 signature
+/// CANNOT be accepted as v2 (and vice versa). v1 and v2 verifiers
+/// coexist while clients migrate.
+pub const MANIFEST_SIGN_CONTEXT_V2: &[u8] = b"Mosaic_Manifest_v2";
+
+/// Current v2 manifest signing transcript format version.
+pub const MANIFEST_TRANSCRIPT_VERSION_V2: u8 = 2;
+
 /// Domain separation context for client-signed tombstone (soft-delete)
 /// transcripts. The byte-distinct prefix prevents cross-protocol signature
 /// reuse: an Ed25519 signature over a regular manifest transcript CANNOT be
@@ -1213,6 +1228,95 @@ pub fn canonical_manifest_transcript_bytes(
     bytes.push(MANIFEST_TRANSCRIPT_VERSION);
     bytes.extend_from_slice(transcript.album_id());
     bytes.extend_from_slice(&transcript.epoch_id().to_le_bytes());
+    bytes.extend_from_slice(&encrypted_meta_len.to_le_bytes());
+    bytes.extend_from_slice(transcript.encrypted_meta());
+    bytes.extend_from_slice(&shard_count.to_le_bytes());
+
+    for (expected, shard) in (0_u32..).zip(shards.iter()) {
+        if shard.chunk_index() != expected {
+            return Err(ManifestTranscriptError::NonSequentialShardIndex {
+                expected,
+                actual: shard.chunk_index(),
+            });
+        }
+
+        bytes.extend_from_slice(&shard.chunk_index().to_le_bytes());
+        bytes.push(shard.tier().to_byte());
+        bytes.extend_from_slice(shard.shard_id());
+        bytes.extend_from_slice(shard.sha256());
+    }
+
+    Ok(bytes)
+}
+
+/// Builds deterministic binary bytes for v2 manifest signing (batch A3,
+/// audit `crypto-correctness H-1 (no manifest freshness)`).
+///
+/// v2 adds a monotonic `manifest_seq` field bound into the signed
+/// transcript. The client tracks the last-seen seq per
+/// `(album_id, epoch_id)` and refuses to honor a manifest whose seq
+/// does not strictly exceed the cached value — closing the freshness
+/// gap where a server could replay an older signed manifest after a
+/// newer one was published.
+///
+/// Layout (additive over v1):
+/// - `MANIFEST_SIGN_CONTEXT_V2` (18 bytes: `Mosaic_Manifest_v2`)
+/// - `MANIFEST_TRANSCRIPT_VERSION_V2` (1 byte: `0x02`)
+/// - `album_id` (16 bytes)
+/// - `epoch_id` (4 bytes, little-endian)
+/// - `manifest_seq` (8 bytes, little-endian, signed i64) **NEW**
+/// - `encrypted_meta_len` (4 bytes, little-endian)
+/// - `encrypted_meta` (variable)
+/// - `shard_count` (4 bytes, little-endian)
+/// - for each shard sorted by chunk_index ascending:
+///   - `chunk_index` (4 bytes, little-endian)
+///   - `tier_byte` (1 byte)
+///   - `shard_id` (16 bytes)
+///   - `sha256` (32 bytes)
+///
+/// The context prefix is byte-distinct from
+/// [`MANIFEST_SIGN_CONTEXT`], so a v1 Ed25519 signature CANNOT be
+/// accepted as v2 (and vice versa). v1 verification remains supported
+/// during the client-migration window; once all clients emit v2, the
+/// v1 surface can be retired.
+///
+/// # Errors
+/// Same as the v1 producer, plus
+/// [`ManifestTranscriptError::LengthTooLarge`] never fires for
+/// `manifest_seq` because it is a fixed 8-byte field.
+pub fn canonical_manifest_transcript_bytes_v2(
+    transcript: &ManifestTranscript<'_>,
+    manifest_seq: i64,
+) -> Result<Vec<u8>, ManifestTranscriptError> {
+    if transcript.encrypted_meta().is_empty() {
+        return Err(ManifestTranscriptError::EmptyEncryptedMeta);
+    }
+    if transcript.shards().is_empty() {
+        return Err(ManifestTranscriptError::EmptyShardList);
+    }
+
+    let encrypted_meta_len = u32::try_from(transcript.encrypted_meta().len()).map_err(|_| {
+        ManifestTranscriptError::LengthTooLarge {
+            field: "encrypted_meta",
+            actual: transcript.encrypted_meta().len(),
+        }
+    })?;
+    let shard_count = u32::try_from(transcript.shards().len()).map_err(|_| {
+        ManifestTranscriptError::LengthTooLarge {
+            field: "shards",
+            actual: transcript.shards().len(),
+        }
+    })?;
+
+    let mut shards = transcript.shards().to_vec();
+    shards.sort_by_key(ManifestShardRef::chunk_index);
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(MANIFEST_SIGN_CONTEXT_V2);
+    bytes.push(MANIFEST_TRANSCRIPT_VERSION_V2);
+    bytes.extend_from_slice(transcript.album_id());
+    bytes.extend_from_slice(&transcript.epoch_id().to_le_bytes());
+    bytes.extend_from_slice(&manifest_seq.to_le_bytes());
     bytes.extend_from_slice(&encrypted_meta_len.to_le_bytes());
     bytes.extend_from_slice(transcript.encrypted_meta());
     bytes.extend_from_slice(&shard_count.to_le_bytes());
