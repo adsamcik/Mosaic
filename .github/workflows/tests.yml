@@ -380,6 +380,9 @@ jobs:
       - name: Run kotlin-raw-input-ffi architecture guard
         run: bash ./tests/architecture/kotlin-raw-input-ffi.sh
 
+      - name: Run android-rust-core-protocol-completeness architecture guard
+        run: bash ./tests/architecture/android-rust-core-protocol-completeness.sh
+
       - name: Run android-no-direct-log architecture guard
         run: bash ./tests/architecture/android-no-direct-log.sh
 
