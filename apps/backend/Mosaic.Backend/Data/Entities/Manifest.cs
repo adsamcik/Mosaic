@@ -41,6 +41,17 @@ public class Manifest
     public int? TombstoneSignerEpochId { get; set; }
 
     /// <summary>
+    /// Monotonic freshness sequence for the manifest signing transcript v2
+    /// (batch 6 — A3, audit <c>crypto-correctness H-1</c>). When the
+    /// client signed the manifest with the v2 transcript (which embeds
+    /// this value), the server enforces strict monotonicity per
+    /// <c>(album_id, current_epoch_id)</c> on finalize so a stale signed
+    /// manifest cannot be replayed under a newer seq value. NULL when
+    /// the row was finalized by a pre-A3 client using the v1 transcript.
+    /// </summary>
+    public long? ManifestSeq { get; set; }
+
+    /// <summary>
     /// When the photo manifest will be automatically deleted. Null means no expiration.
     /// </summary>
     public DateTimeOffset? ExpiresAt { get; set; }
