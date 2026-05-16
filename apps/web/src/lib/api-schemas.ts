@@ -141,6 +141,14 @@ export const AlbumSchema = z.object({
   encryptedDescription: Base64Schema.nullable().optional(),
   expiresAt: IsoDateTimeSchema.nullable().optional(),
   expirationWarningDays: z.number().int().nonnegative().nullish(),
+  // C2 audit "threat-model C-3": owner-signed member roster fields.
+  // NULL on albums whose owner has not yet published a signed roster.
+  // The UI verifies the signature before rendering role badges; if the
+  // signature is missing or invalid, the UI shows an "unverified roster"
+  // state instead of trusting server-told role labels.
+  memberRosterSignature: Base64Schema.nullish(),
+  memberRosterSignerEpochId: z.number().int().nonnegative().nullish(),
+  memberRosterVersion: z.number().int().nonnegative().nullish(),
 });
 export type Album = z.infer<typeof AlbumSchema>;
 

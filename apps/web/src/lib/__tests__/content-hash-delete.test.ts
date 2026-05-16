@@ -10,7 +10,7 @@ import {
 import type { AlbumContentHashRecord, UploadQueueDB } from '../upload/types';
 
 const apiMocks = vi.hoisted(() => ({
-  deleteManifest: vi.fn<() => Promise<void>>(),
+  deleteManifest: vi.fn<(manifestId: string, body?: unknown) => Promise<void>>(),
 }));
 
 const dbMocks = vi.hoisted(() => ({
