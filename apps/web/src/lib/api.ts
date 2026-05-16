@@ -809,9 +809,19 @@ export function createApiClient(): MosaicApi {
       });
     },
 
-    async deleteManifest(manifestId: string): Promise<void> {
+    async deleteManifest(
+      manifestId: string,
+      body?: { tombstoneSignature: string; signerEpochId: number } | null,
+    ): Promise<void> {
+      if (body == null) {
+        return apiRequest(`/manifests/${manifestId}`, {
+          method: 'DELETE',
+        });
+      }
       return apiRequest(`/manifests/${manifestId}`, {
         method: 'DELETE',
+        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json' },
       });
     },
 

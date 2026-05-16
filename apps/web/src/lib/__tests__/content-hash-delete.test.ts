@@ -174,7 +174,8 @@ describe('ContentHashDedup deletion', () => {
       await hook.result().deletePhoto('photo-a', 'album-a');
     });
 
-    expect(apiMocks.deleteManifest).toHaveBeenCalledWith('photo-a');
+    expect(apiMocks.deleteManifest).toHaveBeenCalled();
+    expect(apiMocks.deleteManifest.mock.calls[0]?.[0]).toBe('photo-a');
     expect(dedupMocks.deleteByPhotoId).toHaveBeenCalledWith('album-a', 'photo-a');
     expect(dbMocks.deleteManifest).toHaveBeenCalledWith('photo-a');
     await hook.unmount();

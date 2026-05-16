@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   api: {
     deleteManifest: vi.fn(),
+    getManifest: vi.fn(),
   },
   dbClient: {
     deleteManifest: vi.fn(),
@@ -23,6 +24,9 @@ const mocks = vi.hoisted(() => ({
   coverService: {
     getCachedCover: vi.fn(),
     releaseCover: vi.fn(),
+  },
+  tombstoneSign: {
+    signTombstone: vi.fn(),
   },
 }));
 
@@ -50,6 +54,10 @@ vi.mock('../src/lib/photo-service', () => ({
 vi.mock('../src/lib/album-cover-service', () => ({
   getCachedCover: mocks.coverService.getCachedCover,
   releaseCover: mocks.coverService.releaseCover,
+}));
+
+vi.mock('../src/lib/tombstone-sign', () => ({
+  signTombstone: mocks.tombstoneSign.signTombstone,
 }));
 
 // Import after mocks are set up
@@ -117,6 +125,22 @@ describe('usePhotoActions', () => {
 
     // Setup default mock implementations
     mocks.api.deleteManifest.mockResolvedValue(undefined);
+    mocks.api.getManifest.mockResolvedValue({
+      id: 'manifest-1',
+      albumId: 'album-1',
+      versionCreated: 7,
+      isDeleted: false,
+      encryptedMeta: '',
+      signature: '',
+      signerPubkey: '',
+      shardIds: [],
+      shards: [],
+      createdAt: new Date().toISOString(),
+    });
+    mocks.tombstoneSign.signTombstone.mockResolvedValue({
+      tombstoneSignature: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+Pw==',
+      signerEpochId: 1,
+    });
     mocks.dbClient.deleteManifest.mockResolvedValue(undefined);
     mocks.coverService.getCachedCover.mockReturnValue(null);
 
@@ -136,11 +160,39 @@ describe('usePhotoActions', () => {
         await result.deletePhoto('manifest-1', 'album-1');
       });
 
-      expect(mocks.api.deleteManifest).toHaveBeenCalledWith('manifest-1');
+      // A2: deleteManifest is called with the signed tombstone body.
+      expect(mocks.api.deleteManifest).toHaveBeenCalledWith('manifest-1', {
+        tombstoneSignature: expect.any(String),
+        signerEpochId: 1,
+      });
+      expect(mocks.tombstoneSign.signTombstone).toHaveBeenCalledWith({
+        albumId: 'album-1',
+        photoId: 'manifest-1',
+        versionCreated: 7,
+      });
       expect(mocks.dbClient.deleteManifest).toHaveBeenCalledWith('manifest-1');
       expect(result.error).toBeNull();
       expect(result.isDeleting).toBe(false);
 
+      cleanup();
+    });
+
+    it('falls back to unsigned delete when signing fails (fail-open with warning)', async () => {
+      // If the local epoch cache is missing or the worker fails to sign,
+      // the editor's UI should not block the user. The deletion still
+      // propagates to the server, but visitor clients will refuse to
+      // honor it on sync (`tombstone-unsigned`) until it is re-deleted.
+      mocks.tombstoneSign.signTombstone.mockRejectedValueOnce(
+        new Error('no epoch key cached'),
+      );
+
+      const { result, cleanup } = renderHook();
+      await act(async () => {
+        await result.deletePhoto('manifest-1', 'album-1');
+      });
+
+      expect(mocks.api.deleteManifest).toHaveBeenCalledWith('manifest-1', null);
+      expect(result.error).toBeNull();
       cleanup();
     });
 

@@ -618,7 +618,10 @@ export interface MosaicApi {
     manifestId: string,
     request: UpdateManifestMetadataRequest,
   ): Promise<ManifestMetadataUpdated>;
-  deleteManifest(manifestId: string): Promise<void>;
+  deleteManifest(
+    manifestId: string,
+    body?: { tombstoneSignature: string; signerEpochId: number } | null,
+  ): Promise<void>;
   updatePhotoExpiration(
     manifestId: string,
     request: UpdatePhotoExpirationRequest,

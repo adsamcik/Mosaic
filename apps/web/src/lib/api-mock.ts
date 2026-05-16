@@ -730,7 +730,10 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       };
     },
 
-    async deleteManifest(manifestId: string): Promise<void> {
+    async deleteManifest(
+      manifestId: string,
+      body?: { tombstoneSignature: string; signerEpochId: number } | null,
+    ): Promise<void> {
       await delay();
       const manifest = store.manifests.get(manifestId);
       if (!manifest) {
@@ -738,6 +741,15 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       }
       manifest.isDeleted = true;
       manifest.updatedAt = new Date().toISOString();
+      // A2: mock stores the signed tombstone so tests can assert it was
+      // threaded through. Real backend persists into
+      // manifests.tombstone_signature / tombstone_signer_epoch_id columns.
+      if (body != null) {
+        (manifest as { tombstoneSignature?: string }).tombstoneSignature =
+          body.tombstoneSignature;
+        (manifest as { tombstoneSignerEpochId?: number }).tombstoneSignerEpochId =
+          body.signerEpochId;
+      }
     },
 
     async updatePhotoExpiration(
