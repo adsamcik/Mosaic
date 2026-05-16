@@ -6,13 +6,14 @@
  * Member removal triggers epoch key rotation for security.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   useMemberManagement,
   type MemberInfo,
   type RemovalProgressStep,
 } from '../../hooks/useMemberManagement';
+import { useRosterVerification } from '../../hooks/useRosterVerification';
 import { InviteMemberDialog } from './InviteMemberDialog';
 
 interface MemberListProps {
@@ -104,6 +105,24 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
   const [memberToRemove, setMemberToRemove] = useState<MemberInfo | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
+  // C2c-3: gate role badges on owner-signed roster verification. Until
+  // the owner publishes a signed roster the UI must NOT claim badges
+  // are trusted — a compromised server could otherwise fabricate admin
+  // / editor labels (audit `threat-model C-3`).
+  const rosterInput = useMemo(
+    () => members.map((m) => ({ userId: m.userId, role: m.role })),
+    [members],
+  );
+  const rosterVerification = useRosterVerification(
+    isOpen ? albumId : null,
+    rosterInput,
+    isOpen,
+  );
+  const rosterVerified = rosterVerification.status?.verified === true;
+  const rosterUnverifiedReason = rosterVerification.status?.verified === false
+    ? rosterVerification.status.reason
+    : null;
+
   const handleRemoveClick = useCallback((member: MemberInfo) => {
     setMemberToRemove(member);
     setRemoveError(null);
@@ -186,6 +205,32 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
 
           {!isLoading && !error && (
             <>
+              {/* C2c-3: surface signed-roster trust state so users can
+                  see when role badges are trustworthy vs. provisional.
+                  An unverified roster is NOT a hard failure — the
+                  members list is still shown so the user can act on it
+                  — but the badge styling is muted and the reason is
+                  surfaced for transparency. */}
+              {rosterUnverifiedReason && (
+                <div
+                  className="member-roster-unverified"
+                  role="status"
+                  data-testid="roster-unverified"
+                  data-roster-reason={rosterUnverifiedReason}
+                >
+                  <span className="error-icon" aria-hidden="true">
+                    🛈
+                  </span>
+                  <span>
+                    {t('member.rosterUnverified', {
+                      defaultValue:
+                        'Role badges below are unverified ({{reason}}). The owner has not published a signed roster, or the signature does not match. Treat them as provisional.',
+                      reason: rosterUnverifiedReason,
+                    })}
+                  </span>
+                </div>
+              )}
+
               {isOwner && (
                 <button
                   className="button-primary invite-button"
@@ -210,7 +255,22 @@ export function MemberList({ albumId, isOpen, onClose }: MemberListProps) {
                         <span className="member-name">
                           {member.displayName}
                         </span>
-                        <span className={getRoleBadgeClass(member.role)}>
+                        <span
+                          className={
+                            getRoleBadgeClass(member.role) +
+                            (rosterVerified ? '' : ' member-role-unverified')
+                          }
+                          data-testid="member-role-badge"
+                          data-role-verified={rosterVerified ? 'true' : 'false'}
+                          title={
+                            rosterVerified
+                              ? undefined
+                              : t('member.rolesUnverifiedTitle', {
+                                  defaultValue:
+                                    'Role unverified: owner has not signed a roster matching this list.',
+                                })
+                          }
+                        >
                           {t(getRoleKey(member.role))}
                         </span>
                       </div>
