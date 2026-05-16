@@ -344,6 +344,86 @@ export function PhotoGrid({
     );
   }
 
+  // G4 (batch 8, audit accessibility G-4): keyboard navigation across
+  // the grid. ArrowLeft/Right move to the previous/next photo;
+  // Home/End jump to the first/last photo. Up/Down approximate
+  // ±1 row by ±rowCount (estimated from the layout). The handler
+  // uses document.activeElement.data-photo-id to find the current
+  // anchor — if the user has not yet focused a thumbnail (e.g. they
+  // just tabbed into the grid), the first photo gets focus on
+  // ArrowRight / ArrowDown / Home / End. Virtualized rows that are
+  // not in the DOM cannot be focused directly; we scroll the
+  // container so the row containing the target enters the visible
+  // window, then re-attempt focus on the next animation frame.
+  const handleGridKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    const key = e.key;
+    if (
+      key !== 'ArrowLeft' &&
+      key !== 'ArrowRight' &&
+      key !== 'ArrowUp' &&
+      key !== 'ArrowDown' &&
+      key !== 'Home' &&
+      key !== 'End'
+    ) {
+      return;
+    }
+    if (sortedPhotos.length === 0) {
+      return;
+    }
+    const active = document.activeElement as HTMLElement | null;
+    const activePhotoId = active?.getAttribute('data-photo-id') ?? null;
+    const currentIndex = activePhotoId
+      ? sortedPhotos.findIndex((p) => p.id === activePhotoId)
+      : -1;
+
+    let nextIndex: number;
+    if (key === 'Home') {
+      nextIndex = 0;
+    } else if (key === 'End') {
+      nextIndex = sortedPhotos.length - 1;
+    } else if (currentIndex < 0) {
+      // No anchor yet — first arrow press focuses the first photo.
+      nextIndex = 0;
+    } else if (key === 'ArrowLeft') {
+      nextIndex = Math.max(0, currentIndex - 1);
+    } else if (key === 'ArrowRight') {
+      nextIndex = Math.min(sortedPhotos.length - 1, currentIndex + 1);
+    } else {
+      // ArrowUp / ArrowDown — approximate one row by stepping the
+      // average row size. computeJustifiedLayout returns 3-7 photos
+      // per row at TARGET_ROW_HEIGHT for typical viewports, so 5 is
+      // a reasonable mid-point. Refinement is a follow-up.
+      const rowStep = 5;
+      nextIndex =
+        key === 'ArrowUp'
+          ? Math.max(0, currentIndex - rowStep)
+          : Math.min(sortedPhotos.length - 1, currentIndex + rowStep);
+    }
+    if (nextIndex === currentIndex) {
+      return;
+    }
+    const nextPhoto = sortedPhotos[nextIndex];
+    if (!nextPhoto) {
+      return;
+    }
+    e.preventDefault();
+    const selector = `[data-photo-id="${CSS.escape(nextPhoto.id)}"]`;
+    const tryFocus = (): void => {
+      const el = containerElementRef.current?.querySelector<HTMLElement>(selector);
+      if (el) {
+        el.focus({ preventScroll: true });
+        el.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+      }
+    };
+    if (containerElementRef.current?.querySelector(selector)) {
+      tryFocus();
+    } else {
+      // Target not yet in the virtualized window — request the next
+      // animation frame so React can render it before we try.
+      requestAnimationFrame(tryFocus);
+    }
+  };
+
   // Get the epoch read key for the current lightbox photo
   const currentEpochReadKey = lightbox.currentPhoto
     ? epochKeys.get(lightbox.currentPhoto.epochId)
@@ -355,6 +435,7 @@ export function PhotoGrid({
         ref={containerRef}
         className={`photo-grid-container ${isSelectionMode ? 'selection-mode' : ''}`} // Reusing photo-grid classes or creating new ones
         onScroll={handleScroll}
+        onKeyDown={handleGridKeyDown}
         data-testid="photo-grid"
       >
         {sortedPhotos.length === 0 ? (
