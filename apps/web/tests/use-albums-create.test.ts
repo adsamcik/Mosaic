@@ -159,10 +159,12 @@ describe('useAlbums createAlbum', () => {
       .mockResolvedValueOnce({
         encryptedBundle: new Uint8Array(10).fill(4),
         signature: new Uint8Array(64).fill(5),
+        wireBytes: new Uint8Array([...new Uint8Array(64).fill(5), ...new Uint8Array(10).fill(4)]),
       })
       .mockResolvedValueOnce({
         encryptedBundle: new Uint8Array(10).fill(6),
         signature: new Uint8Array(64).fill(7),
+        wireBytes: new Uint8Array([...new Uint8Array(64).fill(7), ...new Uint8Array(10).fill(6)]),
       });
     mocks.crypto.encryptShard.mockResolvedValue({
       ciphertext: new Uint8Array([1, 2, 3]),

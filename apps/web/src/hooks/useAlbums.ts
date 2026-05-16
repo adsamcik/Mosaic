@@ -442,9 +442,7 @@ export function useAlbums() {
           initialEpochKey: {
             recipientId: currentUser.id,
             epochId,
-            encryptedKeyBundle: toBase64(
-              new Uint8Array([...bundle.signature, ...bundle.encryptedBundle]),
-            ),
+            encryptedKeyBundle: toBase64(bundle.wireBytes),
             ownerSignature: toBase64(bundle.signature),
             sharerPubkey: toBase64(identityPubkey),
             signPubkey: toBase64(epochKey.signPublicKey),
@@ -464,12 +462,7 @@ export function useAlbums() {
           await api.createEpochKey(newAlbum.id, {
             recipientId: currentUser.id,
             epochId,
-            encryptedKeyBundle: toBase64(
-              new Uint8Array([
-                ...correctedBundle.signature,
-                ...correctedBundle.encryptedBundle,
-              ]),
-            ),
+            encryptedKeyBundle: toBase64(correctedBundle.wireBytes),
             ownerSignature: toBase64(correctedBundle.signature),
             sharerPubkey: toBase64(identityPubkey),
             signPubkey: toBase64(epochKey.signPublicKey),
