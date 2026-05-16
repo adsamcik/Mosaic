@@ -26,7 +26,23 @@ if [[ -n "${MOSAIC_WASM_CARGO_FEATURES:-}" ]]; then
   cargo_features=(--features "$MOSAIC_WASM_CARGO_FEATURES")
 fi
 
-cargo build -p mosaic-wasm --target wasm32-unknown-unknown --release --locked "${cargo_features[@]}"
+# Deterministic WASM artifacts across hosts (Windows MSVC vs Linux):
+#   * --remap-path-prefix collapses absolute build paths (CWD + cargo registry +
+#     rustup sysroot) into stable relative tokens so embedded path strings do
+#     not leak the host filesystem layout.
+#   * `lto = "fat"` in [profile.release] is set workspace-wide; combined with
+#     codegen-units=1 it yields a single deterministic LTO pass.
+# Result: byte-identical apps/web/src/generated/mosaic-wasm/*.wasm on Windows
+# and Linux runners. Verified by the wasm-rebuild-invariance CI job.
+rustup_home="$(rustup show home 2>/dev/null || echo "${RUSTUP_HOME:-${HOME:-}}/.rustup")"
+cargo_home="${CARGO_HOME:-${HOME:-}/.cargo}"
+remap=(
+  "--remap-path-prefix=${PROJECT_ROOT}=mosaic"
+  "--remap-path-prefix=${cargo_home}=cargo-home"
+  "--remap-path-prefix=${rustup_home}=rustup-home"
+)
+RUSTFLAGS="${RUSTFLAGS:-} ${remap[*]}" \
+  cargo build -p mosaic-wasm --target wasm32-unknown-unknown --release --locked "${cargo_features[@]}"
 
 out_dir="$PROJECT_ROOT/target/wasm-bindgen/mosaic-wasm"
 mkdir -p "$out_dir"

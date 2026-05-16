@@ -25,7 +25,33 @@ try {
         throw "wasm-bindgen CLI version mismatch: expected $WasmBindgenVersion, got $($Matches[1])"
     }
 
-    cargo build -p mosaic-wasm --target wasm32-unknown-unknown --release --locked
+    # Deterministic WASM artifacts across hosts (Windows MSVC vs Linux):
+    # --remap-path-prefix collapses absolute build paths into stable
+    # relative tokens so embedded path strings do not leak the host
+    # filesystem layout. Combined with `lto = "fat"` + `codegen-units = 1`
+    # in [profile.release] (Cargo.toml), the wasm-rebuild-invariance CI
+    # job sees byte-identical bytes regardless of runner host.
+    $RustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { try { rustup show home } catch { Join-Path $env:USERPROFILE ".rustup" } }
+    $CargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE ".cargo" }
+    $Remap = @(
+        "--remap-path-prefix=$ProjectRoot=mosaic"
+        "--remap-path-prefix=$CargoHome=cargo-home"
+        "--remap-path-prefix=$RustupHome=rustup-home"
+    ) -join ' '
+
+    $PreviousRustFlags = $env:RUSTFLAGS
+    try {
+        $env:RUSTFLAGS = if ($PreviousRustFlags) { "$PreviousRustFlags $Remap" } else { $Remap }
+        cargo build -p mosaic-wasm --target wasm32-unknown-unknown --release --locked
+    }
+    finally {
+        if ($null -eq $PreviousRustFlags) {
+            Remove-Item Env:RUSTFLAGS -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:RUSTFLAGS = $PreviousRustFlags
+        }
+    }
 
     $OutDir = Join-Path $ProjectRoot "target/wasm-bindgen/mosaic-wasm"
     New-Item -ItemType Directory -Force -Path $OutDir | Out-Null

@@ -243,15 +243,14 @@ jobs:
         run: bash ./scripts/build-rust-wasm.sh
 
       - name: Verify committed Rust WASM artifacts are fresh
-        # NOTE: soft-fail pending Sweep 42 follow-up `sweep42-followup-wasm-determinism`.
-        # Build determinism varies by ~200-1500 bytes across Linux distros + GH runner image
-        # versions even with rustup 1.93.1 + pinned wasm-bindgen-cli. The duplicate gate in
-        # the `wasm-rebuild-invariance` job (line 277+) uploads the rebuilt artifact for
-        # off-line investigation; this step is informational only.
-        continue-on-error: true
+        # Deterministic since sweep42-followup-wasm-determinism fix (lto = "fat"
+        # + RUSTFLAGS=--remap-path-prefix=*). The committed apps/web/src/generated/
+        # mosaic-wasm/* MUST match what `bash ./scripts/build-rust-wasm.sh`
+        # produces on this CI runner. If this gate fails, run the script locally,
+        # commit the result, and push.
         run: |
           if ! git diff --exit-code -- apps/web/src/generated/mosaic-wasm/; then
-            echo "::warning::Committed WASM artifacts differ from CI rebuild output. Tracked as v1.0.x follow-up sweep42-followup-wasm-determinism."
+            echo "::error::Committed WASM artifacts do not match CI rebuild. Run 'bash ./scripts/build-rust-wasm.sh' locally, commit the result, and push."
             git diff --stat apps/web/src/generated/mosaic-wasm/
             exit 1
           fi
@@ -312,12 +311,12 @@ jobs:
     name: WASM Rebuild Invariance
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # NOTE: gate is informational pending Sweep 42 follow-up `sweep42-followup-wasm-determinism`.
-    # Build determinism varies by ~200 bytes across Linux distros + GH runner image versions
-    # even with the same rustup toolchain version + pinned wasm-bindgen-cli. The committed
-    # WASM is the dev-convenience artifact; the rebuilt WASM uploaded as an artifact below
-    # is what actually executes if the gate is later flipped to fail-mode.
-    continue-on-error: true
+    # Deterministic since sweep42-followup-wasm-determinism fix:
+    #   * Cargo.toml [profile.release]: lto = "fat", codegen-units = 1
+    #   * scripts/build-rust-wasm.sh: RUSTFLAGS=--remap-path-prefix=*
+    # The committed apps/web/src/generated/mosaic-wasm/* MUST match a
+    # fresh CI rebuild byte-for-byte. If this job fails, run
+    # `bash ./scripts/build-rust-wasm.sh` locally and commit the result.
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -345,7 +344,7 @@ jobs:
         run: |
           status="$(git status --porcelain apps/web/src/generated/mosaic-wasm/)"
           if [ -n "$status" ]; then
-            echo "::warning::Committed WASM artifact differs from CI rebuild output (~200-1500 bytes drift across runner image versions). Tracked as v1.0.x follow-up sweep42-followup-wasm-determinism."
+            echo "::error::Committed WASM artifact does not match CI rebuild. Run 'bash ./scripts/build-rust-wasm.sh' locally, commit the result, and push. Determinism is enforced as of sweep42-followup-wasm-determinism."
             echo "$status"
             git diff --stat apps/web/src/generated/mosaic-wasm/
             exit 1

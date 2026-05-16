@@ -31,7 +31,7 @@ expect_used = "deny"
 [profile.release]
 codegen-units = 1
 debug = "line-tables-only"
-lto = "thin"
+lto = "fat"
 opt-level = "z"
 panic = "abort"
 strip = "symbols"
