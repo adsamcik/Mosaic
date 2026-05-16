@@ -350,7 +350,10 @@ fn link_tier_key_aad_v2_layout_matches_spec() {
 
     // Layout: prefix (26 bytes) || link_id (16) || tier (1) || epoch be (4) = 47 bytes.
     assert_eq!(aad.len(), 26 + 16 + 1 + 4);
-    assert_eq!(&aad[..LINK_TIER_KEY_AAD_V2_PREFIX.len()], LINK_TIER_KEY_AAD_V2_PREFIX);
+    assert_eq!(
+        &aad[..LINK_TIER_KEY_AAD_V2_PREFIX.len()],
+        LINK_TIER_KEY_AAD_V2_PREFIX
+    );
     let after_prefix = &aad[LINK_TIER_KEY_AAD_V2_PREFIX.len()..];
     assert_eq!(&after_prefix[..LINK_ID_BYTES], &TEST_LINK_ID_A);
     assert_eq!(after_prefix[LINK_ID_BYTES], ShardTier::Original.to_byte());
@@ -370,16 +373,11 @@ fn v2_wrap_unwrap_round_trip() {
         let tier_key = random_tier_key();
         let wrapping_key = fresh_wrapping_key(0x71);
 
-        let wrapped = match wrap_tier_key_for_link_v2(
-            &tier_key,
-            tier,
-            &TEST_LINK_ID_A,
-            42,
-            &wrapping_key,
-        ) {
-            Ok(value) => value,
-            Err(error) => panic!("v2 wrap should succeed: {error:?}"),
-        };
+        let wrapped =
+            match wrap_tier_key_for_link_v2(&tier_key, tier, &TEST_LINK_ID_A, 42, &wrapping_key) {
+                Ok(value) => value,
+                Err(error) => panic!("v2 wrap should succeed: {error:?}"),
+            };
         assert_eq!(wrapped.tier, tier);
         assert_eq!(wrapped.nonce.len(), 24);
         assert_eq!(wrapped.encrypted_key.len(), TIER_KEY_BYTES + 16);
@@ -565,16 +563,12 @@ fn v2_unwrap_rejects_v1_wrap_with_wrong_wrapping_key() {
         &correct,
     ));
 
-    match unwrap_tier_key_from_link_v2(
-        &wrapped,
-        ShardTier::Original,
-        &TEST_LINK_ID_A,
-        1,
-        &wrong,
-    ) {
+    match unwrap_tier_key_from_link_v2(&wrapped, ShardTier::Original, &TEST_LINK_ID_A, 1, &wrong) {
         Err(MosaicCryptoError::AuthenticationFailed) => {}
         other => {
-            panic!("expected AuthenticationFailed for wrong wrapping key on v1 fallback, got {other:?}")
+            panic!(
+                "expected AuthenticationFailed for wrong wrapping key on v1 fallback, got {other:?}"
+            )
         }
     }
 }
@@ -604,4 +598,3 @@ fn v1_unwrap_rejects_v2_wrap_no_silent_downgrade() {
         other => panic!("expected AuthenticationFailed when v1 unwrap sees v2 wrap, got {other:?}"),
     }
 }
-

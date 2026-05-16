@@ -123,8 +123,7 @@ pub fn link_tier_key_aad_v2(
     tier_byte: u8,
     epoch_id: u32,
 ) -> Vec<u8> {
-    let mut aad =
-        Vec::with_capacity(LINK_TIER_KEY_AAD_V2_PREFIX.len() + LINK_ID_BYTES + 1 + 4);
+    let mut aad = Vec::with_capacity(LINK_TIER_KEY_AAD_V2_PREFIX.len() + LINK_ID_BYTES + 1 + 4);
     aad.extend_from_slice(LINK_TIER_KEY_AAD_V2_PREFIX);
     aad.extend_from_slice(link_id);
     aad.push(tier_byte);

@@ -51,8 +51,7 @@ fn create_v2_round_trips_through_import_v2() {
     assert_eq!(imported.tier, 2);
     assert_eq!(imported.link_id, created.link_id);
 
-    let encrypted =
-        encrypt_shard_with_epoch_handle(epoch.handle, b"v2 round trip", 1, 2);
+    let encrypted = encrypt_shard_with_epoch_handle(epoch.handle, b"v2 round trip", 1, 2);
     assert_eq!(encrypted.code, ClientErrorCode::Ok);
     let decrypted = decrypt_shard_with_link_tier_handle(imported.handle, &encrypted.envelope_bytes);
     assert_eq!(decrypted.code, ClientErrorCode::Ok);
