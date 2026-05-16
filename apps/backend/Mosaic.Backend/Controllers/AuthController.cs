@@ -8,6 +8,7 @@ using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.Auth;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Logging;
+using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
 
@@ -49,6 +50,7 @@ public partial class AuthController : ControllerBase
 
     private readonly IWebHostEnvironment _env;
     private readonly IMemoryCache _cache;
+    private readonly IAuditLogService _auditLog;
     private readonly bool _isProxyAuthMode;
 
     public AuthController(
@@ -57,7 +59,8 @@ public partial class AuthController : ControllerBase
         ILogger<AuthController> logger,
         IWebHostEnvironment env,
         IMemoryCache cache,
-        RustCoreHost rustHost)
+        RustCoreHost rustHost,
+        IAuditLogService auditLog)
     {
         _db = db;
         _config = config;
@@ -65,6 +68,7 @@ public partial class AuthController : ControllerBase
         _rustHost = rustHost;
         _env = env;
         _cache = cache;
+        _auditLog = auditLog;
 
         // Check if LocalAuth mode is enabled (support both new and legacy config)
         var legacyMode = config["Auth:Mode"];
@@ -295,6 +299,11 @@ public partial class AuthController : ControllerBase
             // User doesn't exist or doesn't have local auth set up
             // Return same error to prevent enumeration
             _logger.AuthChallengeFailed(request.Username, "user not found or no local auth");
+            await _auditLog.WriteAsync(
+                AuditEventTypes.AuthLoginFailed,
+                AuditOutcomes.Denied,
+                HttpContext,
+                details: new { username = request.Username, reason = "user-not-found" });
             return Problem(
                 detail: "Invalid credentials",
                 statusCode: StatusCodes.Status401Unauthorized);
@@ -314,6 +323,12 @@ public partial class AuthController : ControllerBase
             if (!isValid)
             {
                 _logger.AuthChallengeFailed(request.Username, "invalid signature");
+                await _auditLog.WriteAsync(
+                    AuditEventTypes.AuthLoginFailed,
+                    AuditOutcomes.Denied,
+                    HttpContext,
+                    actorUserId: user.Id,
+                    details: new { username = request.Username, reason = "invalid-signature" });
                 return Problem(
                     detail: "Invalid credentials",
                     statusCode: StatusCodes.Status401Unauthorized);
@@ -322,6 +337,12 @@ public partial class AuthController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Signature verification error for {Username}", request.Username);
+            await _auditLog.WriteAsync(
+                AuditEventTypes.AuthLoginFailed,
+                AuditOutcomes.Error,
+                HttpContext,
+                actorUserId: user.Id,
+                details: new { username = request.Username, reason = "signature-verification-error" });
             return Problem(
                 detail: "Invalid credentials",
                 statusCode: StatusCodes.Status401Unauthorized);
@@ -343,6 +364,16 @@ public partial class AuthController : ControllerBase
         };
         _db.Sessions.Add(session);
         await _db.SaveChangesAsync();
+
+        // D1 audit: record successful sign-in. Username + KDF version
+        // are non-secret operational metadata. The session token NEVER
+        // appears in the audit log.
+        await _auditLog.WriteAsync(
+            AuditEventTypes.AuthLoginSucceeded,
+            AuditOutcomes.Success,
+            HttpContext,
+            actorUserId: user.Id,
+            details: new { username = request.Username, kdfAlgVersion = user.KdfAlgVersion });
 
         // Set session cookie
         // Use Secure=false in Development/Testing (HTTP), Secure=true in Production (HTTPS)
@@ -558,6 +589,14 @@ public partial class AuthController : ControllerBase
         {
             session.RevokedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
+
+            // D1 audit: record logout. ActorUserId is the session's
+            // owner so we have a clean per-user logout trail.
+            await _auditLog.WriteAsync(
+                AuditEventTypes.AuthLogout,
+                AuditOutcomes.Success,
+                HttpContext,
+                actorUserId: session.UserId);
         }
 
         // Clear cookie - use same settings as when setting the cookie
