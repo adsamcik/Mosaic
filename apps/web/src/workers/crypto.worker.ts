@@ -1215,6 +1215,8 @@ class CryptoWorker implements CryptoWorkerApi {
         ),
     );
 
+    // Wire framing is non-cryptographic: Rust returns the signature and sealed
+    // payload; the server contract stores `signature || sealed` as bundle bytes.
     const wireBytes = new Uint8Array(sealed.signature.length + sealed.sealed.length);
     wireBytes.set(sealed.signature, 0);
     wireBytes.set(sealed.sealed, sealed.signature.length);
@@ -1918,6 +1920,37 @@ class CryptoWorker implements CryptoWorkerApi {
     });
   }
 
+  // v2 binding variant of createLinkShareHandle (batch 4d - A1).
+  // Emits the first-tier wrap with AAD bound to (link_id, tier, epoch_id).
+  // Use this for new share links so server-side wrap-row substitution is
+  // detected on the visitor's import (closes audit share-link-create C1).
+  async createLinkShareHandleV2(
+    albumId: string,
+    epochHandleId: EpochHandleId,
+    tier: 1 | 2 | 3 | ShardTier,
+  ): Promise<{
+    linkShareHandleId: LinkShareHandleId;
+    linkId: Uint8Array;
+    linkUrlToken: Uint8Array;
+    tier: number;
+    nonce: Uint8Array;
+    encryptedKey: Uint8Array;
+  }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(epochHandleId, 'epoch', (rustEpoch) => {
+      const created = facade.createLinkShareHandleV2(albumId, rustEpoch, tier);
+      const handle = this.handleRegistry.registerLinkShare(created.handle);
+      return {
+        linkShareHandleId: handle.id as LinkShareHandleId,
+        linkId: created.linkId,
+        linkUrlToken: created.linkUrlToken,
+        tier: created.tier,
+        nonce: created.nonce,
+        encryptedKey: created.encryptedKey,
+      };
+    });
+  }
+
   async importLinkShareHandle(
     linkUrlToken: Uint8Array,
   ): Promise<{ linkShareHandleId: LinkShareHandleId; linkId: Uint8Array }> {
@@ -1943,6 +1976,20 @@ class CryptoWorker implements CryptoWorkerApi {
     );
   }
 
+  // v2 binding variant of wrapLinkTierHandle (batch 4d - A1).
+  async wrapLinkTierHandleV2(
+    linkShareHandleId: LinkShareHandleId,
+    epochHandleId: EpochHandleId,
+    tier: 1 | 2 | 3 | ShardTier,
+  ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }> {
+    const facade = await getRustFacade();
+    return this.handleRegistry.withLease(linkShareHandleId, 'linkShare', (rustLink) =>
+      this.handleRegistry.withLease(epochHandleId, 'epoch', (rustEpoch) =>
+        facade.wrapLinkTierHandleV2(rustLink, rustEpoch, tier),
+      ),
+    );
+  }
+
   async importLinkTierHandle(
     linkUrlToken: Uint8Array,
     nonce: Uint8Array,
@@ -1957,6 +2004,36 @@ class CryptoWorker implements CryptoWorkerApi {
       encryptedKey,
       albumId,
       tier,
+    );
+    const handle = this.handleRegistry.registerLinkTier(imported.handle);
+    return {
+      linkTierHandleId: handle.id as LinkTierHandleId,
+      linkId: imported.linkId,
+      tier: imported.tier,
+    };
+  }
+
+  // v2 binding variant of importLinkTierHandle (batch 4d - A1).
+  // The visitor passes the epochId parsed from the signed album manifest.
+  // The unwrap dual-accepts pre-A1 v1 wraps so legacy share links keep
+  // working; v2 wraps enforce (link_id, tier, epoch_id) so a malicious
+  // server cannot substitute wrap rows across tiers / links / epochs.
+  async importLinkTierHandleV2(
+    linkUrlToken: Uint8Array,
+    nonce: Uint8Array,
+    encryptedKey: Uint8Array,
+    albumId: string,
+    tier: 1 | 2 | 3 | ShardTier,
+    epochId: number,
+  ): Promise<{ linkTierHandleId: LinkTierHandleId; linkId: Uint8Array; tier: number }> {
+    const facade = await getRustFacade();
+    const imported = facade.importLinkTierHandleV2(
+      linkUrlToken,
+      nonce,
+      encryptedKey,
+      albumId,
+      tier,
+      epochId,
     );
     const handle = this.handleRegistry.registerLinkTier(imported.handle);
     return {

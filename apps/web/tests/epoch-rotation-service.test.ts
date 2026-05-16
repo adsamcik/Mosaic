@@ -112,7 +112,7 @@ describe('epoch-rotation-service', () => {
     createEpochKeyBundle: ReturnType<typeof vi.fn>;
     unwrapWithAccountKey: ReturnType<typeof vi.fn>;
     importLinkShareHandle: ReturnType<typeof vi.fn>;
-    wrapLinkTierHandle: ReturnType<typeof vi.fn>;
+    wrapLinkTierHandleV2: ReturnType<typeof vi.fn>;
     closeLinkShareHandle: ReturnType<typeof vi.fn>;
   };
 
@@ -138,7 +138,7 @@ describe('epoch-rotation-service', () => {
         linkShareHandleId: 'lnks_rotation',
         linkId: new Uint8Array(16).fill(0xb1),
       })),
-      wrapLinkTierHandle: vi.fn(async (_linkHandle: string, _epochHandle: string, tier: number) => ({
+      wrapLinkTierHandleV2: vi.fn(async (_linkHandle: string, _epochHandle: string, tier: number) => ({
         tier,
         nonce: new Uint8Array(24).fill(tier),
         encryptedKey: new Uint8Array(48).fill(tier),

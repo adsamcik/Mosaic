@@ -1069,6 +1069,20 @@ export interface CryptoWorkerApi {
     encryptedKey: Uint8Array;
   }>;
 
+  // v2 binding variant of createLinkShareHandle (batch 4d - A1).
+  createLinkShareHandleV2(
+    albumId: string,
+    epochHandleId: EpochHandleId,
+    tier: 1 | 2 | 3 | ShardTier,
+  ): Promise<{
+    linkShareHandleId: LinkShareHandleId;
+    linkId: Uint8Array;
+    linkUrlToken: Uint8Array;
+    tier: number;
+    nonce: Uint8Array;
+    encryptedKey: Uint8Array;
+  }>;
+
   importLinkShareHandle(
     linkUrlToken: Uint8Array,
   ): Promise<{
@@ -1082,12 +1096,32 @@ export interface CryptoWorkerApi {
     tier: 1 | 2 | 3 | ShardTier,
   ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }>;
 
+  // v2 binding variant of wrapLinkTierHandle (batch 4d - A1).
+  wrapLinkTierHandleV2(
+    linkShareHandleId: LinkShareHandleId,
+    epochHandleId: EpochHandleId,
+    tier: 1 | 2 | 3 | ShardTier,
+  ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }>;
+
   importLinkTierHandle(
     linkUrlToken: Uint8Array,
     nonce: Uint8Array,
     encryptedKey: Uint8Array,
     albumId: string,
     tier: 1 | 2 | 3 | ShardTier,
+  ): Promise<{ linkTierHandleId: LinkTierHandleId; linkId: Uint8Array; tier: number }>;
+
+  // v2 binding variant of importLinkTierHandle (batch 4d - A1).
+  // Visitor passes epochId from the signed album manifest; the unwrap
+  // dual-accepts v1 wraps for back-compat and enforces (link_id, tier,
+  // epoch_id) on v2 wraps.
+  importLinkTierHandleV2(
+    linkUrlToken: Uint8Array,
+    nonce: Uint8Array,
+    encryptedKey: Uint8Array,
+    albumId: string,
+    tier: 1 | 2 | 3 | ShardTier,
+    epochId: number,
   ): Promise<{ linkTierHandleId: LinkTierHandleId; linkId: Uint8Array; tier: number }>;
 
   mintLinkTierHandleFromRawKey(rawKey: Uint8Array): Promise<LinkTierHandleId>;

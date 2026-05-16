@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   // for `fromBase64` from `lib/api` and the URL encoders from
   // `lib/link-encoding`, all of which we mock below.
   worker: {
-    importLinkTierHandle: vi.fn(),
+    importLinkTierHandleV2: vi.fn(),
   },
   api: {
     fromBase64: vi.fn(),
@@ -269,7 +269,7 @@ describe('useLinkKeys', () => {
     );
     mocks.linkEncoding.decodeLinkId.mockReturnValue(new Uint8Array(16).fill(2));
     mocks.linkEncoding.constantTimeEqual.mockReturnValue(true);
-    mocks.worker.importLinkTierHandle.mockResolvedValue({
+    mocks.worker.importLinkTierHandleV2.mockResolvedValue({
       linkTierHandleId: 'lnkt_test-handle',
       linkId: new Uint8Array(16).fill(2),
       tier: 2,

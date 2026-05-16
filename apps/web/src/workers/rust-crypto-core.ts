@@ -678,6 +678,32 @@ export class RustHandleFacade {
     }));
   }
 
+  // v2 binding variant of createLinkShareHandle (batch 4d - A1).
+  // Emits first-tier wrap with AAD bound to (link_id, tier, epoch_id) so a
+  // malicious server cannot substitute wrap rows across tiers.
+  createLinkShareHandleV2(
+    albumId: string,
+    epochHandle: bigint,
+    tierByte: number,
+  ): {
+    handle: bigint;
+    linkId: Uint8Array;
+    linkUrlToken: Uint8Array;
+    tier: number;
+    nonce: Uint8Array;
+    encryptedKey: Uint8Array;
+  } {
+    const result = rustWasm.createLinkShareHandleV2(albumId, epochHandle, tierByte);
+    return consumeResult(result, 'createLinkShareHandleV2', (r) => ({
+      handle: r.handle,
+      linkId: copyBytes(r.linkId),
+      linkUrlToken: copyBytes(r.linkUrlToken),
+      tier: r.tier,
+      nonce: copyBytes(r.nonce),
+      encryptedKey: copyBytes(r.encryptedKey),
+    }));
+  }
+
   importLinkShareHandle(linkUrlToken: Uint8Array): {
     handle: bigint;
     linkId: Uint8Array;
@@ -708,6 +734,24 @@ export class RustHandleFacade {
     }));
   }
 
+  // v2 binding variant of wrapLinkTierHandle (batch 4d - A1).
+  wrapLinkTierHandleV2(
+    linkShareHandle: bigint,
+    epochHandle: bigint,
+    tierByte: number,
+  ): { tier: number; nonce: Uint8Array; encryptedKey: Uint8Array } {
+    const result = rustWasm.wrapLinkTierHandleV2(
+      linkShareHandle,
+      epochHandle,
+      tierByte,
+    );
+    return consumeResult(result, 'wrapLinkTierHandleV2', (r) => ({
+      tier: r.tier,
+      nonce: copyBytes(r.nonce),
+      encryptedKey: copyBytes(r.encryptedKey),
+    }));
+  }
+
   importLinkTierHandle(
     linkUrlToken: Uint8Array,
     nonce: Uint8Array,
@@ -723,6 +767,33 @@ export class RustHandleFacade {
       tierByte,
     );
     return consumeResult(result, 'importLinkTierHandle', (r) => ({
+      handle: r.handle,
+      linkId: copyBytes(r.linkId),
+      tier: r.tier,
+    }));
+  }
+
+  // v2 binding variant of importLinkTierHandle (batch 4d - A1).
+  // The visitor supplies the epochId parsed from the signed album manifest;
+  // the underlying unwrap dual-accepts pre-A1 v1 wraps so existing share
+  // links keep working, then enforces (link_id, tier, epoch_id) on v2.
+  importLinkTierHandleV2(
+    linkUrlToken: Uint8Array,
+    nonce: Uint8Array,
+    encryptedKey: Uint8Array,
+    albumId: string,
+    tierByte: number,
+    epochId: number,
+  ): { handle: bigint; linkId: Uint8Array; tier: number } {
+    const result = rustWasm.importLinkTierHandleV2(
+      linkUrlToken,
+      nonce,
+      encryptedKey,
+      albumId,
+      tierByte,
+      epochId,
+    );
+    return consumeResult(result, 'importLinkTierHandleV2', (r) => ({
       handle: r.handle,
       linkId: copyBytes(r.linkId),
       tier: r.tier,

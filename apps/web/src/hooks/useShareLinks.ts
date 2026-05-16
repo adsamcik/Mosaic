@@ -256,13 +256,13 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
 
           let wrappedThumb: { tier: number; nonce: Uint8Array; encryptedKey: Uint8Array };
           if (!linkShareHandleId) {
-            const created = await cryptoClient.createLinkShareHandle(albumId, epochHandleId, 1);
+            const created = await cryptoClient.createLinkShareHandleV2(albumId, epochHandleId, 1);
             linkShareHandleId = created.linkShareHandleId;
             linkSecret = created.linkUrlToken;
             linkId = created.linkId;
             wrappedThumb = created;
           } else {
-            wrappedThumb = await cryptoClient.wrapLinkTierHandle(
+            wrappedThumb = await cryptoClient.wrapLinkTierHandleV2(
               linkShareHandleId,
               epochHandleId,
               1,
@@ -276,7 +276,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
           });
 
           if (options.accessTier >= 2) {
-            const wrappedPreview = await cryptoClient.wrapLinkTierHandle(
+            const wrappedPreview = await cryptoClient.wrapLinkTierHandleV2(
               linkShareHandleId!,
               epochHandleId,
               2,
@@ -290,7 +290,7 @@ export function useShareLinks(albumId: string): UseShareLinksResult {
           }
 
           if (options.accessTier >= 3) {
-            const wrappedFull = await cryptoClient.wrapLinkTierHandle(
+            const wrappedFull = await cryptoClient.wrapLinkTierHandleV2(
               linkShareHandleId!,
               epochHandleId,
               3,

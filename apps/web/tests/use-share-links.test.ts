@@ -19,8 +19,8 @@ const mockApi = {
 // Slice 6 — share-link key wrapping flows entirely through the worker.
 const mockCryptoClient = {
   wrapWithAccountKey: vi.fn(),
-  createLinkShareHandle: vi.fn(),
-  wrapLinkTierHandle: vi.fn(),
+  createLinkShareHandleV2: vi.fn(),
+  wrapLinkTierHandleV2: vi.fn(),
   closeLinkShareHandle: vi.fn(),
 };
 
@@ -149,13 +149,13 @@ describe('useShareLinks', () => {
     mockApi.revokeShareLink.mockResolvedValue(undefined);
 
     mockCryptoClient.wrapWithAccountKey.mockResolvedValue(ownerEncryptedSecret);
-    mockCryptoClient.createLinkShareHandle.mockResolvedValue({
+    mockCryptoClient.createLinkShareHandleV2.mockResolvedValue({
       linkShareHandleId,
       linkUrlToken,
       linkId: linkIdBytes,
       ...wrappedTier(1),
     });
-    mockCryptoClient.wrapLinkTierHandle.mockImplementation(
+    mockCryptoClient.wrapLinkTierHandleV2.mockImplementation(
       async (_handle: string, _epochHandle: string, tier: number) => wrappedTier(tier),
     );
     mockCryptoClient.closeLinkShareHandle.mockResolvedValue(undefined);
@@ -239,12 +239,12 @@ describe('useShareLinks', () => {
       expect(result.linkSecret).toBe('encoded-secret');
       expect(result.shareUrl).toContain('/s/encoded-link-id#k=encoded-secret');
       expect(mockFetchAndUnwrapEpochKeys).toHaveBeenCalledWith('album-1');
-      expect(mockCryptoClient.createLinkShareHandle).toHaveBeenCalledWith(
+      expect(mockCryptoClient.createLinkShareHandleV2).toHaveBeenCalledWith(
         'album-1',
         'epch_test-handle-id',
         1,
       );
-      expect(mockCryptoClient.wrapLinkTierHandle).toHaveBeenCalledWith(
+      expect(mockCryptoClient.wrapLinkTierHandleV2).toHaveBeenCalledWith(
         linkShareHandleId,
         'epch_test-handle-id',
         2,
@@ -433,7 +433,7 @@ describe('useShareLinks', () => {
 
       expect(thrown).toBeInstanceOf(Error);
       expect((thrown as Error).message).toBe('Create failed');
-      expect(mockCryptoClient.createLinkShareHandle).toHaveBeenCalled();
+      expect(mockCryptoClient.createLinkShareHandleV2).toHaveBeenCalled();
       expect(mockApi.createShareLink).toHaveBeenCalled();
       expect(mockCryptoClient.closeLinkShareHandle).toHaveBeenCalledWith(linkShareHandleId);
     });
@@ -454,20 +454,20 @@ describe('useShareLinks', () => {
     it('creates only the thumb tier for tier 1 links', async () => {
       await createViaHook(1);
 
-      expect(mockCryptoClient.createLinkShareHandle).toHaveBeenCalledWith(
+      expect(mockCryptoClient.createLinkShareHandleV2).toHaveBeenCalledWith(
         'album-1',
         'epch_test-handle-id',
         1,
       );
-      expect(mockCryptoClient.wrapLinkTierHandle).not.toHaveBeenCalled();
+      expect(mockCryptoClient.wrapLinkTierHandleV2).not.toHaveBeenCalled();
       expect(mockApi.createShareLink.mock.calls[0][1].wrappedKeys).toHaveLength(1);
     });
 
     it('wraps thumb and preview tiers for tier 2 links', async () => {
       await createViaHook(2);
 
-      expect(mockCryptoClient.wrapLinkTierHandle).toHaveBeenCalledTimes(1);
-      expect(mockCryptoClient.wrapLinkTierHandle).toHaveBeenCalledWith(
+      expect(mockCryptoClient.wrapLinkTierHandleV2).toHaveBeenCalledTimes(1);
+      expect(mockCryptoClient.wrapLinkTierHandleV2).toHaveBeenCalledWith(
         linkShareHandleId,
         'epch_test-handle-id',
         2,
@@ -482,14 +482,14 @@ describe('useShareLinks', () => {
     it('wraps thumb, preview, and original tiers for tier 3 links', async () => {
       await createViaHook(3);
 
-      expect(mockCryptoClient.wrapLinkTierHandle).toHaveBeenCalledTimes(2);
-      expect(mockCryptoClient.wrapLinkTierHandle).toHaveBeenNthCalledWith(
+      expect(mockCryptoClient.wrapLinkTierHandleV2).toHaveBeenCalledTimes(2);
+      expect(mockCryptoClient.wrapLinkTierHandleV2).toHaveBeenNthCalledWith(
         1,
         linkShareHandleId,
         'epch_test-handle-id',
         2,
       );
-      expect(mockCryptoClient.wrapLinkTierHandle).toHaveBeenNthCalledWith(
+      expect(mockCryptoClient.wrapLinkTierHandleV2).toHaveBeenNthCalledWith(
         2,
         linkShareHandleId,
         'epch_test-handle-id',
@@ -521,13 +521,13 @@ describe('useShareLinks', () => {
 
       await createViaHook(2);
 
-      expect(mockCryptoClient.createLinkShareHandle).toHaveBeenCalledWith('album-1', 'epch_1', 1);
-      expect(mockCryptoClient.wrapLinkTierHandle).toHaveBeenCalledTimes(5);
-      expect(mockCryptoClient.wrapLinkTierHandle).toHaveBeenCalledWith(linkShareHandleId, 'epch_1', 2);
-      expect(mockCryptoClient.wrapLinkTierHandle).toHaveBeenCalledWith(linkShareHandleId, 'epch_2', 1);
-      expect(mockCryptoClient.wrapLinkTierHandle).toHaveBeenCalledWith(linkShareHandleId, 'epch_2', 2);
-      expect(mockCryptoClient.wrapLinkTierHandle).toHaveBeenCalledWith(linkShareHandleId, 'epch_3', 1);
-      expect(mockCryptoClient.wrapLinkTierHandle).toHaveBeenCalledWith(linkShareHandleId, 'epch_3', 2);
+      expect(mockCryptoClient.createLinkShareHandleV2).toHaveBeenCalledWith('album-1', 'epch_1', 1);
+      expect(mockCryptoClient.wrapLinkTierHandleV2).toHaveBeenCalledTimes(5);
+      expect(mockCryptoClient.wrapLinkTierHandleV2).toHaveBeenCalledWith(linkShareHandleId, 'epch_1', 2);
+      expect(mockCryptoClient.wrapLinkTierHandleV2).toHaveBeenCalledWith(linkShareHandleId, 'epch_2', 1);
+      expect(mockCryptoClient.wrapLinkTierHandleV2).toHaveBeenCalledWith(linkShareHandleId, 'epch_2', 2);
+      expect(mockCryptoClient.wrapLinkTierHandleV2).toHaveBeenCalledWith(linkShareHandleId, 'epch_3', 1);
+      expect(mockCryptoClient.wrapLinkTierHandleV2).toHaveBeenCalledWith(linkShareHandleId, 'epch_3', 2);
       expect(mockApi.createShareLink.mock.calls[0][1].wrappedKeys).toHaveLength(6);
     });
   });

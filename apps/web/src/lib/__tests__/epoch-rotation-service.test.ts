@@ -95,7 +95,7 @@ beforeEach(() => {
       linkShareHandleId: 'lnks_test-handle-id',
       linkId: nonZero(16, 0xb1),
     })),
-    wrapLinkTierHandle: vi.fn(async (_linkHandle: string, _epochHandle: string, tier: number) => ({
+    wrapLinkTierHandleV2: vi.fn(async (_linkHandle: string, _epochHandle: string, tier: number) => ({
       tier,
       nonce: new Uint8Array(24).fill(tier),
       encryptedKey: new Uint8Array(48).fill(tier),
@@ -131,7 +131,7 @@ describe('wrapKeysForShareLinks (P-W7.6 handle material)', () => {
 
     expect(results).toHaveLength(1);
     // Three calls = thumb (tier 1) + preview (tier 2) + full (tier 3).
-    expect((crypto as any).wrapLinkTierHandle).toHaveBeenCalledTimes(3);
+    expect((crypto as any).wrapLinkTierHandleV2).toHaveBeenCalledTimes(3);
   });
 });
 

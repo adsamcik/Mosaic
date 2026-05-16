@@ -562,7 +562,7 @@ export async function wrapKeysForShareLinks(
       const wrappedKeys: ShareLinkKeyUpdateRequest['wrappedKeys'] = [];
 
       // Always wrap thumb key (tier byte 0).
-      const wrappedThumb = await crypto.wrapLinkTierHandle(
+      const wrappedThumb = await crypto.wrapLinkTierHandleV2(
         linkShareHandleId,
         epochHandleId,
         1,
@@ -574,7 +574,7 @@ export async function wrapKeysForShareLinks(
       });
 
       if (link.accessTier >= 2) {
-        const wrappedPreview = await crypto.wrapLinkTierHandle(
+        const wrappedPreview = await crypto.wrapLinkTierHandleV2(
           linkShareHandleId,
           epochHandleId,
           2,
@@ -587,7 +587,7 @@ export async function wrapKeysForShareLinks(
       }
 
       if (link.accessTier >= 3) {
-        const wrappedFull = await crypto.wrapLinkTierHandle(
+        const wrappedFull = await crypto.wrapLinkTierHandleV2(
           linkShareHandleId,
           epochHandleId,
           3,

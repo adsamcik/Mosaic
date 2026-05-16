@@ -193,12 +193,13 @@ export function useLinkKeys(
       const tierKeys = new Map<number, Map<AccessTierType, TierKey>>();
       for (const wrapped of wrappedKeys) {
         try {
-          const imported = await crypto.importLinkTierHandle(
+          const imported = await crypto.importLinkTierHandleV2(
             secret,
             fromBase64(wrapped.nonce),
             fromBase64(wrapped.encryptedKey),
             linkAccess.albumId,
             wrapped.tier,
+            wrapped.epochId,
           );
           if (!constantTimeEqual(urlLinkId, imported.linkId)) {
             throw new Error('Link has been tampered with');
