@@ -5,7 +5,7 @@
  * Verifies that encrypted salt can be synced between devices via server.
  */
 
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fromBase64, toBase64 } from '../src/lib/api';
 import { initializeRustWasmForTests } from './wasm-test-init';
 import {
@@ -13,10 +13,20 @@ import {
   encryptSalt,
   SaltDecryptionError,
 } from '../src/lib/session';
+import { WorkerCryptoErrorCode } from '../src/workers/types';
+
+let accountHandleOpen = true;
 
 vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() => ({
     encryptUserSaltEnvelopeV2: vi.fn(async (salt: Uint8Array) => {
+      if (!accountHandleOpen) {
+        throw {
+          name: 'WorkerCryptoError',
+          code: WorkerCryptoErrorCode.WorkerNotInitialized,
+          message: 'crypto worker not initialised - call init() / initWithWrappedKey() first',
+        };
+      }
       const nonce = crypto.getRandomValues(new Uint8Array(12));
       const ciphertext = new Uint8Array(salt.length + 16);
       ciphertext.set(salt);
@@ -24,10 +34,29 @@ vi.mock('../src/lib/crypto-client', () => ({
       return { ciphertext, nonce };
     }),
     decryptUserSaltEnvelopeV2: vi.fn(async (ciphertext: Uint8Array, nonce: Uint8Array) => {
-      if (ciphertext.length < 16) throw new Error('invalid envelope');
+      if (!accountHandleOpen) {
+        throw {
+          name: 'WorkerCryptoError',
+          code: WorkerCryptoErrorCode.WorkerNotInitialized,
+          message: 'crypto worker not initialised - call init() / initWithWrappedKey() first',
+        };
+      }
+      if (ciphertext.length < 16) {
+        throw {
+          name: 'WorkerCryptoError',
+          code: WorkerCryptoErrorCode.InvalidEnvelope,
+          message: 'invalid envelope',
+        };
+      }
       const tag = ciphertext.subarray(ciphertext.length - 16);
       for (let i = 0; i < nonce.length; i++) {
-        if (tag[i] !== nonce[i]) throw new Error('invalid envelope');
+        if (tag[i] !== nonce[i]) {
+          throw {
+            name: 'WorkerCryptoError',
+            code: WorkerCryptoErrorCode.AuthenticationFailed,
+            message: 'invalid envelope',
+          };
+        }
       }
       return ciphertext.subarray(0, ciphertext.length - 16);
     }),
@@ -37,6 +66,10 @@ vi.mock('../src/lib/crypto-client', () => ({
 describe('Salt Encryption/Decryption', () => {
   beforeAll(async () => {
     await initializeRustWasmForTests();
+  });
+
+  beforeEach(() => {
+    accountHandleOpen = true;
   });
 
   const testPassword = 'test-password-123';
@@ -135,6 +168,23 @@ describe('Salt Encryption/Decryption', () => {
       await expect(
         decryptSalt(encryptedSalt, saltNonce, testPassword, 'wrong-username'),
       ).resolves.toEqual(testSalt);
+    });
+
+    it('does not fall back to legacy v1 when v2 is attempted before account init', async () => {
+      const { encryptedSalt, saltNonce } = await encryptSalt(
+        testSalt,
+        testPassword,
+        testUsername,
+      );
+
+      accountHandleOpen = false;
+
+      await expect(
+        decryptSalt(encryptedSalt, saltNonce, testPassword, testUsername),
+      ).rejects.toMatchObject({
+        name: 'WorkerCryptoError',
+        code: WorkerCryptoErrorCode.WorkerNotInitialized,
+      });
     });
 
     it('throws SaltDecryptionError for corrupted ciphertext', async () => {

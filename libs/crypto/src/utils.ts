@@ -74,7 +74,11 @@ export function randomBytes(length: number): Uint8Array {
  * @returns Base64url string
  */
 export function toBase64(data: Uint8Array): string {
-  const binary = String.fromCharCode(...data);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < data.length; offset += chunkSize) {
+    binary += String.fromCharCode(...data.subarray(offset, offset + chunkSize));
+  }
   const base64 = typeof btoa === 'function'
     ? btoa(binary)
     : Buffer.from(data).toString('base64');

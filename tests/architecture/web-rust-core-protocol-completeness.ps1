@@ -157,7 +157,7 @@ $BannedPatterns = @(
   },
   @{
     Name = 'libsodium bracket primitive access'
-    Pattern = '\bsodium\s*\[\s*[''"](crypto_pwhash|crypto_secretbox|crypto_box|crypto_sign|crypto_aead|crypto_generichash|crypto_kdf|crypto_kx|crypto_scalarmult|crypto_stream)'
+    Pattern = '\bsodium\s*\[\s*[''"](crypto_pwhash|crypto_secretbox|crypto_box|crypto_sign|crypto_aead|crypto_auth|crypto_hash|crypto_generichash|crypto_kdf|crypto_kx|crypto_scalarmult|crypto_stream)'
     Message = 'protocol-class libsodium primitives must not be accessed through bracket notation'
   },
   @{
@@ -236,6 +236,8 @@ Assert-NegativeFixtureCaught 'libsodium-aead' 'sodium.crypto_aead_xchacha20poly1
 Assert-NegativeFixtureCaught 'libsodium-auth' 'sodium.crypto_auth(message, key);' 'libsodium auth'
 Assert-NegativeFixtureCaught 'libsodium-kdf' 'sodium.crypto_kdf_derive_from_key(32, 1, "context1", key);' 'libsodium KDF'
 Assert-NegativeFixtureCaught 'libsodium-bracket-box' "// FIXTURE: sodium['crypto_box_open_easy']" 'libsodium bracket primitive access'
+Assert-NegativeFixtureCaught 'libsodium-bracket-auth' "// FIXTURE: sodium['crypto_auth'](message, key)" 'libsodium bracket primitive access'
+Assert-NegativeFixtureCaught 'libsodium-bracket-hash' "// FIXTURE: sodium['crypto_hash_sha256'](message)" 'libsodium bracket primitive access'
 Assert-NegativeFixtureCaught 'libsodium-destructure-default' "import sodium from 'libsodium-wrappers-sumo'; const { crypto_pwhash } = sodium;" 'libsodium primitive destructure'
 Assert-NegativeFixtureCaught 'libsodium-aliased-bare-call' "import sodium from 'libsodium-wrappers-sumo'; const s2: typeof sodium = sodium; await s2.crypto_pwhash(32, password, salt, 2, 65536, 2);" 'libsodium bare primitive call'
 

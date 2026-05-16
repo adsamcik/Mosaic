@@ -125,4 +125,20 @@ describe('P-W7.4 handle-based bundle sealing', () => {
       recipientAccount.free();
     }
   });
+
+  it('pins the TS wire bundle layout to signature followed by sealed payload', () => {
+    const workerSource = readFileSync(
+      resolve(__dirname, '..', 'crypto.worker.ts'),
+      'utf8',
+    );
+
+    expect(workerSource).toContain('signature || sealed');
+    expect(workerSource).toContain(
+      'new Uint8Array(sealed.signature.length + sealed.sealed.length)',
+    );
+    expect(workerSource).toContain('wireBytes.set(sealed.signature, 0)');
+    expect(workerSource).toContain(
+      'wireBytes.set(sealed.sealed, sealed.signature.length)',
+    );
+  });
 });

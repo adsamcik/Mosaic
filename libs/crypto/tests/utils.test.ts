@@ -86,6 +86,18 @@ describe('utils', () => {
       expect(encoded).toMatch(/^[A-Za-z0-9_-]+$/);
     });
 
+    it('toBase64 handles large buffers without overflowing the call stack', () => {
+      const original = new Uint8Array(256 * 1024);
+      for (let i = 0; i < original.length; i++) {
+        original[i] = i & 0xff;
+      }
+
+      const encoded = toBase64(original);
+      const decoded = fromBase64(encoded);
+
+      expect(decoded).toEqual(original);
+    });
+
     it('fromBase64 decodes URL-safe Base64 without padding', () => {
       // URL-safe encoded "hello"
       const urlSafe = 'aGVsbG8';

@@ -233,6 +233,10 @@ describe('Session Restore', () => {
 
       // Encrypt a salt with known password
       const salt = new Uint8Array(16).fill(1);
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...salt)),
+      );
       const { encryptedSalt, saltNonce } = await encryptSalt(
         salt,
         'test-password',
@@ -289,6 +293,10 @@ describe('Session Restore', () => {
 
       // Encrypt salt with one password
       const salt = new Uint8Array(16).fill(3);
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...salt)),
+      );
       const { encryptedSalt, saltNonce } = await encryptSalt(
         salt,
         'correct-password',

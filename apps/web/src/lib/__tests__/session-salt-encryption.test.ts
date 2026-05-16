@@ -19,20 +19,33 @@ import { resolve } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import sodium from 'libsodium-wrappers-sumo';
 import initRustWasm, {
+  closeAccountKeyHandle,
   consumeMasterKeyHandleForAesGcm,
+  createAccount,
   deriveMasterKeyFromPassword,
   deriveSessionSaltFromUsername,
+  decryptUserSaltEnvelopeV2 as rustDecryptUserSaltEnvelopeV2,
+  encryptUserSaltEnvelopeV2 as rustEncryptUserSaltEnvelopeV2,
   initSync,
 } from '../../generated/mosaic-wasm/mosaic_wasm.js';
+import { WorkerCryptoErrorCode } from '../../workers/types';
 
 // ---------------------------------------------------------------------------
 // Mocks (registered before the SUT import)
 // ---------------------------------------------------------------------------
 
 const updateCurrentUserMock = vi.fn();
+let accountHandleOpen = true;
 
 const cryptoClientMock = {
   encryptUserSaltEnvelopeV2: vi.fn(async (salt: Uint8Array) => {
+    if (!accountHandleOpen) {
+      throw {
+        name: 'WorkerCryptoError',
+        code: WorkerCryptoErrorCode.WorkerNotInitialized,
+        message: 'crypto worker not initialised - call init() / initWithWrappedKey() first',
+      };
+    }
     const tag = new Uint8Array(16);
     for (const byte of salt) tag[0] = (tag[0] ?? 0) ^ byte;
     const ciphertext = new Uint8Array(salt.length + tag.length);
@@ -41,12 +54,31 @@ const cryptoClientMock = {
     return { ciphertext, nonce: new Uint8Array(12).fill(7) };
   }),
   decryptUserSaltEnvelopeV2: vi.fn(async (ciphertext: Uint8Array) => {
-    if (ciphertext.length < 17) throw new Error('invalid salt envelope');
+    if (!accountHandleOpen) {
+      throw {
+        name: 'WorkerCryptoError',
+        code: WorkerCryptoErrorCode.WorkerNotInitialized,
+        message: 'crypto worker not initialised - call init() / initWithWrappedKey() first',
+      };
+    }
+    if (ciphertext.length < 17) {
+      throw {
+        name: 'WorkerCryptoError',
+        code: WorkerCryptoErrorCode.InvalidEnvelope,
+        message: 'invalid salt envelope',
+      };
+    }
     const salt = ciphertext.subarray(0, ciphertext.length - 16);
     const tag = ciphertext.subarray(ciphertext.length - 16);
     let checksum = 0;
     for (const byte of salt) checksum ^= byte;
-    if (tag[0] !== checksum) throw new Error('invalid salt envelope tag');
+    if (tag[0] !== checksum) {
+      throw {
+        name: 'WorkerCryptoError',
+        code: WorkerCryptoErrorCode.AuthenticationFailed,
+        message: 'invalid salt envelope tag',
+      };
+    }
     return new Uint8Array(salt);
   }),
 };
@@ -201,6 +233,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  accountHandleOpen = true;
   updateCurrentUserMock.mockReset();
   updateCurrentUserMock.mockResolvedValue({});
 });
@@ -237,7 +270,7 @@ describe('encryptSalt / decryptSalt - v2 round trip', () => {
     expect(updateCurrentUserMock).not.toHaveBeenCalled();
   });
 
-  it('decrypts v2 through the open account-handle path regardless of password text', async () => {
+  it('propagates missing-account-handle errors instead of falling back to v1', async () => {
     const { encryptedSalt, saltNonce } = await encryptSalt(
       TEST_SALT,
       TEST_PASSWORD,
@@ -245,15 +278,66 @@ describe('encryptSalt / decryptSalt - v2 round trip', () => {
       TEST_KDF_PARAMS,
     );
 
+    accountHandleOpen = false;
+
     await expect(
       decryptSalt(
         encryptedSalt,
         saltNonce,
-        'wrong-password',
+        TEST_PASSWORD,
         TEST_USERNAME,
         TEST_KDF_PARAMS,
       ),
-    ).resolves.toEqual(TEST_SALT);
+    ).rejects.toMatchObject({
+      name: 'WorkerCryptoError',
+      code: WorkerCryptoErrorCode.WorkerNotInitialized,
+    });
+    expect(updateCurrentUserMock).not.toHaveBeenCalled();
+  });
+
+  it('Rust v2 salt envelopes reject a different account handle', () => {
+    const passwordBytes = new TextEncoder().encode(TEST_PASSWORD);
+    const wrongPasswordBytes = new TextEncoder().encode('wrong-password');
+    const userSalt = new Uint8Array(16).fill(0x31);
+    const accountSalt = new Uint8Array(16).fill(0x42);
+    const owner = createAccount(
+      passwordBytes,
+      userSalt,
+      accountSalt,
+      64 * 1024,
+      3,
+      TEST_KDF_PARAMS.parallelism,
+    );
+    const wrong = createAccount(
+      wrongPasswordBytes,
+      userSalt,
+      accountSalt,
+      64 * 1024,
+      3,
+      TEST_KDF_PARAMS.parallelism,
+    );
+    const envelope = rustEncryptUserSaltEnvelopeV2(owner.handle, TEST_SALT);
+    const decryptedWithWrongHandle = rustDecryptUserSaltEnvelopeV2(
+      wrong.handle,
+      envelope.ciphertext,
+      envelope.nonce,
+    );
+
+    try {
+      expect(owner.code).toBe(0);
+      expect(wrong.code).toBe(0);
+      expect(envelope.code).toBe(0);
+      expect(decryptedWithWrongHandle.code).toBe(
+        WorkerCryptoErrorCode.AuthenticationFailed,
+      );
+    } finally {
+      decryptedWithWrongHandle.free();
+      envelope.free();
+      if (owner.handle !== 0n) closeAccountKeyHandle(owner.handle);
+      if (wrong.handle !== 0n) closeAccountKeyHandle(wrong.handle);
+      owner.free();
+      wrong.free();
+    }
   });
 
   it('throws SaltDecryptionError when the v2 ciphertext is tampered with', async () => {
