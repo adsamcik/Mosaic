@@ -2,8 +2,8 @@
  * Link Tier Key Store
  *
  * Secure storage for share link tier keys in IndexedDB.
- * Keys are encrypted with AES-256-GCM using a session-bound, non-extractable
- * encryption key held only in memory for the lifetime of the page.
+ * Keys are encrypted with a session-bound Rust wrap handle held only in
+ * memory for the lifetime of the page.
  *
  * Security properties:
  * - Tier keys are encrypted before IndexedDB storage
@@ -18,7 +18,12 @@
  */
 
 import { createLogger } from './logger';
-import { toArrayBufferView } from './buffer-utils';
+import initRustWasm, {
+  closeLinkTierWrapHandle,
+  createLinkTierWrapHandle,
+  unwrapLinkTierBlob,
+  wrapLinkTierBlob,
+} from '../generated/mosaic-wasm/mosaic_wasm.js';
 import type { AccessTier as AccessTierType } from './api-types';
 import { getCryptoClient } from './crypto-client';
 import type { LinkTierHandleId } from '../workers/types';
@@ -28,8 +33,9 @@ const log = createLogger('LinkTierKeyStore');
 /** Storage key for legacy persisted link encryption key (cleared on logout). */
 const LINK_KEY_STORAGE_KEY = 'mosaic:linkKeyEncryption';
 
-/** In-memory encryption key for link tier keys */
-let linkEncryptionKey: CryptoKey | null = null;
+/** In-memory Rust wrap handle for link tier key storage */
+let linkWrapHandle: bigint | null = null;
+let rustWasmInitPromise: Promise<unknown> | null = null;
 
 /** IndexedDB database name for link keys */
 const DB_NAME = 'mosaic-link-keys';
@@ -70,8 +76,9 @@ interface LegacyStoredLinkKeys {
 interface EncryptedStoredLinkKeys {
   linkId: string;
   version: 1;
-  iv: string; // Base64
+  iv?: string; // Legacy WebCrypto Base64 IV; empty/missing for Rust-wrapped entries
   ciphertext: string; // Base64
+  wrapVersion?: 2;
   storedAt: number;
 }
 
@@ -127,30 +134,34 @@ async function deserializeLinkTierHandle(
   }
 }
 
-/**
- * Get or create the in-memory encryption key for link tier keys.
- *
- * The key is non-extractable and is intentionally NOT persisted to
- * sessionStorage: persisting the raw bytes would let any same-origin script
- * (XSS, malicious extension) decrypt the IndexedDB-stored wrapped link tier
- * keys. As a tradeoff, the key is lost on full page reload — existing
- * IndexedDB entries become undecryptable and `getTierKeys()` falls back to
- * "cache miss, refetch from server."
- */
-async function getLinkEncryptionKey(): Promise<CryptoKey> {
-  if (linkEncryptionKey) {
-    return linkEncryptionKey;
+async function ensureRustWasmInitialized(): Promise<void> {
+  rustWasmInitPromise ??= initRustWasm();
+  await rustWasmInitPromise;
+}
+
+function consumeBytesResult(
+  result: { readonly code: number; readonly bytes: Uint8Array; free(): void },
+  label: string,
+): Uint8Array {
+  try {
+    if (result.code !== 0) {
+      throw new Error(`${label} failed (rust code ${String(result.code)})`);
+    }
+    return new Uint8Array(result.bytes);
+  } finally {
+    result.free();
+  }
+}
+
+async function getLinkWrapHandle(): Promise<bigint> {
+  if (linkWrapHandle !== null) {
+    return linkWrapHandle;
   }
 
-  linkEncryptionKey = await crypto.subtle.generateKey(
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  );
-
-  log.debug('Generated new non-extractable link encryption key');
-
-  return linkEncryptionKey;
+  await ensureRustWasmInitialized();
+  linkWrapHandle = createLinkTierWrapHandle();
+  log.debug('Generated new Rust link tier wrap handle');
+  return linkWrapHandle;
 }
 
 /**
@@ -162,7 +173,14 @@ async function getLinkEncryptionKey(): Promise<CryptoKey> {
  * sitting in storage.
  */
 export function clearLinkKeyEncryption(): void {
-  linkEncryptionKey = null;
+  if (linkWrapHandle !== null) {
+    try {
+      closeLinkTierWrapHandle(linkWrapHandle);
+    } catch (error) {
+      log.warn('Failed to close link tier wrap handle', { error });
+    }
+  }
+  linkWrapHandle = null;
   sessionStorage.removeItem(LINK_KEY_STORAGE_KEY);
   log.debug('Cleared link key encryption');
 }
@@ -227,22 +245,21 @@ export async function saveTierKeys(
       keys,
     };
 
-    // Encrypt with AES-GCM
-    const encKey = await getLinkEncryptionKey();
-    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const handle = await getLinkWrapHandle();
     const plaintextBytes = new TextEncoder().encode(JSON.stringify(plaintext));
-    const ciphertext = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: toArrayBufferView(iv) },
-      encKey,
-      toArrayBufferView(plaintextBytes),
+    const ciphertext = consumeBytesResult(
+      wrapLinkTierBlob(handle, plaintextBytes),
+      'wrapLinkTierBlob',
     );
+    plaintextBytes.fill(0);
 
     // Store encrypted envelope
     const stored: EncryptedStoredLinkKeys = {
       linkId,
       version: 1,
-      iv: toBase64(iv),
-      ciphertext: toBase64(new Uint8Array(ciphertext)),
+      iv: '',
+      ciphertext: toBase64(ciphertext),
+      wrapVersion: 2,
       storedAt: Date.now(),
     };
 
@@ -297,18 +314,28 @@ export async function getTierKeys(
 
         // Detect encrypted vs legacy format
         if ('ciphertext' in stored && 'version' in stored) {
-          // Encrypted format - decrypt
-          const encKey = await getLinkEncryptionKey();
-          const iv = fromBase64(stored.iv);
+          // Encrypted format - decrypt. Legacy WebCrypto-wrapped entries
+          // cannot be opened after this cutover because their non-extractable
+          // JS key was memory-only; clear them as cache misses.
+          if (stored.wrapVersion !== 2) {
+            log.info('Discarding legacy WebCrypto-wrapped tier keys', { linkId });
+            await removeTierKeys(linkId);
+            resolve(null);
+            return;
+          }
+          const handle = await getLinkWrapHandle();
           const ciphertext = fromBase64(stored.ciphertext);
 
           try {
-            const decrypted = await crypto.subtle.decrypt(
-              { name: 'AES-GCM', iv: toArrayBufferView(iv) },
-              encKey,
-              toArrayBufferView(ciphertext),
+            const decrypted = consumeBytesResult(
+              unwrapLinkTierBlob(handle, ciphertext),
+              'unwrapLinkTierBlob',
             );
-            plaintext = JSON.parse(new TextDecoder().decode(decrypted));
+            try {
+              plaintext = JSON.parse(new TextDecoder().decode(decrypted));
+            } finally {
+              decrypted.fill(0);
+            }
           } catch (decryptError) {
             // Decryption failed (likely different session key)
             log.warn('Failed to decrypt tier keys, clearing entry', {

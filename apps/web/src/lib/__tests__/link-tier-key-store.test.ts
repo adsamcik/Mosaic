@@ -44,6 +44,22 @@ vi.mock('../crypto-client', () => ({
   ),
 }));
 
+vi.mock('../../generated/mosaic-wasm/mosaic_wasm.js', () => ({
+  default: vi.fn(async () => undefined),
+  createLinkTierWrapHandle: vi.fn(() => 1n),
+  closeLinkTierWrapHandle: vi.fn(() => 0),
+  wrapLinkTierBlob: vi.fn((_handle: bigint, plaintext: Uint8Array) => ({
+    code: 0,
+    bytes: new Uint8Array(plaintext),
+    free: vi.fn(),
+  })),
+  unwrapLinkTierBlob: vi.fn((_handle: bigint, envelope: Uint8Array) => ({
+    code: 0,
+    bytes: new Uint8Array(envelope),
+    free: vi.fn(),
+  })),
+}));
+
 // ---------------------------------------------------------------------------
 // Minimal in-memory IndexedDB shim (happy-dom does not provide one).
 // Only implements what link-tier-key-store actually uses: open(),
@@ -204,8 +220,9 @@ describe('link-tier-key-store (H3 security regression)', () => {
     sessionStorage.clear();
   });
 
-  it('generates a non-extractable AES-GCM key (exportKey rejects)', async () => {
+  it('routes wrapping through a Rust-owned link-tier wrap handle', async () => {
     const encryptSpy = vi.spyOn(crypto.subtle, 'encrypt');
+    const wasm = await import('../../generated/mosaic-wasm/mosaic_wasm.js');
 
     const { saveTierKeys } = await import('../link-tier-key-store');
 
@@ -216,17 +233,9 @@ describe('link-tier-key-store (H3 security regression)', () => {
 
     await saveTierKeys('linkA', 'albumA', AccessTier.THUMB, tierKeys);
 
-    expect(encryptSpy).toHaveBeenCalled();
-    const capturedKey = encryptSpy.mock.calls[0]?.[1] as CryptoKey;
-    expect(capturedKey).toBeDefined();
-    expect(capturedKey.type).toBe('secret');
-    // The non-extractable flag is the core of the H3 fix.
-    expect(capturedKey.extractable).toBe(false);
-
-    // Direct proof: exportKey('raw', ...) must reject for non-extractable keys.
-    await expect(
-      crypto.subtle.exportKey('raw', capturedKey),
-    ).rejects.toThrow();
+    expect(wasm.createLinkTierWrapHandle).toHaveBeenCalledTimes(1);
+    expect(wasm.wrapLinkTierBlob).toHaveBeenCalledTimes(1);
+    expect(encryptSpy).not.toHaveBeenCalled();
   });
 
   it('does not persist the raw encryption key to sessionStorage', async () => {
@@ -259,6 +268,7 @@ describe('link-tier-key-store (H3 security regression)', () => {
 
     const importSpy = vi.spyOn(crypto.subtle, 'importKey');
     const generateSpy = vi.spyOn(crypto.subtle, 'generateKey');
+    const wasm = await import('../../generated/mosaic-wasm/mosaic_wasm.js');
 
     const { saveTierKeys } = await import('../link-tier-key-store');
 
@@ -269,8 +279,9 @@ describe('link-tier-key-store (H3 security regression)', () => {
 
     await saveTierKeys('linkC', 'albumC', AccessTier.FULL, tierKeys);
 
-    // Must have generated a fresh key, not imported the stored one.
-    expect(generateSpy).toHaveBeenCalledTimes(1);
+    // Must have minted a fresh Rust wrap handle, not imported the stored one.
+    expect(wasm.createLinkTierWrapHandle).toHaveBeenCalledTimes(1);
+    expect(generateSpy).not.toHaveBeenCalled();
     expect(importSpy).not.toHaveBeenCalled();
   });
 
@@ -316,13 +327,15 @@ describe('link-tier-key-store (H3 security regression)', () => {
 
     await mod.saveTierKeys('linkD', 'albumD', AccessTier.THUMB, tierKeys);
 
-    // After clearing, a subsequent save must trigger a brand-new key.
+    // After clearing, a subsequent save must trigger a brand-new Rust handle.
     const generateSpy = vi.spyOn(crypto.subtle, 'generateKey');
+    const wasm = await import('../../generated/mosaic-wasm/mosaic_wasm.js');
     mod.clearLinkKeyEncryption();
 
     await mod.saveTierKeys('linkE', 'albumE', AccessTier.THUMB, tierKeys);
 
-    expect(generateSpy).toHaveBeenCalledTimes(1);
+    expect(wasm.createLinkTierWrapHandle).toHaveBeenCalledTimes(2);
+    expect(generateSpy).not.toHaveBeenCalled();
     // Still no raw key bytes in sessionStorage afterwards.
     expect(sessionStorage.getItem(LINK_KEY_STORAGE_KEY)).toBeNull();
   });

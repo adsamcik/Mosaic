@@ -6,6 +6,52 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+vi.mock('../src/generated/mosaic-wasm/mosaic_wasm.js', () => {
+  let nextHandle = 1n;
+  let nonceCounter = 1;
+  const openHandles = new Set<bigint>();
+  const makeResult = (bytes: Uint8Array) => ({
+    code: 0,
+    bytes,
+    free: vi.fn(),
+  });
+
+  return {
+    default: vi.fn().mockResolvedValue(undefined),
+    createSessionCacheWrapHandle: vi.fn(() => {
+      const handle = nextHandle;
+      nextHandle += 1n;
+      openHandles.add(handle);
+      return handle;
+    }),
+    closeSessionCacheWrapHandle: vi.fn((handle: bigint) => {
+      openHandles.delete(handle);
+    }),
+    wrapSessionCacheBlob: vi.fn((handle: bigint, plaintext: Uint8Array) => {
+      if (!openHandles.has(handle)) {
+        return makeResult(new Uint8Array());
+      }
+      const wrapped = new Uint8Array(4 + plaintext.length);
+      new DataView(wrapped.buffer).setUint32(0, nonceCounter++);
+      for (let index = 0; index < plaintext.length; index += 1) {
+        wrapped[4 + index] = plaintext[index] ^ 0xa5;
+      }
+      return makeResult(wrapped);
+    }),
+    unwrapSessionCacheBlob: vi.fn((handle: bigint, wrapped: Uint8Array) => {
+      if (!openHandles.has(handle) || wrapped.length < 4) {
+        return makeResult(new Uint8Array());
+      }
+      const plaintext = new Uint8Array(wrapped.length - 4);
+      for (let index = 0; index < plaintext.length; index += 1) {
+        plaintext[index] = wrapped[4 + index] ^ 0xa5;
+      }
+      return makeResult(plaintext);
+    }),
+  };
+});
+
 import {
   cacheKeys,
   getCachedKeys,
@@ -16,6 +62,7 @@ import {
   type CachedKeys,
 } from '../src/lib/key-cache';
 import * as settingsService from '../src/lib/settings-service';
+import * as rustWasm from '../src/generated/mosaic-wasm/mosaic_wasm.js';
 
 // Mock settings service
 vi.mock('../src/lib/settings-service', () => ({
@@ -87,12 +134,8 @@ describe('key-cache', () => {
       const validEnvelope = sessionStorage.getItem('mosaic:keyCache');
       expect(validEnvelope).not.toBeNull();
 
-      // Replace the stored ciphertext with one whose plaintext is a v1
-      // payload. We simulate this by mutating the envelope's ciphertext
-      // through a separate path: encrypt a v1 plaintext under the same
-      // in-memory key by going via `crypto.subtle.encrypt` directly.
-      // For simplicity we just stub `crypto.subtle.decrypt` to return a
-      // v1 plaintext.
+      // Replace the Rust unwrap output with a legacy v1 plaintext. The cache
+      // must discard anything that does not carry the v2 schema marker.
       const v1Plaintext = new TextEncoder().encode(
         JSON.stringify({
           accountKey: 'aGVsbG8=',
@@ -105,14 +148,18 @@ describe('key-cache', () => {
           accountSalt: 'aGVsbG8=',
         }),
       );
-      const decryptSpy = vi
-        .spyOn(crypto.subtle, 'decrypt')
-        .mockResolvedValueOnce(v1Plaintext.buffer);
+      const unwrapSpy = vi
+        .spyOn(rustWasm, 'unwrapSessionCacheBlob')
+        .mockReturnValueOnce({
+          code: 0,
+          bytes: v1Plaintext,
+          free: vi.fn(),
+        });
       try {
         const result = await getCachedKeys();
         expect(result).toBeNull();
       } finally {
-        decryptSpy.mockRestore();
+        unwrapSpy.mockRestore();
       }
 
       // The v1 entry was cleared.
@@ -242,24 +289,27 @@ describe('key-cache', () => {
       Date.now = originalNow;
     });
 
-    it('zeroes the decrypted plaintext buffer after parsing', async () => {
+    it('frees the Rust unwrap result after copying', async () => {
       await cacheKeys(mockKeys);
 
       const plaintextBytes = new TextEncoder().encode(JSON.stringify(mockKeys));
-      const decryptSpy = vi
-        .spyOn(crypto.subtle, 'decrypt')
-        .mockResolvedValueOnce(plaintextBytes.buffer);
+      const free = vi.fn();
+      const unwrapSpy = vi
+        .spyOn(rustWasm, 'unwrapSessionCacheBlob')
+        .mockReturnValueOnce({
+          code: 0,
+          bytes: plaintextBytes,
+          free,
+        });
 
       try {
         const result = await getCachedKeys();
 
         expect(result).not.toBeNull();
         expect(result!.sessionState).toBe(mockKeys.sessionState);
-        expect(Array.from(plaintextBytes).every((byte) => byte === 0)).toBe(
-          true,
-        );
+        expect(free).toHaveBeenCalledOnce();
       } finally {
-        decryptSpy.mockRestore();
+        unwrapSpy.mockRestore();
       }
     });
   });
@@ -339,14 +389,14 @@ describe('key-cache', () => {
       expect(ciphertextDecoded).not.toContain('user-salt-16-byt');
     });
 
-    it('each cache operation generates a unique nonce', async () => {
+    it('each cache operation generates a unique wrapped ciphertext', async () => {
       await cacheKeys(mockKeys);
       const stored1 = JSON.parse(sessionStorage.getItem('mosaic:keyCache')!);
 
       await cacheKeys(mockKeys);
       const stored2 = JSON.parse(sessionStorage.getItem('mosaic:keyCache')!);
 
-      expect(stored1.nonce).not.toBe(stored2.nonce);
+      expect(stored1.ciphertext).not.toBe(stored2.ciphertext);
     });
   });
 

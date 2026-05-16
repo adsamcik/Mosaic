@@ -3,7 +3,7 @@
  *
  * Caches the worker's opaque session-state blob in sessionStorage with
  * time-based expiration. The blob itself is encrypted with a random
- * in-memory AES key stored only in memory, preventing raw key
+ * in-memory Rust AES wrap handle stored only in memory, preventing raw key
  * co-location with ciphertext.
  *
  * Slice 2 hard-cutover: the cache schema is now v2 — it stores the
@@ -16,14 +16,19 @@
  *
  * Security properties:
  * - Cached blob is opaque worker output (no raw key bytes in TS land).
- * - Encrypted with AES-256-GCM under a memory-only key before storage.
- * - Encryption key exists only in memory (cleared on tab close/reload).
+ * - Encrypted under a Rust-owned memory-only AES wrap handle before storage.
+ * - The wrap handle exists only in memory (cleared on tab close/reload).
  * - Expiration timestamp prevents indefinite key persistence.
  * - Automatic cleanup on expiration.
  */
 
 import { createLogger } from './logger';
-import { toArrayBufferView } from './buffer-utils';
+import initRustWasm, {
+  closeSessionCacheWrapHandle,
+  createSessionCacheWrapHandle,
+  unwrapSessionCacheBlob,
+  wrapSessionCacheBlob,
+} from '../generated/mosaic-wasm/mosaic_wasm.js';
 import { getKeyCacheDurationMs } from './settings-service';
 
 const log = createLogger('KeyCache');
@@ -39,8 +44,9 @@ const KEY_CACHE_STORAGE_KEY = 'mosaic:keyCache';
  */
 const CACHE_SCHEMA_VERSION = 2 as const;
 
-/** In-memory encryption key for the cache (never persisted) */
-let cacheEncryptionKey: CryptoKey | null = null;
+/** In-memory Rust wrap handle for the cache (never persisted) */
+let cacheWrapHandle: bigint | null = null;
+let rustWasmInitPromise: Promise<unknown> | null = null;
 
 /**
  * Cached session state.
@@ -66,8 +72,10 @@ export interface CachedKeys {
 interface CacheEnvelope {
   /** Encrypted keys (base64) */
   ciphertext: string;
-  /** Encryption nonce (base64) */
-  nonce: string;
+  /** Legacy encryption nonce (base64). Empty for Rust-wrapped v3 entries. */
+  nonce?: string;
+  /** Rust wrap format marker. Missing means legacy WebCrypto AES-GCM. */
+  wrapVersion?: 3;
   /** Expiration timestamp (ms since epoch, or 0 for no expiry) */
   expiresAt: number;
 }
@@ -91,23 +99,33 @@ function fromBase64(base64: string): Uint8Array {
   return bytes;
 }
 
-/**
- * Get or create the in-memory encryption key.
- * The key is non-extractable and never persisted.
- */
-async function getCacheEncryptionKey(): Promise<CryptoKey> {
-  if (cacheEncryptionKey) {
-    return cacheEncryptionKey;
+async function ensureRustWasmInitialized(): Promise<void> {
+  rustWasmInitPromise ??= initRustWasm();
+  await rustWasmInitPromise;
+}
+
+function consumeBytesResult(
+  result: { readonly code: number; readonly bytes: Uint8Array; free(): void },
+  label: string,
+): Uint8Array {
+  try {
+    if (result.code !== 0) {
+      throw new Error(`${label} failed (rust code ${String(result.code)})`);
+    }
+    return new Uint8Array(result.bytes);
+  } finally {
+    result.free();
+  }
+}
+
+async function getCacheWrapHandle(): Promise<bigint> {
+  if (cacheWrapHandle !== null) {
+    return cacheWrapHandle;
   }
 
-  // Generate a random AES-256 key
-  cacheEncryptionKey = await crypto.subtle.generateKey(
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  );
-
-  return cacheEncryptionKey;
+  await ensureRustWasmInitialized();
+  cacheWrapHandle = createSessionCacheWrapHandle();
+  return cacheWrapHandle;
 }
 
 /**
@@ -140,25 +158,21 @@ export async function cacheKeys(keys: CachedKeys): Promise<void> {
   }
 
   try {
-    const encKey = await getCacheEncryptionKey();
+    const handle = await getCacheWrapHandle();
     const plaintext = new TextEncoder().encode(JSON.stringify(keys));
     try {
-      // Generate random nonce
-      const nonce = crypto.getRandomValues(new Uint8Array(12));
-
-      // Encrypt
-      const ciphertext = await crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
-        encKey,
-        toArrayBufferView(plaintext),
+      const wrapped = consumeBytesResult(
+        wrapSessionCacheBlob(handle, plaintext),
+        'wrapSessionCacheBlob',
       );
 
       // Calculate expiration (0 = no expiry for "until tab close")
       const expiresAt = durationMs === Infinity ? 0 : Date.now() + durationMs;
 
       const envelope: CacheEnvelope = {
-        ciphertext: toBase64(new Uint8Array(ciphertext)),
-        nonce: toBase64(nonce),
+        ciphertext: toBase64(wrapped),
+        nonce: '',
+        wrapVersion: 3,
         expiresAt,
       };
 
@@ -206,26 +220,24 @@ export async function getCachedKeys(): Promise<CachedKeys | null> {
       return null;
     }
 
-    if (!cacheEncryptionKey) {
-      log.debug('No in-memory cache encryption key available');
+    if (cacheWrapHandle === null) {
+      log.debug('No in-memory cache wrap handle available');
       clearCachedKeys();
       return null;
     }
 
-    // Get the in-memory encryption key
-    const encKey = await getCacheEncryptionKey();
+    if (envelope.wrapVersion !== 3) {
+      log.info('Discarding legacy WebCrypto-wrapped cached keys');
+      clearCachedKeys();
+      return null;
+    }
 
-    // Decrypt
-    const ciphertext = fromBase64(envelope.ciphertext);
-    const nonce = fromBase64(envelope.nonce);
-
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: toArrayBufferView(nonce) },
-      encKey,
-      toArrayBufferView(ciphertext),
+    const handle = await getCacheWrapHandle();
+    const wrapped = fromBase64(envelope.ciphertext);
+    const plaintextBytes = consumeBytesResult(
+      unwrapSessionCacheBlob(handle, wrapped),
+      'unwrapSessionCacheBlob',
     );
-
-    const plaintextBytes = new Uint8Array(plaintext);
     try {
       const parsed = JSON.parse(
         new TextDecoder().decode(plaintextBytes),
@@ -281,7 +293,14 @@ export function clearCachedKeys(): void {
  * Called on logout to ensure keys cannot be recovered.
  */
 export function clearCacheEncryptionKey(): void {
-  cacheEncryptionKey = null;
+  if (cacheWrapHandle !== null) {
+    try {
+      closeSessionCacheWrapHandle(cacheWrapHandle);
+    } catch (error) {
+      log.warn('Failed to close cache wrap handle', { error });
+    }
+  }
+  cacheWrapHandle = null;
   clearCachedKeys();
   log.debug('Cleared cache encryption key');
 }
@@ -291,7 +310,7 @@ export function clearCacheEncryptionKey(): void {
  * Used to determine if we can skip password entry.
  */
 export function hasCachedKeys(): boolean {
-  if (!cacheEncryptionKey) {
+  if (cacheWrapHandle === null) {
     return false;
   }
 
