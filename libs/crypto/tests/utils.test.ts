@@ -1,5 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import sodium from 'libsodium-wrappers-sumo';
+import { describe, it, expect } from 'vitest';
 import {
   concat,
   constantTimeEqual,
@@ -11,9 +10,10 @@ import {
   fromBytes,
 } from '../src/utils';
 
-beforeAll(async () => {
-  await sodium.ready;
-});
+// Wave 4B (commit 92271f1) removed libsodium-wrappers-sumo from
+// libs/crypto's runtime dependency set; the helpers under test now use
+// browser crypto + TextEncoder + btoa/atob exclusively. The previous
+// `beforeAll(await sodium.ready)` shim is no longer needed.
 
 describe('utils', () => {
   describe('concat', () => {
