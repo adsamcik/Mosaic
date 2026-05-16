@@ -28,14 +28,22 @@ try {
     # Deterministic WASM artifacts across hosts (Windows MSVC vs Linux):
     # --remap-path-prefix collapses absolute build paths into stable
     # relative tokens so embedded path strings do not leak the host
-    # filesystem layout. Combined with `lto = "fat"` + `codegen-units = 1`
-    # in [profile.release] (Cargo.toml), the wasm-rebuild-invariance CI
-    # job sees byte-identical bytes regardless of runner host.
+    # filesystem layout or host target triple. Combined with
+    # `lto = "fat"` + `codegen-units = 1` in [profile.release]
+    # (Cargo.toml), the wasm-rebuild-invariance CI job sees byte-identical
+    # bytes regardless of runner host.
     $RustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { try { rustup show home } catch { Join-Path $env:USERPROFILE ".rustup" } }
     $CargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE ".cargo" }
+    $RustVersionLine = rustc -V
+    $RustVersion = if ($RustVersionLine -match "rustc\s+(\S+)") { $Matches[1] } else { "" }
+    $HostTriple = (rustc -Vv | Select-String "^host:" | ForEach-Object { $_.Line -split "\s+" } | Select-Object -Last 1)
+    $ToolchainDir = Join-Path $RustupHome "toolchains/$RustVersion-$HostTriple"
+    $ChannelToolchainDir = Join-Path $RustupHome "toolchains/$RustVersion"
     $Remap = @(
         "--remap-path-prefix=$ProjectRoot=mosaic"
         "--remap-path-prefix=$CargoHome=cargo-home"
+        "--remap-path-prefix=$ToolchainDir=rust-toolchain"
+        "--remap-path-prefix=$ChannelToolchainDir=rust-toolchain"
         "--remap-path-prefix=$RustupHome=rustup-home"
     ) -join ' '
 

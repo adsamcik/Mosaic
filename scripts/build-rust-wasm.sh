@@ -28,17 +28,25 @@ fi
 
 # Deterministic WASM artifacts across hosts (Windows MSVC vs Linux):
 #   * --remap-path-prefix collapses absolute build paths (CWD + cargo registry +
-#     rustup sysroot) into stable relative tokens so embedded path strings do
-#     not leak the host filesystem layout.
+#     rustup sysroot, INCLUDING the host-specific toolchain triple) into stable
+#     relative tokens so embedded path strings do not leak the host filesystem
+#     layout or the host target triple.
 #   * `lto = "fat"` in [profile.release] is set workspace-wide; combined with
 #     codegen-units=1 it yields a single deterministic LTO pass.
 # Result: byte-identical apps/web/src/generated/mosaic-wasm/*.wasm on Windows
 # and Linux runners. Verified by the wasm-rebuild-invariance CI job.
 rustup_home="$(rustup show home 2>/dev/null || echo "${RUSTUP_HOME:-${HOME:-}}/.rustup")"
 cargo_home="${CARGO_HOME:-${HOME:-}/.cargo}"
+host_triple="$(rustc -Vv | awk '/^host:/{print $2}')"
+toolchain_dir="${rustup_home}/toolchains/$(rustc -V | awk '{print $2}')-${host_triple}"
+# Some platforms include a different toolchain dir name when rustup uses a
+# channel rather than a fixed version; we cover both.
+channel_toolchain_dir="${rustup_home}/toolchains/$(rustc -V | awk '{print $2}')"
 remap=(
   "--remap-path-prefix=${PROJECT_ROOT}=mosaic"
   "--remap-path-prefix=${cargo_home}=cargo-home"
+  "--remap-path-prefix=${toolchain_dir}=rust-toolchain"
+  "--remap-path-prefix=${channel_toolchain_dir}=rust-toolchain"
   "--remap-path-prefix=${rustup_home}=rustup-home"
 )
 RUSTFLAGS="${RUSTFLAGS:-} ${remap[*]}" \

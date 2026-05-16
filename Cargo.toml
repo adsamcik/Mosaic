@@ -30,7 +30,13 @@ expect_used = "deny"
 
 [profile.release]
 codegen-units = 1
-debug = "line-tables-only"
+# debug = "none" is critical for cross-host WASM byte-determinism: any
+# debug info embeds host absolute paths whose separators differ (\ on
+# Windows vs / on Linux). --remap-path-prefix collapses the prefix but
+# cannot rewrite separators inside the rest of the path. With
+# `debug = "none"` the section is omitted entirely — panic messages still
+# carry their string content but no source coordinates.
+debug = "none"
 lto = "fat"
 opt-level = "z"
 panic = "abort"
