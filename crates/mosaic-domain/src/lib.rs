@@ -896,10 +896,11 @@ impl MemberRosterTranscript {
 pub fn canonical_member_roster_transcript_bytes(
     transcript: &MemberRosterTranscript,
 ) -> Result<Vec<u8>, MemberRosterError> {
-    let member_count = u32::try_from(transcript.members().len())
-        .map_err(|_| MemberRosterError::LengthTooLarge {
+    let member_count = u32::try_from(transcript.members().len()).map_err(|_| {
+        MemberRosterError::LengthTooLarge {
             actual: transcript.members().len(),
-        })?;
+        }
+    })?;
 
     let mut bytes = Vec::with_capacity(
         MEMBER_ROSTER_SIGN_CONTEXT.len()
@@ -924,7 +925,6 @@ pub fn canonical_member_roster_transcript_bytes(
 
     Ok(bytes)
 }
-
 
 /// Builds deterministic client-local canonical metadata sidecar bytes.
 ///

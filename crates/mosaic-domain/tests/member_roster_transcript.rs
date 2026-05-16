@@ -67,15 +67,20 @@ fn member_role_try_from_byte_rejects_unknown_bytes() {
 fn empty_roster_has_stable_55_byte_layout() {
     let transcript = MemberRosterTranscript::new(ALBUM_A, 1_u32, 0_i64, Vec::new())
         .expect("empty roster is allowed");
-    let bytes =
-        canonical_member_roster_transcript_bytes(&transcript).expect("canonical bytes");
+    let bytes = canonical_member_roster_transcript_bytes(&transcript).expect("canonical bytes");
 
     // 22 (context) + 1 (version) + 16 (album) + 4 (epoch) + 8 (roster_version) + 4 (count) = 55
     assert_eq!(bytes.len(), 55);
 
-    assert_eq!(&bytes[..MEMBER_ROSTER_SIGN_CONTEXT.len()], MEMBER_ROSTER_SIGN_CONTEXT);
+    assert_eq!(
+        &bytes[..MEMBER_ROSTER_SIGN_CONTEXT.len()],
+        MEMBER_ROSTER_SIGN_CONTEXT
+    );
     assert_eq!(MEMBER_ROSTER_SIGN_CONTEXT, b"Mosaic_MemberRoster_v1");
-    assert_eq!(bytes[MEMBER_ROSTER_SIGN_CONTEXT.len()], MEMBER_ROSTER_TRANSCRIPT_VERSION);
+    assert_eq!(
+        bytes[MEMBER_ROSTER_SIGN_CONTEXT.len()],
+        MEMBER_ROSTER_TRANSCRIPT_VERSION
+    );
     assert_eq!(MEMBER_ROSTER_TRANSCRIPT_VERSION, 1);
 
     let mut cursor = MEMBER_ROSTER_SIGN_CONTEXT.len() + 1;
@@ -94,14 +99,22 @@ fn empty_roster_has_stable_55_byte_layout() {
 fn three_member_roster_has_stable_106_byte_layout() {
     // 55 (header) + 3 * 17 (member entries) = 106
     let entries = vec![
-        MemberRosterEntry { member_id: MEMBER_X, role: MemberRole::Owner },
-        MemberRosterEntry { member_id: MEMBER_Y, role: MemberRole::Editor },
-        MemberRosterEntry { member_id: MEMBER_Z, role: MemberRole::Viewer },
+        MemberRosterEntry {
+            member_id: MEMBER_X,
+            role: MemberRole::Owner,
+        },
+        MemberRosterEntry {
+            member_id: MEMBER_Y,
+            role: MemberRole::Editor,
+        },
+        MemberRosterEntry {
+            member_id: MEMBER_Z,
+            role: MemberRole::Viewer,
+        },
     ];
     let transcript = MemberRosterTranscript::new(ALBUM_A, 7_u32, 42_i64, entries)
         .expect("three-member roster is allowed");
-    let bytes =
-        canonical_member_roster_transcript_bytes(&transcript).expect("canonical bytes");
+    let bytes = canonical_member_roster_transcript_bytes(&transcript).expect("canonical bytes");
 
     assert_eq!(bytes.len(), 55 + 3 * 17);
     assert_eq!(bytes.len(), 106);
@@ -129,14 +142,32 @@ fn roster_canonicalisation_sorts_members_by_id_bytes() {
     // Server cannot reorder entries to swap which member_id's role a
     // signature applies to — the canonical bytes are sort-stable.
     let entries_a = vec![
-        MemberRosterEntry { member_id: MEMBER_X, role: MemberRole::Owner },
-        MemberRosterEntry { member_id: MEMBER_Y, role: MemberRole::Editor },
-        MemberRosterEntry { member_id: MEMBER_Z, role: MemberRole::Viewer },
+        MemberRosterEntry {
+            member_id: MEMBER_X,
+            role: MemberRole::Owner,
+        },
+        MemberRosterEntry {
+            member_id: MEMBER_Y,
+            role: MemberRole::Editor,
+        },
+        MemberRosterEntry {
+            member_id: MEMBER_Z,
+            role: MemberRole::Viewer,
+        },
     ];
     let entries_b = vec![
-        MemberRosterEntry { member_id: MEMBER_Z, role: MemberRole::Viewer },
-        MemberRosterEntry { member_id: MEMBER_X, role: MemberRole::Owner },
-        MemberRosterEntry { member_id: MEMBER_Y, role: MemberRole::Editor },
+        MemberRosterEntry {
+            member_id: MEMBER_Z,
+            role: MemberRole::Viewer,
+        },
+        MemberRosterEntry {
+            member_id: MEMBER_X,
+            role: MemberRole::Owner,
+        },
+        MemberRosterEntry {
+            member_id: MEMBER_Y,
+            role: MemberRole::Editor,
+        },
     ];
     let a = canonical_member_roster_transcript_bytes(
         &MemberRosterTranscript::new(ALBUM_A, 1, 0, entries_a).expect("a"),
@@ -152,13 +183,21 @@ fn roster_canonicalisation_sorts_members_by_id_bytes() {
 #[test]
 fn roster_canonicalisation_rejects_duplicate_member_ids() {
     let entries = vec![
-        MemberRosterEntry { member_id: MEMBER_X, role: MemberRole::Owner },
-        MemberRosterEntry { member_id: MEMBER_X, role: MemberRole::Editor },
+        MemberRosterEntry {
+            member_id: MEMBER_X,
+            role: MemberRole::Owner,
+        },
+        MemberRosterEntry {
+            member_id: MEMBER_X,
+            role: MemberRole::Editor,
+        },
     ];
     let result = MemberRosterTranscript::new(ALBUM_A, 1, 0, entries);
     assert_eq!(
         result,
-        Err(MemberRosterError::DuplicateMemberId { member_id: MEMBER_X }),
+        Err(MemberRosterError::DuplicateMemberId {
+            member_id: MEMBER_X
+        }),
     );
 }
 
@@ -254,8 +293,14 @@ fn roster_differs_on_field_changes() {
         5_u32,
         1_i64,
         vec![
-            MemberRosterEntry { member_id: MEMBER_X, role: MemberRole::Editor },
-            MemberRosterEntry { member_id: MEMBER_Y, role: MemberRole::Viewer },
+            MemberRosterEntry {
+                member_id: MEMBER_X,
+                role: MemberRole::Editor,
+            },
+            MemberRosterEntry {
+                member_id: MEMBER_Y,
+                role: MemberRole::Viewer,
+            },
         ],
     )
     .expect("added");
@@ -303,13 +348,11 @@ fn roster_accessors_return_construction_inputs() {
 
 #[test]
 fn roster_handles_extreme_roster_version_values() {
-    let max =
-        MemberRosterTranscript::new(ALBUM_A, u32::MAX, i64::MAX, Vec::new()).expect("max");
+    let max = MemberRosterTranscript::new(ALBUM_A, u32::MAX, i64::MAX, Vec::new()).expect("max");
     let max_bytes = canonical_member_roster_transcript_bytes(&max).expect("max bytes");
     assert_eq!(max_bytes.len(), 55);
 
-    let min =
-        MemberRosterTranscript::new(ALBUM_A, 0_u32, i64::MIN, Vec::new()).expect("min");
+    let min = MemberRosterTranscript::new(ALBUM_A, 0_u32, i64::MIN, Vec::new()).expect("min");
     let min_bytes = canonical_member_roster_transcript_bytes(&min).expect("min bytes");
     assert_eq!(min_bytes.len(), 55);
     assert_ne!(max_bytes, min_bytes);

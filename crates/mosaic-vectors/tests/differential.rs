@@ -27,8 +27,7 @@ use mosaic_crypto::{
 };
 use mosaic_domain::{
     EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, ShardTier,
-    TombstoneTranscript, canonical_manifest_transcript_bytes,
-    canonical_tombstone_transcript_bytes,
+    TombstoneTranscript, canonical_manifest_transcript_bytes, canonical_tombstone_transcript_bytes,
 };
 use mosaic_vectors::{
     ParsedVector, default_corpus_dir, load_all, load_vector,
@@ -661,7 +660,6 @@ fn manifest_transcript_vector_matches_rust_canonical_bytes() {
     );
 }
 
-
 #[test]
 fn tombstone_signature_vector_locks_transcript_and_ed25519_signature() {
     // Cross-client lock for audit `sync C2` (batch 5e — A2). The Ed25519
@@ -673,7 +671,11 @@ fn tombstone_signature_vector_locks_transcript_and_ed25519_signature() {
     let parsed = load("tombstone_signature.json");
     let vector = TombstoneSignatureVector::from(&parsed).expect("tombstone_signature vector");
 
-    assert_eq!(vector.signing_seed.len(), 32, "signing seed must be 32 bytes");
+    assert_eq!(
+        vector.signing_seed.len(),
+        32,
+        "signing seed must be 32 bytes"
+    );
     assert_eq!(vector.album_id.len(), 16, "album_id must be 16 bytes");
     assert_eq!(vector.photo_id.len(), 16, "photo_id must be 16 bytes");
 
@@ -682,12 +684,8 @@ fn tombstone_signature_vector_locks_transcript_and_ed25519_signature() {
     album_id.copy_from_slice(&vector.album_id);
     let mut photo_id = [0_u8; 16];
     photo_id.copy_from_slice(&vector.photo_id);
-    let transcript = TombstoneTranscript::new(
-        album_id,
-        vector.epoch_id,
-        photo_id,
-        vector.version_created,
-    );
+    let transcript =
+        TombstoneTranscript::new(album_id, vector.epoch_id, photo_id, vector.version_created);
     let transcript_bytes = canonical_tombstone_transcript_bytes(&transcript);
     assert_eq!(
         transcript_bytes.len(),

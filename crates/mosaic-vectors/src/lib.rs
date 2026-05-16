@@ -1183,8 +1183,7 @@ pub mod vectors {
         /// Returns [`VectorLoadError`] on missing fields or invalid hex.
         pub fn from(parsed: &ParsedVector) -> Result<Self, VectorLoadError> {
             let inputs: TombstoneInputs = extract(&parsed.document, "inputs", &parsed.path)?;
-            let expected: TombstoneExpected =
-                extract(&parsed.document, "expected", &parsed.path)?;
+            let expected: TombstoneExpected = extract(&parsed.document, "expected", &parsed.path)?;
             Ok(Self {
                 signing_seed: decode_hex(&inputs.signing_seed_hex, "signingSeedHex", &parsed.path)?,
                 album_id: decode_hex(&inputs.album_id_hex, "albumIdHex", &parsed.path)?,
