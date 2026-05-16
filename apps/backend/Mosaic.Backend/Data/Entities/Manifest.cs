@@ -22,6 +22,25 @@ public class Manifest
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     /// <summary>
+    /// Ed25519 signature over the canonical tombstone transcript
+    /// (mosaic-domain: <c>Mosaic_Tombstone_v1 || version || album || epoch ||
+    /// photo || version_created</c>). NULL when the manifest is live or when
+    /// the row was soft-deleted by a pre-A2 client without signing. The
+    /// client that initiated the delete must sign this transcript with the
+    /// per-epoch <c>ManifestSigningSecretKey</c>; the sync client verifies
+    /// the signature against the album's published epoch signing pubkey
+    /// before purging local state (audit <c>sync C2</c>).
+    /// </summary>
+    public byte[]? TombstoneSignature { get; set; }
+
+    /// <summary>
+    /// Epoch ID under which <see cref="TombstoneSignature"/> was produced.
+    /// The sync client uses this to look up the right signing pubkey to
+    /// verify against. NULL when no tombstone signature is present.
+    /// </summary>
+    public int? TombstoneSignerEpochId { get; set; }
+
+    /// <summary>
     /// When the photo manifest will be automatically deleted. Null means no expiration.
     /// </summary>
     public DateTimeOffset? ExpiresAt { get; set; }

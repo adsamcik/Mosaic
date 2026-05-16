@@ -93,3 +93,21 @@ public record UpdateManifestMetadataRequest(
     [MaxLength(256)] string Signature,
     [MaxLength(128)] string SignerPubkey
 );
+
+/// <summary>
+/// Optional request body for the soft-delete (tombstone) endpoint
+/// (batch 5b — A2). When present, the client supplies an Ed25519 signature
+/// over the canonical tombstone transcript
+/// (<c>Mosaic_Tombstone_v1 || version || album || epoch || photo ||
+/// version_created</c>) computed with the per-epoch signing key. The sync
+/// client verifies the signature against the album's published signing
+/// pubkey for <paramref name="SignerEpochId"/> before purging local state.
+///
+/// All fields are nullable so pre-A2 clients (no body, or body without
+/// signature) keep working — the server stores NULL and v1 sync responses
+/// are unchanged. Closes audit <c>sync C2 (unauthenticated tombstones)</c>.
+/// </summary>
+public record DeleteManifestRequest(
+    [MaxLength(128)] string? TombstoneSignature,
+    int? SignerEpochId
+);

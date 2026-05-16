@@ -460,6 +460,13 @@ public class AlbumsController : ControllerBase
                 m.EncryptedMeta,
                 m.Signature,
                 m.SignerPubkey,
+                // A2 audit "sync C2": tombstone signature + signer-epoch
+                // surfaced so the sync client can verify the deletion
+                // against the album's published epoch signing pubkey
+                // before purging local state. NULL on live rows and on
+                // pre-A2 tombstones.
+                m.TombstoneSignature,
+                m.TombstoneSignerEpochId,
                 m.ExpiresAt,
                 // Legacy format for backward compatibility
                 ShardIds = m.ManifestShards

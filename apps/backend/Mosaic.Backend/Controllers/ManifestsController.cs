@@ -678,10 +678,16 @@ public class ManifestsController : ControllerBase
     }
 
     /// <summary>
-    /// Soft-delete a manifest
+    /// Soft-delete a manifest. Optionally accepts a signed tombstone
+    /// transcript (batch 5b — A2). When the client supplies a signature,
+    /// the server stores it on the row; sync responses surface it so other
+    /// clients can verify before purging local state (closes audit
+    /// <c>sync C2 (unauthenticated tombstones)</c>). Pre-A2 clients omit
+    /// the body — the field stays NULL and the legacy unsigned-delete
+    /// behavior is preserved during migration.
     /// </summary>
     [HttpDelete("{manifestId}")]
-    public async Task<IActionResult> Delete(Guid manifestId)
+    public async Task<IActionResult> Delete(Guid manifestId, [FromBody] DeleteManifestRequest? request = null)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
@@ -723,6 +729,41 @@ public class ManifestsController : ControllerBase
             {
                 await _expirationService.EnforceManifestExpirationAsync(manifestId);
                 return StatusCode(StatusCodes.Status410Gone);
+            }
+
+            // A2: persist the signed tombstone transcript when supplied.
+            // Both fields must be present together. We do NOT verify the
+            // signature server-side — the canonical check is the client's
+            // pre-purge verification (zero-knowledge invariant: the server
+            // is never the authority on signature validity). Other client
+            // sessions verify the signature using the album's published
+            // epoch signing pubkey before acting on the tombstone.
+            if (request is not null
+                && !string.IsNullOrEmpty(request.TombstoneSignature)
+                && request.SignerEpochId is int signerEpochId)
+            {
+                if (!TryDecodeBase64(request.TombstoneSignature, out var signatureBytes)
+                    || signatureBytes.Length == 0)
+                {
+                    return Problem(
+                        detail: "tombstoneSignature must be valid base64 and non-empty",
+                        statusCode: StatusCodes.Status400BadRequest);
+                }
+                if (signatureBytes.Length != 64)
+                {
+                    return Problem(
+                        detail: "tombstoneSignature must be a 64-byte Ed25519 signature",
+                        statusCode: StatusCodes.Status400BadRequest);
+                }
+                manifest.TombstoneSignature = signatureBytes;
+                manifest.TombstoneSignerEpochId = signerEpochId;
+            }
+            else if (request is not null
+                && (!string.IsNullOrEmpty(request.TombstoneSignature) ^ request.SignerEpochId.HasValue))
+            {
+                return Problem(
+                    detail: "tombstoneSignature and signerEpochId must be supplied together or both omitted",
+                    statusCode: StatusCodes.Status400BadRequest);
             }
 
             // Soft delete
