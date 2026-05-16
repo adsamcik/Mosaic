@@ -1,3 +1,7 @@
+// Test-only allowlist: `expect()` is idiomatic for cross-client parity test
+// failure reporting; same convention as the other parity test modules.
+#![allow(clippy::expect_used)]
+
 use ciborium::value::Value;
 use mosaic_client::ClientErrorCode;
 use mosaic_crypto::{

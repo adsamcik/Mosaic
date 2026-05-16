@@ -1,3 +1,9 @@
+// Test-only allowlist: `expect()` is idiomatic for `assert!`-style failure
+// reporting in cross-client crypto tests, and `aes_gcm` 0.10 still uses
+// generic-array 0.14's `from_slice` until the workspace upgrades to
+// generic-array 1.x.
+#![allow(clippy::expect_used, deprecated)]
+
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce as AesGcmNonce, aead::Aead};
 use mosaic_crypto::{
     AES_GCM_NONCE_BYTES, SESSION_SALT_BYTES, SecretKey, Sha256Hasher,

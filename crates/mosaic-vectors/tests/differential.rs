@@ -204,9 +204,9 @@ fn tier_key_wrap_v2_vector_locks_aad_construction_and_round_trips() {
     );
 
     // 3. Round-trip wrap + unwrap via the public v2 API.
-    let mut tier_key_buf = vector.tier_key.clone();
+    let tier_key_buf = vector.tier_key.clone();
     let wrapped = wrap_tier_key_for_link_v2(
-        &mut tier_key_buf,
+        &tier_key_buf,
         tier,
         &link_keys.link_id,
         vector.epoch_id,
