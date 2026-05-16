@@ -31,7 +31,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     KEY_BYTES, LINK_ID_BYTES, LINK_SECRET_BYTES, LINK_TIER_KEY_AAD, MosaicCryptoError, SecretKey,
-    unwrap_secret_with_aad, wrap_secret_with_aad,
+    link_tier_key_aad_v2, unwrap_secret_with_aad, wrap_secret_with_aad,
 };
 
 /// Length of the XChaCha20-Poly1305 nonce embedded in every wrapped tier key.
@@ -199,6 +199,120 @@ pub fn unwrap_tier_key_from_link(
     full_wrapped.extend_from_slice(&wrapped.encrypted_key);
 
     unwrap_secret_with_aad(&full_wrapped, wrapping_key, LINK_TIER_KEY_AAD)
+}
+
+/// Wraps a 32-byte tier key for storage on a share-link record, binding
+/// the AEAD AAD to `(link_id, tier_byte, epoch_id)` so any server-side
+/// tampering of those plaintext fields invalidates the wrap.
+///
+/// Output layout matches [`wrap_tier_key_for_link`]: `nonce(24) ||
+/// encrypted_key(payload(32) || tag(16))` split apart so the caller can
+/// serialise the components independently. On-disk shape is unchanged
+/// from v1, so existing storage schemas accept v2 wraps unchanged; the
+/// only difference is which AAD was used to seal them.
+///
+/// Audit "share-link-create C1": v1 [`LINK_TIER_KEY_AAD`] bound only a
+/// constant protocol label, which let a hostile server swap a high-tier
+/// wrap into a low-tier slot or replay across links/epochs. The v2 AAD
+/// (see [`crate::link_tier_key_aad_v2`]) authenticates the link
+/// identity, tier byte, and epoch id alongside the ciphertext, so tier
+/// confinement and link/epoch binding become cryptographic invariants.
+///
+/// New callers should prefer this function over [`wrap_tier_key_for_link`].
+/// Migration is incremental — see [`unwrap_tier_key_from_link_v2`] which
+/// transparently accepts both v1 and v2 wraps on read so old share
+/// links keep working during a rolling caller migration.
+///
+/// # Errors
+/// * [`MosaicCryptoError::InvalidKeyLength`] if `tier_key` is not 32 bytes.
+/// * Any error propagated from [`crate::wrap_secret_with_aad`] (RNG / AEAD failures).
+pub fn wrap_tier_key_for_link_v2(
+    tier_key: &[u8],
+    tier: ShardTier,
+    link_id: &[u8; LINK_ID_BYTES],
+    epoch_id: u32,
+    wrapping_key: &SecretKey,
+) -> Result<WrappedTierKey, MosaicCryptoError> {
+    if tier_key.len() != KEY_BYTES {
+        return Err(MosaicCryptoError::InvalidKeyLength {
+            actual: tier_key.len(),
+        });
+    }
+
+    let aad = link_tier_key_aad_v2(link_id, tier.to_byte(), epoch_id);
+    let wrapped = wrap_secret_with_aad(tier_key, wrapping_key, &aad)?;
+
+    if wrapped.len() < LINK_WRAP_NONCE_BYTES {
+        return Err(MosaicCryptoError::WrappedKeyTooShort {
+            actual: wrapped.len(),
+        });
+    }
+
+    let mut nonce = [0_u8; LINK_WRAP_NONCE_BYTES];
+    nonce.copy_from_slice(&wrapped[..LINK_WRAP_NONCE_BYTES]);
+    let encrypted_key = wrapped[LINK_WRAP_NONCE_BYTES..].to_vec();
+
+    Ok(WrappedTierKey {
+        tier,
+        nonce,
+        encrypted_key,
+    })
+}
+
+/// Unwraps a tier key with the v2 AAD that authenticates
+/// `(link_id, tier_byte, epoch_id)`, transparently falling back to v1
+/// for wraps produced by [`wrap_tier_key_for_link`] before the v2
+/// migration.
+///
+/// **Dual-accept policy.** Attempts the v2 AAD first. On AEAD
+/// authentication failure, falls back to the legacy v1 AAD that bound
+/// only the protocol label. This keeps existing wraps readable while
+/// every NEW wrap can be bound to its tier, link, and epoch. Owner-
+/// initiated epoch rotation naturally migrates wraps to v2 over time.
+///
+/// Verifies that the stored `tier` matches `expected_tier` before
+/// attempting either AAD — the tier byte in the wrapped record is
+/// still trusted as a routing hint, but unlike v1 it is now
+/// additionally authenticated through the v2 AAD when present.
+///
+/// # Errors
+/// * [`MosaicCryptoError::LinkTierMismatch`] if `wrapped.tier != expected_tier`.
+/// * [`MosaicCryptoError::AuthenticationFailed`] if neither AAD verifies
+///   (genuine tampering OR wrong wrapping key OR mismatched link/epoch
+///   on a true-v2 wrap).
+/// * Any other error propagated from [`crate::unwrap_secret_with_aad`].
+pub fn unwrap_tier_key_from_link_v2(
+    wrapped: &WrappedTierKey,
+    expected_tier: ShardTier,
+    link_id: &[u8; LINK_ID_BYTES],
+    epoch_id: u32,
+    wrapping_key: &SecretKey,
+) -> Result<Zeroizing<Vec<u8>>, MosaicCryptoError> {
+    if wrapped.tier != expected_tier {
+        return Err(MosaicCryptoError::LinkTierMismatch {
+            expected: expected_tier.to_byte(),
+            actual: wrapped.tier.to_byte(),
+        });
+    }
+
+    let mut full_wrapped = Vec::with_capacity(wrapped.nonce.len() + wrapped.encrypted_key.len());
+    full_wrapped.extend_from_slice(&wrapped.nonce);
+    full_wrapped.extend_from_slice(&wrapped.encrypted_key);
+
+    let aad_v2 = link_tier_key_aad_v2(link_id, wrapped.tier.to_byte(), epoch_id);
+    match unwrap_secret_with_aad(&full_wrapped, wrapping_key, &aad_v2) {
+        Ok(plaintext) => Ok(plaintext),
+        Err(MosaicCryptoError::AuthenticationFailed) => {
+            // Backward compatibility: pre-A1 wraps used the legacy
+            // tier-and-link-agnostic AAD. Accept them so previously-
+            // distributed share links keep working. Any wrap that
+            // also fails v1 unwrap surfaces the AuthenticationFailed
+            // signal — the correct "ciphertext was tampered with"
+            // response.
+            unwrap_secret_with_aad(&full_wrapped, wrapping_key, LINK_TIER_KEY_AAD)
+        }
+        Err(other) => Err(other),
+    }
 }
 
 /// Computes `BLAKE2b(out_len = OutSize, key, msg)` matching libsodium's

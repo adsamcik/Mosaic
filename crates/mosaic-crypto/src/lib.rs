@@ -36,7 +36,7 @@ pub use sharing::{
 mod link_sharing;
 pub use link_sharing::{
     LinkKeys, WrappedTierKey, derive_link_keys, generate_link_secret, unwrap_tier_key_from_link,
-    wrap_tier_key_for_link,
+    unwrap_tier_key_from_link_v2, wrap_tier_key_for_link, wrap_tier_key_for_link_v2,
 };
 
 pub mod ts_canonical;
@@ -75,7 +75,62 @@ pub const ACCOUNT_KEY_WRAP_AAD: &[u8] = b"mosaic:l2-account-key:v1";
 
 /// AAD for L3 link-tier-key wraps under per-link BLAKE2b-derived wrapping key.
 /// Used by `wrap_tier_key_for_link` / `unwrap_tier_key_from_link`.
+///
+/// **Legacy (v1).** This constant binds nothing but the protocol label,
+/// which means a hostile server can swap the bytes of a high-tier wrap
+/// into a low-tier slot (or vice versa) and the AEAD MAC still verifies.
+/// Audit "share-link-create C1" — superseded by [`link_tier_key_aad_v2`]
+/// which additionally authenticates `(link_id, tier_byte, epoch_id)` as
+/// part of the AAD. The v1 constant remains for read-only fallback so
+/// existing share links continue to work; new wraps should use the v2
+/// variant of [`wrap_tier_key_for_link`].
 pub const LINK_TIER_KEY_AAD: &[u8] = b"mosaic:l3-link-tier-key:v1";
+
+/// Domain-separating prefix for the v2 link-tier-key AAD. See
+/// [`link_tier_key_aad_v2`] for the full AAD construction.
+///
+/// 26 bytes. The trailing version tag (`:v2`) is critical: v1 wraps
+/// authenticated with the legacy `LINK_TIER_KEY_AAD` cannot be
+/// silently interpreted as v2 because the AAD prefixes differ.
+pub const LINK_TIER_KEY_AAD_V2_PREFIX: &[u8] = b"mosaic:l3-link-tier-key:v2";
+
+/// Build the v2 link-tier-key AAD that authenticates the link identity,
+/// tier byte, and epoch id alongside the bytes being sealed.
+///
+/// Layout: `LINK_TIER_KEY_AAD_V2_PREFIX (26 bytes) || link_id (16 bytes)
+///          || tier_byte (1 byte) || epoch_id big-endian (4 bytes)`
+///
+/// Total length: 47 bytes. Concatenating these fields into the AAD
+/// converts tier confinement, link membership, and epoch binding from
+/// a non-cryptographic "trust the plaintext metadata stored next to
+/// the ciphertext" check into a cryptographic invariant: any
+/// server-side tampering of the tier, the epoch, or the link these
+/// wraps belong to causes AEAD verification to fail.
+///
+/// `link_id` is the 16-byte BLAKE2b-keyed hash produced by
+/// [`crate::derive_link_keys`] from the link secret; both sides know
+/// it without transmitting it (responder derives from URL fragment,
+/// owner derives at link creation).
+///
+/// `epoch_id` is the album epoch this wrapped tier key is bound to.
+/// Sealed under this AAD, an old-epoch wrap cannot be replayed into a
+/// new-epoch context.
+///
+/// Closes audit "share-link-create C1".
+#[must_use]
+pub fn link_tier_key_aad_v2(
+    link_id: &[u8; LINK_ID_BYTES],
+    tier_byte: u8,
+    epoch_id: u32,
+) -> Vec<u8> {
+    let mut aad =
+        Vec::with_capacity(LINK_TIER_KEY_AAD_V2_PREFIX.len() + LINK_ID_BYTES + 1 + 4);
+    aad.extend_from_slice(LINK_TIER_KEY_AAD_V2_PREFIX);
+    aad.extend_from_slice(link_id);
+    aad.push(tier_byte);
+    aad.extend_from_slice(&epoch_id.to_be_bytes());
+    aad
+}
 
 /// Backend LocalAuth username length limit.
 const MAX_AUTH_USERNAME_BYTES: usize = 256;

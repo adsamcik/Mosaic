@@ -7,8 +7,10 @@
 use std::collections::HashSet;
 
 use mosaic_crypto::{
-    LINK_ID_BYTES, LINK_SECRET_BYTES, LinkKeys, MosaicCryptoError, SecretKey, WrappedTierKey,
-    derive_link_keys, generate_link_secret, unwrap_tier_key_from_link, wrap_tier_key_for_link,
+    LINK_ID_BYTES, LINK_SECRET_BYTES, LINK_TIER_KEY_AAD_V2_PREFIX, LinkKeys, MosaicCryptoError,
+    SecretKey, WrappedTierKey, derive_link_keys, generate_link_secret, link_tier_key_aad_v2,
+    unwrap_tier_key_from_link, unwrap_tier_key_from_link_v2, wrap_tier_key_for_link,
+    wrap_tier_key_for_link_v2,
 };
 use mosaic_domain::ShardTier;
 
@@ -324,3 +326,282 @@ fn decode_nibble(c: u8) -> u8 {
         _ => panic!("invalid hex nibble: {c}"),
     }
 }
+
+// =============================================================================
+// V2 AAD tests — audit "share-link-create C1"
+// =============================================================================
+//
+// The v2 wrap binds (link_id, tier_byte, epoch_id) into the AEAD AAD so a
+// hostile server can no longer swap a high-tier wrap into a low-tier slot,
+// replay a wrap across links of the same owner, or replay an old-epoch wrap
+// into a new-epoch context. These tests pin down each of those properties.
+
+const TEST_LINK_ID_A: [u8; LINK_ID_BYTES] = [
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+];
+
+const TEST_LINK_ID_B: [u8; LINK_ID_BYTES] = [
+    0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00,
+];
+
+#[test]
+fn link_tier_key_aad_v2_layout_matches_spec() {
+    let aad = link_tier_key_aad_v2(&TEST_LINK_ID_A, ShardTier::Original.to_byte(), 0x01020304);
+
+    // Layout: prefix (26 bytes) || link_id (16) || tier (1) || epoch be (4) = 47 bytes.
+    assert_eq!(aad.len(), 26 + 16 + 1 + 4);
+    assert_eq!(&aad[..LINK_TIER_KEY_AAD_V2_PREFIX.len()], LINK_TIER_KEY_AAD_V2_PREFIX);
+    let after_prefix = &aad[LINK_TIER_KEY_AAD_V2_PREFIX.len()..];
+    assert_eq!(&after_prefix[..LINK_ID_BYTES], &TEST_LINK_ID_A);
+    assert_eq!(after_prefix[LINK_ID_BYTES], ShardTier::Original.to_byte());
+    assert_eq!(
+        &after_prefix[LINK_ID_BYTES + 1..LINK_ID_BYTES + 1 + 4],
+        &[0x01, 0x02, 0x03, 0x04],
+    );
+}
+
+#[test]
+fn v2_wrap_unwrap_round_trip() {
+    for tier in [
+        ShardTier::Thumbnail,
+        ShardTier::Preview,
+        ShardTier::Original,
+    ] {
+        let tier_key = random_tier_key();
+        let wrapping_key = fresh_wrapping_key(0x71);
+
+        let wrapped = match wrap_tier_key_for_link_v2(
+            &tier_key,
+            tier,
+            &TEST_LINK_ID_A,
+            42,
+            &wrapping_key,
+        ) {
+            Ok(value) => value,
+            Err(error) => panic!("v2 wrap should succeed: {error:?}"),
+        };
+        assert_eq!(wrapped.tier, tier);
+        assert_eq!(wrapped.nonce.len(), 24);
+        assert_eq!(wrapped.encrypted_key.len(), TIER_KEY_BYTES + 16);
+
+        let plaintext = match unwrap_tier_key_from_link_v2(
+            &wrapped,
+            tier,
+            &TEST_LINK_ID_A,
+            42,
+            &wrapping_key,
+        ) {
+            Ok(value) => value,
+            Err(error) => panic!("v2 unwrap should succeed: {error:?}"),
+        };
+        assert_eq!(plaintext.as_slice(), tier_key.as_slice());
+    }
+}
+
+#[test]
+fn v2_unwrap_rejects_swapped_link_id() {
+    let tier_key = random_tier_key();
+    let wrapping_key = fresh_wrapping_key(0x72);
+
+    let wrapped = match wrap_tier_key_for_link_v2(
+        &tier_key,
+        ShardTier::Original,
+        &TEST_LINK_ID_A,
+        7,
+        &wrapping_key,
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("v2 wrap should succeed: {error:?}"),
+    };
+
+    match unwrap_tier_key_from_link_v2(
+        &wrapped,
+        ShardTier::Original,
+        &TEST_LINK_ID_B, // wrong link
+        7,
+        &wrapping_key,
+    ) {
+        Err(MosaicCryptoError::AuthenticationFailed) => {}
+        other => panic!("expected AuthenticationFailed for cross-link unwrap, got {other:?}"),
+    }
+}
+
+#[test]
+fn v2_unwrap_rejects_wrong_epoch_id() {
+    let tier_key = random_tier_key();
+    let wrapping_key = fresh_wrapping_key(0x73);
+
+    let wrapped = match wrap_tier_key_for_link_v2(
+        &tier_key,
+        ShardTier::Preview,
+        &TEST_LINK_ID_A,
+        12,
+        &wrapping_key,
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("v2 wrap should succeed: {error:?}"),
+    };
+
+    match unwrap_tier_key_from_link_v2(
+        &wrapped,
+        ShardTier::Preview,
+        &TEST_LINK_ID_A,
+        13, // wrong epoch
+        &wrapping_key,
+    ) {
+        Err(MosaicCryptoError::AuthenticationFailed) => {}
+        other => panic!("expected AuthenticationFailed for cross-epoch unwrap, got {other:?}"),
+    }
+}
+
+#[test]
+fn v2_unwrap_rejects_tier_mismatch() {
+    let tier_key = random_tier_key();
+    let wrapping_key = fresh_wrapping_key(0x74);
+
+    let wrapped = match wrap_tier_key_for_link_v2(
+        &tier_key,
+        ShardTier::Thumbnail,
+        &TEST_LINK_ID_A,
+        5,
+        &wrapping_key,
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("v2 wrap should succeed: {error:?}"),
+    };
+
+    // Caller-asserted tier mismatch is caught before AEAD, returning the
+    // explicit LinkTierMismatch enum (same behavior as v1 unwrap).
+    match unwrap_tier_key_from_link_v2(
+        &wrapped,
+        ShardTier::Preview,
+        &TEST_LINK_ID_A,
+        5,
+        &wrapping_key,
+    ) {
+        Err(MosaicCryptoError::LinkTierMismatch { expected, actual }) => {
+            assert_eq!(expected, ShardTier::Preview.to_byte());
+            assert_eq!(actual, ShardTier::Thumbnail.to_byte());
+        }
+        other => panic!("expected LinkTierMismatch, got {other:?}"),
+    }
+}
+
+#[test]
+fn v2_unwrap_rejects_forged_tier_byte() {
+    // A hostile server could swap the plaintext `tier` byte on the wrap
+    // record. With v2 AAD the tier is part of what's authenticated, so
+    // the unwrap fails even when the caller's `expected_tier` matches
+    // the (forged) wrap.tier — because the AAD computed over the forged
+    // tier won't equal the AAD the wrap was sealed under.
+    let tier_key = random_tier_key();
+    let wrapping_key = fresh_wrapping_key(0x75);
+
+    let mut wrapped = match wrap_tier_key_for_link_v2(
+        &tier_key,
+        ShardTier::Original, // sealed as tier 3
+        &TEST_LINK_ID_A,
+        99,
+        &wrapping_key,
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("v2 wrap should succeed: {error:?}"),
+    };
+    // Forge: relabel as tier 1 thumbnail.
+    wrapped.tier = ShardTier::Thumbnail;
+
+    match unwrap_tier_key_from_link_v2(
+        &wrapped,
+        ShardTier::Thumbnail, // caller asks for tier 1
+        &TEST_LINK_ID_A,
+        99,
+        &wrapping_key,
+    ) {
+        Err(MosaicCryptoError::AuthenticationFailed) => {}
+        other => panic!("expected AuthenticationFailed for forged tier byte, got {other:?}"),
+    }
+}
+
+#[test]
+fn v2_unwrap_accepts_v1_wrap_back_compat() {
+    // Existing share links wrapped under the legacy v1 AAD must still
+    // unwrap cleanly via the v2 unwrap path so the rolling caller
+    // migration is non-disruptive.
+    let tier_key = random_tier_key();
+    let wrapping_key = fresh_wrapping_key(0x76);
+
+    let wrapped = unwrap_wrapped(wrap_tier_key_for_link(
+        &tier_key,
+        ShardTier::Original,
+        &wrapping_key,
+    ));
+
+    let plaintext = match unwrap_tier_key_from_link_v2(
+        &wrapped,
+        ShardTier::Original,
+        &TEST_LINK_ID_A, // arbitrary — v1 AAD ignores it
+        123,             // arbitrary — v1 AAD ignores it
+        &wrapping_key,
+    ) {
+        Ok(value) => value,
+        Err(error) => {
+            panic!("v2 unwrap must accept v1-wrapped bytes for back-compat: {error:?}")
+        }
+    };
+    assert_eq!(plaintext.as_slice(), tier_key.as_slice());
+}
+
+#[test]
+fn v2_unwrap_rejects_v1_wrap_with_wrong_wrapping_key() {
+    // Back-compat path must NOT silently accept a v1 wrap that was
+    // sealed under a different wrapping key.
+    let tier_key = random_tier_key();
+    let correct = fresh_wrapping_key(0x77);
+    let wrong = fresh_wrapping_key(0x78);
+
+    let wrapped = unwrap_wrapped(wrap_tier_key_for_link(
+        &tier_key,
+        ShardTier::Original,
+        &correct,
+    ));
+
+    match unwrap_tier_key_from_link_v2(
+        &wrapped,
+        ShardTier::Original,
+        &TEST_LINK_ID_A,
+        1,
+        &wrong,
+    ) {
+        Err(MosaicCryptoError::AuthenticationFailed) => {}
+        other => {
+            panic!("expected AuthenticationFailed for wrong wrapping key on v1 fallback, got {other:?}")
+        }
+    }
+}
+
+#[test]
+fn v1_unwrap_rejects_v2_wrap_no_silent_downgrade() {
+    // Mirror property: a v2 wrap must NOT round-trip through the legacy
+    // v1 unwrap. This is required so an attacker who managed to get a
+    // legacy code path to read a v2 wrap can't strip the AAD-binding
+    // by downgrading the unwrap function.
+    let tier_key = random_tier_key();
+    let wrapping_key = fresh_wrapping_key(0x79);
+
+    let wrapped = match wrap_tier_key_for_link_v2(
+        &tier_key,
+        ShardTier::Original,
+        &TEST_LINK_ID_A,
+        7,
+        &wrapping_key,
+    ) {
+        Ok(value) => value,
+        Err(error) => panic!("v2 wrap should succeed: {error:?}"),
+    };
+
+    match unwrap_tier_key_from_link(&wrapped, ShardTier::Original, &wrapping_key) {
+        Err(MosaicCryptoError::AuthenticationFailed) => {}
+        other => panic!("expected AuthenticationFailed when v1 unwrap sees v2 wrap, got {other:?}"),
+    }
+}
+
