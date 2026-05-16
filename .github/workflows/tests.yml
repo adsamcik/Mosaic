@@ -233,6 +233,9 @@ jobs:
       - name: Run rust-cutover-boundary PowerShell architecture guard
         run: pwsh ./tests/architecture/rust-cutover-boundary.ps1
 
+      - name: Run dotnet-no-crypto-bypass architecture guard
+        run: bash ./tests/architecture/dotnet-no-crypto-bypass.sh
+
       - name: Install wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.118 --locked
 

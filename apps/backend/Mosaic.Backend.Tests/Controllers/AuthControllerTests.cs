@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Mosaic.Backend.Crypto;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Data;
@@ -23,6 +24,8 @@ namespace Mosaic.Backend.Tests.Controllers;
 
 public class AuthControllerTests
 {
+    private static readonly Lazy<RustCoreHost> RustHost = new(() => new RustCoreHost(NullLogger<RustCoreHost>.Instance));
+
     private static IConfiguration CreateConfig(string? serverSecret = null)
     {
         var configValues = new Dictionary<string, string?>
@@ -50,7 +53,7 @@ public class AuthControllerTests
         var httpContext = new DefaultHttpContext();
         httpContext.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(remoteIp ?? "127.0.0.1");
 
-        return new AuthController(db, config, logger, env, cache)
+        return new AuthController(db, config, logger, env, cache, RustHost.Value)
         {
             ControllerContext = new ControllerContext
             {

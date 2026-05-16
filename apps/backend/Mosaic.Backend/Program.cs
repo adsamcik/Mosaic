@@ -16,6 +16,7 @@ using System.Security.Cryptography;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Mosaic.Backend.Crypto;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -53,6 +54,7 @@ builder.Services.AddOptions<IdempotencyOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<IdempotencyOptions>, IdempotencyOptionsValidator>();
 builder.Services.AddScoped<IAlbumExpirationService, AlbumExpirationService>();
+builder.Services.AddSingleton<RustCoreHost>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHostedService<GarbageCollectionService>();
 builder.Services.AddHostedService<IdempotencyRecordCleanupHostedService>();

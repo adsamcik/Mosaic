@@ -8,7 +8,6 @@ using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.Auth;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Logging;
-using NSec.Cryptography;
 
 namespace Mosaic.Backend.Controllers;
 
@@ -24,6 +23,7 @@ public partial class AuthController : ControllerBase
     private readonly MosaicDbContext _db;
     private readonly IConfiguration _config;
     private readonly ILogger<AuthController> _logger;
+    private readonly RustCoreHost _rustHost;
     private readonly bool _isLocalAuthMode;
 
     // Challenge expires after 60 seconds
@@ -56,11 +56,13 @@ public partial class AuthController : ControllerBase
         IConfiguration config,
         ILogger<AuthController> logger,
         IWebHostEnvironment env,
-        IMemoryCache cache)
+        IMemoryCache cache,
+        RustCoreHost rustHost)
     {
         _db = db;
         _config = config;
         _logger = logger;
+        _rustHost = rustHost;
         _env = env;
         _cache = cache;
 
@@ -815,12 +817,7 @@ public partial class AuthController : ControllerBase
         }
 
         var message = AuthChallengeTranscriptBuilder.BuildTranscript(username, challenge, timestamp);
-
-        // Verify Ed25519 signature using NSec
-        var algorithm = SignatureAlgorithm.Ed25519;
-        var publicKey = PublicKey.Import(algorithm, pubkey, KeyBlobFormat.RawPublicKey);
-
-        return algorithm.Verify(publicKey, message, signature);
+        return _rustHost.VerifyAuthChallenge(message, signature, pubkey);
     }
 
     private static string? ParseDeviceName(string userAgent)
