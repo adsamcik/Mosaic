@@ -113,9 +113,14 @@ class AndroidRustAuthChallengeApiRoundTripTest {
   }
 
   @Test
-  fun verifyWithTimestampMismatchReturnsAuthenticationFailed() {
-    // negativeCases.timestamp-mismatch: verify signatureWithTimestamp
-    // against transcriptNoTimestamp → AUTH_VERIFICATION_FAILED (205)
+  fun timestampAdvisoryYieldsIdenticalSignature() {
+    // Since deep-04 F5 (Wave 2D, commit 27f192c), the timestamp_ms parameter
+    // is advisory only and is NOT mixed into the signed transcript. Replay
+    // protection is provided exclusively by the server-side single-use
+    // AuthChallenge.IsUsed atomic claim (Wave 2A fix 2A-9). The canonical
+    // vector therefore expects the with-ts and no-ts signatures to be
+    // byte-identical, and verifying a "with-ts" signature against the
+    // "no-ts" transcript succeeds.
     NativeLibraryAvailability.assumeAvailableOrFailInCi()
     val api = AndroidRustAuthChallengeApi()
     val vector = readVector()
@@ -124,8 +129,12 @@ class AndroidRustAuthChallengeApiRoundTripTest {
       vector.expectedSignatureWithTimestamp,
       vector.authPublicKey,
     )
-    assertEquals(205, result.code)
-    assertFalse(result.valid)
+    assertEquals(0, result.code)
+    assertTrue(result.valid)
+    assertArrayEquals(
+      vector.expectedSignatureNoTimestamp,
+      vector.expectedSignatureWithTimestamp,
+    )
   }
 
   @Test
