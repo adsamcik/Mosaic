@@ -2699,6 +2699,38 @@ pub fn import_link_tier_handle(
     }
 }
 
+/// v2 binding variant of [`import_link_tier_handle`] (batch 4c - A1).
+///
+/// The visitor passes the `epoch_id` parsed from the signed album manifest.
+/// The wrap is dual-accepted (v2 first, fall back to v1) so pre-A1
+/// share links keep working while v2 wraps enforce the
+/// `(link_id, tier, epoch_id)` AAD binding that closes audit
+/// `share-link-create C1`.
+#[uniffi::export]
+#[must_use]
+pub fn import_link_tier_handle_v2(
+    link_url_token: Vec<u8>,
+    nonce: Vec<u8>,
+    encrypted_key: Vec<u8>,
+    album_id: String,
+    tier_byte: u8,
+    epoch_id: u32,
+) -> LinkTierHandleFfiResult {
+    let link_url_token = Zeroizing::new(link_url_token);
+    let result = mosaic_client::import_link_tier_handle_v2(
+        &link_url_token,
+        &nonce,
+        &encrypted_key,
+        album_id,
+        tier_byte,
+        epoch_id,
+    );
+    LinkTierHandleFfiResult {
+        code: result.code.as_u16(),
+        link_tier_handle_id: result.handle,
+    }
+}
+
 /// Decrypts a shard using a Rust-owned share-link tier handle.
 #[uniffi::export]
 #[must_use]

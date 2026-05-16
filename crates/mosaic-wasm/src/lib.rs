@@ -3990,6 +3990,24 @@ pub fn create_link_share_handle(
     ))
 }
 
+/// v2 binding variant of [`create_link_share_handle`] (batch 4c - A1).
+///
+/// The first-tier wrap is AEAD-bound to `(link_id, tier, epoch_id)` so a
+/// malicious server cannot substitute wrap rows across tiers. v1 callers
+/// remain available for the in-flight WASM/TS migration.
+#[must_use]
+pub fn create_link_share_handle_v2(
+    album_id: String,
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> CreateLinkShareHandleResult {
+    create_link_share_handle_result_from_client(mosaic_client::create_link_share_handle_v2(
+        album_id,
+        epoch_handle,
+        tier_byte,
+    ))
+}
+
 /// Imports a URL fragment seed into a Rust-owned share-link handle.
 #[must_use]
 pub fn import_link_share_handle(link_url_token: Vec<u8>) -> LinkTierHandleResult {
@@ -4005,6 +4023,20 @@ pub fn wrap_link_tier_handle(
     tier_byte: u8,
 ) -> WrappedTierKeyResult {
     wrapped_tier_key_result_from_client(mosaic_client::wrap_link_tier_handle(
+        link_share_handle,
+        epoch_handle,
+        tier_byte,
+    ))
+}
+
+/// v2 binding variant of [`wrap_link_tier_handle`] (batch 4c - A1).
+#[must_use]
+pub fn wrap_link_tier_handle_v2(
+    link_share_handle: u64,
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> WrappedTierKeyResult {
+    wrapped_tier_key_result_from_client(mosaic_client::wrap_link_tier_handle_v2(
         link_share_handle,
         epoch_handle,
         tier_byte,
@@ -4027,6 +4059,31 @@ pub fn import_link_tier_handle(
         &encrypted_key,
         album_id,
         tier_byte,
+    ))
+}
+
+/// v2 binding variant of [`import_link_tier_handle`] (batch 4c - A1).
+///
+/// The visitor supplies the `epoch_id` parsed from the signed album manifest;
+/// the underlying v2 unwrap dual-accepts v1 wraps so pre-A1 share links
+/// keep working, then enforces the AAD binding on new v2 wraps.
+#[must_use]
+pub fn import_link_tier_handle_v2(
+    link_url_token: Vec<u8>,
+    nonce: Vec<u8>,
+    encrypted_key: Vec<u8>,
+    album_id: String,
+    tier_byte: u8,
+    epoch_id: u32,
+) -> LinkTierHandleResult {
+    let link_url_token = Zeroizing::new(link_url_token);
+    link_tier_handle_result_from_client(mosaic_client::import_link_tier_handle_v2(
+        &link_url_token,
+        &nonce,
+        &encrypted_key,
+        album_id,
+        tier_byte,
+        epoch_id,
     ))
 }
 
@@ -5498,6 +5555,21 @@ pub fn create_link_share_handle_js(
     ))
 }
 
+/// v2 binding variant of `createLinkShareHandle` (batch 4c - A1).
+#[wasm_bindgen(js_name = createLinkShareHandleV2)]
+#[must_use]
+pub fn create_link_share_handle_v2_js(
+    album_id: String,
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> JsCreateLinkShareHandleResult {
+    js_create_link_share_handle_result_from_rust(create_link_share_handle_v2(
+        album_id,
+        epoch_handle,
+        tier_byte,
+    ))
+}
+
 /// Imports a URL fragment seed into a share-link handle through WASM.
 #[wasm_bindgen(js_name = importLinkShareHandle)]
 #[must_use]
@@ -5520,6 +5592,21 @@ pub fn wrap_link_tier_handle_js(
     ))
 }
 
+/// v2 binding variant of `wrapLinkTierHandle` (batch 4c - A1).
+#[wasm_bindgen(js_name = wrapLinkTierHandleV2)]
+#[must_use]
+pub fn wrap_link_tier_handle_v2_js(
+    link_share_handle: u64,
+    epoch_handle: u64,
+    tier_byte: u8,
+) -> JsWrappedTierKeyResult {
+    js_wrapped_tier_key_result_from_rust(wrap_link_tier_handle_v2(
+        link_share_handle,
+        epoch_handle,
+        tier_byte,
+    ))
+}
+
 /// Imports a wrapped tier key into a link-tier handle through WASM.
 #[wasm_bindgen(js_name = importLinkTierHandle)]
 #[must_use]
@@ -5536,6 +5623,27 @@ pub fn import_link_tier_handle_js(
         encrypted_key,
         album_id,
         tier_byte,
+    ))
+}
+
+/// v2 binding variant of `importLinkTierHandle` (batch 4c - A1).
+#[wasm_bindgen(js_name = importLinkTierHandleV2)]
+#[must_use]
+pub fn import_link_tier_handle_v2_js(
+    link_url_token: Vec<u8>,
+    nonce: Vec<u8>,
+    encrypted_key: Vec<u8>,
+    album_id: String,
+    tier_byte: u8,
+    epoch_id: u32,
+) -> JsLinkTierHandleResult {
+    js_link_tier_handle_result_from_rust(import_link_tier_handle_v2(
+        link_url_token,
+        nonce,
+        encrypted_key,
+        album_id,
+        tier_byte,
+        epoch_id,
     ))
 }
 

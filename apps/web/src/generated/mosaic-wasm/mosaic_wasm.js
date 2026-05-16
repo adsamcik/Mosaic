@@ -3507,6 +3507,20 @@ export function createLinkShareHandle(album_id, epoch_handle, tier_byte) {
 }
 
 /**
+ * v2 binding variant of `createLinkShareHandle` (batch 4c - A1).
+ * @param {string} album_id
+ * @param {bigint} epoch_handle
+ * @param {number} tier_byte
+ * @returns {CreateLinkShareHandleResult}
+ */
+export function createLinkShareHandleV2(album_id, epoch_handle, tier_byte) {
+    const ptr0 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.createLinkShareHandleV2(ptr0, len0, epoch_handle, tier_byte);
+    return CreateLinkShareHandleResult.__wrap(ret);
+}
+
+/**
  * Creates a link-tier blob AES wrap handle through WASM.
  * @returns {bigint}
  */
@@ -4134,6 +4148,29 @@ export function importLinkTierHandle(link_url_token, nonce, encrypted_key, album
     const ptr3 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
     const len3 = WASM_VECTOR_LEN;
     const ret = wasm.importLinkTierHandle(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, tier_byte);
+    return LinkTierHandleResult.__wrap(ret);
+}
+
+/**
+ * v2 binding variant of `importLinkTierHandle` (batch 4c - A1).
+ * @param {Uint8Array} link_url_token
+ * @param {Uint8Array} nonce
+ * @param {Uint8Array} encrypted_key
+ * @param {string} album_id
+ * @param {number} tier_byte
+ * @param {number} epoch_id
+ * @returns {LinkTierHandleResult}
+ */
+export function importLinkTierHandleV2(link_url_token, nonce, encrypted_key, album_id, tier_byte, epoch_id) {
+    const ptr0 = passArray8ToWasm0(link_url_token, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(nonce, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(encrypted_key, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.importLinkTierHandleV2(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, tier_byte, epoch_id);
     return LinkTierHandleResult.__wrap(ret);
 }
 
@@ -4944,6 +4981,18 @@ export function wrapLinkTierBlob(handle, plaintext) {
  */
 export function wrapLinkTierHandle(link_share_handle, epoch_handle, tier_byte) {
     const ret = wasm.wrapLinkTierHandle(link_share_handle, epoch_handle, tier_byte);
+    return WrappedTierKeyResult.__wrap(ret);
+}
+
+/**
+ * v2 binding variant of `wrapLinkTierHandle` (batch 4c - A1).
+ * @param {bigint} link_share_handle
+ * @param {bigint} epoch_handle
+ * @param {number} tier_byte
+ * @returns {WrappedTierKeyResult}
+ */
+export function wrapLinkTierHandleV2(link_share_handle, epoch_handle, tier_byte) {
+    const ret = wasm.wrapLinkTierHandleV2(link_share_handle, epoch_handle, tier_byte);
     return WrappedTierKeyResult.__wrap(ret);
 }
 

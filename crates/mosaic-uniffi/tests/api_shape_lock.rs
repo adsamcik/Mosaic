@@ -60,7 +60,13 @@ fn uniffi_exported_api_shape_matches_golden() {
 
 #[test]
 fn uniffi_api_v1_baseline_signature_unchanged() {
-    let v1_baseline_blake3 = "0c62fe29c0bcf843c99e466b3ca690272ba5d2b807bb6c6fd34c3be53cd75d5b";
+    // Bumped 2026-05-16: additive `import_link_tier_handle_v2(epoch_id)` for
+    // audit `share-link-create C1` (link-tier AAD v2 binding, batch 4c).
+    // The pre-A1 v1 functions remain unchanged and FFI-stable; v2 unwrap
+    // dual-accepts v1 wraps so previously-distributed share links keep
+    // working on Android. This is a non-breaking addition reviewable under
+    // SPEC-LateV1ProtocolFreeze (no `v1.0.0` tag has been cut yet).
+    let v1_baseline_blake3 = "8231df9d5ed17b288b635ba184f2c6a4e5416873558def3d5112c14a3478cfae";
     let actual = blake3::hash(canonical_uniffi_api_shape(SOURCE).as_bytes()).to_hex();
 
     assert_eq!(

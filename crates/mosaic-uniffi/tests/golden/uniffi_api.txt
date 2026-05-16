@@ -519,6 +519,7 @@ export pub fn advance_album_sync_uniffi( snapshot: ClientCoreAlbumSyncSnapshot, 
 export pub fn manifest_transcript_bytes_uniffi( inputs: ClientCoreManifestTranscriptInputs, ) -> Result<Vec<u8>, MosaicError>
 export pub fn mint_link_tier_handle_from_raw_key(raw_key: Vec<u8>) -> LinkTierHandleFfiResult
 export pub fn import_link_tier_handle( link_url_token: Vec<u8>, nonce: Vec<u8>, encrypted_key: Vec<u8>, album_id: String, tier_byte: u8, ) -> LinkTierHandleFfiResult
+export pub fn import_link_tier_handle_v2( link_url_token: Vec<u8>, nonce: Vec<u8>, encrypted_key: Vec<u8>, album_id: String, tier_byte: u8, epoch_id: u32, ) -> LinkTierHandleFfiResult
 export pub fn decrypt_shard_with_link_tier_handle( link_tier_handle: u64, envelope_bytes: Vec<u8>, ) -> DecryptedShardResult
 export pub fn close_link_tier_handle(handle: u64) -> u16
 export pub fn verify_shard_integrity_sha256( envelope: Vec<u8>, expected_sha256: Vec<u8>, ) -> Result<bool, MosaicError>

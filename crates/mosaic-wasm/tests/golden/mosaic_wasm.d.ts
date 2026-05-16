@@ -1054,6 +1054,11 @@ export function createIdentityHandle(account_key_handle: bigint): IdentityHandle
 export function createLinkShareHandle(album_id: string, epoch_handle: bigint, tier_byte: number): CreateLinkShareHandleResult;
 
 /**
+ * v2 binding variant of `createLinkShareHandle` (batch 4c - A1).
+ */
+export function createLinkShareHandleV2(album_id: string, epoch_handle: bigint, tier_byte: number): CreateLinkShareHandleResult;
+
+/**
  * Creates a link-tier blob AES wrap handle through WASM.
  */
 export function createLinkTierWrapHandle(): bigint;
@@ -1254,6 +1259,11 @@ export function importLinkShareHandle(link_url_token: Uint8Array): LinkTierHandl
  * Imports a wrapped tier key into a link-tier handle through WASM.
  */
 export function importLinkTierHandle(link_url_token: Uint8Array, nonce: Uint8Array, encrypted_key: Uint8Array, album_id: string, tier_byte: number): LinkTierHandleResult;
+
+/**
+ * v2 binding variant of `importLinkTierHandle` (batch 4c - A1).
+ */
+export function importLinkTierHandleV2(link_url_token: Uint8Array, nonce: Uint8Array, encrypted_key: Uint8Array, album_id: string, tier_byte: number, epoch_id: number): LinkTierHandleResult;
 
 /**
  * Initializes an album sync coordinator through a primitive WASM proof surface.
@@ -1490,6 +1500,11 @@ export function wrapLinkTierBlob(handle: bigint, plaintext: Uint8Array): BytesRe
 export function wrapLinkTierHandle(link_share_handle: bigint, epoch_handle: bigint, tier_byte: number): WrappedTierKeyResult;
 
 /**
+ * v2 binding variant of `wrapLinkTierHandle` (batch 4c - A1).
+ */
+export function wrapLinkTierHandleV2(link_share_handle: bigint, epoch_handle: bigint, tier_byte: number): WrappedTierKeyResult;
+
+/**
  * Wraps a session-cache blob through WASM.
  */
 export function wrapSessionCacheBlob(handle: bigint, plaintext: Uint8Array): BytesResult;
@@ -1564,6 +1579,7 @@ export interface InitOutput {
     readonly createEpochKeyHandle: (a: bigint, b: number) => number;
     readonly createIdentityHandle: (a: bigint) => number;
     readonly createLinkShareHandle: (a: number, b: number, c: bigint, d: number) => number;
+    readonly createLinkShareHandleV2: (a: number, b: number, c: bigint, d: number) => number;
     readonly createLinkTierWrapHandle: (a: number) => void;
     readonly createSessionCacheWrapHandle: (a: number) => void;
     readonly createaccountresult_code: (a: number) => number;
@@ -1661,6 +1677,7 @@ export interface InitOutput {
     readonly imageinspectresult_width: (a: number) => number;
     readonly importLinkShareHandle: (a: number, b: number) => number;
     readonly importLinkTierHandle: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
+    readonly importLinkTierHandleV2: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => number;
     readonly initAlbumSync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: bigint, i: number) => void;
     readonly initUploadJob: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
     readonly inspectImage: (a: number, b: number) => number;
@@ -1761,6 +1778,7 @@ export interface InitOutput {
     readonly videoinspectresult_widthPx: (a: number) => number;
     readonly wrapLinkTierBlob: (a: bigint, b: number, c: number) => number;
     readonly wrapLinkTierHandle: (a: bigint, b: bigint, c: number) => number;
+    readonly wrapLinkTierHandleV2: (a: bigint, b: bigint, c: number) => number;
     readonly wrapSessionCacheBlob: (a: bigint, b: number, c: number) => number;
     readonly wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;
     readonly wrappedtierkeyresult_tier: (a: number) => number;
