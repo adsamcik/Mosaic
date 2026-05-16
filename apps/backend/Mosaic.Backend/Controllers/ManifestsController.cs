@@ -159,6 +159,35 @@ public class ManifestsController : ControllerBase
                         detail: $"Manifest signed by stale epoch ({manifestEpochId.Value}); album is at epoch {album.CurrentEpochId}. Re-encrypt with the current epoch and retry.",
                         statusCode: StatusCodes.Status409Conflict);
                 }
+
+                // 6d-guard (A3, audit crypto-correctness H-1): when the
+                // client supplied a v2 transcript with a manifest_seq
+                // freshness field, enforce strict monotonicity per
+                // (album_id, signer_pubkey). SignerPubkey uniquely
+                // identifies the epoch (it's the per-epoch
+                // ManifestSigningPubkey), so this is functionally
+                // (album_id, epoch_id) scoping. A malicious or compromised
+                // server cannot replay an older signed manifest under a
+                // newer seq because Ed25519 binds the bytes — the only
+                // freshness lever is the seq stored in the transcript and
+                // the server's max-seq check. Pre-A3 clients omit
+                // ManifestSeq and skip this guard (NULL stays NULL on
+                // disk).
+                if (request.ManifestSeq.HasValue)
+                {
+                    var maxSeqForEpoch = await _db.Manifests
+                        .IgnoreQueryFilters()
+                        .Where(m => m.AlbumId == album.Id
+                            && m.SignerPubkey == request.SignerPubkey
+                            && m.ManifestSeq != null)
+                        .MaxAsync(m => (long?)m.ManifestSeq) ?? 0L;
+                    if (request.ManifestSeq.Value <= maxSeqForEpoch)
+                    {
+                        return Problem(
+                            detail: $"Manifest seq {request.ManifestSeq.Value} is not strictly greater than the current max {maxSeqForEpoch} for this album+epoch. Increment seq and retry.",
+                            statusCode: StatusCodes.Status409Conflict);
+                    }
+                }
             }
 
             var shards = await _db.Shards
@@ -247,6 +276,7 @@ public class ManifestsController : ControllerBase
                 Signature = request.Signature,
                 SignerPubkey = request.SignerPubkey,
                 ExpiresAt = request.ExpiresAt,
+                ManifestSeq = request.ManifestSeq,
                 CreatedAt = now.UtcDateTime,
                 UpdatedAt = now.UtcDateTime
             };

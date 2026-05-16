@@ -485,6 +485,11 @@ public class AlbumsController : ControllerBase
                 // pre-A2 tombstones.
                 m.TombstoneSignature,
                 m.TombstoneSignerEpochId,
+                // A3 audit "crypto-correctness H-1": manifest freshness
+                // sequence surfaced so the sync client can detect
+                // non-monotonic manifest streams (a compromised server
+                // replaying old signed manifests). NULL on pre-A3 rows.
+                m.ManifestSeq,
                 m.ExpiresAt,
                 // Legacy format for backward compatibility
                 ShardIds = m.ManifestShards

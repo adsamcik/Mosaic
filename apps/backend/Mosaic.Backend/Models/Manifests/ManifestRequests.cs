@@ -31,7 +31,16 @@ public record CreateManifestRequest(
     /// <summary>
     /// Optional UTC expiration deadline for this photo. Null means no expiration.
     /// </summary>
-    DateTimeOffset? ExpiresAt = null
+    DateTimeOffset? ExpiresAt = null,
+    /// <summary>
+    /// Optional monotonic freshness sequence for the v2 manifest-signing
+    /// transcript (batch 6 — A3, audit <c>crypto-correctness H-1</c>). When
+    /// present, the server enforces strict monotonicity per
+    /// <c>(album_id, signer_pubkey)</c> on finalize so a stale signed
+    /// manifest cannot be replayed under a newer seq value. NULL is
+    /// accepted (pre-A3 clients keep working with the v1 transcript).
+    /// </summary>
+    long? ManifestSeq = null
 ) {
     [JsonConstructor]
     public CreateManifestRequest(
@@ -42,7 +51,8 @@ public record CreateManifestRequest(
         List<string> ShardIds,
         int? Tier = null,
         List<TieredShardInfo>? TieredShards = null,
-        DateTimeOffset? ExpiresAt = null)
+        DateTimeOffset? ExpiresAt = null,
+        long? ManifestSeq = null)
         : this(
             1,
             AlbumId,
@@ -54,7 +64,8 @@ public record CreateManifestRequest(
             ShardIds,
             Tier,
             TieredShards,
-            ExpiresAt)
+            ExpiresAt,
+            ManifestSeq)
     {
     }
 }
