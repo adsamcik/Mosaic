@@ -61,6 +61,29 @@ pub const TOMBSTONE_SIGN_CONTEXT: &[u8] = b"Mosaic_Tombstone_v1";
 /// Current tombstone signing transcript format version.
 pub const TOMBSTONE_TRANSCRIPT_VERSION: u8 = 1;
 
+/// Domain separation context for owner-signed member-roster transcripts.
+/// The byte-distinct prefix prevents cross-protocol signature reuse against
+/// regular manifests or tombstones.
+///
+/// The album owner publishes a signed roster `(album_id, epoch_id,
+/// roster_version, sort_by_member_id([(member_id, role_byte)..]))` so the
+/// UI verifies role badges against the album's published epoch signing
+/// pubkey before rendering — a compromised server can no longer fabricate
+/// admin / editor labels.
+///
+/// Closes audit `threat-model C-3 (server-controlled member roles)`.
+pub const MEMBER_ROSTER_SIGN_CONTEXT: &[u8] = b"Mosaic_MemberRoster_v1";
+
+/// Current member-roster signing transcript format version.
+pub const MEMBER_ROSTER_TRANSCRIPT_VERSION: u8 = 1;
+
+/// Encodes [`MemberRole`] as a single canonical byte. Stable across
+/// language bindings: byte values are part of the signed transcript and
+/// must NEVER be renumbered.
+pub const MEMBER_ROLE_OWNER_BYTE: u8 = 1;
+pub const MEMBER_ROLE_EDITOR_BYTE: u8 = 2;
+pub const MEMBER_ROLE_VIEWER_BYTE: u8 = 3;
+
 /// Domain separation context for client-local canonical metadata sidecar bytes.
 pub const METADATA_SIDECAR_CONTEXT: &[u8] = b"Mosaic_Metadata_v1";
 
@@ -711,6 +734,197 @@ pub fn canonical_tombstone_transcript_bytes(transcript: &TombstoneTranscript) ->
     bytes.extend_from_slice(&transcript.version_created().to_le_bytes());
     bytes
 }
+
+/// Album member role, byte-pinned for the signed roster transcript.
+///
+/// The byte values are part of the signed roster and MUST NOT be
+/// renumbered: doing so would silently invalidate every previously
+/// distributed roster signature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum MemberRole {
+    Owner = MEMBER_ROLE_OWNER_BYTE,
+    Editor = MEMBER_ROLE_EDITOR_BYTE,
+    Viewer = MEMBER_ROLE_VIEWER_BYTE,
+}
+
+impl MemberRole {
+    /// Returns the canonical wire byte for this role.
+    #[must_use]
+    pub const fn to_byte(self) -> u8 {
+        self as u8
+    }
+
+    /// Parses a wire byte into a [`MemberRole`].
+    ///
+    /// # Errors
+    /// Returns [`MemberRosterError::InvalidRoleByte`] for unknown values.
+    pub fn try_from_byte(byte: u8) -> Result<Self, MemberRosterError> {
+        match byte {
+            MEMBER_ROLE_OWNER_BYTE => Ok(Self::Owner),
+            MEMBER_ROLE_EDITOR_BYTE => Ok(Self::Editor),
+            MEMBER_ROLE_VIEWER_BYTE => Ok(Self::Viewer),
+            other => Err(MemberRosterError::InvalidRoleByte { byte: other }),
+        }
+    }
+}
+
+/// Single entry in a signed member roster.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MemberRosterEntry {
+    pub member_id: [u8; 16],
+    pub role: MemberRole,
+}
+
+/// Errors surfaced while canonicalising a member roster transcript.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MemberRosterError {
+    /// The roster contained an unknown role byte (forward-compatibility
+    /// breach — the canonical wire byte set is the v1 freeze surface).
+    InvalidRoleByte { byte: u8 },
+    /// The roster contained the same `member_id` twice. A signed roster
+    /// must be a set: duplicate IDs would let a server cherry-pick which
+    /// role label to show without changing the signed byte sum.
+    DuplicateMemberId { member_id: [u8; 16] },
+    /// More than `u32::MAX` members were supplied (will not happen in
+    /// practice but the canonical bytes encode the count as a u32).
+    LengthTooLarge { actual: usize },
+}
+
+/// Owner-signed album member roster transcript inputs.
+///
+/// Binds:
+/// - `album_id` (16 bytes) — the roster is scoped to this album.
+/// - `epoch_id` (4 bytes LE) — re-signed whenever the epoch rotates so
+///   stale rosters from a previous epoch cannot be replayed.
+/// - `roster_version` (8 bytes LE signed) — monotonically increasing per
+///   (album_id, epoch_id) so an older roster cannot be replayed after a
+///   role change.
+/// - `members` (sorted ascending by `member_id`) — each entry contributes
+///   `member_id || role_byte`. The sort is part of the canonical bytes,
+///   so a server cannot reorder entries to swap which `member_id`'s role
+///   the signature applies to.
+///
+/// Build the deterministic byte form with
+/// [`canonical_member_roster_transcript_bytes`]; sign and verify it with
+/// the existing manifest signing helpers (`sign_manifest_transcript` /
+/// `verify_manifest_transcript`) on the per-epoch
+/// `ManifestSigningSecretKey` / `ManifestSigningPublicKey` pair.
+///
+/// Closes audit `threat-model C-3 (server-controlled member roles)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberRosterTranscript {
+    album_id: [u8; 16],
+    epoch_id: u32,
+    roster_version: i64,
+    members: Vec<MemberRosterEntry>,
+}
+
+impl MemberRosterTranscript {
+    /// Creates a member roster transcript input.
+    ///
+    /// The caller may supply members in any order; canonicalisation sorts
+    /// them ascending by `member_id` bytes before emitting the transcript.
+    ///
+    /// # Errors
+    /// Returns [`MemberRosterError::DuplicateMemberId`] if the same
+    /// `member_id` appears twice. (Role mismatches between duplicate IDs
+    /// would create ambiguity about which label a signature endorses.)
+    pub fn new(
+        album_id: [u8; 16],
+        epoch_id: u32,
+        roster_version: i64,
+        members: Vec<MemberRosterEntry>,
+    ) -> Result<Self, MemberRosterError> {
+        let mut sorted = members;
+        sorted.sort_by_key(|entry| entry.member_id);
+        for window in sorted.windows(2) {
+            if window[0].member_id == window[1].member_id {
+                return Err(MemberRosterError::DuplicateMemberId {
+                    member_id: window[0].member_id,
+                });
+            }
+        }
+        Ok(Self {
+            album_id,
+            epoch_id,
+            roster_version,
+            members: sorted,
+        })
+    }
+
+    #[must_use]
+    pub const fn album_id(&self) -> &[u8; 16] {
+        &self.album_id
+    }
+
+    #[must_use]
+    pub const fn epoch_id(&self) -> u32 {
+        self.epoch_id
+    }
+
+    #[must_use]
+    pub const fn roster_version(&self) -> i64 {
+        self.roster_version
+    }
+
+    /// Returns the members in canonical sort order (ascending by `member_id`).
+    #[must_use]
+    pub fn members(&self) -> &[MemberRosterEntry] {
+        &self.members
+    }
+}
+
+/// Builds deterministic binary bytes for owner-signed roster signing.
+///
+/// Layout:
+/// - `MEMBER_ROSTER_SIGN_CONTEXT` (22 bytes: `Mosaic_MemberRoster_v1`)
+/// - `MEMBER_ROSTER_TRANSCRIPT_VERSION` (1 byte: `0x01`)
+/// - `album_id` (16 bytes)
+/// - `epoch_id` (4 bytes, little-endian)
+/// - `roster_version` (8 bytes, little-endian, signed)
+/// - `member_count` (4 bytes, little-endian, unsigned)
+/// - for each member in ascending `member_id` order:
+///   - `member_id` (16 bytes)
+///   - `role_byte` (1 byte)
+///
+/// Total: 22 + 1 + 16 + 4 + 8 + 4 + N * (16 + 1) = 55 + 17N bytes.
+///
+/// # Errors
+/// Returns [`MemberRosterError::LengthTooLarge`] when the member count
+/// cannot fit in a `u32`.
+pub fn canonical_member_roster_transcript_bytes(
+    transcript: &MemberRosterTranscript,
+) -> Result<Vec<u8>, MemberRosterError> {
+    let member_count = u32::try_from(transcript.members().len())
+        .map_err(|_| MemberRosterError::LengthTooLarge {
+            actual: transcript.members().len(),
+        })?;
+
+    let mut bytes = Vec::with_capacity(
+        MEMBER_ROSTER_SIGN_CONTEXT.len()
+            + 1
+            + 16
+            + 4
+            + 8
+            + 4
+            + (transcript.members().len() * (16 + 1)),
+    );
+    bytes.extend_from_slice(MEMBER_ROSTER_SIGN_CONTEXT);
+    bytes.push(MEMBER_ROSTER_TRANSCRIPT_VERSION);
+    bytes.extend_from_slice(transcript.album_id());
+    bytes.extend_from_slice(&transcript.epoch_id().to_le_bytes());
+    bytes.extend_from_slice(&transcript.roster_version().to_le_bytes());
+    bytes.extend_from_slice(&member_count.to_le_bytes());
+
+    for entry in transcript.members() {
+        bytes.extend_from_slice(&entry.member_id);
+        bytes.push(entry.role.to_byte());
+    }
+
+    Ok(bytes)
+}
+
 
 /// Builds deterministic client-local canonical metadata sidecar bytes.
 ///
