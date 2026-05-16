@@ -1270,8 +1270,7 @@ pub mod vectors {
         /// # Errors
         /// Returns [`VectorLoadError`] on missing fields or invalid hex.
         pub fn from(parsed: &ParsedVector) -> Result<Self, VectorLoadError> {
-            let inputs: MemberRosterInputs =
-                extract(&parsed.document, "inputs", &parsed.path)?;
+            let inputs: MemberRosterInputs = extract(&parsed.document, "inputs", &parsed.path)?;
             let expected: MemberRosterExpected =
                 extract(&parsed.document, "expected", &parsed.path)?;
             let mut members = alloc::vec::Vec::with_capacity(inputs.members.len());
@@ -1286,11 +1285,7 @@ pub mod vectors {
                 });
             }
             Ok(Self {
-                signing_seed: decode_hex(
-                    &inputs.signing_seed_hex,
-                    "signingSeedHex",
-                    &parsed.path,
-                )?,
+                signing_seed: decode_hex(&inputs.signing_seed_hex, "signingSeedHex", &parsed.path)?,
                 album_id: decode_hex(&inputs.album_id_hex, "albumIdHex", &parsed.path)?,
                 epoch_id: inputs.epoch_id,
                 roster_version: inputs.roster_version,

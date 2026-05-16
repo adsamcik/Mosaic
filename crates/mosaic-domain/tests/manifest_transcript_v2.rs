@@ -35,7 +35,12 @@ const SHARD_SHA256: [u8; 32] = [0x55_u8; 32];
 fn one_shard_transcript() -> ManifestTranscript<'static> {
     static SHARD_REFS: std::sync::OnceLock<[ManifestShardRef; 1]> = std::sync::OnceLock::new();
     let shards = SHARD_REFS.get_or_init(|| {
-        [ManifestShardRef::new(0, SHARD_ID, ShardTier::Thumbnail, SHARD_SHA256)]
+        [ManifestShardRef::new(
+            0,
+            SHARD_ID,
+            ShardTier::Thumbnail,
+            SHARD_SHA256,
+        )]
     });
     ManifestTranscript::new(
         ALBUM_A,
@@ -93,7 +98,10 @@ fn v2_transcript_differs_from_v1_at_the_prefix() {
     let transcript = one_shard_transcript();
     let v1 = canonical_manifest_transcript_bytes(&transcript).expect("v1");
     let v2 = canonical_manifest_transcript_bytes_v2(&transcript, 1).expect("v2");
-    assert_ne!(v1, v2, "v1 and v2 bytes must differ (no signature cross-accept)");
+    assert_ne!(
+        v1, v2,
+        "v1 and v2 bytes must differ (no signature cross-accept)"
+    );
     assert_ne!(
         &v1[..MANIFEST_SIGN_CONTEXT.len()],
         &v2[..MANIFEST_SIGN_CONTEXT_V2.len()],

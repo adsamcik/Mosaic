@@ -26,10 +26,9 @@ use mosaic_crypto::{
     verify_and_open_bundle,
 };
 use mosaic_domain::{
-    EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, MemberRole,
-    MemberRosterEntry, MemberRosterTranscript, ShardTier, TombstoneTranscript,
-    canonical_manifest_transcript_bytes, canonical_member_roster_transcript_bytes,
-    canonical_tombstone_transcript_bytes,
+    EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, MemberRole, MemberRosterEntry,
+    MemberRosterTranscript, ShardTier, TombstoneTranscript, canonical_manifest_transcript_bytes,
+    canonical_member_roster_transcript_bytes, canonical_tombstone_transcript_bytes,
 };
 use mosaic_vectors::{
     ParsedVector, default_corpus_dir, load_all, load_vector,
@@ -747,7 +746,6 @@ fn tombstone_signature_vector_locks_transcript_and_ed25519_signature() {
     );
 }
 
-
 #[test]
 fn member_roster_signature_vector_locks_transcript_and_ed25519_signature() {
     // Cross-client lock for audit `threat-model C-3` (batch C2d).
@@ -758,7 +756,11 @@ fn member_roster_signature_vector_locks_transcript_and_ed25519_signature() {
     let vector =
         MemberRosterSignatureVector::from(&parsed).expect("member_roster_signature vector");
 
-    assert_eq!(vector.signing_seed.len(), 32, "signing seed must be 32 bytes");
+    assert_eq!(
+        vector.signing_seed.len(),
+        32,
+        "signing seed must be 32 bytes"
+    );
     assert_eq!(vector.album_id.len(), 16, "album_id must be 16 bytes");
 
     let mut album_id = [0_u8; 16];
@@ -838,9 +840,13 @@ fn member_roster_signature_vector_locks_transcript_and_ed25519_signature() {
         };
         tampered_entries.push(MemberRosterEntry { member_id, role });
     }
-    let tampered =
-        MemberRosterTranscript::new(album_id, vector.epoch_id, vector.roster_version, tampered_entries)
-            .expect("roster with tampered role");
+    let tampered = MemberRosterTranscript::new(
+        album_id,
+        vector.epoch_id,
+        vector.roster_version,
+        tampered_entries,
+    )
+    .expect("roster with tampered role");
     let tampered_bytes =
         canonical_member_roster_transcript_bytes(&tampered).expect("canonical bytes");
     assert!(
