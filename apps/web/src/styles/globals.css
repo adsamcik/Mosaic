@@ -110,6 +110,38 @@
   padding: 0;
 }
 
+/*
+ * G3 (batch 8, audit accessibility G-3): Global keyboard-only focus
+ * indicator. `:focus-visible` matches only when the user reached the
+ * element via keyboard navigation (Tab) or assistive tech — never on
+ * mouse clicks. This means the focus ring stays out of the way of
+ * mouse users (no UI noise on every button press) while remaining
+ * always-visible for keyboard / screen-reader users (WCAG 2.4.7).
+ *
+ * The ring is intentionally high-contrast (two-tone: dark border +
+ * indigo halo) so it shows on BOTH the dark and light themes without
+ * per-component tuning. Components that need a custom indicator
+ * (form inputs, photo thumbnails, etc.) override this rule.
+ *
+ * `outline-offset: 2px` keeps the ring visually separated from
+ * rounded corners; `outline: 2px solid` is the canonical
+ * accessible indicator width per the WCAG focus-indicator
+ * non-normative guidance.
+ */
+:focus-visible {
+  outline: 2px solid var(--color-primary, #6366f1);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Belt-and-braces: suppress the legacy default focus ring on
+ * mouse-click activation only. Modern browsers do this automatically
+ * via :focus-visible heuristic, but old code that triggers
+ * .focus() programmatically should not flash the default ring. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 html,
 body,
 #root {
