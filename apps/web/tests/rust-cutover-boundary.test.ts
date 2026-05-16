@@ -122,10 +122,6 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
 ]);
 
 const directSodiumPrimitiveAllowlist = new Map<string, string>([
-  [
-    'lib/session.ts',
-    'Argon2id salt-encryption KDF runs on main thread before crypto worker is initialized (security fix H1/H2)',
-  ],
   ['workers/crypto.worker.ts', 'central TypeScript crypto compatibility facade'],
 ]);
 
@@ -274,11 +270,13 @@ describe('web Rust crypto cutover boundaries', () => {
       importersMatching(
         /from\s+['"][^'"]*generated\/mosaic-wasm\/mosaic_wasm\.js['"]/,
       ),
-    ).toEqual([
-      'lib/content-hash.ts',
-      'lib/exif-stripper.ts',
-      'lib/local-auth.ts',
-      'lib/opfs-staging.ts',
+      ).toEqual([
+        'lib/content-hash.ts',
+        'lib/exif-stripper.ts',
+        'lib/key-cache.ts',
+        'lib/link-tier-key-store.ts',
+        'lib/local-auth.ts',
+        'lib/opfs-staging.ts',
       'lib/scope-key.ts',
       'lib/session.ts',
       'lib/sidecar/signaling.ts',
