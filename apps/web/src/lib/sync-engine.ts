@@ -264,6 +264,14 @@ class SyncEngine extends EventTarget {
 
       let sinceVersion = await db.getAlbumVersion(albumId);
       let iterationCount = 0;
+      // 6e — A3 audit "crypto-correctness H-1": per-(albumId, signerPubkey)
+      // max manifest_seq observed during this syncAlbum invocation. Declared
+      // OUTSIDE the pagination loop so the monotonicity check spans every
+      // page returned by the server in a single call (a malicious server
+      // can re-order signed manifests across pages just as easily as
+      // within one page). Cross-call persistence (writing this back to
+      // the album row) is a follow-up; in-call enforcement is the floor.
+      const maxManifestSeqBySigner = new Map<string, number>();
 
       while (true) {
         throwIfAborted(signal);
@@ -460,6 +468,31 @@ class SyncEngine extends EventTarget {
               });
               recordSkip(manifest.id, manifest.versionCreated, 'signature-invalid');
               continue;
+            }
+
+            // 6e — A3 audit "crypto-correctness H-1": v2 transcript binds
+            // `manifest_seq` into the signed bytes. The server-emitted
+            // `manifest.manifestSeq` therefore matches the signed value
+            // (signature verified above) — anything else would have
+            // failed verify. Now enforce strict monotonicity per signer
+            // pubkey: a malicious server replaying an older signed
+            // manifest with the same epoch's signing key would surface
+            // here as `manifest-stale-seq` and the cursor would NOT
+            // advance past it. Pre-A3 rows (null seq) skip the guard.
+            if (manifest.manifestSeq != null) {
+              const signerKey = manifest.signerPubkey;
+              const prevMax = maxManifestSeqBySigner.get(signerKey);
+              if (prevMax != null && manifest.manifestSeq <= prevMax) {
+                log.error('Manifest seq is not strictly monotonic', {
+                  albumId,
+                  manifestId: manifest.id,
+                  seq: manifest.manifestSeq,
+                  prevMax,
+                });
+                recordSkip(manifest.id, manifest.versionCreated, 'manifest-stale-seq');
+                continue;
+              }
+              maxManifestSeqBySigner.set(signerKey, manifest.manifestSeq);
             }
 
             decrypted.push({

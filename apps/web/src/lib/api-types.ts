@@ -483,6 +483,20 @@ export interface ManifestRecord {
   signature: string;
   signerPubkey: string;
   shardIds: string[];
+  /**
+   * A2 audit "sync C2": signed tombstone fields. Null on live rows and
+   * on pre-A2 unsigned tombstones (sync engine treats unsigned tombstones
+   * as suspicious and refuses to purge local state).
+   */
+  tombstoneSignature?: string | null;
+  tombstoneSignerEpochId?: number | null;
+  /**
+   * A3 audit "crypto-correctness H-1": optional monotonic freshness seq
+   * tied to the v2 manifest signing transcript. NULL on pre-A3 manifests.
+   * The sync engine enforces strictly monotonic seq per
+   * (albumId, signerPubkey) to reject replay of older signed manifests.
+   */
+  manifestSeq?: number | null;
   /** ISO 8601 date when this photo expires and will be deleted */
   expiresAt?: string | null;
   /** Days before expiration to show warning */

@@ -277,6 +277,13 @@ export const ManifestRecordSchema = z.object({
   // re-deleted with a signed transcript).
   tombstoneSignature: Base64Schema.nullish(),
   tombstoneSignerEpochId: z.number().int().nonnegative().nullish(),
+  // A3 audit "crypto-correctness H-1": optional monotonic freshness seq
+  // tied to the v2 manifest signing transcript. The sync engine enforces
+  // strictly monotonic seq per `(albumId, signerPubkey)` to reject
+  // a malicious server replaying older signed manifests under a later
+  // VersionCreated. NULL on pre-A3 manifests (v1 transcript), in which
+  // case the seq guard is skipped for that row.
+  manifestSeq: z.number().int().nonnegative().nullish(),
   createdAt: IsoDateTimeSchema,
   updatedAt: IsoDateTimeSchema.nullish(),
 });
