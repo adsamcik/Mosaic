@@ -2,6 +2,7 @@ import { useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDownloadManager } from '../../hooks/useDownloadManager';
 import type { AlbumDiff, CurrentAlbumManifest, DownloadOutputMode, PhotoMeta, ResumableJobSummary } from '../../workers/types';
+import { toSafeErrorMessage } from '../../lib/error-messages';
 import { DownloadModePicker } from './DownloadModePicker';
 import { shortId } from './DownloadJobRow';
 
@@ -54,7 +55,7 @@ export function DownloadResumePrompt({
         setPickerJobId(job.jobId);
       })
       .catch((caught: unknown) => {
-        setError(caught instanceof Error ? caught.message : String(caught));
+        setError(toSafeErrorMessage(caught));
       })
       .finally(() => setBusyJobId(null));
   };
@@ -65,7 +66,7 @@ export function DownloadResumePrompt({
       onResume(jobId, mode);
     } else {
       void manager.resumeJob(jobId, { mode }).catch((caught: unknown) => {
-        setError(caught instanceof Error ? caught.message : String(caught));
+        setError(toSafeErrorMessage(caught));
       });
     }
   };
