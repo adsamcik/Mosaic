@@ -45,6 +45,22 @@ pub const MANIFEST_SIGN_CONTEXT: &[u8] = b"Mosaic_Manifest_v1";
 /// Current manifest signing transcript format version.
 pub const MANIFEST_TRANSCRIPT_VERSION: u8 = 1;
 
+/// Domain separation context for client-signed tombstone (soft-delete)
+/// transcripts. The byte-distinct prefix prevents cross-protocol signature
+/// reuse: an Ed25519 signature over a regular manifest transcript CANNOT be
+/// accepted as a tombstone signature, and vice versa.
+///
+/// Tombstones are signed by the editor that initiated the delete using the
+/// same per-epoch `ManifestSigningSecretKey` that signs regular manifests.
+/// The client verifies the signature against the album's published signing
+/// public key before purging local state.
+///
+/// Closes audit `sync C2 (unauthenticated tombstones)`.
+pub const TOMBSTONE_SIGN_CONTEXT: &[u8] = b"Mosaic_Tombstone_v1";
+
+/// Current tombstone signing transcript format version.
+pub const TOMBSTONE_TRANSCRIPT_VERSION: u8 = 1;
+
 /// Domain separation context for client-local canonical metadata sidecar bytes.
 pub const METADATA_SIDECAR_CONTEXT: &[u8] = b"Mosaic_Metadata_v1";
 
@@ -601,6 +617,99 @@ impl<'a> ManifestTranscript<'a> {
     pub const fn shards(&self) -> &[ManifestShardRef] {
         self.shards
     }
+}
+
+/// Tombstone (soft-delete) signing transcript inputs.
+///
+/// Binds the album, signing epoch, photo identity, and the photo's version at
+/// deletion time so a server cannot:
+/// - reuse a tombstone across albums (`album_id`),
+/// - present an out-of-epoch deletion (`epoch_id`),
+/// - swap one photo's tombstone for another's (`photo_id`),
+/// - replay a stale tombstone after a photo is re-uploaded with a later
+///   version (`version_created`).
+///
+/// The deterministic byte form is produced by
+/// [`canonical_tombstone_transcript_bytes`]; sign and verify it with the
+/// existing manifest signing helpers (`sign_manifest_transcript` /
+/// `verify_manifest_transcript`) on the per-epoch
+/// `ManifestSigningSecretKey` / `ManifestSigningPublicKey` pair. The
+/// `TOMBSTONE_SIGN_CONTEXT` prefix is byte-distinct from
+/// `MANIFEST_SIGN_CONTEXT`, preventing a regular-manifest signature from
+/// being mistaken for a tombstone signature and vice versa.
+///
+/// Closes audit `sync C2 (unauthenticated tombstones)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TombstoneTranscript {
+    album_id: [u8; 16],
+    epoch_id: u32,
+    photo_id: [u8; 16],
+    version_created: i64,
+}
+
+impl TombstoneTranscript {
+    /// Creates a tombstone transcript input.
+    #[must_use]
+    pub const fn new(
+        album_id: [u8; 16],
+        epoch_id: u32,
+        photo_id: [u8; 16],
+        version_created: i64,
+    ) -> Self {
+        Self {
+            album_id,
+            epoch_id,
+            photo_id,
+            version_created,
+        }
+    }
+
+    /// Returns the 16-byte album UUID bytes.
+    #[must_use]
+    pub const fn album_id(&self) -> &[u8; 16] {
+        &self.album_id
+    }
+
+    /// Returns the epoch ID.
+    #[must_use]
+    pub const fn epoch_id(&self) -> u32 {
+        self.epoch_id
+    }
+
+    /// Returns the 16-byte photo UUID bytes.
+    #[must_use]
+    pub const fn photo_id(&self) -> &[u8; 16] {
+        &self.photo_id
+    }
+
+    /// Returns the version-created value at deletion time.
+    #[must_use]
+    pub const fn version_created(&self) -> i64 {
+        self.version_created
+    }
+}
+
+/// Builds deterministic binary bytes for tombstone signing.
+///
+/// Layout (45 bytes total):
+/// - `TOMBSTONE_SIGN_CONTEXT` (19 bytes: `Mosaic_Tombstone_v1`)
+/// - `TOMBSTONE_TRANSCRIPT_VERSION` (1 byte: `0x01`)
+/// - `album_id` (16 bytes)
+/// - `epoch_id` (4 bytes, little-endian)
+/// - `photo_id` (16 bytes)
+/// - `version_created` (8 bytes, little-endian, signed)
+///
+/// Total: 19 + 1 + 16 + 4 + 16 + 8 = 64 bytes.
+#[must_use]
+pub fn canonical_tombstone_transcript_bytes(transcript: &TombstoneTranscript) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(TOMBSTONE_SIGN_CONTEXT.len() + 1 + 16 + 4 + 16 + 8);
+    bytes.extend_from_slice(TOMBSTONE_SIGN_CONTEXT);
+    bytes.push(TOMBSTONE_TRANSCRIPT_VERSION);
+    bytes.extend_from_slice(transcript.album_id());
+    bytes.extend_from_slice(&transcript.epoch_id().to_le_bytes());
+    bytes.extend_from_slice(transcript.photo_id());
+    bytes.extend_from_slice(&transcript.version_created().to_le_bytes());
+    bytes
 }
 
 /// Builds deterministic client-local canonical metadata sidecar bytes.
