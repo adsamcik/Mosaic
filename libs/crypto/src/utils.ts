@@ -4,7 +4,6 @@
  * Helper functions for byte manipulation and cryptographic operations.
  */
 
-import sodium from 'libsodium-wrappers-sumo';
 
 /**
  * Concatenate multiple Uint8Arrays into a single array.
@@ -35,8 +34,11 @@ export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) {
     return false;
   }
-  // sodium.compare returns 0 if equal, -1 or 1 if not
-  return sodium.compare(a, b) === 0;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a[i]! ^ b[i]!;
+  }
+  return diff === 0;
 }
 
 /**
@@ -45,7 +47,9 @@ export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
  * @param buffer - Buffer to zero
  */
 export function memzero(buffer: Uint8Array): void {
-  sodium.memzero(buffer);
+  // Best-effort JS zeroization: engines may keep prior copies internally,
+  // but callers should still overwrite live Uint8Array buffers promptly.
+  buffer.fill(0);
 }
 
 /**
@@ -55,7 +59,12 @@ export function memzero(buffer: Uint8Array): void {
  * @returns Random bytes
  */
 export function randomBytes(length: number): Uint8Array {
-  return sodium.randombytes_buf(length);
+  if (!Number.isSafeInteger(length) || length < 0) {
+    throw new Error('random byte length must be a non-negative safe integer');
+  }
+  const bytes = new Uint8Array(length);
+  globalThis.crypto.getRandomValues(bytes);
+  return bytes;
 }
 
 /**
@@ -65,7 +74,11 @@ export function randomBytes(length: number): Uint8Array {
  * @returns Base64url string
  */
 export function toBase64(data: Uint8Array): string {
-  return sodium.to_base64(data, sodium.base64_variants.URLSAFE_NO_PADDING);
+  const binary = String.fromCharCode(...data);
+  const base64 = typeof btoa === 'function'
+    ? btoa(binary)
+    : Buffer.from(data).toString('base64');
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 /**
@@ -80,14 +93,16 @@ export function toBase64(data: Uint8Array): string {
  * @returns Decoded bytes
  */
 export function fromBase64(base64: string): Uint8Array {
-  // Normalize standard Base64 to URL-safe: replace + with -, / with _
-  const normalized = base64.replace(/\+/g, '-').replace(/\//g, '_');
-  // Strip padding (libsodium URLSAFE_NO_PADDING doesn't accept padding)
-  const unpadded = normalized.replace(/=+$/, '');
-  return sodium.from_base64(
-    unpadded,
-    sodium.base64_variants.URLSAFE_NO_PADDING,
-  );
+  const standard = base64.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = standard.padEnd(standard.length + ((4 - (standard.length % 4)) % 4), '=');
+  const binary = typeof atob === 'function'
+    ? atob(padded)
+    : Buffer.from(padded, 'base64').toString('binary');
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 /**
