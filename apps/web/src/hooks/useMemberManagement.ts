@@ -19,6 +19,38 @@ import {
   EpochRotationError,
   removeMemberAndRotateEpoch,
 } from '../lib/epoch-rotation-service';
+import { createLogger } from '../lib/logger';
+import { signAndPublishRoster } from '../lib/roster-sign';
+
+const log = createLogger('useMemberManagement');
+
+/**
+ * Best-effort publish of the owner-signed member roster after a
+ * membership change. Failures are logged but never bubbled up — the
+ * user's invite / remove already succeeded server-side, and the worst
+ * outcome is that the visitor's UI shows an "unverified roster" banner
+ * until the next mutation. Audit `threat-model C-3` (batch C2c-5).
+ */
+async function publishRosterBestEffort(
+  albumId: string,
+  members: ReadonlyArray<{ userId: string; role: string }>,
+): Promise<void> {
+  try {
+    const result = await signAndPublishRoster(albumId, members);
+    log.debug('Published signed roster', {
+      albumId,
+      rosterVersion: result.rosterVersion,
+      signerEpochId: result.signerEpochId,
+      memberCount: members.length,
+    });
+  } catch (err) {
+    log.warn('Best-effort roster publish failed (visitor UI will show "unverified")', {
+      albumId,
+      memberCount: members.length,
+      reason: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 /** Error thrown by member management operations */
 export class MemberManagementError extends Error {
@@ -336,7 +368,16 @@ export function useMemberManagement(
         const memberInfo = toMemberInfo(newMember);
 
         // Update local state
-        setMembers((prev) => [...prev, memberInfo]);
+        const nextMembers = [...members, memberInfo];
+        setMembers(nextMembers);
+
+        // C2c-5: re-sign and publish the owner-signed roster so visitor
+        // clients see verified role badges. Best-effort — invite already
+        // succeeded server-side.
+        void publishRosterBestEffort(
+          albumId,
+          nextMembers.map((m) => ({ userId: m.userId, role: m.role })),
+        );
 
         return memberInfo;
       } catch (err) {
@@ -367,7 +408,14 @@ export function useMemberManagement(
         await api.removeAlbumMember(albumId, userId);
 
         // Update local state
-        setMembers((prev) => prev.filter((m) => m.userId !== userId));
+        const nextMembers = members.filter((m) => m.userId !== userId);
+        setMembers(nextMembers);
+
+        // C2c-5: re-sign and publish the owner-signed roster.
+        void publishRosterBestEffort(
+          albumId,
+          nextMembers.map((m) => ({ userId: m.userId, role: m.role })),
+        );
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
         throw new MemberManagementError(
@@ -380,7 +428,7 @@ export function useMemberManagement(
         setRemovalStep(null);
       }
     },
-    [albumId],
+    [albumId, members],
   );
 
   /**
@@ -414,11 +462,21 @@ export function useMemberManagement(
         setRemovalStep('rotating');
         onProgress?.('rotating');
         await removeMemberAndRotateEpoch(albumId, userId);
-        setMembers((prev) => prev.filter((m) => m.userId !== userId));
+        const nextMembers = members.filter((m) => m.userId !== userId);
+        setMembers(nextMembers);
 
         setRemovalStep('clearing');
         onProgress?.('clearing');
         await clearPhotoCaches(albumId);
+
+        // C2c-5: re-sign the roster under the NEW epoch (rotation just
+        // bumped CurrentEpochId so the next signed roster binds to the
+        // post-rotation signing key). Best-effort: rotation already
+        // succeeded server-side.
+        void publishRosterBestEffort(
+          albumId,
+          nextMembers.map((m) => ({ userId: m.userId, role: m.role })),
+        );
 
         setRemovalStep('complete');
         onProgress?.('complete');
@@ -442,7 +500,7 @@ export function useMemberManagement(
         setRemovalStep(null);
       }
     },
-    [albumId],
+    [albumId, members],
   );
 
   // Determine if current user is owner
