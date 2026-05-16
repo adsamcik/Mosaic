@@ -5,8 +5,7 @@ import android.content.Context
 import android.net.Uri
 import java.io.File
 import java.io.InputStream
-import java.io.OutputStream
-import java.security.MessageDigest
+import org.mosaic.android.main.upload.RustContentHasher
 
 internal class ShardEnvelopeStore(
   private val context: Context,
@@ -47,17 +46,17 @@ internal class ShardEnvelopeStore(
     if (file.exists()) return PersistedEnvelope(Uri.fromFile(file).toString(), sha256Hex(file.inputStream()))
     file.parentFile?.mkdirs()
     val partial = File(file.parentFile, "${file.name}.partial")
-    val digest = MessageDigest.getInstance("SHA-256")
     partial.outputStream().use { output ->
-      output.writeAndHash(envelope, digest)
+      output.write(envelope)
     }
+    val sha256Hex = RustContentHasher.sha256Hex(envelope)
     if (!partial.renameTo(file)) {
       partial.copyTo(file, overwrite = true)
       partial.delete()
     }
     return PersistedEnvelope(
       uri = Uri.fromFile(file).toString(),
-      sha256Hex = digest.digest().joinToString("") { byte -> "%02x".format(byte) },
+      sha256Hex = sha256Hex,
     )
   }
 
@@ -83,27 +82,10 @@ internal class ShardEnvelopeStore(
     private const val MOSAIC_STAGED_SCHEME = "mosaic-staged"
     private const val ENVELOPE_DIR_NAME = "encrypted-shards"
 
-    fun sha256Hex(bytes: ByteArray): String =
-      MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { byte -> "%02x".format(byte) }
+    fun sha256Hex(bytes: ByteArray): String = RustContentHasher.sha256Hex(bytes)
 
-    fun sha256Hex(input: InputStream): String {
-      val digest = MessageDigest.getInstance("SHA-256")
-      input.use { stream ->
-        val buffer = ByteArray(64 * 1024)
-        while (true) {
-          val read = stream.read(buffer)
-          if (read <= 0) break
-          digest.update(buffer, 0, read)
-        }
-      }
-      return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
-    }
+    fun sha256Hex(input: InputStream): String = RustContentHasher.sha256Hex(input)
   }
-}
-
-private fun OutputStream.writeAndHash(bytes: ByteArray, digest: MessageDigest) {
-  write(bytes)
-  digest.update(bytes)
 }
 
 internal data class ShardEnvelopeInput(
