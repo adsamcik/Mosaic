@@ -22,6 +22,7 @@ import {
   manifestShardIdsMatchTranscript,
   manifestTranscriptInputForPhotoMeta,
 } from './manifest-transcript';
+import { buildTombstoneTranscriptBytes } from './tombstone-transcript';
 import type {
   ContentConflictEventDetail,
   SyncEventDetail,
@@ -74,6 +75,91 @@ function isHandleLifecycleError(error: unknown): boolean {
     code === WorkerCryptoErrorCode.ClosedHandle ||
     code === WorkerCryptoErrorCode.EpochHandleNotFound
   );
+}
+
+/**
+ * Verifies a tombstone (soft-delete) signature against the published
+ * per-epoch manifest signing pubkey. Returns `null` on success, or a
+ * short skip-reason string on failure (recorded as a sync skip; cursor
+ * does not advance past the suspicious row).
+ *
+ * Closes audit `sync C2 (unauthenticated tombstones)`: pre-A2 unsigned
+ * tombstones surface as `tombstone-unsigned` and the local photo is NOT
+ * purged. After every editor has migrated to signed deletes, all
+ * tombstones carry valid signatures and this path becomes a no-op.
+ */
+async function verifyTombstoneOrReason(
+  manifest: {
+    id: string;
+    albumId: string;
+    versionCreated: number;
+    isDeleted: boolean;
+    tombstoneSignature?: string | null;
+    tombstoneSignerEpochId?: number | null;
+  },
+  albumId: string,
+  deps: {
+    fetchEpochKey: (
+      albumId: string,
+      epochId: number,
+    ) => Promise<{ signPublicKey: Uint8Array }>;
+    verifySignature: (
+      transcriptBytes: Uint8Array,
+      signature: Uint8Array,
+      pubkey: Uint8Array,
+    ) => Promise<boolean>;
+  },
+): Promise<string | null> {
+  if (!manifest.tombstoneSignature || manifest.tombstoneSignerEpochId == null) {
+    return 'tombstone-unsigned';
+  }
+
+  let signatureBytes: Uint8Array;
+  try {
+    signatureBytes = fromBase64(manifest.tombstoneSignature);
+  } catch {
+    return 'tombstone-bad-base64';
+  }
+  if (signatureBytes.length !== 64) {
+    return 'tombstone-bad-length';
+  }
+
+  let signerEpochBundle: { signPublicKey: Uint8Array };
+  try {
+    signerEpochBundle = await deps.fetchEpochKey(
+      albumId,
+      manifest.tombstoneSignerEpochId,
+    );
+  } catch {
+    return 'tombstone-unknown-signer-epoch';
+  }
+  if (!hasValidSigningKey(signerEpochBundle.signPublicKey)) {
+    return 'tombstone-empty-signer-pubkey';
+  }
+
+  let transcriptBytes: Uint8Array;
+  try {
+    transcriptBytes = buildTombstoneTranscriptBytes({
+      albumId: manifest.albumId,
+      epochId: manifest.tombstoneSignerEpochId,
+      photoId: manifest.id,
+      versionCreated: manifest.versionCreated,
+    });
+  } catch {
+    return 'tombstone-transcript-build-failed';
+  }
+
+  let isValid = false;
+  try {
+    isValid = await deps.verifySignature(
+      transcriptBytes,
+      signatureBytes,
+      signerEpochBundle.signPublicKey,
+    );
+  } catch {
+    return 'tombstone-verify-error';
+  }
+  return isValid ? null : 'tombstone-signature-invalid';
 }
 
 function createDeletedManifestTombstone(manifest: {
@@ -268,6 +354,34 @@ class SyncEngine extends EventTarget {
           throwIfAborted(signal);
 
           if (manifest.isDeleted) {
+            // Audit "sync C2" (batch 5c — A2): an unsigned tombstone is
+            // suspicious. A malicious or compromised server could fabricate
+            // `isDeleted: true` rows to purge local state. We therefore
+            // require a valid Ed25519 signature over the canonical
+            // tombstone transcript (album_id, signer_epoch_id, photo_id,
+            // version_created) before calling purgeLocalPhoto. Failures are
+            // recorded as skips so the cursor does not advance past the
+            // suspicious row — the next sync run will retry, and the UI
+            // can surface "{N} pending deletions need re-authorization".
+            const reason = await verifyTombstoneOrReason(
+              manifest,
+              albumId,
+              {
+                fetchEpochKey: getOrFetchEpochKey,
+                verifySignature: (transcript, signature, pubkey) =>
+                  crypto.verifySignatureWithEpoch(transcript, signature, pubkey),
+              },
+            );
+            if (reason !== null) {
+              log.warn('Refusing to purge on unsigned/invalid tombstone', {
+                albumId: manifest.albumId,
+                manifestId: manifest.id,
+                versionCreated: manifest.versionCreated,
+                reason,
+              });
+              recordSkip(manifest.id, manifest.versionCreated, reason);
+              continue;
+            }
             await purgeLocalPhoto({
               albumId: manifest.albumId,
               photoId: manifest.id,

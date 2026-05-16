@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   },
   crypto: {
     verifyManifestWithEpoch: vi.fn(),
+    verifySignatureWithEpoch: vi.fn(),
     decryptManifestWithEpoch: vi.fn(),
   },
   epochService: {
@@ -112,6 +113,7 @@ describe('syncEngine', () => {
       blockers: [],
     });
     mocks.crypto.verifyManifestWithEpoch.mockResolvedValue(true);
+    mocks.crypto.verifySignatureWithEpoch.mockResolvedValue(true);
     mocks.crypto.decryptManifestWithEpoch.mockResolvedValue(
       SAMPLE_PHOTO_META_BYTES,
     );
@@ -285,19 +287,21 @@ describe('syncEngine', () => {
   });
 
 
-  it('purges local photo data when sync observes a deleted manifest without decrypting metadata', async () => {
+  it('purges local photo data when sync observes a signed tombstone (A2)', async () => {
     const signer = new Uint8Array(32).fill(9);
     mocks.api.syncAlbum.mockResolvedValue({
       manifests: [
         {
-          id: 'manifest-deleted',
-          albumId: 'album-1',
+          id: '11111111-2222-3333-4444-555555555555',
+          albumId: '00000000-1111-2222-3333-444444444444',
           versionCreated: 3,
           isDeleted: true,
           encryptedMeta: '',
           signature: '',
           signerPubkey: toBase64(signer),
           shardIds: ['encrypted-shard-1'],
+          tombstoneSignature: toBase64(new Uint8Array(64).fill(0xab)),
+          tombstoneSignerEpochId: 7,
         },
       ],
       currentEpochId: 7,
@@ -307,24 +311,125 @@ describe('syncEngine', () => {
 
     const syncEngine = await importSyncEngine();
 
-    await syncEngine.sync('album-1');
+    await syncEngine.sync('00000000-1111-2222-3333-444444444444');
 
+    expect(mocks.crypto.verifySignatureWithEpoch).toHaveBeenCalledTimes(1);
     expect(mocks.localPurge.purgeLocalPhoto).toHaveBeenCalledWith({
-      albumId: 'album-1',
-      photoId: 'manifest-deleted',
+      albumId: '00000000-1111-2222-3333-444444444444',
+      photoId: '11111111-2222-3333-4444-555555555555',
       reason: 'sync-deleted',
     });
-    expect(mocks.crypto.verifyManifestWithEpoch).not.toHaveBeenCalled();
     expect(mocks.crypto.decryptManifestWithEpoch).not.toHaveBeenCalled();
     expect(mocks.db.insertManifests).toHaveBeenCalledWith([
       expect.objectContaining({
-        id: 'manifest-deleted',
-        albumId: 'album-1',
+        id: '11111111-2222-3333-4444-555555555555',
+        albumId: '00000000-1111-2222-3333-444444444444',
         isDeleted: true,
         shardIds: ['encrypted-shard-1'],
       }),
     ]);
-    expect(mocks.db.setAlbumVersion).toHaveBeenCalledWith('album-1', 3);
+    expect(mocks.db.setAlbumVersion).toHaveBeenCalledWith('00000000-1111-2222-3333-444444444444', 3);
+  });
+
+  it('refuses to purge on unsigned tombstone (audit sync C2)', async () => {
+    // Pre-A2 tombstones (no signature) MUST NOT be honored — a malicious
+    // server cannot forge deletions to purge local state.
+    const signer = new Uint8Array(32).fill(9);
+    mocks.api.syncAlbum.mockResolvedValue({
+      manifests: [
+        {
+          id: '11111111-2222-3333-4444-555555555555',
+          albumId: '00000000-1111-2222-3333-444444444444',
+          versionCreated: 3,
+          isDeleted: true,
+          encryptedMeta: '',
+          signature: '',
+          signerPubkey: toBase64(signer),
+          shardIds: ['encrypted-shard-1'],
+          // No tombstoneSignature / tombstoneSignerEpochId
+        },
+      ],
+      currentEpochId: 7,
+      albumVersion: 3,
+      hasMore: false,
+    });
+
+    const syncEngine = await importSyncEngine();
+    await syncEngine.sync('00000000-1111-2222-3333-444444444444');
+
+    expect(mocks.crypto.verifySignatureWithEpoch).not.toHaveBeenCalled();
+    expect(mocks.localPurge.purgeLocalPhoto).not.toHaveBeenCalled();
+    // Skip clamps cursor advance: cursor must not advance past the
+    // suspicious tombstone so the next sync run retries (this is
+    // sync C1/C3/C4 "skip-aware cursor" behavior re-used).
+    expect(mocks.db.setAlbumVersion).not.toHaveBeenCalledWith(
+      '00000000-1111-2222-3333-444444444444',
+      3,
+    );
+  });
+
+  it('refuses to purge on tombstone with invalid signature', async () => {
+    const signer = new Uint8Array(32).fill(9);
+    mocks.api.syncAlbum.mockResolvedValue({
+      manifests: [
+        {
+          id: '11111111-2222-3333-4444-555555555555',
+          albumId: '00000000-1111-2222-3333-444444444444',
+          versionCreated: 3,
+          isDeleted: true,
+          encryptedMeta: '',
+          signature: '',
+          signerPubkey: toBase64(signer),
+          shardIds: ['encrypted-shard-1'],
+          tombstoneSignature: toBase64(new Uint8Array(64).fill(0xab)),
+          tombstoneSignerEpochId: 7,
+        },
+      ],
+      currentEpochId: 7,
+      albumVersion: 3,
+      hasMore: false,
+    });
+
+    mocks.crypto.verifySignatureWithEpoch.mockResolvedValueOnce(false);
+
+    const syncEngine = await importSyncEngine();
+    await syncEngine.sync('00000000-1111-2222-3333-444444444444');
+
+    expect(mocks.crypto.verifySignatureWithEpoch).toHaveBeenCalledTimes(1);
+    expect(mocks.localPurge.purgeLocalPhoto).not.toHaveBeenCalled();
+    expect(mocks.db.setAlbumVersion).not.toHaveBeenCalledWith(
+      '00000000-1111-2222-3333-444444444444',
+      3,
+    );
+  });
+
+  it('refuses to purge on tombstone with wrong-length signature', async () => {
+    const signer = new Uint8Array(32).fill(9);
+    mocks.api.syncAlbum.mockResolvedValue({
+      manifests: [
+        {
+          id: '11111111-2222-3333-4444-555555555555',
+          albumId: '00000000-1111-2222-3333-444444444444',
+          versionCreated: 3,
+          isDeleted: true,
+          encryptedMeta: '',
+          signature: '',
+          signerPubkey: toBase64(signer),
+          shardIds: ['encrypted-shard-1'],
+          tombstoneSignature: toBase64(new Uint8Array(63)), // not 64 bytes
+          tombstoneSignerEpochId: 7,
+        },
+      ],
+      currentEpochId: 7,
+      albumVersion: 3,
+      hasMore: false,
+    });
+
+    const syncEngine = await importSyncEngine();
+    await syncEngine.sync('00000000-1111-2222-3333-444444444444');
+
+    expect(mocks.crypto.verifySignatureWithEpoch).not.toHaveBeenCalled();
+    expect(mocks.localPurge.purgeLocalPhoto).not.toHaveBeenCalled();
   });
 
   it('skips manifests when server signer pubkey mismatches the cached epoch signing key', async () => {

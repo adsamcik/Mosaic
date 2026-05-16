@@ -1298,6 +1298,15 @@ class CryptoWorker implements CryptoWorkerApi {
     return facade.verifyManifestWithEpoch(transcript, signature, pubKey);
   }
 
+  async verifySignatureWithEpoch(
+    transcriptBytes: Uint8Array,
+    signature: Uint8Array,
+    pubKey: Uint8Array,
+  ): Promise<boolean> {
+    const facade = await getRustFacade();
+    return facade.verifyManifestWithEpoch(transcriptBytes, signature, pubKey);
+  }
+
   async finalizeIdempotencyKey(jobId: string): Promise<string> {
     const facade = await getRustFacade();
     return facade.finalizeIdempotencyKey(jobId);

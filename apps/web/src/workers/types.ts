@@ -549,6 +549,23 @@ export interface CryptoWorkerApi {
   ): Promise<boolean>;
 
   /**
+   * Verify an Ed25519 signature over caller-built transcript bytes
+   * against a per-epoch manifest signing public key.
+   *
+   * Used by the sync engine to verify signed tombstones (audit
+   * `sync C2`, batch 5c — A2). The transcript bytes are built by the
+   * caller (e.g. `buildTombstoneTranscriptBytes`) to match the
+   * canonical Rust producer in `mosaic-domain`; this method only runs
+   * the underlying Ed25519 verify primitive so the same worker call
+   * can serve any pre-canonicalized transcript format.
+   */
+  verifySignatureWithEpoch(
+    transcriptBytes: Uint8Array,
+    signature: Uint8Array,
+    pubKey: Uint8Array,
+  ): Promise<boolean>;
+
+  /**
    * Get the user's identity public key (Ed25519)
    * Returns null if identity keypair not yet derived
    */

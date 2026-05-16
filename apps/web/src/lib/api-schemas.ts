@@ -263,6 +263,12 @@ export const ManifestRecordSchema = z.object({
   // cryptographically).
   shardIds: z.array(z.string()),
   shards: z.array(ManifestShardProjectionSchema).default([]),
+  // A2 audit "sync C2": signed tombstone fields. Null on live rows and on
+  // pre-A2 unsigned tombstones (the read path treats unsigned tombstones
+  // as suspicious and refuses to purge local state until they are
+  // re-deleted with a signed transcript).
+  tombstoneSignature: Base64Schema.nullish(),
+  tombstoneSignerEpochId: z.number().int().nonnegative().nullish(),
   createdAt: IsoDateTimeSchema,
   updatedAt: IsoDateTimeSchema.nullish(),
 });
