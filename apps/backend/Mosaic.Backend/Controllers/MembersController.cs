@@ -363,4 +363,145 @@ public class MembersController : ControllerBase
             throw;
         }
     }
+
+    /// <summary>
+    /// Publish an owner-signed member roster (batch C2b-2 — closes audit
+    /// <c>threat-model C-3 (server-controlled member roles)</c>).
+    ///
+    /// The owner signs the canonical roster transcript produced by
+    /// <c>mosaic_domain::canonical_member_roster_transcript_bytes</c> with
+    /// the per-epoch <c>ManifestSigningSecretKey</c>; the server stores
+    /// the signature, signer-epoch, and version on the Album row. The
+    /// visitor client recomputes the same transcript from the album's
+    /// member list and verifies the signature against the album's
+    /// published epoch signing pubkey before rendering role badges — a
+    /// compromised or malicious server can no longer fabricate
+    /// admin/editor labels.
+    ///
+    /// Server-side validation (the server is NOT the authority on
+    /// signature validity, but performs structural and authorization
+    /// checks):
+    /// - Caller must be the album owner.
+    /// - <c>RosterVersion</c> must be strictly greater than the current
+    ///   stored version (monotonic — prevents rollback of role changes).
+    /// - <c>Signature</c> must be a valid base64 string decoding to
+    ///   exactly 64 bytes (Ed25519 signature length).
+    /// - <c>SignerEpochId</c> must resolve to an existing album epoch.
+    /// </summary>
+    [HttpPost("roster")]
+    public async Task<IActionResult> PublishSignedRoster(
+        Guid albumId,
+        [FromBody] PublishSignedRosterRequest request)
+    {
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
+
+        var (album, ownerError) = await _db.RequireAlbumOwnerAsync(albumId, user.Id);
+        if (ownerError != null)
+        {
+            return ownerError;
+        }
+
+        if (!TryDecodeBase64(request.Signature, out var signatureBytes) || signatureBytes.Length == 0)
+        {
+            return Problem(
+                detail: "signature must be valid base64 and non-empty",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+        if (signatureBytes.Length != 64)
+        {
+            return Problem(
+                detail: "signature must be a 64-byte Ed25519 signature",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        // Reject stale rosters: rosterVersion must strictly increase. A
+        // server that accepts a lower version could be coerced into
+        // serving an old roster (rollback attack on role revocations).
+        if (album!.MemberRosterVersion is long currentVersion
+            && request.RosterVersion <= currentVersion)
+        {
+            return Problem(
+                detail: $"rosterVersion must strictly increase (current={currentVersion}, requested={request.RosterVersion})",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        // SignerEpochId must resolve to an actual album epoch. We accept
+        // any historical or current epoch — visitors look up the matching
+        // pubkey to verify, so a stale-but-still-signed roster from an
+        // earlier epoch is allowed if it's the latest published version.
+        var epochExists = await _db.EpochKeys
+            .AnyAsync(ek => ek.AlbumId == albumId && ek.EpochId == request.SignerEpochId);
+        if (!epochExists)
+        {
+            return Problem(
+                detail: $"signerEpochId {request.SignerEpochId} does not exist for this album",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        // Reject duplicate member entries — a duplicate would create role
+        // ambiguity under one signature. The signed transcript already
+        // rejects duplicates client-side, but defense in depth surfaces
+        // bad clients early with a clear 400.
+        if (request.Members.Length != request.Members.Select(m => m.UserId).Distinct().Count())
+        {
+            return Problem(
+                detail: "duplicate userId in roster members",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        // Reject unknown role bytes — only the wire-pinned set is valid.
+        foreach (var member in request.Members)
+        {
+            if (member.RoleByte is not (1 or 2 or 3))
+            {
+                return Problem(
+                    detail: $"invalid roleByte {member.RoleByte} for member {member.UserId} (expected 1=owner, 2=editor, 3=viewer)",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+        }
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            album.MemberRosterSignature = signatureBytes;
+            album.MemberRosterSignerEpochId = request.SignerEpochId;
+            album.MemberRosterVersion = request.RosterVersion;
+            album.UpdatedAt = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Ok(new
+            {
+                albumId,
+                rosterVersion = request.RosterVersion,
+                signerEpochId = request.SignerEpochId,
+                memberCount = request.Members.Length,
+            });
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    private static bool TryDecodeBase64(string? value, out byte[] bytes)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            bytes = [];
+            return false;
+        }
+        try
+        {
+            bytes = Convert.FromBase64String(value);
+            return true;
+        }
+        catch (FormatException)
+        {
+            bytes = [];
+            return false;
+        }
+    }
 }
