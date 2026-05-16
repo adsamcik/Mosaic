@@ -28,15 +28,17 @@ use mosaic_crypto::{
 use mosaic_domain::{
     EncryptedMetadataEnvelope, ManifestShardRef, ManifestTranscript, MemberRole, MemberRosterEntry,
     MemberRosterTranscript, ShardTier, TombstoneTranscript, canonical_manifest_transcript_bytes,
-    canonical_member_roster_transcript_bytes, canonical_tombstone_transcript_bytes,
+    canonical_manifest_transcript_bytes_v2, canonical_member_roster_transcript_bytes,
+    canonical_tombstone_transcript_bytes,
 };
 use mosaic_vectors::{
     ParsedVector, default_corpus_dir, load_all, load_vector,
     vectors::{
         AccountUnlockVector, AuthChallengeVector, AuthKeypairVector, ContentEncryptVector,
         ContentHashVector, EpochDeriveVector, IdentityVector, LinkKeysVector,
-        ManifestTranscriptVector, MemberRosterSignatureVector, SealedBundleVector,
-        ShardEnvelopeVector, TierKeyWrapV2Vector, TierKeyWrapVector, TombstoneSignatureVector,
+        ManifestSignatureV2Vector, ManifestTranscriptVector, MemberRosterSignatureVector,
+        SealedBundleVector, ShardEnvelopeVector, TierKeyWrapV2Vector, TierKeyWrapVector,
+        TombstoneSignatureVector,
     },
 };
 use sha2::{Digest, Sha256};
@@ -861,5 +863,117 @@ fn member_roster_signature_vector_locks_transcript_and_ed25519_signature() {
     assert!(
         !verify_manifest_transcript(&transcript_bytes, &signature, &wrong_pubkey),
         "verify must reject the locked signature against a wrong pubkey"
+    );
+}
+
+#[test]
+fn manifest_signature_v2_vector_locks_transcript_and_ed25519_signature() {
+    // Cross-client lock for audit `crypto-correctness H-1` (batch 6f — A3).
+    // Ed25519 (RFC 8032) is deterministic given fixed seed + message, so
+    // all three client implementations (Rust core, WASM, UniFFI) MUST
+    // produce identical bytes. The vector also locks the v2 transcript
+    // layout — any drift here (e.g. accidental change to manifest_seq
+    // encoding) would silently break cross-client signature compatibility.
+    let parsed = load("manifest_signature_v2.json");
+    assert!(
+        parsed.rust_canonical,
+        "manifest_signature_v2.json must declare rust_canonical: true"
+    );
+    let vector = ManifestSignatureV2Vector::from(&parsed).expect("manifest_signature_v2 vector");
+
+    assert_eq!(vector.signing_seed.len(), 32, "signing_seed must be 32 bytes");
+    assert_eq!(vector.album_id.len(), 16, "album_id must be 16 bytes");
+    assert!(!vector.shards.is_empty(), "shards must be non-empty");
+
+    let mut album_id = [0_u8; 16];
+    album_id.copy_from_slice(&vector.album_id);
+    let envelope = EncryptedMetadataEnvelope::new(&vector.encrypted_meta);
+    let shard_refs: Vec<ManifestShardRef> = vector
+        .shards
+        .iter()
+        .map(|shard| {
+            let mut shard_id = [0_u8; 16];
+            shard_id.copy_from_slice(&shard.shard_id);
+            let mut sha256 = [0_u8; 32];
+            sha256.copy_from_slice(&shard.sha256);
+            ManifestShardRef::new(
+                shard.chunk_index,
+                shard_id,
+                ShardTier::try_from(shard.tier).expect("valid tier byte"),
+                sha256,
+            )
+        })
+        .collect();
+    let transcript = ManifestTranscript::new(album_id, vector.epoch_id, envelope, &shard_refs);
+
+    // 1. Transcript bytes are byte-exact (cross-client compatibility floor).
+    let transcript_bytes = canonical_manifest_transcript_bytes_v2(&transcript, vector.manifest_seq)
+        .expect("canonical_manifest_transcript_bytes_v2");
+    assert_eq!(
+        transcript_bytes.len(),
+        vector.expected_transcript_length,
+        "v2 transcript length drift"
+    );
+    assert_eq!(
+        hex(&transcript_bytes),
+        hex(&vector.expected_transcript),
+        "v2 manifest transcript bytes drift (cross-client signature will silently break)"
+    );
+
+    // 2. Pubkey derived from the seed matches.
+    let mut seed = vector.signing_seed.clone();
+    let secret = ManifestSigningSecretKey::from_seed(&mut seed).expect("from_seed");
+    let pubkey = secret.public_key();
+    assert_eq!(
+        hex(pubkey.as_bytes()),
+        hex(&vector.expected_signing_pubkey),
+        "manifest v2 signing pubkey derivation drift"
+    );
+
+    // 3. Signature is byte-exact (Ed25519 RFC 8032 deterministic).
+    let signature = sign_manifest_transcript(&transcript_bytes, &secret);
+    assert_eq!(
+        hex(signature.as_bytes()),
+        hex(&vector.expected_signature),
+        "manifest v2 signature drift - cross-client verifiers will reject"
+    );
+
+    // 4. Strict verify accepts the locked signature.
+    assert!(
+        verify_manifest_transcript(&transcript_bytes, &signature, &pubkey),
+        "verify_manifest_transcript must accept the locked v2 signature"
+    );
+
+    // 5. Negative: tampered manifest_seq must fail (the freshness binding).
+    let tampered_seq_bytes =
+        canonical_manifest_transcript_bytes_v2(&transcript, vector.manifest_seq + 1)
+            .expect("v2 bytes for tampered seq");
+    assert!(
+        !verify_manifest_transcript(&tampered_seq_bytes, &signature, &pubkey),
+        "verify must reject a v2 signature whose manifest_seq has been tampered"
+    );
+
+    // 6. Negative: silent-downgrade attempt - v1 transcript bytes for the
+    //    same inputs MUST NOT verify against the v2 signature (the context
+    //    prefix is byte-distinct so Ed25519 binding rejects it).
+    let v1_bytes = canonical_manifest_transcript_bytes(&transcript)
+        .expect("canonical_manifest_transcript_bytes");
+    assert_ne!(
+        hex(&v1_bytes),
+        hex(&transcript_bytes),
+        "v1 and v2 transcript bytes MUST differ"
+    );
+    assert!(
+        !verify_manifest_transcript(&v1_bytes, &signature, &pubkey),
+        "v1 verifier MUST NOT accept the v2 signature (no silent downgrade)"
+    );
+
+    // 7. Negative: wrong pubkey rejected.
+    let wrong_v2_pubkey_bytes = [0x55_u8; 32];
+    let wrong_v2_pubkey = ManifestSigningPublicKey::from_bytes(&wrong_v2_pubkey_bytes)
+        .expect("from_bytes accepts 32 bytes");
+    assert!(
+        !verify_manifest_transcript(&transcript_bytes, &signature, &wrong_v2_pubkey),
+        "verify must reject the locked v2 signature against a wrong pubkey"
     );
 }

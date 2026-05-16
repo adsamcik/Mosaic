@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "operation": "manifest.sign-transcript.v2",
+  "protocolVersion": "mosaic-v1",
+  "rust_canonical": true,
+  "description": "Cross-client v2 manifest-signing signature lock (batch 6f — A3, audit crypto-correctness H-1). The editor signs the canonical manifest_v2 transcript (mosaic-domain: 'Mosaic_Manifest_v2' || version=2 || album_id(16) || epoch_id_LE_u32(4) || manifest_seq_LE_i64(8) || encrypted_meta_len_LE_u32(4) || encrypted_meta || shard_count_LE_u32(4) || (chunk_index_LE_u32(4) || tier(1) || shard_id(16) || sha256(32))*) with the per-epoch Ed25519 ManifestSigningSecretKey. The 8-byte manifest_seq inserted after epoch_id is the monotonic freshness lever the server and sync client enforce per (album_id, epoch_id) to reject replays of older signed manifests. Ed25519 (RFC 8032) is deterministic given a fixed seed + message, so all three client implementations (Rust, WASM, UniFFI) MUST produce the exact signature bytes locked here. v1 readers will NEVER accept this v2 signature because the context prefix is byte-distinct ('Mosaic_Manifest_v1' vs 'Mosaic_Manifest_v2') — guaranteeing no-silent-downgrade.",
+  "algorithms": {
+    "transcript": "mosaic_domain::canonical_manifest_transcript_bytes_v2",
+    "signing": "Ed25519 (RFC 8032 deterministic), 32-byte seed -> 32-byte pubkey + 64-byte signature",
+    "verify": "mosaic_crypto::verify_manifest_transcript (Ed25519 strict)"
+  },
+  "domainLabels": [
+    "mosaic.v1.manifest.transcript.v2"
+  ],
+  "inputs": {
+    "signingSeedHex": "4242424242424242424242424242424242424242424242424242424242424242",
+    "albumIdHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+    "epochId": 7,
+    "manifestSeq": 17,
+    "encryptedMetaHex": "deadbeefcafebabe",
+    "shards": [
+      {
+        "chunkIndex": 0,
+        "tier": 3,
+        "shardIdHex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+        "sha256Hex": "7777777777777777777777777777777777777777777777777777777777777777"
+      }
+    ]
+  },
+  "expected": {
+    "transcriptLength": 116,
+    "transcriptHex": "4d6f736169635f4d616e69666573745f763202a0a1a2a3a4a5a6a7a8a9aaabacadaeaf07000000110000000000000008000000deadbeefcafebabe010000000000000003c0c1c2c3c4c5c6c7c8c9cacbcccdcecf7777777777777777777777777777777777777777777777777777777777777777",
+    "signingPubkeyHex": "2152f8d19b791d24453242e15f2eab6cb7cffa7b6a5ed30097960e069881db12",
+    "signatureHex": "dc089f31ebac462e953aef56c9acb5e734fcdd13aede3c1139de048e830969460e6f16b7e31091f7252e152c7719fbc5b9b067b705bcdc0fc1e33aa2a0c11904"
+  },
+  "negativeCases": [
+    {
+      "name": "tampered-manifest-seq",
+      "mutations": [
+        "change inputs.manifestSeq from 17 to 18"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "manifest_seq is bound into the signed bytes; a server replaying an older signed manifest under a newer seq value fails verification (closes audit crypto-correctness H-1)."
+    },
+    {
+      "name": "tampered-context-prefix-v1",
+      "mutations": [
+        "replace the leading 'Mosaic_Manifest_v2' bytes with 'Mosaic_Manifest_v1'"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "The v2 context prefix is byte-distinct from v1; a downgrade attempt to a v1 transcript MUST fail verification (no silent downgrade)."
+    },
+    {
+      "name": "tampered-epoch-id",
+      "mutations": [
+        "change inputs.epochId from 7 to 8"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "epoch_id is little-endian-encoded into the transcript; cross-epoch replay fails verification."
+    },
+    {
+      "name": "tampered-album-id",
+      "mutations": [
+        "flip first byte of inputs.albumIdHex"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "Cross-album manifest replay fails verification."
+    },
+    {
+      "name": "tampered-signature",
+      "mutations": [
+        "flip first byte of expected.signatureHex"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "Ed25519 strict verify rejects any modification of the signature bytes."
+    },
+    {
+      "name": "wrong-pubkey",
+      "mutations": [
+        "verify with a different 32-byte pubkey (e.g. all-0x55)"
+      ],
+      "errorCode": "AUTHENTICATION_FAILED",
+      "rationale": "Cross-key substitution must fail — the sync visitor only trusts the album's published epoch signing pubkey."
+    }
+  ],
+  "serverBoundOutputs": [
+    {
+      "name": "transcriptBytes",
+      "classification": "public-cryptographic",
+      "reason": "Manifest transcript bytes are the message signed by the album epoch."
+    },
+    {
+      "name": "signature",
+      "classification": "public-cryptographic",
+      "reason": "Ed25519 signature stored in the manifests row and re-emitted in sync responses."
+    },
+    {
+      "name": "manifestSeq",
+      "classification": "operational-metadata",
+      "reason": "Monotonic freshness counter; the backend enforces strict monotonicity per (album_id, signer_pubkey)."
+    }
+  ],
+  "forbiddenServerOutputs": [
+    {
+      "name": "signingSeed",
+      "reason": "The per-epoch signing seed never leaves the client — only its derived pubkey is published.",
+      "errorCode": "PLAINTEXT_KEY_FORBIDDEN"
+    }
+  ]
+}

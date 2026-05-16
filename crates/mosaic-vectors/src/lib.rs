@@ -1309,6 +1309,102 @@ pub mod vectors {
             })
         }
     }
+
+    /// `manifest.sign-transcript.v2` parsed inputs/outputs (batch 6f — A3).
+    ///
+    /// Locks the byte-exact v2 manifest-signing transcript (which embeds the
+    /// `manifest_seq` freshness field) AND the Ed25519 signature/pubkey
+    /// derived from a known 32-byte seed. Cross-client implementations
+    /// (Rust, WASM, UniFFI) MUST produce identical bytes — Ed25519 is
+    /// deterministic, and the v2 context prefix (`Mosaic_Manifest_v2`) is
+    /// byte-distinct from v1 so a v1 verifier will reject this signature
+    /// (no-silent-downgrade). Closes audit `crypto-correctness H-1`
+    /// cross-client surface.
+    pub struct ManifestSignatureV2Vector {
+        pub signing_seed: alloc::vec::Vec<u8>,
+        pub album_id: alloc::vec::Vec<u8>,
+        pub epoch_id: u32,
+        pub manifest_seq: i64,
+        pub encrypted_meta: alloc::vec::Vec<u8>,
+        pub shards: alloc::vec::Vec<ManifestShardEntry>,
+        pub expected_transcript: alloc::vec::Vec<u8>,
+        pub expected_transcript_length: usize,
+        pub expected_signing_pubkey: alloc::vec::Vec<u8>,
+        pub expected_signature: alloc::vec::Vec<u8>,
+    }
+
+    #[derive(Deserialize)]
+    struct ManifestV2Inputs {
+        #[serde(rename = "signingSeedHex")]
+        signing_seed_hex: alloc::string::String,
+        #[serde(rename = "albumIdHex")]
+        album_id_hex: alloc::string::String,
+        #[serde(rename = "epochId")]
+        epoch_id: u32,
+        #[serde(rename = "manifestSeq")]
+        manifest_seq: i64,
+        #[serde(rename = "encryptedMetaHex")]
+        encrypted_meta_hex: alloc::string::String,
+        shards: alloc::vec::Vec<ManifestShardInput>,
+    }
+    #[derive(Deserialize)]
+    struct ManifestV2Expected {
+        #[serde(rename = "transcriptLength")]
+        transcript_length: usize,
+        #[serde(rename = "transcriptHex")]
+        transcript_hex: alloc::string::String,
+        #[serde(rename = "signingPubkeyHex")]
+        signing_pubkey_hex: alloc::string::String,
+        #[serde(rename = "signatureHex")]
+        signature_hex: alloc::string::String,
+    }
+
+    impl ManifestSignatureV2Vector {
+        /// # Errors
+        /// Returns [`VectorLoadError`] on missing fields or invalid hex.
+        pub fn from(parsed: &ParsedVector) -> Result<Self, VectorLoadError> {
+            let inputs: ManifestV2Inputs = extract(&parsed.document, "inputs", &parsed.path)?;
+            let expected: ManifestV2Expected =
+                extract(&parsed.document, "expected", &parsed.path)?;
+            let mut shards = alloc::vec::Vec::with_capacity(inputs.shards.len());
+            for shard in inputs.shards {
+                shards.push(ManifestShardEntry {
+                    chunk_index: shard.chunk_index,
+                    tier: shard.tier,
+                    shard_id: decode_hex(&shard.shard_id_hex, "shards[].shardIdHex", &parsed.path)?,
+                    sha256: decode_hex(&shard.sha256_hex, "shards[].sha256Hex", &parsed.path)?,
+                });
+            }
+            Ok(Self {
+                signing_seed: decode_hex(&inputs.signing_seed_hex, "signingSeedHex", &parsed.path)?,
+                album_id: decode_hex(&inputs.album_id_hex, "albumIdHex", &parsed.path)?,
+                epoch_id: inputs.epoch_id,
+                manifest_seq: inputs.manifest_seq,
+                encrypted_meta: decode_hex(
+                    &inputs.encrypted_meta_hex,
+                    "encryptedMetaHex",
+                    &parsed.path,
+                )?,
+                shards,
+                expected_transcript: decode_hex(
+                    &expected.transcript_hex,
+                    "expected.transcriptHex",
+                    &parsed.path,
+                )?,
+                expected_transcript_length: expected.transcript_length,
+                expected_signing_pubkey: decode_hex(
+                    &expected.signing_pubkey_hex,
+                    "expected.signingPubkeyHex",
+                    &parsed.path,
+                )?,
+                expected_signature: decode_hex(
+                    &expected.signature_hex,
+                    "expected.signatureHex",
+                    &parsed.path,
+                )?,
+            })
+        }
+    }
 }
 
 #[cfg(test)]
