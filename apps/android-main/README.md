@@ -146,6 +146,25 @@ and `AutoImportWorkInstrumentedTest` (emulator).
   state through the process-scoped `AutoImportRuntime` registry instead of
   `HiltWorker`. Tests install a custom `AutoImportSettingsProvider` /
   `AutoImportRuntimeProvider` for deterministic fixture setup.
+- **Expedited shard workers (v1.0.1 s24).** Both `ShardEncryptionScheduler`
+  and `ShardUploadScheduler` build their `OneTimeWorkRequest`s with
+  `setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)`. This is
+  the upload-while-Doze contract: on Android 12+ a multi-shard upload that
+  enters a Doze maintenance window would otherwise wait hours for the next
+  window. Expedited work is permitted to run immediately; the fallback
+  `RUN_AS_NON_EXPEDITED_WORK_REQUEST` policy means the worker silently
+  degrades to standard scheduling when expedited quota is exhausted rather
+  than failing. `ShardEncryptionWorker.getForegroundInfo()` and
+  `ShardUploadWorker.getForegroundInfo()` return a `ForegroundInfo` on the
+  shared `mosaic.shard-upload` notification channel
+  (`IMPORTANCE_LOW`, no sound, no vibration) so WorkManager can promote the
+  worker to a foreground service when needed. The notification body is the
+  deliberately-generic `shard_upload_notification_text` string ("Uploading
+  album to the cloud" / "Nahrávám album do cloudu") — it never includes
+  album names, photo identifiers, or any user-identifying material. Retries
+  scheduled with `initialDelayMs > 0` are intentionally **not** expedited
+  because `WorkRequest.Builder` rejects the combination ("Expedited jobs
+  cannot be delayed"); a deferred retry is by definition not time-critical.
 
 ## Dependencies
 
