@@ -1,0 +1,92 @@
+version: 2
+
+# Dependabot configuration for Mosaic.
+#
+# Purpose: enable auto-updates across all ecosystems. Security alerts for
+# Android Netty/Guava transitives are mitigated at the build level via
+# `resolutionStrategy.eachDependency` in apps/android-main/build.gradle.kts
+# (forces patched versions) — see CVE comments there. Alerts for the
+# pre-pin versions reported by the auto-dependency-submission scanner
+# have been dismissed via API with reason="inaccurate" because the
+# release APK is unaffected (zero Netty in releaseRuntimeClasspath; only
+# `listenablefuture:1.0` stub for Guava).
+
+updates:
+  # ---------------------------------------------------------------
+  # Android Gradle (apps/android-main) — UTP transitive Netty/Guava
+  # pinned via resolutionStrategy.eachDependency (build.gradle.kts:223).
+  # ---------------------------------------------------------------
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # ---------------------------------------------------------------
+  # NPM (libs/crypto, apps/web, tests/e2e, tests/integration)
+  # ---------------------------------------------------------------
+  - package-ecosystem: "npm"
+    directory: "/libs/crypto"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/apps/web"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/tests/e2e"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: "npm"
+    directory: "/tests/integration"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+
+  # ---------------------------------------------------------------
+  # Cargo (Rust workspace at repo root)
+  # ---------------------------------------------------------------
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # ---------------------------------------------------------------
+  # NuGet (apps/backend/Mosaic.Backend)
+  # ---------------------------------------------------------------
+  - package-ecosystem: "nuget"
+    directory: "/apps/backend/Mosaic.Backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # ---------------------------------------------------------------
+  # GitHub Actions
+  # ---------------------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+
+  # ---------------------------------------------------------------
+  # Docker (Dockerfiles)
+  # ---------------------------------------------------------------
+  - package-ecosystem: "docker"
+    directory: "/apps/backend/Mosaic.Backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: "docker"
+    directory: "/apps/web"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
