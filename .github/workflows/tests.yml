@@ -280,6 +280,9 @@ jobs:
       - name: Run no-raw-secret-ffi-export architecture guard
         run: bash ./tests/architecture/no-raw-secret-ffi-export.sh
 
+      - name: Run no-arbitrary-identity-sign architecture guard
+        run: bash ./tests/architecture/no-arbitrary-identity-sign.sh
+
       - name: Run web-raw-input-ffi PowerShell architecture guard
         run: pwsh ./tests/architecture/web-raw-input-ffi.ps1
 
