@@ -177,7 +177,7 @@ describe('SharedAlbumViewer', () => {
         linkId: 'test-link-id',
       });
 
-      expect(getByText('Validating share link...')).not.toBeNull();
+      expect(getByText('shared.validating')).not.toBeNull();
       expect(getByTestId('shared-album-viewer')).not.toBeNull();
 
       cleanup();
@@ -198,8 +198,8 @@ describe('SharedAlbumViewer', () => {
         linkId: 'test-link-id',
       });
 
-      expect(getByText('Invalid Share Link')).not.toBeNull();
-      expect(getByText(/secret key is missing/i)).not.toBeNull();
+      expect(getByText('shared.invalidLink')).not.toBeNull();
+      expect(getByText('shared.missingSecret')).not.toBeNull();
 
       cleanup();
     });
@@ -222,7 +222,7 @@ describe('SharedAlbumViewer', () => {
         linkId: 'test-link-id',
       });
 
-      expect(getByText('Unable to Access Album')).not.toBeNull();
+      expect(getByText('shared.unableToAccess')).not.toBeNull();
       expect(getByText('This link has expired')).not.toBeNull();
 
       cleanup();
@@ -270,7 +270,8 @@ describe('SharedAlbumViewer', () => {
         linkId: 'test-link-id',
       });
 
-      expect(getByText('🖼️ Mosaic')).not.toBeNull();
+      // i18n mock returns keys; when albumName is unset, header uses shared.mosaicHeader.
+      expect(getByText('shared.mosaicHeader')).not.toBeNull();
 
       cleanup();
     });
@@ -280,7 +281,7 @@ describe('SharedAlbumViewer', () => {
         linkId: 'test-link-id',
       });
 
-      expect(getByText('Shared Album')).not.toBeNull();
+      expect(getByText('shared.sharedAlbum')).not.toBeNull();
 
       cleanup();
     });
@@ -292,8 +293,9 @@ describe('SharedAlbumViewer', () => {
         linkId: 'test-link-id',
       });
 
-      expect(getByText(/Powered by/i)).not.toBeNull();
-      expect(getByText(/Zero-knowledge encrypted/i)).not.toBeNull();
+      // i18n mock returns the key as-is; the real footer copy lives in
+      // locale files under shared.footer.
+      expect(getByText('shared.footer')).not.toBeNull();
 
       cleanup();
     });

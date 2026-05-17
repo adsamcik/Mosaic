@@ -426,7 +426,8 @@ describe('ShareLinkDialog', () => {
       });
 
       const button = getByTestId('generate-button') as HTMLButtonElement;
-      expect(button.textContent).toContain('Generating...');
+      // i18n mock in tests/setup.ts returns translation keys as-is.
+      expect(button.textContent).toContain('shareLink.create.generating');
       cleanup();
     });
 
@@ -567,7 +568,8 @@ describe('ShareLinkDialog', () => {
 
       const copyButton = getByTestId('copy-link-button') as HTMLButtonElement;
       expect(copyButton).not.toBeNull();
-      expect(copyButton.textContent).toContain('Copy');
+      // i18n mock returns translation keys as-is — initial state is `common.copy`.
+      expect(copyButton.textContent).toContain('common.copy');
       cleanup();
     });
   });
@@ -682,7 +684,7 @@ describe('ShareLinkDialog', () => {
       });
 
       const info = getByTestId('share-link-info');
-      expect(info?.textContent).toContain('Expires');
+      expect(info?.textContent).toContain('shareLink.create.expiresLabel');
       expect(info?.textContent).toContain('Jan 15, 2025');
       cleanup();
     });
@@ -703,7 +705,7 @@ describe('ShareLinkDialog', () => {
       });
 
       const info = getByTestId('share-link-info');
-      expect(info?.textContent).toContain('Max uses');
+      expect(info?.textContent).toContain('shareLink.create.maxUsesLabel');
       expect(info?.textContent).toContain('25');
       cleanup();
     });

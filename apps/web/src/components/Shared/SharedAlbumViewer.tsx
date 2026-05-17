@@ -299,10 +299,7 @@ export function SharedAlbumViewer({
       </main>
 
       <footer className="shared-viewer-footer">
-        <p>
-          Powered by <strong>Mosaic</strong> — Zero-knowledge encrypted photo
-          gallery
-        </p>
+        <p>{t('shared.footer')}</p>
       </footer>
     </div>
   );
