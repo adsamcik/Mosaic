@@ -23,7 +23,7 @@ Out of scope:
 ## Governance
 
 - **ADR-023** is the source of truth for canonical CBOR, integer map keys, `schema_version`, phase enum representation, validation rules, storage layout, migration obligations, and reversibility posture (ADR-023 §"Single canonical wire format: CBOR canonical encoding via `ciborium`", §"`schema_version: u16` is the single migration coordinate", §"Phase enum representation: numeric `u8` with append-only allocation", §"Validation rules at decode time", and §"Migration test obligations (per R-Cl3)").
-- **ADR-022** binds upload snapshots to manifest finalization by requiring persisted `Idempotency-Key` and `shardId`s for retry/recovery, and by defining `tieredShards` fields referenced by the upload snapshot key registry (ADR-022 §"`POST /api/manifests` request shape (frozen)" and §"Rules").
+- **ADR-022** binds upload snapshots to manifest finalization by requiring persisted `Idempotency-Key` and `shardId`s for retry/recovery, and by defining `tieredShards` fields referenced by the upload snapshot key registry (ADR-022 §"`POST /api/v1/manifests` request shape (frozen)" and §"Rules").
 - **Lock tests** pin all v1 numeric allocations. Existing rows cannot be reordered, renumbered, renamed with a different meaning, or reused after deprecation.
 - **ADR amendment workflow:** any backward-incompatible change requires a new ADR or ADR-023 amendment, a schema version bump, migration vectors, lock-test updates, and cross-platform fixture proof. Additive fields use the next available integer key.
 

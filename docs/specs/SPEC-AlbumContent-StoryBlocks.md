@@ -609,7 +609,7 @@ async function rotateEpochWithContent(
 **Backend:**
 
 - [ ] Add `AlbumContent` entity and migration
-- [ ] Add `GET/PUT /api/albums/{id}/content` endpoints
+- [ ] Add `GET/PUT /api/v1/albums/{id}/content` endpoints
 - [ ] Include content in album sync response
 - [ ] Add content to epoch rotation logic
 - [ ] Version-based concurrency control

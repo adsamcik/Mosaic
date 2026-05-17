@@ -216,7 +216,7 @@ export interface CryptoLib {
 
 ## Task 3: OpenAPI Specification
 
-### Deliverable: `docs/api/openapi.yaml`
+### Deliverable: `docs/api/v1/openapi.yaml`
 
 ```yaml
 openapi: 3.1.0
@@ -701,7 +701,7 @@ export const mockApi = {
 - [ ] Argon2id params documented with benchmark results
 - [ ] `libs/crypto/src/types.ts` complete and reviewed
 - [ ] `libs/crypto/src/index.ts` interface complete
-- [ ] `docs/api/openapi.yaml` complete and validated
+- [ ] `docs/api/v1/openapi.yaml` complete and validated
 - [ ] Database schema finalized
 - [ ] Mock crypto implementation ready
 - [ ] Mock API implementation ready

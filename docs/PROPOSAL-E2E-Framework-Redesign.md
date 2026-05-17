@@ -579,21 +579,21 @@ export class ApiClient {
   
   // Album operations
   async createAlbum(name: string): Promise<Album> {
-    return this.request('POST', '/api/albums', { name });
+    return this.request('POST', '/api/v1/albums', { name });
   }
   
   async getAlbums(): Promise<Album[]> {
-    return this.request('GET', '/api/albums');
+    return this.request('GET', '/api/v1/albums');
   }
   
   async deleteAlbum(id: string): Promise<void> {
-    await this.request('DELETE', `/api/albums/${id}`);
+    await this.request('DELETE', `/api/v1/albums/${id}`);
   }
   
   // Verification helpers
   async verifyAlbumExists(id: string): Promise<boolean> {
     try {
-      await this.request('GET', `/api/albums/${id}`);
+      await this.request('GET', `/api/v1/albums/${id}`);
       return true;
     } catch {
       return false;

@@ -118,7 +118,7 @@ vector corpus under `tests/vectors/`.
 │                                                                      │
 │  ┌────────────────┐  ┌────────────────┐                            │
 │  │ Tus Uploads    │  │ Blob Storage   │                            │
-│  │ /api/files     │  │ /data/blobs    │                            │
+│  │ /api/v1/files     │  │ /data/blobs    │                            │
 │  └────────────────┘  └────────────────┘                            │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -129,8 +129,8 @@ vector corpus under `tests/vectors/`.
 1. User drops photo in browser
 2. Main thread → CryptoWorker: Generate shards (thumb, preview, full)
 3. CryptoWorker encrypts each shard with tier-specific epoch key
-4. Main thread uploads shards via Tus protocol to /api/files
-5. After all shards complete, POST /api/albums/{id}/manifests with metadata
+4. Main thread uploads shards via Tus protocol to /api/v1/files
+5. After all shards complete, POST /api/v1/albums/{id}/manifests with metadata
 6. Server links shards to manifest, marks as ACTIVE
 7. CryptoWorker → DbWorker: Store decrypted metadata in SQLite
 8. UI updates to show new photo
@@ -141,7 +141,7 @@ vector corpus under `tests/vectors/`.
 ```
 1. UI requests photo from usePhotos hook
 2. Hook queries DbWorker for photo metadata
-3. On thumbnail click, fetch shard from /api/shards/{id}
+3. On thumbnail click, fetch shard from /api/v1/shards/{id}
 4. CryptoWorker decrypts shard using cached epoch key
 5. Create Blob URL and cache in LRU (100MB limit)
 6. Display in lightbox
@@ -158,78 +158,78 @@ vector corpus under `tests/vectors/`.
 | Method | Route | Purpose |
 |--------|-------|---------|
 | GET | `/health` | Database connectivity check |
-| POST | `/api/auth/init` | Request auth challenge (returns salt + nonce) |
-| POST | `/api/auth/verify` | Verify Ed25519 signature, create session |
-| POST | `/api/auth/register` | Register new user with crypto keys |
-| POST | `/api/auth/logout` | Revoke current session |
-| GET | `/api/auth/sessions` | List active sessions |
-| DELETE | `/api/auth/sessions/{id}` | Revoke specific session |
+| POST | `/api/v1/auth/init` | Request auth challenge (returns salt + nonce) |
+| POST | `/api/v1/auth/verify` | Verify Ed25519 signature, create session |
+| POST | `/api/v1/auth/register` | Register new user with crypto keys |
+| POST | `/api/v1/auth/logout` | Revoke current session |
+| GET | `/api/v1/auth/sessions` | List active sessions |
+| DELETE | `/api/v1/auth/sessions/{id}` | Revoke specific session |
 
 #### Users
 
 | Method | Route | Purpose |
 |--------|-------|---------|
-| GET | `/api/users/me` | Get current user profile + quota |
-| PUT | `/api/users/me` | Update identity pubkey and/or encrypted salt |
-| PUT | `/api/users/me/wrapped-account-key` | Update wrapped account key |
-| GET | `/api/users/{userId}` | Get user's public info |
-| GET | `/api/users/by-key/{publicKey}` | Lookup user by identity public key |
+| GET | `/api/v1/users/me` | Get current user profile + quota |
+| PUT | `/api/v1/users/me` | Update identity pubkey and/or encrypted salt |
+| PUT | `/api/v1/users/me/wrapped-account-key` | Update wrapped account key |
+| GET | `/api/v1/users/{userId}` | Get user's public info |
+| GET | `/api/v1/users/by-key/{publicKey}` | Lookup user by identity public key |
 
 #### Albums
 
 | Method | Route | Purpose |
 |--------|-------|---------|
-| GET | `/api/albums` | List all accessible albums |
-| POST | `/api/albums` | Create new album |
-| GET | `/api/albums/{id}` | Get album details |
-| DELETE | `/api/albums/{id}` | Delete album (owner only) |
-| PATCH | `/api/albums/{id}/name` | Rename album |
-| PATCH | `/api/albums/{id}/expiration` | Update expiration settings |
-| GET | `/api/albums/{id}/sync` | Sync changes since version |
+| GET | `/api/v1/albums` | List all accessible albums |
+| POST | `/api/v1/albums` | Create new album |
+| GET | `/api/v1/albums/{id}` | Get album details |
+| DELETE | `/api/v1/albums/{id}` | Delete album (owner only) |
+| PATCH | `/api/v1/albums/{id}/name` | Rename album |
+| PATCH | `/api/v1/albums/{id}/expiration` | Update expiration settings |
+| GET | `/api/v1/albums/{id}/sync` | Sync changes since version |
 
 #### Album Members & Epoch Keys
 
 | Method | Route | Purpose |
 |--------|-------|---------|
-| GET | `/api/albums/{id}/members` | List members |
-| POST | `/api/albums/{id}/members` | Invite member |
-| DELETE | `/api/albums/{id}/members/{userId}` | Remove member |
-| GET | `/api/albums/{id}/epochs` | Get epoch keys |
-| POST | `/api/albums/{id}/epochs` | Create epoch key for recipient |
-| POST | `/api/albums/{id}/epochs/{epochId}/rotate` | Rotate to new epoch |
+| GET | `/api/v1/albums/{id}/members` | List members |
+| POST | `/api/v1/albums/{id}/members` | Invite member |
+| DELETE | `/api/v1/albums/{id}/members/{userId}` | Remove member |
+| GET | `/api/v1/albums/{id}/epochs` | Get epoch keys |
+| POST | `/api/v1/albums/{id}/epochs` | Create epoch key for recipient |
+| POST | `/api/v1/albums/{id}/epochs/{epochId}/rotate` | Rotate to new epoch |
 
 #### Manifests & Shards
 
 | Method | Route | Purpose |
 |--------|-------|---------|
-| POST | `/api/albums/{id}/manifests` | Create manifest (link shards) |
-| DELETE | `/api/albums/{id}/manifests/{manifestId}` | Delete manifest |
-| GET | `/api/shards/{id}` | Download encrypted shard |
-| GET | `/api/shards/{id}/meta` | Get shard metadata |
+| POST | `/api/v1/albums/{id}/manifests` | Create manifest (link shards) |
+| DELETE | `/api/v1/albums/{id}/manifests/{manifestId}` | Delete manifest |
+| GET | `/api/v1/shards/{id}` | Download encrypted shard |
+| GET | `/api/v1/shards/{id}/meta` | Get shard metadata |
 
 #### Share Links
 
 | Method | Route | Purpose |
 |--------|-------|---------|
-| POST | `/api/albums/{id}/share-links` | Create share link |
-| GET | `/api/albums/{id}/share-links` | List share links |
-| DELETE | `/api/albums/{id}/share-links/{linkId}` | Revoke link |
-| GET | `/api/s/{linkId}` | Access link info (public) |
-| GET | `/api/s/{linkId}/epochs` | Get wrapped keys (public) |
-| GET | `/api/s/{linkId}/photos` | Get photos via link (public) |
-| GET | `/api/s/{linkId}/shards/{shardId}` | Download via link (public) |
+| POST | `/api/v1/albums/{id}/share-links` | Create share link |
+| GET | `/api/v1/albums/{id}/share-links` | List share links |
+| DELETE | `/api/v1/albums/{id}/share-links/{linkId}` | Revoke link |
+| GET | `/api/v1/s/{linkId}` | Access link info (public) |
+| GET | `/api/v1/s/{linkId}/epochs` | Get wrapped keys (public) |
+| GET | `/api/v1/s/{linkId}/photos` | Get photos via link (public) |
+| GET | `/api/v1/s/{linkId}/shards/{shardId}` | Download via link (public) |
 
 #### Admin
 
 | Method | Route | Purpose |
 |--------|-------|---------|
-| GET | `/api/admin/users` | List all users with quotas |
-| PUT | `/api/admin/users/{id}/quota` | Set custom quota |
-| GET | `/api/admin/albums` | List all albums |
-| PUT | `/api/admin/albums/{id}/limits` | Set album limits |
-| GET | `/api/admin/settings/quota` | Get system quota defaults |
-| PUT | `/api/admin/settings/quota` | Update quota defaults |
-| GET | `/api/admin/stats` | System-wide statistics |
+| GET | `/api/v1/admin/users` | List all users with quotas |
+| PUT | `/api/v1/admin/users/{id}/quota` | Set custom quota |
+| GET | `/api/v1/admin/albums` | List all albums |
+| PUT | `/api/v1/admin/albums/{id}/limits` | Set album limits |
+| GET | `/api/v1/admin/settings/quota` | Get system quota defaults |
+| PUT | `/api/v1/admin/settings/quota` | Update quota defaults |
+| GET | `/api/v1/admin/stats` | System-wide statistics |
 
 ### Middleware Pipeline
 
@@ -241,7 +241,7 @@ The middleware order is critical:
 4. **RequestTimingMiddleware** - Performance logging
 5. **LocalAuthMiddleware** OR **TrustedProxyMiddleware** - Authentication
 6. **AdminAuthMiddleware** - Admin route protection
-7. **Tus endpoint** - `/api/files` resumable uploads
+7. **Tus endpoint** - `/api/v1/files` resumable uploads
 8. **Controllers** - API endpoints
 
 ### Background Services
@@ -561,10 +561,10 @@ For use with trusted reverse proxies (Authelia, Caddy, nginx):
 Challenge-response authentication with Ed25519:
 
 ```
-1. Client → POST /api/auth/init { username }
+1. Client → POST /api/v1/auth/init { username }
 2. Server → { challenge: bytes(32), userSalt: bytes(16) }
 3. Client derives Ed25519 keypair from password
-4. Client → POST /api/auth/verify { username, signature }
+4. Client → POST /api/v1/auth/verify { username, signature }
 5. Server verifies signature against stored publicKey
 6. Server → Sets mosaic_session cookie, returns wrapped keys
 ```

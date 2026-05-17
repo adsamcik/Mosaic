@@ -131,14 +131,14 @@ private bool TryProxyAuth(HttpContext context)
 private static readonly string[] PublicPaths =
 [
     "/health",
-    "/api/health",
-    "/api/auth/init",
-    "/api/auth/config",
-    "/api/auth/verify",
-    "/api/auth/register",
-    "/api/dev-auth/",     // ⚠️ Development-only
-    "/api/test-seed/",    // ⚠️ E2E test seeding
-    "/api/s/",            // Anonymous share links
+    "/api/v1/health",
+    "/api/v1/auth/init",
+    "/api/v1/auth/config",
+    "/api/v1/auth/verify",
+    "/api/v1/auth/register",
+    "/api/v1/dev-auth/",     // ⚠️ Development-only
+    "/api/v1/test-seed/",    // ⚠️ E2E test seeding
+    "/api/v1/s/",            // Anonymous share links
     "/swagger",
     "/openapi"
 ];
@@ -157,42 +157,42 @@ private static readonly string[] PublicPaths =
 | Controller | Endpoint | Auth Required | Authorization Check |
 |------------|----------|---------------|---------------------|
 | **AlbumsController** | | | |
-| | `GET /api/albums` | ✅ Session | Filters to user's albums only |
-| | `POST /api/albums` | ✅ Session | Any authenticated user |
-| | `GET /api/albums/{id}` | ✅ Session | Album membership check |
-| | `DELETE /api/albums/{id}` | ✅ Session | Owner only |
-| | `PATCH /api/albums/{id}/name` | ✅ Session | Owner or Editor |
-| | `PATCH /api/albums/{id}/expiration` | ✅ Session | Owner only |
+| | `GET /api/v1/albums` | ✅ Session | Filters to user's albums only |
+| | `POST /api/v1/albums` | ✅ Session | Any authenticated user |
+| | `GET /api/v1/albums/{id}` | ✅ Session | Album membership check |
+| | `DELETE /api/v1/albums/{id}` | ✅ Session | Owner only |
+| | `PATCH /api/v1/albums/{id}/name` | ✅ Session | Owner or Editor |
+| | `PATCH /api/v1/albums/{id}/expiration` | ✅ Session | Owner only |
 | **MembersController** | | | |
-| | `GET /api/albums/{id}/members` | ✅ Session | Album membership |
-| | `POST /api/albums/{id}/members` | ✅ Session | CanUpload role check |
-| | `DELETE /api/albums/{id}/members/{userId}` | ✅ Session | Owner only |
+| | `GET /api/v1/albums/{id}/members` | ✅ Session | Album membership |
+| | `POST /api/v1/albums/{id}/members` | ✅ Session | CanUpload role check |
+| | `DELETE /api/v1/albums/{id}/members/{userId}` | ✅ Session | Owner only |
 | **ManifestsController** | | | |
-| | `POST /api/manifests` | ✅ Session | Album member + CanUpload |
-| | `GET /api/manifests/{id}` | ✅ Session | Album membership |
-| | `DELETE /api/manifests/{id}` | ✅ Session | Album member + CanUpload |
+| | `POST /api/v1/manifests` | ✅ Session | Album member + CanUpload |
+| | `GET /api/v1/manifests/{id}` | ✅ Session | Album membership |
+| | `DELETE /api/v1/manifests/{id}` | ✅ Session | Album member + CanUpload |
 | **ShardsController** | | | |
-| | `GET /api/shards/{id}` | ✅ Session | Album membership via manifest |
+| | `GET /api/v1/shards/{id}` | ✅ Session | Album membership via manifest |
 | **ShareLinksController** | | | |
-| | `POST /api/albums/{id}/share-links` | ✅ Session | Owner only |
-| | `GET /api/albums/{id}/share-links` | ✅ Session | Owner only |
-| | `DELETE /api/share-links/{id}` | ✅ Session | Owner only |
-| | `GET /api/s/{linkId}` | ❌ Anonymous | Link validity check |
-| | `GET /api/s/{linkId}/keys` | ❌ Anonymous | Link validity check |
-| | `GET /api/s/{linkId}/photos` | ❌ Anonymous | Link validity check |
-| | `GET /api/s/{linkId}/shards/{shardId}` | ❌ Anonymous | Link + shard belongs to album |
+| | `POST /api/v1/albums/{id}/share-links` | ✅ Session | Owner only |
+| | `GET /api/v1/albums/{id}/share-links` | ✅ Session | Owner only |
+| | `DELETE /api/v1/share-links/{id}` | ✅ Session | Owner only |
+| | `GET /api/v1/s/{linkId}` | ❌ Anonymous | Link validity check |
+| | `GET /api/v1/s/{linkId}/keys` | ❌ Anonymous | Link validity check |
+| | `GET /api/v1/s/{linkId}/photos` | ❌ Anonymous | Link validity check |
+| | `GET /api/v1/s/{linkId}/shards/{shardId}` | ❌ Anonymous | Link + shard belongs to album |
 | **AuthController** | | | |
-| | `GET /api/auth/config` | ❌ Public | Always public |
-| | `POST /api/auth/init` | ❌ Public | Rate limited |
-| | `POST /api/auth/verify` | ❌ Public | Rate limited |
-| | `POST /api/auth/register` | ❌ Public | Rate limited |
-| | `POST /api/auth/logout` | ✅ Session | Current user only |
+| | `GET /api/v1/auth/config` | ❌ Public | Always public |
+| | `POST /api/v1/auth/init` | ❌ Public | Rate limited |
+| | `POST /api/v1/auth/verify` | ❌ Public | Rate limited |
+| | `POST /api/v1/auth/register` | ❌ Public | Rate limited |
+| | `POST /api/v1/auth/logout` | ✅ Session | Current user only |
 | **Admin Controllers** | | | |
-| | All `/api/admin/*` | ✅ Session + Admin | `IsAdmin = true` required |
+| | All `/api/v1/admin/*` | ✅ Session + Admin | `IsAdmin = true` required |
 | **DevAuthController** | | | |
-| | `POST /api/dev-auth/login` | ❌ Dev Only | `IsDevelopment()` check |
+| | `POST /api/v1/dev-auth/login` | ❌ Dev Only | `IsDevelopment()` check |
 | **TestSeedController** | | | |
-| | All `/api/test-seed/*` | ❌ Test Only | `IsDevelopment() \|\| IsEnvironment("Testing")` |
+| | All `/api/v1/test-seed/*` | ❌ Test Only | `IsDevelopment() \|\| IsEnvironment("Testing")` |
 
 ### 2.2 Role-Based Access Control Implementation
 
@@ -684,7 +684,7 @@ public async Task Security_Albums_NonexistentAlbumReturnsUnauthorizedToPreventEn
 
 ### Medium Priority
 
-3. **Test Endpoint Protection** - Add a secret header requirement for `/api/test-seed/*` endpoints even in test environments.
+3. **Test Endpoint Protection** - Add a secret header requirement for `/api/v1/test-seed/*` endpoints even in test environments.
 
 4. **Cookie Security Audit** - Verify cookie `SameSite=Strict` is enforced in production (currently set based on environment).
 

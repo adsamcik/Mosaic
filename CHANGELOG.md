@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: API routes moved from `/api/*` to `/api/v1/*`** (v1.0.1 s23). All backend HTTP endpoints (auth, albums, manifests, members, epoch-keys, users, admin, share-links, test-seed, sidecar signaling/telemetry, tus uploads) are now served under the `/api/v1/` prefix. Unversioned health/observability surfaces (`/health`, `/scalar`, `/openapi`, `/.well-known/*`) are unchanged. Web (`apps/web`), Android (`apps/android-main`), integration tests, and E2E tests have been updated to the new prefix in lockstep. The change prepares the API surface for future versioned evolution; existing out-of-tree clients hitting `/api/...` (without a version segment) will receive 404 until updated. See also the late-v1 protocol freeze in `docs/RELEASE.md` — route paths remain frozen at the v1 contract; this is a one-time path prefix shift, not a contract change.
+
 ### Added
 
 #### Sidecar Beacon (P4-A through P4-E, beta)

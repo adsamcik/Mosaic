@@ -41,7 +41,7 @@ The registration flow triggers these operations in sequence:
 
 ```
 1. localAuthRegister() 
-   └── initAuth() → GET /api/auth/init (fetches userSalt)
+   └── initAuth() → GET /api/v1/auth/init (fetches userSalt)
    └── cryptoClient.deriveAuthKey()  ← HANG POINT #1
        └── Web Worker: deriveAuthKeypair()
            └── sodium.crypto_pwhash() with Argon2id (64 MiB, 3 iter)

@@ -12,7 +12,7 @@ The Mosaic v1 freeze gate (`docs/specs/SPEC-LateV1ProtocolFreeze.md` §"Explicit
 
 The Rust core completion programme (`plan.md` v2) is scoped to closing the explicitly-open items that block encryption, media handling, and the upload pipeline. Reopening the album-content document schema during this programme would expand scope across Lane W (web rich-text editor, story sections, content blocks), Lane B (backend story/content endpoints), and Lane Q (cross-platform story rendering) without unblocking any of the freeze items the programme already commits to closing.
 
-The current behaviour is operational: `GET/PUT /api/albums/{albumId}/content` round-trips one encrypted opaque blob per album with a 24-byte nonce, deterministic three-way merge (`SPEC-SyncConflictResolution.md`) for conflict resolution, and an opaque `version` counter for optimistic concurrency. End-users can edit album content; the data is end-to-end encrypted; sync resolves conflicts deterministically.
+The current behaviour is operational: `GET/PUT /api/v1/albums/{albumId}/content` round-trips one encrypted opaque blob per album with a 24-byte nonce, deterministic three-way merge (`SPEC-SyncConflictResolution.md`) for conflict resolution, and an opaque `version` counter for optimistic concurrency. End-users can edit album content; the data is end-to-end encrypted; sync resolves conflicts deterministically.
 
 The remaining open work is internal: the encrypted *block* schema (story sections, embedded media references, rich-text variants, future formats) and any additional server-visible concurrency or partial-update fields. Those decisions are coupled to UX work in `SPEC-AlbumContent-StoryBlocks.md`, `SPEC-BlockBasedContentSystem.md`, `SPEC-BlockEditorUX.md`, `SPEC-SectionBasedStoryStructure.md`, and `SPEC-AnimationSystem.md` — all of which are independent of the encryption / media / upload programme.
 
@@ -21,7 +21,7 @@ The remaining open work is internal: the encrypted *block* schema (story section
 The album story/content document shape is **formally deferred to v1.x.** The Rust core completion programme will not modify:
 
 - the encrypted block schema inside the album content document,
-- the `GET/PUT /api/albums/{albumId}/content` request or response shape,
+- the `GET/PUT /api/v1/albums/{albumId}/content` request or response shape,
 - the optimistic-concurrency `version` field semantics,
 - the deterministic three-way merge in `SPEC-SyncConflictResolution.md`.
 

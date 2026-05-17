@@ -397,7 +397,7 @@ public class TrustedProxyMiddleware
 ### 2.3 Manifest Creation (Atomic Transaction)
 
 ```csharp
-// POST /api/manifests
+// POST /api/v1/manifests
 public async Task<IActionResult> CreateManifest(CreateManifestRequest request)
 {
     var userId = GetCurrentUserId();
@@ -473,7 +473,7 @@ public async Task<IActionResult> CreateManifest(CreateManifestRequest request)
 ### 2.4 Sync Endpoint
 
 ```csharp
-// GET /api/albums/{albumId}/sync?since=105
+// GET /api/v1/albums/{albumId}/sync?since=105
 public async Task<IActionResult> SyncDelta(Guid albumId, long since)
 {
     var userId = GetCurrentUserId();

@@ -51,7 +51,7 @@ All deadlines are UTC ISO 8601 timestamps. Clients MUST send an explicit offset 
 
 ### Create album with optional expiration
 
-`POST /api/albums`
+`POST /api/v1/albums`
 
 Request body extends the existing encrypted album creation request:
 
@@ -98,7 +98,7 @@ Validation:
 
 ### Set or clear album expiration
 
-`PATCH /api/albums/{albumId}/expiration`
+`PATCH /api/v1/albums/{albumId}/expiration`
 
 Authorization: album owner only. Editors/viewers receive `403`; non-members receive `403` or `404` according to existing membership lookup conventions.
 
@@ -141,7 +141,7 @@ Response semantics:
 
 Logical photos are represented by manifest/photo records. The endpoint is album-scoped to make authorization and earlier-album-deadline behavior explicit:
 
-`PATCH /api/albums/{albumId}/photos/{photoId}/expiration`
+`PATCH /api/v1/albums/{albumId}/photos/{photoId}/expiration`
 
 Where `photoId` is the logical photo/manifest identifier returned in sync/gallery APIs.
 
@@ -203,17 +203,17 @@ A photo is represented by a manifest plus opaque encrypted shard references. Pho
 }
 ```
 
-`POST /api/manifests` accepts optional `expiresAt`. The album-scoped `PATCH /api/albums/{albumId}/photos/{photoId}/expiration` (above) is the canonical mutation endpoint; it supersedes the legacy `PATCH /api/manifests/{manifestId}/expiration` shape because authorization and earlier-album-deadline semantics depend on the album scope. `expiresAt: null` disables photo expiration. Non-null deadlines must be strictly greater than backend `UtcNow`.
+`POST /api/v1/manifests` accepts optional `expiresAt`. The album-scoped `PATCH /api/v1/albums/{albumId}/photos/{photoId}/expiration` (above) is the canonical mutation endpoint; it supersedes the legacy `PATCH /api/v1/manifests/{manifestId}/expiration` shape because authorization and earlier-album-deadline semantics depend on the album scope. `expiresAt: null` disables photo expiration. Non-null deadlines must be strictly greater than backend `UtcNow`.
 
 ### Read/list/sync behavior
 
 | API | Before deadline | At/after effective deadline |
 | --- | --- | --- |
-| `GET /api/albums` | Includes accessible albums with `expiresAt` and `expirationWarningDays`. | Expired albums are omitted once access is denied/swept. |
-| `GET /api/albums/{albumId}` | Returns album lifecycle fields. | Returns `410 Gone` until hard-delete removes the album, then `404 Not Found`. |
-| `GET /api/albums/{albumId}/sync?since=N` | Returns changes and lifecycle fields needed by web warning UI. | Returns `410 Gone` until hard-delete removes the album, then `404 Not Found`; client purges local album data for either status. |
-| `GET /api/shards/{shardId}` | Returns opaque bytes only if user has access and effective deadline is in future. | Returns `410 Gone` for expired photo/album until hard-delete, then `404 Not Found`. |
-| `GET /api/manifests/{manifestId}` | Returns encrypted manifest while effective deadline is in future. | Returns `410 Gone` until hard-delete/tombstone cleanup, then `404 Not Found`. |
+| `GET /api/v1/albums` | Includes accessible albums with `expiresAt` and `expirationWarningDays`. | Expired albums are omitted once access is denied/swept. |
+| `GET /api/v1/albums/{albumId}` | Returns album lifecycle fields. | Returns `410 Gone` until hard-delete removes the album, then `404 Not Found`. |
+| `GET /api/v1/albums/{albumId}/sync?since=N` | Returns changes and lifecycle fields needed by web warning UI. | Returns `410 Gone` until hard-delete removes the album, then `404 Not Found`; client purges local album data for either status. |
+| `GET /api/v1/shards/{shardId}` | Returns opaque bytes only if user has access and effective deadline is in future. | Returns `410 Gone` for expired photo/album until hard-delete, then `404 Not Found`. |
+| `GET /api/v1/manifests/{manifestId}` | Returns encrypted manifest while effective deadline is in future. | Returns `410 Gone` until hard-delete/tombstone cleanup, then `404 Not Found`. |
 | Sync photo deletion | Returns normal manifest records. | Emits a minimal tombstone (`id`, `albumId`, `isDeleted: true`, version) before/with sweep so clients purge local photo caches. |
 
 `410 Gone` means the resource existed but is inaccessible due to expiry. Clients MUST treat `410` the same as deletion for local purge, but MAY show an "expired" message if the user is actively viewing the resource.
@@ -254,12 +254,12 @@ The contract preserves zero-knowledge constraints:
 ```text
 Controllers
 ├─ AlbumsController
-│  ├─ POST /api/albums accepts expiresAt/expirationWarningDays
-│  ├─ PATCH /api/albums/{albumId}/expiration owner-only
-│  ├─ GET /api/albums/{albumId} returns 410/404 after expiry
-│  └─ GET /api/albums/{albumId}/sync returns 410/404 after expiry
+│  ├─ POST /api/v1/albums accepts expiresAt/expirationWarningDays
+│  ├─ PATCH /api/v1/albums/{albumId}/expiration owner-only
+│  ├─ GET /api/v1/albums/{albumId} returns 410/404 after expiry
+│  └─ GET /api/v1/albums/{albumId}/sync returns 410/404 after expiry
 ├─ ManifestsController or PhotosController
-│  ├─ PATCH /api/albums/{albumId}/photos/{photoId}/expiration editor+owner
+│  ├─ PATCH /api/v1/albums/{albumId}/photos/{photoId}/expiration editor+owner
 │  ├─ manifest/photo reads deny expired resources
 │  └─ delete/tombstone photo records for sync purge
 └─ ShardsController

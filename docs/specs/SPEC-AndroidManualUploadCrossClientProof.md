@@ -58,7 +58,7 @@ Android Photo Picker grant
        ],
        manifestReceipt: { manifestId, version }
      }
-  -> backend POST /api/manifests
+  -> backend POST /api/v1/manifests
      {
        albumId,
        encryptedMeta: base64 bytes over JSON transport / byte[] in .NET,
@@ -80,7 +80,7 @@ Android Photo Picker grant
        shardIds
      }
   -> web crypto worker verifies/decrypts encryptedMeta client-side
-  -> web shard service downloads /api/shards/{shardId} as Uint8Array
+  -> web shard service downloads /api/v1/shards/{shardId} as Uint8Array
 ```
 
 The shared fixture pins the concrete proof values:

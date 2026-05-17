@@ -89,7 +89,7 @@ Auth__ProxyAuthEnabled=true   # Enable ProxyAuth
 
 **Mode Detection Tests:**
 - Frontend detects auth mode from backend
-- `/api/auth/init` returns expected response based on mode
+- `/api/v1/auth/init` returns expected response based on mode
 - Health endpoint always accessible
 - Protected endpoints require authentication
 
@@ -174,7 +174,7 @@ npx playwright test auth-modes.spec.ts --project=chromium
 | Backend Entity     | [Manifest.cs](../apps/backend/Mosaic.Backend/Data/Entities/Manifest.cs) — `ExpiresAt`                                                               |
 | Backend Service    | [AlbumExpirationService.cs](../apps/backend/Mosaic.Backend/Services/AlbumExpirationService.cs) — deterministic server-clock enforcement and sweeps  |
 | Backend GC         | [GarbageCollectionService.cs](../apps/backend/Mosaic.Backend/Services/GarbageCollectionService.cs) — invokes album/photo expiration sweeps          |
-| Backend API        | `PATCH /api/albums/{albumId}/expiration`, `POST /api/manifests`, `PATCH /api/manifests/{manifestId}/expiration`                                     |
+| Backend API        | `PATCH /api/v1/albums/{albumId}/expiration`, `POST /api/v1/manifests`, `PATCH /api/v1/manifests/{manifestId}/expiration`                                     |
 | Backend Enforcement| Album, manifest, shard, share-link, and Tus upload endpoints block expired content                                                                  |
 | Frontend API       | [api.ts](../apps/web/src/lib/api.ts) — album and photo expiration request adapters                                                                  |
 | Frontend Settings  | [AlbumExpirationSettings.tsx](../apps/web/src/components/Albums/AlbumExpirationSettings.tsx)                                                        |
@@ -203,7 +203,7 @@ npx playwright test auth-modes.spec.ts --project=chromium
 - Upload prevention for expired albums
 - Client-side cleanup (epoch keys wiped, local DB cleared) when album disappears
 - Expired/deleted albums and sync-deleted photos purge local decrypted metadata, thumbnails, cached album keys, queued upload references, and in-memory photo state
-- Photo expiration uses a lifecycle-metadata-only API adapter (`PATCH /api/manifests/{manifestId}/expiration`)
+- Photo expiration uses a lifecycle-metadata-only API adapter (`PATCH /api/v1/manifests/{manifestId}/expiration`)
 
 **Limitations (v1):**
 - Garbage collection runs hourly, but endpoint-integrated checks also enforce expiry before serving protected backend content.

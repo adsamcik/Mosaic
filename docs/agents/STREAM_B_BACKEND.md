@@ -178,7 +178,7 @@ app.UseMiddleware<RequestTimingMiddleware>();
 app.UseMiddleware<TrustedProxyMiddleware>();
 
 // Tus endpoint for uploads
-app.MapTus("/api/files", async ctx => new tusdotnet.Models.Configuration.DefaultTusConfiguration
+app.MapTus("/api/v1/files", async ctx => new tusdotnet.Models.Configuration.DefaultTusConfiguration
 {
     Store = new tusdotnet.Stores.TusDiskStore(
         builder.Configuration["Storage:Path"]!
@@ -621,7 +621,7 @@ using Mosaic.Backend.Data.Entities;
 namespace Mosaic.Backend.Controllers;
 
 [ApiController]
-[Route("api/albums")]
+[Route("api/v1/albums")]
 public class AlbumsController : ControllerBase
 {
     private readonly MosaicDbContext _db;
@@ -703,7 +703,7 @@ public class AlbumsController : ControllerBase
         
         await _db.SaveChangesAsync();
         
-        return Created($"/api/albums/{album.Id}", new
+        return Created($"/api/v1/albums/{album.Id}", new
         {
             album.Id,
             album.OwnerId,
@@ -788,7 +788,7 @@ using Mosaic.Backend.Data.Entities;
 namespace Mosaic.Backend.Controllers;
 
 [ApiController]
-[Route("api/manifests")]
+[Route("api/v1/manifests")]
 public class ManifestsController : ControllerBase
 {
     private readonly MosaicDbContext _db;
@@ -878,7 +878,7 @@ public class ManifestsController : ControllerBase
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
             
-            return Created($"/api/manifests/{manifest.Id}", new
+            return Created($"/api/v1/manifests/{manifest.Id}", new
             {
                 manifest.Id,
                 Version = album.CurrentVersion
@@ -904,7 +904,7 @@ using Mosaic.Backend.Services;
 namespace Mosaic.Backend.Controllers;
 
 [ApiController]
-[Route("api/shards")]
+[Route("api/v1/shards")]
 public class ShardsController : ControllerBase
 {
     private readonly MosaicDbContext _db;

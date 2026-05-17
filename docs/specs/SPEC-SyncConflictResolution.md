@@ -1172,7 +1172,7 @@ describe('RaceConditions', () => {
     const syncOrder: number[] = [];
     
     // Intercept sync calls
-    await page.route('**/api/albums/*/content', async (route, request) => {
+    await page.route('**/api/v1/albums/*/content', async (route, request) => {
       const body = await request.postDataJSON();
       syncOrder.push(body.baseVersion);
       await route.continue();

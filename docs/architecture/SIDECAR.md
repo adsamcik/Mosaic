@@ -12,7 +12,7 @@ session key, or the plaintext payload.
 
 ```
 Device A ──┐                                ┌── Device B
-           │  WS /api/sidecar/signal/{room} │
+           │  WS /api/v1/sidecar/signal/{room} │
            ├────────► relay (ZK-blind) ◄────┤
            │                                │
            └── PAKE handshake (over relay) ─┘
@@ -47,7 +47,7 @@ about the pairing code.
 ### Server (`apps/backend/Mosaic.Backend/SidecarSignaling/`)
 
 * `SidecarSignalingEndpoint` — minimal-API WebSocket handler at
-  `WS /api/sidecar/signal/{roomId}`.
+  `WS /api/v1/sidecar/signal/{roomId}`.
 * `RoomManager` — `ConcurrentDictionary<string, Room>` + a hosted-service
   sweep that disposes rooms past their deadline.
 * `Room` — at most 2 sockets, per-room frame-byte/frame-count budgets.
@@ -94,7 +94,7 @@ model).
 
 ### Out of scope (for now)
 
-* No metrics export. The `/api/sidecar/health` endpoint reports only the
+* No metrics export. The `/api/v1/sidecar/health` endpoint reports only the
   current room count for liveness probes.
 * No multi-instance coordination — rooms are per-process. A future phase
   may add Redis sticky sessions, but the relay itself is stateless enough
@@ -194,7 +194,7 @@ AND `featureFlags.sidecarTelemetry` are on. Telemetry is OFF by default
 even when the feature itself is enabled, so devs can disable telemetry
 independently.
 
-Backend endpoint (`POST /api/sidecar/telemetry/v1`) re-validates the
+Backend endpoint (`POST /api/v1/sidecar/telemetry/v1`) re-validates the
 schema strictly, rejects malformed JSON / oversized batches / unknown
 bucket values, and emits one structured-log line per event with a
 fixed message template. NO IPs, NO user ids, NO request timestamps

@@ -58,9 +58,9 @@ tests" below).
   classes, required field names, enum values, byte/base64 encodings, cookie
   name `mosaic_session`, ProxyAuth `Remote-User` header, and Tus metadata
   keys (`albumId`, optional `sha256`).
-- **Tus transport semantics** — `POST/PATCH/HEAD/DELETE /api/files`, resume
+- **Tus transport semantics** — `POST/PATCH/HEAD/DELETE /api/v1/files`, resume
   semantics, completed-uploads-become-pending-opaque-shards behaviour, and
-  `GET /api/shards/{shardId}` `X-Content-SHA256` response header.
+  `GET /api/v1/shards/{shardId}` `X-Content-SHA256` response header.
 - **Existing WASM/UniFFI record names, public field names, stable error
   codes, and handle-based secret boundary** — `AccountKeyHandle`,
   `IdentityHandle`, `EpochKeyHandle`, opaque secret references only.

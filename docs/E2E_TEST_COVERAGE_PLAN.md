@@ -283,67 +283,67 @@ Scenario: Remove member and rotate keys
 
 | Scenario                       | Method | Endpoint      | Expected          | Status |
 | ------------------------------ | ------ | ------------- | ----------------- | ------ |
-| Valid Remote-User creates user | GET    | /api/users/me | 200 + user object | ⬜      |
-| Missing Remote-User header     | GET    | /api/users/me | 401 Unauthorized  | ⬜      |
-| Untrusted IP rejected          | GET    | /api/users/me | 401 Unauthorized  | ⬜      |
-| Invalid Remote-User format     | GET    | /api/users/me | 400 Bad Request   | ⬜      |
+| Valid Remote-User creates user | GET    | /api/v1/users/me | 200 + user object | ⬜      |
+| Missing Remote-User header     | GET    | /api/v1/users/me | 401 Unauthorized  | ⬜      |
+| Untrusted IP rejected          | GET    | /api/v1/users/me | 401 Unauthorized  | ⬜      |
+| Invalid Remote-User format     | GET    | /api/v1/users/me | 400 Bad Request   | ⬜      |
 
 ### 2. Album Operations
 
 | Scenario                 | Method | Endpoint                      | Expected        | Status |
 | ------------------------ | ------ | ----------------------------- | --------------- | ------ |
-| Create album             | POST   | /api/albums                   | 201 + album     | ⬜      |
-| List user's albums       | GET    | /api/albums                   | 200 + array     | ⬜      |
-| Get album details        | GET    | /api/albums/{id}              | 200 + album     | ⬜      |
-| Get album (not member)   | GET    | /api/albums/{id}              | 403 Forbidden   | ⬜      |
-| Delete album (owner)     | DELETE | /api/albums/{id}              | 204             | ⬜      |
-| Delete album (not owner) | DELETE | /api/albums/{id}              | 403 Forbidden   | ⬜      |
-| Sync from version 0      | GET    | /api/albums/{id}/sync?since=0 | 200 + manifests | ⬜      |
-| Incremental sync         | GET    | /api/albums/{id}/sync?since=5 | 200 + delta     | ⬜      |
+| Create album             | POST   | /api/v1/albums                   | 201 + album     | ⬜      |
+| List user's albums       | GET    | /api/v1/albums                   | 200 + array     | ⬜      |
+| Get album details        | GET    | /api/v1/albums/{id}              | 200 + album     | ⬜      |
+| Get album (not member)   | GET    | /api/v1/albums/{id}              | 403 Forbidden   | ⬜      |
+| Delete album (owner)     | DELETE | /api/v1/albums/{id}              | 204             | ⬜      |
+| Delete album (not owner) | DELETE | /api/v1/albums/{id}              | 403 Forbidden   | ⬜      |
+| Sync from version 0      | GET    | /api/v1/albums/{id}/sync?since=0 | 200 + manifests | ⬜      |
+| Incremental sync         | GET    | /api/v1/albums/{id}/sync?since=5 | 200 + delta     | ⬜      |
 
 ### 3. Member Management
 
 | Scenario                 | Method | Endpoint                           | Expected        | Status |
 | ------------------------ | ------ | ---------------------------------- | --------------- | ------ |
-| List members             | GET    | /api/albums/{id}/members           | 200 + array     | ⬜      |
-| Invite member (owner)    | POST   | /api/albums/{id}/members           | 201 + member    | ⬜      |
-| Invite member (editor)   | POST   | /api/albums/{id}/members           | 201 (allowed)   | ⬜      |
-| Invite member (viewer)   | POST   | /api/albums/{id}/members           | 403 Forbidden   | ⬜      |
-| Invite non-existent user | POST   | /api/albums/{id}/members           | 404 Not Found   | ⬜      |
-| Invite duplicate member  | POST   | /api/albums/{id}/members           | 409 Conflict    | ⬜      |
-| Remove member            | DELETE | /api/albums/{id}/members/{userId}  | 204             | ⬜      |
-| Remove owner             | DELETE | /api/albums/{id}/members/{ownerId} | 400 Bad Request | ⬜      |
+| List members             | GET    | /api/v1/albums/{id}/members           | 200 + array     | ⬜      |
+| Invite member (owner)    | POST   | /api/v1/albums/{id}/members           | 201 + member    | ⬜      |
+| Invite member (editor)   | POST   | /api/v1/albums/{id}/members           | 201 (allowed)   | ⬜      |
+| Invite member (viewer)   | POST   | /api/v1/albums/{id}/members           | 403 Forbidden   | ⬜      |
+| Invite non-existent user | POST   | /api/v1/albums/{id}/members           | 404 Not Found   | ⬜      |
+| Invite duplicate member  | POST   | /api/v1/albums/{id}/members           | 409 Conflict    | ⬜      |
+| Remove member            | DELETE | /api/v1/albums/{id}/members/{userId}  | 204             | ⬜      |
+| Remove owner             | DELETE | /api/v1/albums/{id}/members/{ownerId} | 400 Bad Request | ⬜      |
 
 ### 4. Epoch Keys
 
 | Scenario              | Method | Endpoint                           | Expected        | Status |
 | --------------------- | ------ | ---------------------------------- | --------------- | ------ |
-| Get epoch keys        | GET    | /api/albums/{id}/keys              | 200 + array     | ⬜      |
-| Create epoch key      | POST   | /api/albums/{id}/keys              | 201             | ⬜      |
-| Duplicate key         | POST   | /api/albums/{id}/keys              | 409 Conflict    | ⬜      |
-| Rotate epoch          | POST   | /api/albums/{id}/epochs/{n}/rotate | 200             | ⬜      |
-| Rotate to lower epoch | POST   | /api/albums/{id}/epochs/{n}/rotate | 400 Bad Request | ⬜      |
+| Get epoch keys        | GET    | /api/v1/albums/{id}/keys              | 200 + array     | ⬜      |
+| Create epoch key      | POST   | /api/v1/albums/{id}/keys              | 201             | ⬜      |
+| Duplicate key         | POST   | /api/v1/albums/{id}/keys              | 409 Conflict    | ⬜      |
+| Rotate epoch          | POST   | /api/v1/albums/{id}/epochs/{n}/rotate | 200             | ⬜      |
+| Rotate to lower epoch | POST   | /api/v1/albums/{id}/epochs/{n}/rotate | 400 Bad Request | ⬜      |
 
 ### 5. Manifests & Shards
 
 | Scenario                   | Method | Endpoint            | Expected       | Status |
 | -------------------------- | ------ | ------------------- | -------------- | ------ |
-| Create manifest            | POST   | /api/manifests      | 201 + manifest | ⬜      |
-| Create manifest (viewer)   | POST   | /api/manifests      | 403 Forbidden  | ⬜      |
-| Get manifest               | GET    | /api/manifests/{id} | 200 + manifest | ⬜      |
-| Delete manifest            | DELETE | /api/manifests/{id} | 204            | ⬜      |
-| Download shard             | GET    | /api/shards/{id}    | 200 + binary   | ⬜      |
-| Download shard (no access) | GET    | /api/shards/{id}    | 403 Forbidden  | ⬜      |
+| Create manifest            | POST   | /api/v1/manifests      | 201 + manifest | ⬜      |
+| Create manifest (viewer)   | POST   | /api/v1/manifests      | 403 Forbidden  | ⬜      |
+| Get manifest               | GET    | /api/v1/manifests/{id} | 200 + manifest | ⬜      |
+| Delete manifest            | DELETE | /api/v1/manifests/{id} | 204            | ⬜      |
+| Download shard             | GET    | /api/v1/shards/{id}    | 200 + binary   | ⬜      |
+| Download shard (no access) | GET    | /api/v1/shards/{id}    | 403 Forbidden  | ⬜      |
 
 ### 6. Tus Upload
 
 | Scenario             | Method | Endpoint        | Expected            | Status |
 | -------------------- | ------ | --------------- | ------------------- | ------ |
-| Create upload        | POST   | /api/files      | 201 + Location      | ⬜      |
-| Upload chunk         | PATCH  | /api/files/{id} | 204                 | ⬜      |
-| Complete upload      | PATCH  | /api/files/{id} | 204 + shard created | ⬜      |
-| Upload exceeds quota | POST   | /api/files      | Quota error         | ⬜      |
-| Upload exceeds 6MB   | POST   | /api/files      | 413 Too Large       | ⬜      |
+| Create upload        | POST   | /api/v1/files      | 201 + Location      | ⬜      |
+| Upload chunk         | PATCH  | /api/v1/files/{id} | 204                 | ⬜      |
+| Complete upload      | PATCH  | /api/v1/files/{id} | 204 + shard created | ⬜      |
+| Upload exceeds quota | POST   | /api/v1/files      | Quota error         | ⬜      |
+| Upload exceeds 6MB   | POST   | /api/v1/files      | 413 Too Large       | ⬜      |
 
 ---
 

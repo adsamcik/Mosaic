@@ -10,7 +10,7 @@ The Mosaic v1 freeze gate lists the manifest finalization shape as explicitly op
 
 > Manifest finalization shape. Current backend accepts both legacy `shardIds` and newer `tieredShards`; Rust canonical transcript work is stricter than the live web manifest path. The final late-v1 manifest create/read shape remains open until Android upload proves the exact tier/hash/version fields.
 
-The current state of `POST /api/manifests` (web) accepts both formats simultaneously:
+The current state of `POST /api/v1/manifests` (web) accepts both formats simultaneously:
 
 - **Legacy:** flat `shardIds: string[]` — array of all shard IDs (image: thumb/preview/original; video: thumb + chunked originals; legacy single-tier: chunked).
 - **New tiered:** `tieredShards: { thumbnail, preview, original[] }` with explicit `shardId` + `tier` per entry.
@@ -41,7 +41,7 @@ The freeze-open question said "tier/hash/version fields"; the version-field coll
 
 `manifestVersion` (the ambiguous v1 name) is **not used** in the wire format. Field rename is forced; backend and clients both ship the rename in lockstep.
 
-### `POST /api/manifests` request shape (frozen)
+### `POST /api/v1/manifests` request shape (frozen)
 
 ```json
 {
@@ -69,7 +69,7 @@ Required headers:
 - `Idempotency-Key: mosaic-finalize-<upload-job-uuidv7>` — sourced from the upload-job snapshot (R-Cl1) and prefixed with the operation namespace to prevent accidental collisions with non-finalize idempotency keys. The canonical string is produced by `mosaic_client::finalize_idempotency_key` and must be consumed by Web/WASM and Android/UniFFI wrappers rather than duplicated in client code. Server stores `(idempotency_key, canonical_request_body, response)` for the **idempotency window** (default 30 days, per ADR-022; never less than `MAX_RETRY_COUNT_LIMIT × max_backoff_with_persistence_recovery_buffer`).
 - `If-Match: "<metadataVersion>"` (PATCH only, not POST).
 
-### `POST /api/manifests` response shape (frozen)
+### `POST /api/v1/manifests` response shape (frozen)
 
 ```json
 {
@@ -81,7 +81,7 @@ Required headers:
 }
 ```
 
-### `GET /api/manifests/{manifestId}` response shape (frozen)
+### `GET /api/v1/manifests/{manifestId}` response shape (frozen)
 
 ```json
 {
@@ -103,7 +103,7 @@ Required headers:
 
 1. **`tieredShards` is the canonical wire format.** Every new client (web post-W-A4, Android A10) sends `tieredShards`. Backend `protocolVersion` MUST equal `1`; other values rejected.
 2. **Legacy `shardIds` is read-only and accepted on `GET` for backward compatibility for ≥ 2 release windows after this programme's G6 closes.** Legacy responses include both: `shardIds` (flat) and a synthesized `tieredShards` reconstructed by the backend from stored tier metadata if available, otherwise omitted (clients fall back to legacy display). Read-side discriminator: presence of `tieredShards` field in response.
-3. **No client may write a manifest without `tieredShards`.** Backend rejects `POST /api/manifests` requests that lack `tieredShards` with `400 BAD_REQUEST` and `ClientErrorCode = ManifestShapeRejected`.
+3. **No client may write a manifest without `tieredShards`.** Backend rejects `POST /api/v1/manifests` requests that lack `tieredShards` with `400 BAD_REQUEST` and `ClientErrorCode = ManifestShapeRejected`.
 4. **`tier` ∈ {1, 2, 3}** with **per-asset-type validation** (per ADR-024):
    - `assetType = Image` → tier 1, tier 2, tier 3 all required (each may have one or more `shardIndex` for chunked originals on tier 3).
    - `assetType = Video` → tier 1 (poster) and tier 3 required; **tier 2 forbidden** (returns `VideoTierShapeRejected` on read).
@@ -123,15 +123,15 @@ Required headers:
 
 `asset_id` is the encrypted-meta-derived identifier; clients compute it as `BLAKE2b-256(encrypted_meta)[..16]` (the same value embedded in the upload-job snapshot per R-Cl1). The server never sees the plaintext correlation; the recovery scan is purely client-side.
 
-If the network drops during `POST /api/manifests` and the client cannot determine outcome:
+If the network drops during `POST /api/v1/manifests` and the client cannot determine outcome:
 
 1. Reducer transitions to phase `ManifestCommitUnknown` (numeric value `7`, locked by ADR-023's phase-enum lock test).
 2. Reducer emits effect `RecoverManifestThroughSync { asset_id, shard_set_hash, since_metadata_version }`.
-3. Adapter calls sync via `GET /api/albums/{albumId}/sync?cursor=...&since_version=<since_metadata_version>` and scans returned manifests for matching `asset_id` + `shard_set_hash`. The adapter also has access to `Idempotency-Key` from the snapshot.
+3. Adapter calls sync via `GET /api/v1/albums/{albumId}/sync?cursor=...&since_version=<since_metadata_version>` and scans returned manifests for matching `asset_id` + `shard_set_hash`. The adapter also has access to `Idempotency-Key` from the snapshot.
 4. **Match outcomes** (decision table to keep recovery deadlock-free):
    - **Both `asset_id` and `shard_set_hash` match** → manifest committed successfully; reducer emits `SyncConfirmed { manifest_id, metadata_version }`; transitions to `Confirmed`.
    - **`asset_id` matches but `shard_set_hash` differs** → a stale or parallel client uploaded a different shard set for the same asset; reducer treats this as a *non-recoverable conflict*: emits `NonRetryableFailure { code: ManifestSetConflict }` and stops. User-visible state: "Upload conflict — please retry from a fresh source."
-   - **No match within `manifest_recovery_timeout_ms`** (default 60s; configurable per platform) → reducer retries `POST /api/manifests` with **the same Idempotency-Key** *and* the same `signature` (signature is over deterministic transcript bytes; recomputing yields identical bytes). Server idempotency layer handles dedup.
+   - **No match within `manifest_recovery_timeout_ms`** (default 60s; configurable per platform) → reducer retries `POST /api/v1/manifests` with **the same Idempotency-Key** *and* the same `signature` (signature is over deterministic transcript bytes; recomputing yields identical bytes). Server idempotency layer handles dedup.
    - **Idempotency-Key TTL expired** → server returns `409 IDEMPOTENCY_KEY_EXPIRED`; reducer treats as `NonRetryableFailure { code: IdempotencyExpired }`. User-visible state: "Upload took too long — please retry from a fresh source."
 5. Retry budget bounded by `MAX_RETRY_COUNT_LIMIT = 64` (R-Cl1).
 

@@ -745,8 +745,8 @@ Week 1: Backend + Types
  □ Add AlbumSectionDocument entity
  □ Add migration for album_sections table
  □ Create API endpoints:
-   □ GET /api/albums/{id}/sections
-   □ PUT /api/albums/{id}/sections
+   □ GET /api/v1/albums/{id}/sections
+   □ PUT /api/v1/albums/{id}/sections
  □ Extend PhotoMeta type with sectionId/sectionPosition
  □ Update manifest encryption to include section fields
 
@@ -772,7 +772,7 @@ Week 3: Integration + Polish
 ## Appendix A: API Endpoints
 
 ```typescript
-// GET /api/albums/{id}/sections
+// GET /api/v1/albums/{id}/sections
 interface GetSectionsResponse {
   /** Current section document version */
   version: number;
@@ -786,7 +786,7 @@ interface GetSectionsResponse {
   epochId: number;
 }
 
-// PUT /api/albums/{id}/sections
+// PUT /api/v1/albums/{id}/sections
 interface UpdateSectionsRequest {
   /** Expected current version (optimistic locking) */
   expectedVersion: number;

@@ -47,7 +47,7 @@ Deprecation workflow:
 - Allocated tags are append-only.
 - A tag's layout includes endianness, encoding, value range, presence semantics, and maximum byte length when a maximum exists.
 - Sidecar contents are plaintext only inside the client-local metadata pipeline and must be encrypted before manifest binding or transit (`canonical_metadata_sidecar_bytes` documents this in `crates/mosaic-domain/src/lib.rs`).
-- The backend never sees sidecar TLV plaintext; it receives only `encryptedMetaSidecar` opaque envelope bytes (ADR-022 Â§"POST /api/manifests request shape (frozen)" and Â§"Rules" item 9).
+- The backend never sees sidecar TLV plaintext; it receives only `encryptedMetaSidecar` opaque envelope bytes (ADR-022 Â§"POST /api/v1/manifests request shape (frozen)" and Â§"Rules" item 9).
 
 ## TLV record encoding
 

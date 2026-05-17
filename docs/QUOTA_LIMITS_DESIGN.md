@@ -184,7 +184,7 @@ All admin endpoints require `IsAdmin = true` on the authenticated user.
 #### System Settings
 
 ```http
-GET /api/admin/settings/quota
+GET /api/v1/admin/settings/quota
 Response: {
   "maxStorageBytesPerUser": 10737418240,
   "maxAlbumsPerUser": 100,
@@ -192,7 +192,7 @@ Response: {
   "maxBytesPerAlbum": 5368709120
 }
 
-PUT /api/admin/settings/quota
+PUT /api/v1/admin/settings/quota
 Request: {
   "maxStorageBytesPerUser": 10737418240,
   "maxAlbumsPerUser": 100,
@@ -204,7 +204,7 @@ Request: {
 #### User Quota Management
 
 ```http
-GET /api/admin/users
+GET /api/v1/admin/users
 Response: {
   "users": [
     {
@@ -222,27 +222,27 @@ Response: {
   ]
 }
 
-GET /api/admin/users/{userId}/quota
-PUT /api/admin/users/{userId}/quota
+GET /api/v1/admin/users/{userId}/quota
+PUT /api/v1/admin/users/{userId}/quota
 Request: {
   "maxStorageBytes": 21474836480,  // null = use system default
   "maxAlbums": 200                  // null = use system default
 }
 
-DELETE /api/admin/users/{userId}/quota
+DELETE /api/v1/admin/users/{userId}/quota
 // Resets to system defaults
 
-POST /api/admin/users/{userId}/promote
+POST /api/v1/admin/users/{userId}/promote
 // Promotes user to admin
 
-POST /api/admin/users/{userId}/demote
+POST /api/v1/admin/users/{userId}/demote
 // Demotes admin to regular user
 ```
 
 #### Album Limit Management
 
 ```http
-GET /api/admin/albums
+GET /api/v1/admin/albums
 Response: {
   "albums": [
     {
@@ -260,21 +260,21 @@ Response: {
   ]
 }
 
-GET /api/admin/albums/{albumId}/limits
-PUT /api/admin/albums/{albumId}/limits
+GET /api/v1/admin/albums/{albumId}/limits
+PUT /api/v1/admin/albums/{albumId}/limits
 Request: {
   "maxPhotos": 20000,      // null = use system default
   "maxSizeBytes": 10737418240
 }
 
-DELETE /api/admin/albums/{albumId}/limits
+DELETE /api/v1/admin/albums/{albumId}/limits
 // Resets to system defaults
 ```
 
 #### Usage Statistics
 
 ```http
-GET /api/admin/stats
+GET /api/v1/admin/stats
 Response: {
   "totalUsers": 42,
   "totalAlbums": 150,
@@ -364,7 +364,7 @@ public class AdminAuthMiddleware
 {
     public async Task Invoke(HttpContext context, MosaicDbContext db)
     {
-        if (!context.Request.Path.StartsWithSegments("/api/admin"))
+        if (!context.Request.Path.StartsWithSegments("/api/v1/admin"))
         {
             await _next(context);
             return;

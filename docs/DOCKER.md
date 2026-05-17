@@ -364,7 +364,7 @@ Mosaic uses the `Remote-User` header for authentication. Your reverse proxy must
 ```caddyfile
 photos.example.com {
     forward_auth authelia:9091 {
-        uri /api/authz/forward-auth
+        uri /api/v1/authz/forward-auth
         copy_headers Remote-User Remote-Groups Remote-Email Remote-Name
     }
     reverse_proxy mosaic-frontend:8080
@@ -457,7 +457,7 @@ docker inspect --format='{{json .State.Health}}' mosaic-backend | jq
 
 Health endpoints:
 - Frontend: `GET /health` → `200 OK`
-- Backend: `GET /api/health` → `200 OK`
+- Backend: `GET /api/v1/health` → `200 OK`
 - PostgreSQL: `pg_isready` command
 
 ### Metrics (Optional)

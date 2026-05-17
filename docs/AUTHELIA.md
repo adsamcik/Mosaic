@@ -26,14 +26,14 @@ Mosaic uses the `Remote-User` header for authentication. Authelia acts as an aut
 Mosaic supports share links that allow anonymous access to specific albums without authentication. These links use the `/s/` path prefix:
 
 - **Frontend**: `/s/{linkId}` - Renders the shared album viewer
-- **API**: `/api/s/{linkId}/*` - Backend endpoints for share link data
+- **API**: `/api/v1/s/{linkId}/*` - Backend endpoints for share link data
 
 **The following paths must bypass Authelia authentication** so that anyone with a valid share link can view the shared content:
 
 | Path | Purpose |
 |------|---------|
 | `/s/*` | Share link frontend routes |
-| `/api/s/*` | Share link API endpoints |
+| `/api/v1/s/*` | Share link API endpoints |
 | `/assets/*` | JavaScript, CSS bundles (Vite output) |
 | `/*.js`, `/*.css`, `/*.wasm` | Root-level static files |
 | `/index.html` | SPA entry point |
@@ -224,7 +224,7 @@ photos.example.com {
     # Required for share link viewers to load the app
     @public {
         path /s/*
-        path /api/s/*
+        path /api/v1/s/*
         path /assets/*
         path_regexp \.(js|css|wasm|woff2?|ttf|ico|png|svg)$
     }
@@ -235,7 +235,7 @@ photos.example.com {
     # All other routes require authentication
     handle {
         forward_auth authelia:9091 {
-            uri /api/authz/forward-auth
+            uri /api/v1/authz/forward-auth
             copy_headers Remote-User Remote-Groups Remote-Email Remote-Name
         }
 
@@ -293,7 +293,7 @@ access_control:
     - domain: 'photos.example.com'
       resources:
         - '^/s/.*$'
-        - '^/api/s/.*$'
+        - '^/api/v1/s/.*$'
       policy: bypass
 
     # Allow access to Mosaic for all authenticated users
@@ -455,7 +455,7 @@ proxy_request_buffering off;
 
 ```nginx
 # Authelia authorization endpoint
-set $upstream_authelia http://authelia:9091/api/authz/auth-request;
+set $upstream_authelia http://authelia:9091/api/v1/authz/auth-request;
 
 location /internal/authelia/authz {
     internal;
@@ -658,7 +658,7 @@ services:
       - "traefik.http.routers.authelia.tls.certresolver=le"
       - "traefik.http.services.authelia.loadbalancer.server.port=9091"
       # ForwardAuth middleware
-      - "traefik.http.middlewares.authelia.forwardauth.address=http://authelia:9091/api/authz/forward-auth"
+      - "traefik.http.middlewares.authelia.forwardauth.address=http://authelia:9091/api/v1/authz/forward-auth"
       - "traefik.http.middlewares.authelia.forwardauth.trustForwardHeader=true"
       - "traefik.http.middlewares.authelia.forwardauth.authResponseHeaders=Remote-User,Remote-Groups,Remote-Email,Remote-Name"
 

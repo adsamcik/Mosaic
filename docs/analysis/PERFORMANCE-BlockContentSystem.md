@@ -286,7 +286,7 @@ TipTap (recommended editor) handles this internally:
 │         ↓                                                   │
 │  Timer fires → Encrypt entire document                      │
 │         ↓                                                   │
-│  PUT /api/albums/{id}/content (400KB payload)               │
+│  PUT /api/v1/albums/{id}/content (400KB payload)               │
 │         ↓                                                   │
 │  Server stores blob, increments version                     │
 └─────────────────────────────────────────────────────────────┘

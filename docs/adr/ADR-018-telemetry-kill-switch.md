@@ -62,7 +62,7 @@ These events are collected **locally only** by default. They live in a bounded r
 If the user explicitly opts into "Anonymous diagnostics" in Settings:
 
 - The local ring buffer is aggregated weekly into `(code, phase, count_in_period)` tuples *plus* an aggregate `decrypt_op_total` counter (see "Counter set" below).
-- Aggregates are uploaded to the operator's `POST /api/diagnostics` endpoint (one request per week per user; client schedules with reducer-supplied jitter to avoid synchronized peaks).
+- Aggregates are uploaded to the operator's `POST /api/v1/diagnostics` endpoint (one request per week per user; client schedules with reducer-supplied jitter to avoid synchronized peaks).
 - Aggregates are encrypted as a **libsodium sealed box** (`crypto_box_seal`, X25519 + XChaCha20-Poly1305) to the **operator diagnostic public key** — a long-term X25519 public key (32 bytes) compiled into the client at build time via `operatorConfig.diagnosticPublicKey` (sibling to the cert pins per ADR-019). The corresponding private key is held by the operator's diagnostics service; it is **separate from the operator's TLS cert chain and from any user account key**, and is rotated by operator-controlled build updates following the same lifecycle as the cert pins. No key in the user's L0–L3 hierarchy is reused.
 - No correlation_id, no per-event timestamps. Operators see weekly counts only.
 
@@ -144,7 +144,7 @@ Performance budgets are monitored via:
 ### Crash reporting
 
 - **Default off.** Production builds do not auto-upload crashes.
-- **Opt-in.** Same pathway as diagnostics aggregates: weekly upload of `(crash_signature, count)` to `POST /api/diagnostics/crashes` if the user opts in.
+- **Opt-in.** Same pathway as diagnostics aggregates: weekly upload of `(crash_signature, count)` to `POST /api/v1/diagnostics/crashes` if the user opts in.
 - **No stack traces with variable values.** Crash signatures are pre-redacted (file + line + class hash + ClientErrorCode if reachable).
 - **No ANR auto-reporting.** Android ANRs go to logcat (per `android-no-direct-log` posture, only the redacted-logger wrapper) and to the local diagnostic ring buffer; not to the operator without opt-in.
 
@@ -176,7 +176,7 @@ Performance budgets are monitored via:
 
 ## Consequences
 
-- A new endpoint `POST /api/diagnostics` is allowed (reference implementation in backend); operator-controlled retention.
+- A new endpoint `POST /api/v1/diagnostics` is allowed (reference implementation in backend); operator-controlled retention.
 - ClientErrorCode (R-C1) is the canonical input to telemetry; new variants imply telemetry implications and must be reviewed.
 - The local diagnostic ring buffer (web IDB / Android Room) is wiped on logout; persists across app restarts within a session.
 - W-A5 / A-Lane do not implement a server-driven kill-switch; they implement local fail-closed and cohort gates.

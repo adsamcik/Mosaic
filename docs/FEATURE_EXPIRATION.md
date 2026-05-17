@@ -81,7 +81,7 @@ interface CreateAlbumRequest {
 #### Update Album Expiration Endpoint
 
 ```http
-PATCH /api/albums/{albumId}/expiration
+PATCH /api/v1/albums/{albumId}/expiration
 Authorization: Required (owner only)
 Content-Type: application/json
 
@@ -209,7 +209,7 @@ private async Task CleanExpiredShareLinks()
 #### 2. AlbumsController Updates
 
 ```csharp
-// PATCH /api/albums/{albumId}/expiration
+// PATCH /api/v1/albums/{albumId}/expiration
 [HttpPatch("{albumId:guid}/expiration")]
 public async Task<IActionResult> UpdateExpiration(Guid albumId, UpdateExpirationRequest request)
 {
@@ -379,7 +379,7 @@ function formatExpirationBadge(expiresAt: string): string {
 #### Update Share Link Expiration
 
 ```http
-PATCH /api/albums/{albumId}/share-links/{linkId}/expiration
+PATCH /api/v1/albums/{albumId}/share-links/{linkId}/expiration
 Authorization: Required (owner only)
 Content-Type: application/json
 
@@ -479,7 +479,7 @@ const EXPIRY_PRESETS = [
 - [ ] Add `ExpiresAt` and `ExpirationWarningDays` to Album entity
 - [ ] Create database migration
 - [ ] Update `CreateAlbum` to accept expiration params
-- [ ] Add `PATCH /api/albums/{id}/expiration` endpoint
+- [ ] Add `PATCH /api/v1/albums/{id}/expiration` endpoint
 - [ ] Update `GarbageCollectionService` to delete expired albums
 - [ ] Add unit tests for all new functionality
 
@@ -491,7 +491,7 @@ const EXPIRY_PRESETS = [
 - [ ] Add tests for new components
 
 ### Phase 3: Share Link Enhancements
-- [ ] Add `PATCH /api/albums/{albumId}/share-links/{linkId}/expiration` endpoint
+- [ ] Add `PATCH /api/v1/albums/{albumId}/share-links/{linkId}/expiration` endpoint
 - [ ] Create `EditLinkExpirationDialog` component
 - [ ] Add expiry presets to `ShareLinkDialog`
 - [ ] Add warning for never-expiring links
@@ -545,10 +545,10 @@ const EXPIRY_PRESETS = [
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/albums` | Create album (now accepts `expiresAt`) |
-| PATCH | `/api/albums/{id}/expiration` | **NEW** Update album expiration |
-| GET | `/api/albums/{id}` | Get album (now returns `expiresAt`) |
-| PATCH | `/api/albums/{albumId}/share-links/{linkId}/expiration` | **NEW** Update link expiration |
+| POST | `/api/v1/albums` | Create album (now accepts `expiresAt`) |
+| PATCH | `/api/v1/albums/{id}/expiration` | **NEW** Update album expiration |
+| GET | `/api/v1/albums/{id}` | Get album (now returns `expiresAt`) |
+| PATCH | `/api/v1/albums/{albumId}/share-links/{linkId}/expiration` | **NEW** Update link expiration |
 
 ---
 

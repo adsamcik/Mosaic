@@ -45,8 +45,8 @@ npm --workspace apps/web run dev
 
 No flag — the endpoints are unconditionally mapped:
 
-* `WS  /api/sidecar/signal/{roomId}` — signaling relay
-* `POST /api/sidecar/telemetry/v1`  — telemetry sink
+* `WS  /api/v1/sidecar/signal/{roomId}` — signaling relay
+* `POST /api/v1/sidecar/telemetry/v1`  — telemetry sink
 
 Both refuse traffic from clients that haven't opened the modal (the
 client-side flag gates UI exposure).

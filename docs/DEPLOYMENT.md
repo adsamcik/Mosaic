@@ -247,7 +247,7 @@ auth.yourdomain.com {
 # Mosaic (protected by Authelia)
 photos.yourdomain.com {
     forward_auth authelia:9091 {
-        uri /api/authz/forward-auth
+        uri /api/v1/authz/forward-auth
         copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
     }
     reverse_proxy mosaic-frontend:8080

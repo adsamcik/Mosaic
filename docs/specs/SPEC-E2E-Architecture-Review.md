@@ -361,7 +361,7 @@ async function globalTeardown(): Promise<void> {
   
   // Clean up test users/albums created with specific prefix
   const API_URL = process.env.API_URL || 'http://localhost:8080';
-  await fetch(`${API_URL}/api/admin/cleanup-test-data`, {
+  await fetch(`${API_URL}/api/v1/admin/cleanup-test-data`, {
     method: 'POST',
     headers: { 'X-Admin-Key': process.env.E2E_ADMIN_KEY || '' },
   }).catch(() => {});

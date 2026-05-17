@@ -533,11 +533,11 @@ public class Block
 
 | Method | Route | Purpose |
 |--------|-------|---------|
-| GET | `/api/albums/{id}/blocks` | List blocks for album |
-| GET | `/api/albums/{id}/blocks/sync` | Sync blocks since version |
-| POST | `/api/albums/{id}/blocks` | Create block |
-| PUT | `/api/albums/{id}/blocks/{blockId}` | Update block |
-| DELETE | `/api/albums/{id}/blocks/{blockId}` | Delete block (soft) |
+| GET | `/api/v1/albums/{id}/blocks` | List blocks for album |
+| GET | `/api/v1/albums/{id}/blocks/sync` | Sync blocks since version |
+| POST | `/api/v1/albums/{id}/blocks` | Create block |
+| PUT | `/api/v1/albums/{id}/blocks/{blockId}` | Update block |
+| DELETE | `/api/v1/albums/{id}/blocks/{blockId}` | Delete block (soft) |
 
 ### 4.2 Option B: Extend Manifests
 
@@ -949,7 +949,7 @@ For Mosaic's target use case (≤50 users, personal photo galleries):
 ```
 Week 1-2: Schema & API
   ├── Add encryptedContent field to Album entity
-  ├── Create PATCH /api/albums/{id}/content endpoint
+  ├── Create PATCH /api/v1/albums/{id}/content endpoint
   └── Add to sync response
 
 Week 3-4: Frontend Core

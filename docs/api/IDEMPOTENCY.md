@@ -14,7 +14,7 @@ The middleware (`apps/backend/Mosaic.Backend/Middleware/IdempotencyMiddleware.cs
 registered in `Program.cs`) applies to:
 
 - **Methods**: `POST`, `PUT`, `DELETE`.
-- **Exclusion**: requests to `PATCH /api/files/*` (the Tus upload `PATCH`
+- **Exclusion**: requests to `PATCH /api/v1/files/*` (the Tus upload `PATCH`
   endpoint) are intentionally **not** covered — Tus has its own resumability
   contract via `Upload-Offset` / `Upload-Checksum`, and layering idempotency
   on top would double-buffer multi-gigabyte bodies.

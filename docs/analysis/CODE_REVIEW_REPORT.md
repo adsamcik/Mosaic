@@ -117,9 +117,9 @@ if (!_env.IsDevelopment() && !_env.IsEnvironment("Testing"))
 **Location:** Multiple endpoints  
 | Endpoint | Risk |
 |----------|------|
-| `GET /api/s/{linkId}/photos` | Could return thousands of manifests |
-| `GET /api/albums` | Unbounded for active users |
-| `GET /api/albums/{id}/members` | Could grow large |
+| `GET /api/v1/s/{linkId}/photos` | Could return thousands of manifests |
+| `GET /api/v1/albums` | Unbounded for active users |
+| `GET /api/v1/albums/{id}/members` | Could grow large |
 
 **Fix:** Add pagination with `skip`/`take` parameters.
 
@@ -321,8 +321,8 @@ verifyManifest(...): boolean {
 
 | Issue | Current | Suggested |
 |-------|---------|-----------|
-| Share link delete | `/api/me/share-links/{id}` | `/api/s/{id}` for consistency |
-| Action verb in URL | `POST /api/auth/sessions/revoke-others` | `DELETE /api/auth/sessions/others` |
+| Share link delete | `/api/v1/me/share-links/{id}` | `/api/v1/s/{id}` for consistency |
+| Action verb in URL | `POST /api/v1/auth/sessions/revoke-others` | `DELETE /api/v1/auth/sessions/others` |
 
 ---
 

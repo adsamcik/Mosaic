@@ -602,7 +602,7 @@ class SessionManager {
     // Fetch user salt from server (or use derived if first login)
     let userSalt: Uint8Array;
     try {
-      const saltResponse = await fetch('/api/me/salt');
+      const saltResponse = await fetch('/api/v1/me/salt');
       if (saltResponse.ok) {
         const { salt } = await saltResponse.json();
         userSalt = Uint8Array.from(atob(salt), c => c.charCodeAt(0));

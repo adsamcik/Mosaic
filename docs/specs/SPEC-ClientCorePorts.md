@@ -55,7 +55,7 @@ Checklist coverage: all 15 v1 required ports are specified below, including `Epo
 | ADR-006, "Rules" | Raw L0/L1/L2/epoch/signing/link keys never cross WASM/Kotlin/UniFFI boundaries; long-running calls expose cancellation and redacted stable errors. |
 | ADR-013, "API shape" | Streaming AEAD is deferred to v1.x; v1 upload ports use single-shot envelope v3, while `envelope_version` leaves room for v4. |
 | ADR-018, "Telemetry posture" and "What ships to operators" | Diagnostic events are local-ring-buffer-first, opaque-code-only, and contain no PII or IDs. Server upload of aggregates is out of band. |
-| ADR-022, "POST /api/manifests request shape" and "Rules" #11 | Manifest commit uses `Idempotency-Key`; identical key plus identical canonical body returns identical response, body mismatch returns `409 IDEMPOTENCY_CONFLICT`, and expired cache returns `409 IDEMPOTENCY_KEY_EXPIRED`. |
+| ADR-022, "POST /api/v1/manifests request shape" and "Rules" #11 | Manifest commit uses `Idempotency-Key`; identical key plus identical canonical body returns identical response, body mismatch returns `409 IDEMPOTENCY_CONFLICT`, and expired cache returns `409 IDEMPOTENCY_KEY_EXPIRED`. |
 | ADR-023, "Single canonical wire format" and "Persistence transactions and CAS" | Snapshots are opaque canonical-CBOR blobs; `update_snapshot(id, expected_revision, new_bytes)` is compare-and-swap; sync apply is one transaction. |
 | `SPEC-ClientCoreStateMachines.md`, "Error, cancellation, and retry model" | Reducers own transition, retry, cancel, and manifest-unknown semantics. |
 | `SPEC-LateV1ProtocolFreeze.md`, "Rust FFI DTOs" and "Opaque blob formats" | Stable error codes are append-only; no raw-secret FFI outputs; shard envelope v3 and manifest transcript surfaces are freeze candidates/frozen by gate status. |
@@ -597,7 +597,7 @@ Tus offsets in GRDB; progress callbacks expose bytes only.
 
 ### 5. CreateManifestPort
 
-**Purpose:** Commit the finalized encrypted manifest body to `/api/manifests`
+**Purpose:** Commit the finalized encrypted manifest body to `/api/v1/manifests`
 with ADR-022 idempotency semantics.
 
 **DTO shape:**
@@ -665,7 +665,7 @@ idempotency key and body hash in GRDB before dispatch.
 ### 6. FetchAlbumSyncPagePort
 
 **Purpose:** Fetch one encrypted album sync page from
-`GET /api/albums/{id}/sync` without applying it.
+`GET /api/v1/albums/{id}/sync` without applying it.
 
 **DTO shape:**
 

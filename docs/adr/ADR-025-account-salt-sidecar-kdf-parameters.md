@@ -17,7 +17,7 @@ their rationale:
 1. **LocalAuth account-salt derivation** (`derive_account_salt`,
    `mosaic_crypto::ACCOUNT_SALT_HMAC_INFO = b"mosaic_account_salt"`).
    Inputs: 32-byte `user_salt`. Output: 16-byte deterministic salt
-   returned by `/api/auth/init` so the client can repeat password
+   returned by `/api/v1/auth/init` so the client can repeat password
    derivation across devices without exposing whether a username is
    registered (anti-enumeration).
 
