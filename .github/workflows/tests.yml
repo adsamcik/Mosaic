@@ -243,19 +243,27 @@ jobs:
         run: bash ./scripts/build-rust-wasm.sh
 
       - name: Verify committed Rust WASM artifacts are fresh
-        # Soft-fail: cross-host WASM determinism is a partial property after
-        # sweep42-followup-wasm-determinism. `lto = "fat"` + `debug = "none"` +
-        # RUSTFLAGS=--remap-path-prefix reduced drift from ~1500 bytes to
-        # ~150 bytes. The residual ~150 bytes appear to come from
-        # toolchain-internal binary blobs that differ between rustup's
-        # Windows and Linux installations even at the same pinned version.
-        # The duplicate gate in `wasm-rebuild-invariance` uploads the CI
-        # rebuild as an artifact for off-line investigation; this step is
-        # informational only.
-        continue-on-error: true
+        # HARD-FAIL: contributors MUST build the committed WASM artifact
+        # via `scripts/build-rust-wasm-docker.{sh,ps1}` which runs the
+        # build inside the pinned `mosaic-wasm-build:1.93.1` Docker
+        # image. That image matches the CI Linux toolchain byte-for-byte,
+        # so a fresh CI rebuild must produce the same bytes as what was
+        # committed.
+        #
+        # If this step fails locally:
+        #   1. Run `bash scripts/build-rust-wasm-docker.sh`
+        #      (or `pwsh scripts/build-rust-wasm-docker.ps1` on Windows).
+        #   2. Commit the updated apps/web/src/generated/mosaic-wasm/
+        #      files.
+        #
+        # Closes sweep42-followup-wasm-determinism. Native Windows
+        # builds drift ~150 bytes from Linux/CI builds because the
+        # wasm32 backend lowers a small number of internal helpers
+        # differently between host LLVM builds; the Docker wrapper
+        # bypasses that drift entirely.
         run: |
           if ! git diff --exit-code -- apps/web/src/generated/mosaic-wasm/; then
-            echo "::warning::Committed WASM artifacts differ from CI rebuild output (~150 bytes residual cross-host drift). Tracked as v1.0.x follow-up sweep42-followup-wasm-determinism."
+            echo "::error::Committed WASM artifacts differ from CI rebuild output. Run scripts/build-rust-wasm-docker.sh and commit the result."
             git diff --stat apps/web/src/generated/mosaic-wasm/
             exit 1
           fi
@@ -316,15 +324,14 @@ jobs:
     name: WASM Rebuild Invariance
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Soft-fail: sweep42-followup-wasm-determinism reduced cross-host drift
-    # from ~1500 bytes to ~150 bytes with lto=fat, debug=none, and
-    # --remap-path-prefix. The residual ~150 bytes appear to come from
-    # toolchain-internal binary blobs that differ between rustup's Windows
-    # and Linux installations even at the same pinned 1.93.1 version. The
-    # rebuilt WASM uploaded as an artifact below is what actually executes
-    # if the gate is later flipped to fail-mode.
-    continue-on-error: true
-
+    # HARD-FAIL: the Docker-based deterministic builder
+    # (scripts/build-rust-wasm-docker.{sh,ps1}) closes
+    # sweep42-followup-wasm-determinism. A committed WASM artifact
+    # built via the Docker wrapper matches a CI Linux rebuild
+    # byte-for-byte, so this gate is now a true invariance check.
+    #
+    # If this job fails: run scripts/build-rust-wasm-docker.sh locally
+    # and commit the updated apps/web/src/generated/mosaic-wasm/.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -351,7 +358,7 @@ jobs:
         run: |
           status="$(git status --porcelain apps/web/src/generated/mosaic-wasm/)"
           if [ -n "$status" ]; then
-            echo "::warning::Committed WASM artifact differs from CI rebuild output (~150 bytes residual cross-host drift). Tracked as v1.0.x follow-up sweep42-followup-wasm-determinism."
+            echo "::error::Committed WASM artifact differs from CI rebuild output. Run scripts/build-rust-wasm-docker.sh locally and commit the result."
             echo "$status"
             git diff --stat apps/web/src/generated/mosaic-wasm/
             exit 1

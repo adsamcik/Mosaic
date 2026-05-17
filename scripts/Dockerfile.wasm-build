@@ -1,0 +1,48 @@
+# Dockerfile.wasm-build — deterministic Rust→WASM builder
+#
+# Closes sweep42-followup-wasm-determinism. The committed
+# `apps/web/src/generated/mosaic-wasm/mosaic_wasm_bg.wasm` artifact must
+# match the CI rebuild output byte-for-byte so the
+# `wasm-rebuild-invariance` gate can move from soft-fail (current state)
+# to hard-fail.
+#
+# Previously the gate had to tolerate a ~150 byte cross-host drift:
+# Windows-built and Linux-built artifacts differed because the wasm32
+# rustc backend lowers a small number of internal helpers slightly
+# differently depending on the host LLVM build (one extra
+# monomorphization on Windows). Even with `lto=fat` + `debug=none` +
+# `--remap-path-prefix` the residual ~150 bytes persisted.
+#
+# Pinning the build to a fixed Linux image — the same family used by
+# the CI runner — produces deterministic output for every contributor.
+#
+# Usage (preferred):
+#
+#   bash scripts/build-rust-wasm-docker.sh
+#   # or
+#   pwsh scripts/build-rust-wasm-docker.ps1
+#
+# Both wrappers build this image once (cached) then run the same
+# `scripts/build-rust-wasm.sh` inside it, mounting the repo read/write
+# and emitting the artifacts at `apps/web/src/generated/mosaic-wasm/`.
+#
+# Pinning is intentional and exact: any change to rustc, the wasm32
+# target std, or wasm-bindgen-cli will likely change the output bytes,
+# so version bumps here MUST be coordinated with a fresh artifact
+# commit.
+
+FROM rust:1.93.1-slim@sha256:c0a38f5662afdb298898da1d70b909af4bda4e0acff2dc52aea6360a9b9c6956
+
+# Install only the deterministic toolchain pieces. We deliberately do
+# NOT install build-essential / clang — `wasm32-unknown-unknown` is a
+# self-contained Rust target with no C deps. Adding a host C toolchain
+# would silently re-introduce a determinism risk if any crate's
+# build.rs reached for `cc`.
+RUN rustup target add wasm32-unknown-unknown \
+ && cargo install wasm-bindgen-cli --version 0.2.118 --locked
+
+WORKDIR /work
+
+# Default to building the WASM artifact. Override with --entrypoint=...
+# if you need to drop into a shell for debugging.
+ENTRYPOINT ["bash", "/work/scripts/build-rust-wasm.sh"]
