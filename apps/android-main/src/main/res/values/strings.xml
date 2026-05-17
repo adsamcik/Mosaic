@@ -14,4 +14,13 @@
   <string name="upload_in_progress">Mosaic upload in progress</string>
   <string name="upload_n_of_m">%1$d of %2$d shards uploaded</string>
   <string name="cancel">Cancel</string>
+  <!--
+    Shard-pipeline foreground notification strings. Posted by
+    ShardEncryptionWorker and ShardUploadWorker when WorkManager promotes them
+    to expedited / foreground status (see ADR-007 + v1.0.1 s24 "expedited shard
+    workers"). Kept deliberately generic: never includes album names, photo
+    identifiers, file paths, or any user-identifying material.
+  -->
+  <string name="shard_upload_notification_channel_name">Mosaic album upload</string>
+  <string name="shard_upload_notification_text">Uploading album to the cloud</string>
 </resources>

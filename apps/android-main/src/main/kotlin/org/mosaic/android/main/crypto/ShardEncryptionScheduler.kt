@@ -6,6 +6,7 @@ import androidx.work.Data
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import java.util.concurrent.TimeUnit
 
 object ShardEncryptionScheduler {
@@ -39,6 +40,7 @@ object ShardEncryptionScheduler {
           .build(),
       )
       .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, INITIAL_BACKOFF_SECONDS, TimeUnit.SECONDS)
+      .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
       .addTag(uploadJobTag(jobId))
       .addTag(SHARD_ENCRYPT_TAG)
       .build()

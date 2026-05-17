@@ -1,0 +1,10 @@
+<resources>
+  <!--
+    Czech translations for the shard-pipeline foreground notification. Other
+    user-visible strings fall back to the default (English) values/ resources
+    until translated. Both strings MUST NOT include album names, photo
+    identifiers, file paths, or any user-identifying material.
+  -->
+  <string name="shard_upload_notification_channel_name">Mosaic nahrávání alba</string>
+  <string name="shard_upload_notification_text">Nahrávám album do cloudu</string>
+</resources>

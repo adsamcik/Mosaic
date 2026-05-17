@@ -5,6 +5,7 @@ import androidx.work.Constraints
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkContinuation
 import androidx.work.Data
 import java.util.concurrent.TimeUnit
@@ -17,19 +18,29 @@ object ShardUploadScheduler {
     tusEndpoint: String,
     metadataSignature: String? = null,
     initialDelayMs: Long = 0L,
-  ): OneTimeWorkRequest =
-    OneTimeWorkRequestBuilder<ShardUploadWorker>()
+  ): OneTimeWorkRequest {
+    val coercedDelayMs = initialDelayMs.coerceIn(0L, MAX_BACKOFF_MS)
+    val builder = OneTimeWorkRequestBuilder<ShardUploadWorker>()
       .setInputData(inputData(jobId, shardId, tusEndpoint, metadataSignature))
       .setConstraints(
         Constraints.Builder()
           .setRequiredNetworkType(NetworkType.CONNECTED)
           .build(),
       )
-      .setInitialDelay(initialDelayMs.coerceIn(0L, MAX_BACKOFF_MS), TimeUnit.MILLISECONDS)
+      .setInitialDelay(coercedDelayMs, TimeUnit.MILLISECONDS)
       .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, INITIAL_BACKOFF_SECONDS, TimeUnit.SECONDS)
       .addTag(ShardEncryptionScheduler.uploadJobTag(jobId))
       .addTag(SHARD_UPLOAD_TAG)
-      .build()
+    // setExpedited is incompatible with setInitialDelay (WorkRequest.Builder
+    // throws "Expedited jobs cannot be delayed"). The expedited path matters
+    // for first-attempt uploads that must bypass Doze maintenance windows; a
+    // caller-supplied retry delay already means the job is intentionally
+    // deferred, so non-expedited scheduling is the correct behavior there.
+    if (coercedDelayMs == 0L) {
+      builder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+    }
+    return builder.build()
+  }
 
   fun thenUpload(encryptionContinuation: WorkContinuation, uploadRequest: OneTimeWorkRequest): WorkContinuation =
     encryptionContinuation.then(uploadRequest)

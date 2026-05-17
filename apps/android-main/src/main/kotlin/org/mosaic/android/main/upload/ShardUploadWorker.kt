@@ -3,6 +3,7 @@ package org.mosaic.android.main.upload
 import android.content.Context
 import android.net.Uri
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.Logger
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -40,6 +41,9 @@ class ShardUploadWorker internal constructor(
     FileShardUploadManifestStore(appContext),
     { message -> Logger.get().warning(LOG_TAG, message) },
   )
+
+  override suspend fun getForegroundInfo(): ForegroundInfo =
+    ShardWorkerForegroundInfo.forUpload(applicationContext)
 
   override suspend fun doWork(): Result {
     val envelopeUri = inputData.getString(KEY_ENVELOPE_URI) ?: return failure(FAILURE_MISSING_INPUT)

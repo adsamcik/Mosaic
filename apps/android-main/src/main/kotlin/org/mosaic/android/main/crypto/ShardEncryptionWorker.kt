@@ -2,6 +2,7 @@ package org.mosaic.android.main.crypto
 
 import android.content.Context
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import org.mosaic.android.main.db.UploadQueueDatabase
@@ -9,6 +10,7 @@ import org.mosaic.android.main.security.zeroize
 import org.mosaic.android.main.upload.ContentHashDedup
 import org.mosaic.android.main.upload.NoOpContentHashDedup
 import org.mosaic.android.main.upload.RoomContentHashDedup
+import org.mosaic.android.main.upload.ShardWorkerForegroundInfo
 
 class ShardEncryptionWorker internal constructor(
   appContext: Context,
@@ -35,6 +37,9 @@ class ShardEncryptionWorker internal constructor(
     RoomEpochHandleResolver(database.albumEpochKeyDao()),
     RoomContentHashDedup(database.albumContentHashDao()),
   )
+
+  override suspend fun getForegroundInfo(): ForegroundInfo =
+    ShardWorkerForegroundInfo.forEncryption(applicationContext)
 
   override suspend fun doWork(): Result {
     val stagingUri = inputData.getString(KEY_STAGING_URI) ?: return Result.failure()
