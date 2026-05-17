@@ -43,7 +43,7 @@ ENV VITE_E2E_WEAK_KEYS=${VITE_E2E_WEAK_KEYS}
 RUN npm run build
 
 # Production stage - nginx with custom config
-FROM nginx:alpine@sha256:645eda1c2477aaa9b879f73909b9222c6f19798dd45be6706268d82a661c6e6d AS production
+FROM nginx:alpine@sha256:dc48b7a872a79fb541ba5081d320b11b549231bc63ba465a7495afaa7d2ebcb8 AS production
 
 # OCI Image Labels (overwritten by docker/metadata-action in CI)
 LABEL org.opencontainers.image.title="Mosaic Frontend" \
