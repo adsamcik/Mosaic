@@ -30,6 +30,9 @@ The records are intentionally scoped to decisions that unblock the Android encry
 | [ADR-022](ADR-022-manifest-finalization-shape.md) | Manifest finalization shape: `tieredShards` canonical write, legacy `shardIds` read-only |
 | [ADR-023](ADR-023-persisted-snapshot-schema.md) | Snapshot persistence: CBOR canonical encoding, schema_version migration coordinate |
 | [ADR-024](ADR-024-video-preview-tier-policy.md) | Video assets ship tier 1 + tier 3; tier 2 forbidden for video |
+| [ADR-025](ADR-025-account-salt-sidecar-kdf-parameters.md) | KDF parameters for LocalAuth account-salt (HMAC-SHA-256) and Sidecar room ID (HKDF-SHA-256) |
+| [ADR-026](ADR-026-kdf-aad-namespace-policy.md) | `mosaic:KIND:v1` is the canonical KDF/AAD label namespace; two pre-existing labels grandfathered |
+| [ADR-027](ADR-027-content-hash-dedup-rationale.md) | SHA-256 plaintext content-hash dedup, client-computed, per-photo |
 
 Supporting baseline:
 
