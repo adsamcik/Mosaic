@@ -35,12 +35,12 @@ namespace Mosaic.Backend.Middleware;
 /// holds.
 ///
 /// Exempt paths:
-///   - <c>/api/auth/init</c> and <c>/api/auth/verify</c> — login flow
+///   - <c>/api/v1/auth/init</c> and <c>/api/v1/auth/verify</c> — login flow
 ///     bootstraps cross-origin metadata before any cookie exists. They
 ///     are guarded by the per-IP rate limiter and PAKE.
-///   - <c>/api/sidecar/*</c> — sidecar relay WebSocket; no cookies, no
+///   - <c>/api/v1/sidecar/*</c> — sidecar relay WebSocket; no cookies, no
 ///     CSRF surface.
-///   - <c>/api/s/*</c> — anonymous share-link surface; no cookies in
+///   - <c>/api/v1/s/*</c> — anonymous share-link surface; no cookies in
 ///     play (the visitor side ships with `credentials: 'omit'` in
 ///     practice, and the server is anonymous-only per the LocalAuth
 ///     middleware).
@@ -55,13 +55,13 @@ public sealed class OriginValidationMiddleware
 
     private static readonly string[] ExemptPathPrefixes =
     {
-        "/api/auth/init",
-        "/api/auth/verify",
-        "/api/auth/register",
-        "/api/sidecar/",
-        "/api/s/",
+        "/api/v1/auth/init",
+        "/api/v1/auth/verify",
+        "/api/v1/auth/register",
+        "/api/v1/sidecar/",
+        "/api/v1/s/",
         "/health",
-        "/api/health",
+        "/api/v1/health",
     };
 
     private static readonly HashSet<string> SafeMethods = new(StringComparer.OrdinalIgnoreCase)

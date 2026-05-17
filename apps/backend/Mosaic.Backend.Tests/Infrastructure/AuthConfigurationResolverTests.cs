@@ -142,18 +142,18 @@ public class AuthConfigurationResolverTests
     }
 
     [Theory]
-    [InlineData("/api/auth/verify", "/api/auth/verify", true)]
-    [InlineData("/api/auth/verify/", "/api/auth/verify", true)]
-    [InlineData("/api/auth/verify-extra", "/api/auth/verify", false)]
-    [InlineData("/API/AUTH/VERIFY", "/api/auth/verify", true)]
-    [InlineData("/api/settings", "/api/s", false)]
-    [InlineData("/api/secrets", "/api/s", false)]
-    [InlineData("/api/s//keys", "/api/s", true)]
-    [InlineData("/api/s?link=abc", "/api/s", false)]
-    [InlineData(null, "/api/auth/verify", false)]
-    [InlineData("", "/api/auth/verify", false)]
-    [InlineData("/api/auth/verify", null, false)]
-    [InlineData("/api/auth/verify", "", false)]
+    [InlineData("/api/v1/auth/verify", "/api/v1/auth/verify", true)]
+    [InlineData("/api/v1/auth/verify/", "/api/v1/auth/verify", true)]
+    [InlineData("/api/v1/auth/verify-extra", "/api/v1/auth/verify", false)]
+    [InlineData("/API/AUTH/VERIFY", "/api/v1/auth/verify", true)]
+    [InlineData("/api/v1/settings", "/api/v1/s", false)]
+    [InlineData("/api/v1/secrets", "/api/v1/s", false)]
+    [InlineData("/api/v1/s//keys", "/api/v1/s", true)]
+    [InlineData("/api/v1/s?link=abc", "/api/v1/s", false)]
+    [InlineData(null, "/api/v1/auth/verify", false)]
+    [InlineData("", "/api/v1/auth/verify", false)]
+    [InlineData("/api/v1/auth/verify", null, false)]
+    [InlineData("/api/v1/auth/verify", "", false)]
     public void MatchesPublicPath_UsesExactOrSlashBoundaryMatching(
         string? path,
         string? publicPath,

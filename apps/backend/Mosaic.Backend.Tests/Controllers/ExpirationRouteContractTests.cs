@@ -26,7 +26,7 @@ public class ExpirationRouteContractTests
             .SelectMany(GetPatchRoutes)
             .ToArray();
 
-        Assert.Contains("api/albums/{albumId:guid}/photos/{photoId:guid}/expiration", routes);
+        Assert.Contains("api/v1/albums/{albumId:guid}/photos/{photoId:guid}/expiration", routes);
     }
 
     private static IEnumerable<string> GetPatchRoutes(Type controllerType)

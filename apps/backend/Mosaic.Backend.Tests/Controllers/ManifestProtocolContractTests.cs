@@ -70,7 +70,7 @@ public class ManifestProtocolContractTests
         Assert.Equal(album.Id, syncShape.albumId.GetGuid());
         Assert.Equal(42, syncShape.currentVersion.GetInt64());
         Assert.Equal(manifest.Id, syncShape.manifestId.GetGuid());
-        Assert.Equal($"/api/manifests/{manifest.Id}", syncShape.manifestUrl.GetString());
+        Assert.Equal($"/api/v1/manifests/{manifest.Id}", syncShape.manifestUrl.GetString());
         Assert.Equal(thumb.Sha256, syncShape.expectedSha256.GetString());
         AssertContract("album-sync.contract.json", ToShapeJson(syncShape));
     }

@@ -18,7 +18,7 @@ namespace Mosaic.Backend.Controllers;
 /// Returns 404 for all endpoints when in ProxyAuth mode.
 /// </summary>
 [ApiController]
-[Route("api/auth")]
+[Route("api/v1/auth")]
 public partial class AuthController : ControllerBase
 {
     private readonly MosaicDbContext _db;
@@ -574,7 +574,7 @@ public partial class AuthController : ControllerBase
 
         _logger.UserRegistered(request.Username);
 
-        return Created($"/api/users/{user.Id}", new { id = user.Id, username = user.AuthSub, isAdmin = isFirstUser });
+        return Created($"/api/v1/users/{user.Id}", new { id = user.Id, username = user.AuthSub, isAdmin = isFirstUser });
     }
 
     /// <summary>

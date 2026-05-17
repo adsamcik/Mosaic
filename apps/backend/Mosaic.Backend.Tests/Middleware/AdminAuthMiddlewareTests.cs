@@ -28,7 +28,7 @@ public class AdminAuthMiddlewareTests
             NullLogger<AdminAuthMiddleware>.Instance);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/users/me";
+        context.Request.Path = "/api/v1/users/me";
 
         await middleware.InvokeAsync(context, db);
 
@@ -44,7 +44,7 @@ public class AdminAuthMiddlewareTests
             NullLogger<AdminAuthMiddleware>.Instance);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/admin/settings";
+        context.Request.Path = "/api/v1/admin/settings";
         context.Response.Body = new MemoryStream();
 
         await middleware.InvokeAsync(context, db);
@@ -61,7 +61,7 @@ public class AdminAuthMiddlewareTests
             NullLogger<AdminAuthMiddleware>.Instance);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/admin/users";
+        context.Request.Path = "/api/v1/admin/users";
         context.Items["AuthSub"] = "nonexistent@test.com";
         context.Response.Body = new MemoryStream();
 
@@ -88,7 +88,7 @@ public class AdminAuthMiddlewareTests
             NullLogger<AdminAuthMiddleware>.Instance);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/admin/albums";
+        context.Request.Path = "/api/v1/admin/albums";
         context.Items["AuthSub"] = "regular@test.com";
         context.Response.Body = new MemoryStream();
 
@@ -117,7 +117,7 @@ public class AdminAuthMiddlewareTests
             NullLogger<AdminAuthMiddleware>.Instance);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/admin/stats";
+        context.Request.Path = "/api/v1/admin/stats";
         context.Items["AuthSub"] = "admin@test.com";
 
         await middleware.InvokeAsync(context, db);

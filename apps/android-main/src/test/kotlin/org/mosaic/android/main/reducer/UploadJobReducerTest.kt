@@ -10,6 +10,7 @@ import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -166,6 +167,64 @@ class UploadJobReducerTest {
   }
 
   @Test
+  fun retryBudget_exhausted_preservesOriginatingErrorCode_notBudgetExhaustedSentinel() = runBlocking {
+    // v1.0.1 s31 regression: previously the FFI event errorCode was clobbered
+    // with CLIENT_CORE_RETRY_BUDGET_EXHAUSTED, so the persisted failureCode
+    // showed the synthetic sentinel instead of the originating transient
+    // (e.g. NETWORK_TIMEOUT). Seed a snapshot at the budget limit so the
+    // very next failure transitions to NonRetryableFailure, and assert the
+    // persisted snapshot carries the dispatcher's stable code intact.
+    seed(snapshot("UploadingShard", retryCount = 5, shards = listOf(shard(0, uploaded = false))))
+    val originatingCode = RustClientCoreUploadStableCode.CLIENT_CORE_INVALID_SNAPSHOT
+
+    val outcome = reducer(FailingDispatcher(retryable = true, stableCode = originatingCode))
+      .run(UploadJobId(JOB_ID))
+
+    assertEquals(UploadJobOutcome.Failed, outcome)
+    val persistedSnapshot = persisted().decodeUploadSnapshot()
+    assertEquals("Failed", persistedSnapshot.phase)
+    assertEquals(
+      "retry-budget exhaustion must preserve the originating transient error code in failureCode",
+      originatingCode,
+      persistedSnapshot.failureCode,
+    )
+    assertNotEquals(
+      "originating code must not be clobbered by CLIENT_CORE_RETRY_BUDGET_EXHAUSTED sentinel",
+      RustClientCoreUploadStableCode.CLIENT_CORE_RETRY_BUDGET_EXHAUSTED,
+      persistedSnapshot.failureCode,
+    )
+  }
+
+  @Test
+  fun uploadErrorFromSnapshot_drainedBudget_returnsCompositeRetryBudgetExhaustedWithCause() {
+    val originatingCode = RustClientCoreUploadStableCode.CLIENT_CORE_INVALID_SNAPSHOT
+    val failed = snapshot("UploadingShard", retryCount = 5, shards = listOf(shard(0, uploaded = false)))
+      .copy(phase = "Failed", failureCode = originatingCode)
+
+    val error = uploadErrorFromSnapshot(failed)
+
+    assertEquals(UploadError.RetryBudgetExhausted(cause = originatingCode), error)
+  }
+
+  @Test
+  fun uploadErrorFromSnapshot_nonRetryableBeforeBudget_returnsNonRetryableWithCause() {
+    val originatingCode = RustClientCoreUploadStableCode.CLIENT_CORE_INVALID_TRANSITION
+    val failed = snapshot("UploadingShard", retryCount = 0, shards = listOf(shard(0, uploaded = false)))
+      .copy(phase = "Failed", failureCode = originatingCode)
+
+    val error = uploadErrorFromSnapshot(failed)
+
+    assertEquals(UploadError.NonRetryable(cause = originatingCode), error)
+  }
+
+  @Test
+  fun uploadErrorFromSnapshot_nonFailedPhase_returnsNull() {
+    val running = snapshot("UploadingShard", retryCount = 1, shards = listOf(shard(0, uploaded = false)))
+
+    assertEquals(null, uploadErrorFromSnapshot(running))
+  }
+
+  @Test
   fun retryBudget_retryableFailureWithinBudgetSchedulesRetry() = runBlocking {
     seed(snapshot("UploadingShard", retryCount = 4, shards = listOf(shard(0, uploaded = false))))
 
@@ -297,12 +356,15 @@ class UploadJobReducerTest {
     }
   }
 
-  private class FailingDispatcher(private val retryable: Boolean) : EffectDispatcher {
+  private class FailingDispatcher(
+    private val retryable: Boolean,
+    private val stableCode: Int = RustClientCoreUploadStableCode.CLIENT_CORE_MANIFEST_OUTCOME_UNKNOWN,
+  ) : EffectDispatcher {
     override suspend fun dispatch(
       snapshot: UploadJobSnapshotRow,
       effect: RustClientCoreUploadJobFfiEffect,
     ): RustClientCoreUploadJobFfiEvent {
-      throw EffectDispatchException("failed", retryable = retryable)
+      throw EffectDispatchException("failed", retryable = retryable, stableCode = stableCode)
     }
   }
 

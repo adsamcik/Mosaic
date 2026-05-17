@@ -13,7 +13,7 @@ namespace Mosaic.Backend.Controllers;
 /// All endpoints are unauthenticated for test automation purposes.
 /// </summary>
 [ApiController]
-[Route("api/test-seed")]
+[Route("api/v1/test-seed")]
 public class TestSeedController : ControllerBase
 {
     private readonly MosaicDbContext _db;

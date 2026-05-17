@@ -191,7 +191,7 @@ public sealed class IdempotencyMiddleware
         }
 
         if (HttpMethods.IsPatch(request.Method)
-            && request.Path.StartsWithSegments("/api/files", StringComparison.OrdinalIgnoreCase))
+            && request.Path.StartsWithSegments("/api/v1/files", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

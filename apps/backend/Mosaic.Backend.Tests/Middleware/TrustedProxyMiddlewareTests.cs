@@ -67,7 +67,7 @@ public class TrustedProxyMiddlewareTests
         var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/albums";
+        context.Request.Path = "/api/v1/albums";
         context.Connection.RemoteIpAddress = null;
 
         // Act
@@ -89,7 +89,7 @@ public class TrustedProxyMiddlewareTests
         var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/albums";
+        context.Request.Path = "/api/v1/albums";
         context.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.1"); // Not in 10.0.0.0/8
 
         // Act
@@ -111,7 +111,7 @@ public class TrustedProxyMiddlewareTests
         var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/albums";
+        context.Request.Path = "/api/v1/albums";
         context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.1"); // Trusted
         // No Remote-User header
 
@@ -134,7 +134,7 @@ public class TrustedProxyMiddlewareTests
         var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/albums";
+        context.Request.Path = "/api/v1/albums";
         context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.1"); // Trusted
         context.Request.Headers["Remote-User"] = "invalid user with spaces!@#$%"; // Invalid chars
 
@@ -162,7 +162,7 @@ public class TrustedProxyMiddlewareTests
         var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/albums";
+        context.Request.Path = "/api/v1/albums";
         context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.1"); // Trusted
         context.Request.Headers["Remote-User"] = "test-user-123";
 
@@ -203,7 +203,7 @@ public class TrustedProxyMiddlewareTests
             var middleware = new TrustedProxyMiddleware(next, config, logger);
 
             var context = new DefaultHttpContext();
-            context.Request.Path = "/api/albums";
+            context.Request.Path = "/api/v1/albums";
             context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.1");
             context.Request.Headers["Remote-User"] = username;
 
@@ -238,7 +238,7 @@ public class TrustedProxyMiddlewareTests
             var middleware = new TrustedProxyMiddleware(next, config, logger);
 
             var context = new DefaultHttpContext();
-            context.Request.Path = "/api/albums";
+            context.Request.Path = "/api/v1/albums";
             context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.1");
             context.Request.Headers["Remote-User"] = username;
 
@@ -278,7 +278,7 @@ public class TrustedProxyMiddlewareTests
             var middleware = new TrustedProxyMiddleware(next, config, logger);
 
             var context = new DefaultHttpContext();
-            context.Request.Path = "/api/albums";
+            context.Request.Path = "/api/v1/albums";
             context.Connection.RemoteIpAddress = IPAddress.Parse(ip);
             context.Request.Headers["Remote-User"] = "test-user";
 
@@ -302,7 +302,7 @@ public class TrustedProxyMiddlewareTests
         var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/albums";
+        context.Request.Path = "/api/v1/albums";
         context.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.1"); // Not trusted
         context.Request.Headers["Remote-User"] = "malicious-user"; // Attempt to spoof
 
@@ -331,7 +331,7 @@ public class TrustedProxyMiddlewareTests
         var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/albums";
+        context.Request.Path = "/api/v1/albums";
         context.Connection.RemoteIpAddress = IPAddress.Parse("127.0.0.1");
         context.Request.Headers["Remote-User"] = "localhost-user";
 
@@ -359,7 +359,7 @@ public class TrustedProxyMiddlewareTests
         var middleware = new TrustedProxyMiddleware(next, config, logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/albums";
+        context.Request.Path = "/api/v1/albums";
         context.Connection.RemoteIpAddress = IPAddress.IPv6Loopback;
         context.Request.Headers["Remote-User"] = "ipv6-user";
 

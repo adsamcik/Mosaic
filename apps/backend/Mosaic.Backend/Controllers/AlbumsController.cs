@@ -16,7 +16,7 @@ using Mosaic.Backend.Models.Photos;
 namespace Mosaic.Backend.Controllers;
 
 [ApiController]
-[Route("api/albums")]
+[Route("api/v1/albums")]
 public class AlbumsController : ControllerBase
 {
     private readonly MosaicDbContext _db;
@@ -238,7 +238,7 @@ public class AlbumsController : ControllerBase
 
             _logger.AlbumCreated(album.Id, user.Id);
 
-            return Created($"/api/albums/{album.Id}", new
+            return Created($"/api/v1/albums/{album.Id}", new
             {
                 album.Id,
                 album.OwnerId,
@@ -536,7 +536,7 @@ public class AlbumsController : ControllerBase
             AlbumId = album.Id,
             CurrentVersion = album.CurrentVersion,
             ManifestId = currentManifest?.Id,
-            ManifestUrl = currentManifest == null ? null : $"/api/manifests/{currentManifest.Id}",
+            ManifestUrl = currentManifest == null ? null : $"/api/v1/manifests/{currentManifest.Id}",
             ExpectedSha256 = currentManifest?.ManifestShards
                 .OrderBy(ms => ms.Tier)
                 .ThenBy(ms => ms.ShardIndex)
@@ -554,7 +554,7 @@ public class AlbumsController : ControllerBase
     /// Send Accept: application/vnd.mosaic.tiered-shards+json to include tieredShards.
     /// </summary>
     [HttpGet("{albumId}/photos")]
-    [HttpGet("/api/shared/{albumId}/photos")]
+    [HttpGet("/api/v1/shared/{albumId}/photos")]
     [ProducesResponseType<PagedResult<PhotoResponse>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetPhotos(Guid albumId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
     {

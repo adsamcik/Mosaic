@@ -11,7 +11,7 @@ using Mosaic.Backend.Services;
 namespace Mosaic.Backend.Controllers;
 
 [ApiController]
-[Route("api/manifests")]
+[Route("api/v1/manifests")]
 public class ManifestsController : ControllerBase
 {
     /// <summary>
@@ -331,7 +331,7 @@ public class ManifestsController : ControllerBase
             await tx.CommitAsync();
 
             SetManifestETag(manifest);
-            return Created($"/api/manifests/{manifest.Id}", ToFinalizeResponse(manifest, shardInfoList));
+            return Created($"/api/v1/manifests/{manifest.Id}", ToFinalizeResponse(manifest, shardInfoList));
         }
         catch
         {

@@ -33,14 +33,14 @@ public partial class CombinedAuthMiddleware
     private static readonly string[] PublicPaths =
     [
         "/health",
-        "/api/health",
-        "/api/auth/init",
-        "/api/auth/config",
-        "/api/auth/verify",
-        "/api/auth/register",
-        "/api/dev-auth",
-        "/api/s", // Intentionally broad for anonymous share-link routes; exact-plus-slash matching keeps /api/settings and /api/secrets private.
-        "/api/sidecar", // Sidecar Beacon signaling relay; intentionally unauthenticated (room-id is PAKE-derived, server cannot enumerate).
+        "/api/v1/health",
+        "/api/v1/auth/init",
+        "/api/v1/auth/config",
+        "/api/v1/auth/verify",
+        "/api/v1/auth/register",
+        "/api/v1/dev-auth",
+        "/api/v1/s", // Intentionally broad for anonymous share-link routes; exact-plus-slash matching keeps /api/v1/settings and /api/v1/secrets private.
+        "/api/v1/sidecar", // Sidecar Beacon signaling relay; intentionally unauthenticated (room-id is PAKE-derived, server cannot enumerate).
         "/swagger",
         "/openapi"
     ];
@@ -74,9 +74,9 @@ public partial class CombinedAuthMiddleware
         var path = context.Request.Path.Value ?? "";
         var isPublicPath = IsPublicPath(path);
 
-        // Special case: /api/auth/init returns 404 when LocalAuth is disabled
+        // Special case: /api/v1/auth/init returns 404 when LocalAuth is disabled
         if (isPublicPath &&
-            AuthConfigurationResolver.MatchesPublicPath(path, "/api/auth/init") &&
+            AuthConfigurationResolver.MatchesPublicPath(path, "/api/v1/auth/init") &&
             !_localAuthEnabled)
         {
             context.Response.StatusCode = 404;
@@ -93,7 +93,7 @@ public partial class CombinedAuthMiddleware
         }
 
         // Always attempt authentication to populate context items.
-        // This enables public endpoints (e.g. /api/auth/register) to
+        // This enables public endpoints (e.g. /api/v1/auth/register) to
         // perform their own authorization checks when needed.
         var authenticated = false;
         if (_localAuthEnabled && await TryLocalAuthAsync(context, db))
@@ -265,7 +265,7 @@ public partial class CombinedAuthMiddleware
         }
 
         return _testSeedEnabled &&
-               AuthConfigurationResolver.MatchesPublicPath(path, "/api/test-seed");
+               AuthConfigurationResolver.MatchesPublicPath(path, "/api/v1/test-seed");
     }
 
     private static bool IsPublicShareLinkPhotoPath(HttpRequest request)
@@ -276,7 +276,7 @@ public partial class CombinedAuthMiddleware
         }
 
         var path = request.Path.Value ?? string.Empty;
-        return path.StartsWith("/api/share-links/", StringComparison.OrdinalIgnoreCase)
+        return path.StartsWith("/api/v1/share-links/", StringComparison.OrdinalIgnoreCase)
             && path.EndsWith("/photos", StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -52,7 +52,7 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
     private async Task<WebSocket> ConnectAsync(string roomId, CancellationToken ct = default)
     {
         var wsClient = _factory.Server.CreateWebSocketClient();
-        var uri = new Uri(_factory.Server.BaseAddress, $"/api/sidecar/signal/{roomId}");
+        var uri = new Uri(_factory.Server.BaseAddress, $"/api/v1/sidecar/signal/{roomId}");
         return await wsClient.ConnectAsync(uri, ct);
     }
 
@@ -192,7 +192,7 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
         var roomId = NewRoomId();
 
         var wsClient = factory.Server.CreateWebSocketClient();
-        var uri = new Uri(factory.Server.BaseAddress, $"/api/sidecar/signal/{roomId}");
+        var uri = new Uri(factory.Server.BaseAddress, $"/api/v1/sidecar/signal/{roomId}");
         using var a = await wsClient.ConnectAsync(uri, cts.Token);
         using var b = await wsClient.ConnectAsync(uri, cts.Token);
 
@@ -230,7 +230,7 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
         var roomId = NewRoomId();
 
         var wsClient = factory.Server.CreateWebSocketClient();
-        var uri = new Uri(factory.Server.BaseAddress, $"/api/sidecar/signal/{roomId}");
+        var uri = new Uri(factory.Server.BaseAddress, $"/api/v1/sidecar/signal/{roomId}");
         var a = await wsClient.ConnectAsync(uri, cts.Token);
         var b = await wsClient.ConnectAsync(uri, cts.Token);
         var manager = factory.Services.GetRequiredService<RoomManager>();
@@ -276,16 +276,16 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
 
         // First two creations succeed.
         var ws1 = await wsClient.ConnectAsync(
-            new Uri(factory.Server.BaseAddress, $"/api/sidecar/signal/{NewRoomId()}"), cts.Token);
+            new Uri(factory.Server.BaseAddress, $"/api/v1/sidecar/signal/{NewRoomId()}"), cts.Token);
         var ws2 = await wsClient.ConnectAsync(
-            new Uri(factory.Server.BaseAddress, $"/api/sidecar/signal/{NewRoomId()}"), cts.Token);
+            new Uri(factory.Server.BaseAddress, $"/api/v1/sidecar/signal/{NewRoomId()}"), cts.Token);
 
         // Third creation from same IP should fail with 429 (which surfaces as a
         // failed WebSocket handshake).
         await Assert.ThrowsAnyAsync<Exception>(async () =>
         {
             await wsClient.ConnectAsync(
-                new Uri(factory.Server.BaseAddress, $"/api/sidecar/signal/{NewRoomId()}"), cts.Token);
+                new Uri(factory.Server.BaseAddress, $"/api/v1/sidecar/signal/{NewRoomId()}"), cts.Token);
         });
 
         ws1.Dispose();
@@ -393,7 +393,7 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
     public async Task HealthEndpoint_ReturnsRoomCount()
     {
         using var http = _factory.CreateClient();
-        var resp = await http.GetAsync("/api/sidecar/health");
+        var resp = await http.GetAsync("/api/v1/sidecar/health");
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
         var body = await resp.Content.ReadAsStringAsync();
         Assert.Contains("\"rooms\"", body);

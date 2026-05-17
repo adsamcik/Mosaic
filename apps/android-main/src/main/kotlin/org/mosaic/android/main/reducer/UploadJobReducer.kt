@@ -87,9 +87,17 @@ class UploadJobReducer(
         errorCode = error.stableCode,
       )
     } else {
+      // v1.0.1 s31: previously we always emitted
+      // `CLIENT_CORE_RETRY_BUDGET_EXHAUSTED` here, clobbering the originating
+      // transient error code (e.g. a network timeout) that drove us into the
+      // exhausted state. Consumers (UI, logs) lost any signal about the
+      // underlying cause. We now preserve the originating stable code on the
+      // FFI event so the persisted snapshot's `failureCode` carries it, while
+      // budget-exhaustion semantics remain recoverable via the snapshot's
+      // `retryCount >= maxRetryCount` comparison (see [uploadErrorFromSnapshot]).
       UploadJobEvents.nonRetryableFailure(
         effectId = effect.effectId,
-        errorCode = RustClientCoreUploadStableCode.CLIENT_CORE_RETRY_BUDGET_EXHAUSTED,
+        errorCode = error.stableCode,
       )
     }
   }
@@ -319,6 +327,45 @@ class EffectDispatchException(
   val stableCode: Int = RustClientCoreUploadStableCode.CLIENT_CORE_MANIFEST_OUTCOME_UNKNOWN,
   cause: Throwable? = null,
 ) : Exception(message, cause)
+
+/**
+ * v1.0.1 s31: composite error model surfaced to UI/log consumers when an
+ * upload job terminates in `Failed`. Previously the FFI event's `errorCode`
+ * was clobbered with `CLIENT_CORE_RETRY_BUDGET_EXHAUSTED` so the originating
+ * transient (e.g. NETWORK_TIMEOUT) was lost. The reducer now preserves the
+ * originating code in the persisted snapshot's `failureCode`; this helper
+ * lifts that back into a composite error that names both the budget reason
+ * *and* the originating cause.
+ */
+sealed interface UploadError {
+  /** A non-retryable error that terminated the job before exhausting retries. */
+  data class NonRetryable(val cause: Int) : UploadError
+
+  /**
+   * Retry budget for the effect was drained. [cause] is the originating
+   * transient error code that triggered the last retry attempt (e.g. a
+   * network timeout), not the synthetic budget-exhausted sentinel.
+   */
+  data class RetryBudgetExhausted(val cause: Int) : UploadError
+}
+
+/**
+ * Inspect a terminal upload snapshot and return the composite [UploadError]
+ * that drove it into `Failed`. Returns `null` for non-failed snapshots.
+ *
+ * Budget exhaustion is detected via `retryCount >= maxRetryCount`. Callers
+ * (UI, telemetry, logs) can show "Upload failed: retry budget exhausted
+ * (cause: NETWORK_TIMEOUT)" instead of just "Upload failed".
+ */
+fun uploadErrorFromSnapshot(snapshot: RustClientCoreUploadJobFfiSnapshot): UploadError? {
+  if (snapshot.phase != "Failed") return null
+  val cause = snapshot.failureCode
+  return if (snapshot.maxRetryCount > 0 && snapshot.retryCount >= snapshot.maxRetryCount) {
+    UploadError.RetryBudgetExhausted(cause = cause)
+  } else {
+    UploadError.NonRetryable(cause = cause)
+  }
+}
 
 data class RetryBudget(
   val maxRetries: Int,

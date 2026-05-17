@@ -13,7 +13,7 @@ namespace Mosaic.Backend.Controllers;
 /// API for managing album content (storytelling blocks, text, etc.)
 /// </summary>
 [ApiController]
-[Route("api/albums/{albumId:guid}/content")]
+[Route("api/v1/albums/{albumId:guid}/content")]
 public class AlbumContentController : ControllerBase
 {
     private readonly MosaicDbContext _db;

@@ -97,7 +97,7 @@ public class ShareLinkAccessController : ControllerBase
     /// <summary>
     /// Validate and access a share link (anonymous)
     /// </summary>
-    [HttpGet("api/s/{linkId}")]
+    [HttpGet("api/v1/s/{linkId}")]
     public async Task<IActionResult> Access(string linkId)
     {
         var linkIdBytes = Base64UrlHelper.FromBase64Url(linkId);
@@ -189,7 +189,7 @@ public class ShareLinkAccessController : ControllerBase
     /// <summary>
     /// Get epoch keys for a share link (anonymous)
     /// </summary>
-    [HttpGet("api/s/{linkId}/keys")]
+    [HttpGet("api/v1/s/{linkId}/keys")]
     public async Task<IActionResult> GetKeys(string linkId)
     {
         var linkIdBytes = Base64UrlHelper.FromBase64Url(linkId);
@@ -226,7 +226,7 @@ public class ShareLinkAccessController : ControllerBase
             if (!await IsGrantValidAsync(shareLink, grantToken, HttpContext.RequestAborted))
             {
                 return Problem(
-                    detail: "Valid access grant required for limited-use links. Call GET /api/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header.",
+                    detail: "Valid access grant required for limited-use links. Call GET /api/v1/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header.",
                     statusCode: StatusCodes.Status401Unauthorized);
             }
         }
@@ -262,8 +262,8 @@ public class ShareLinkAccessController : ControllerBase
     /// <summary>
     /// Get photo metadata for a share link (anonymous)
     /// </summary>
-    [HttpGet("api/s/{linkId}/photos")]
-    [HttpGet("api/share-links/{linkId}/photos")]
+    [HttpGet("api/v1/s/{linkId}/photos")]
+    [HttpGet("api/v1/share-links/{linkId}/photos")]
     public async Task<IActionResult> GetPhotos(string linkId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
         skip = Math.Max(0, skip);
@@ -302,7 +302,7 @@ public class ShareLinkAccessController : ControllerBase
             if (!await IsGrantValidAsync(shareLink, grantToken, HttpContext.RequestAborted))
             {
                 return Problem(
-                    detail: "Valid access grant required for limited-use links. Call GET /api/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header.",
+                    detail: "Valid access grant required for limited-use links. Call GET /api/v1/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header.",
                     statusCode: StatusCodes.Status401Unauthorized);
             }
         }
@@ -360,7 +360,7 @@ public class ShareLinkAccessController : ControllerBase
     /// <summary>
     /// Download a shard via share link (anonymous)
     /// </summary>
-    [HttpGet("api/s/{linkId}/shards/{shardId}")]
+    [HttpGet("api/v1/s/{linkId}/shards/{shardId}")]
     public async Task<IActionResult> DownloadShard(string linkId, Guid shardId)
     {
         var linkIdBytes = Base64UrlHelper.FromBase64Url(linkId);
@@ -396,7 +396,7 @@ public class ShareLinkAccessController : ControllerBase
             if (!await IsGrantValidAsync(shareLink, grantToken, HttpContext.RequestAborted))
             {
                 return Problem(
-                    detail: "Valid access grant required for limited-use links. Call GET /api/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header.",
+                    detail: "Valid access grant required for limited-use links. Call GET /api/v1/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header.",
                     statusCode: StatusCodes.Status401Unauthorized);
             }
         }

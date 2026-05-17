@@ -8,7 +8,7 @@ using Mosaic.Backend.Services;
 namespace Mosaic.Backend.Controllers;
 
 [ApiController]
-[Route("api/admin/stats")]
+[Route("api/v1/admin/stats")]
 public class AdminStatsController : ControllerBase
 {
     private readonly MosaicDbContext _db;

@@ -24,7 +24,7 @@ namespace Mosaic.Backend.Controllers;
 /// This controller proxies tile fetches through the backend so:
 ///   - OSM only sees the backend's IP / UA, not the user's;
 ///   - the request log on the backend can be redacted (only the route
-///     template <c>/api/tiles/&lt;redacted&gt;</c> reaches the access
+///     template <c>/api/v1/tiles/&lt;redacted&gt;</c> reaches the access
 ///     log because <c>nginx.conf</c> already does that mapping);
 ///   - the backend can aggressively cache tiles to amortize the
 ///     bandwidth cost.
@@ -36,12 +36,12 @@ namespace Mosaic.Backend.Controllers;
 /// This endpoint is authentication-required (members can see maps;
 /// anonymous share-link visitors do not get the map view today). If
 /// that policy changes, this controller will need a separate
-/// <c>/api/s/&#123;linkId&#125;/tiles/...</c> sibling — anonymous
+/// <c>/api/v1/s/&#123;linkId&#125;/tiles/...</c> sibling — anonymous
 /// users must NOT reach this controller because their tile fetches
 /// would correlate with their share-link surface.
 /// </summary>
 [ApiController]
-[Route("api/tiles")]
+[Route("api/v1/tiles")]
 [Authorize]
 public sealed class MapTilesController : ControllerBase
 {

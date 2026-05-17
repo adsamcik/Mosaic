@@ -8,7 +8,7 @@ using Mosaic.Backend.Services;
 namespace Mosaic.Backend.Controllers;
 
 [ApiController]
-[Route("api/shards")]
+[Route("api/v1/shards")]
 public class ShardsController : ControllerBase
 {
     private readonly MosaicDbContext _db;

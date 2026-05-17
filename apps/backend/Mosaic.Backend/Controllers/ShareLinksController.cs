@@ -35,7 +35,7 @@ public class ShareLinksController : ControllerBase
     /// <summary>
     /// Create a new share link for an album (owner only)
     /// </summary>
-    [HttpPost("api/albums/{albumId}/share-links")]
+    [HttpPost("api/v1/albums/{albumId}/share-links")]
     public async Task<IActionResult> Create(Guid albumId, [FromBody] CreateShareLinkRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -182,7 +182,7 @@ public class ShareLinksController : ControllerBase
                     });
             }
 
-            return Created($"/api/share-links/{shareLink.Id}", new ShareLinkResponse
+            return Created($"/api/v1/share-links/{shareLink.Id}", new ShareLinkResponse
             {
                 Id = shareLink.Id,
                 LinkId = Base64UrlHelper.ToBase64Url(shareLink.LinkId),
@@ -204,7 +204,7 @@ public class ShareLinksController : ControllerBase
     /// <summary>
     /// List all share links for an album (owner only)
     /// </summary>
-    [HttpGet("api/albums/{albumId}/share-links")]
+    [HttpGet("api/v1/albums/{albumId}/share-links")]
     public async Task<IActionResult> List(Guid albumId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
         skip = Math.Max(0, skip);
@@ -250,7 +250,7 @@ public class ShareLinksController : ControllerBase
     /// <summary>
     /// List active share links with owner-encrypted secrets (owner only, for epoch rotation)
     /// </summary>
-    [HttpGet("api/albums/{albumId}/share-links/with-secrets")]
+    [HttpGet("api/v1/albums/{albumId}/share-links/with-secrets")]
     public async Task<IActionResult> ListWithSecrets(Guid albumId, [FromQuery] int skip = 0, [FromQuery] int take = 50)
     {
         skip = Math.Max(0, skip);
@@ -317,7 +317,7 @@ public class ShareLinksController : ControllerBase
     /// <summary>
     /// Revoke a share link (soft delete, owner only)
     /// </summary>
-    [HttpDelete("api/share-links/{id}")]
+    [HttpDelete("api/v1/share-links/{id}")]
     public async Task<IActionResult> Revoke(Guid id)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -374,7 +374,7 @@ public class ShareLinksController : ControllerBase
     /// <summary>
     /// Update expiration settings for a share link (owner only)
     /// </summary>
-    [HttpPatch("api/albums/{albumId:guid}/share-links/{linkId}/expiration")]
+    [HttpPatch("api/v1/albums/{albumId:guid}/share-links/{linkId}/expiration")]
     [ProducesResponseType<ShareLinkResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateLinkExpiration(Guid albumId, string linkId, [FromBody] UpdateLinkExpirationRequest request)
     {
@@ -453,7 +453,7 @@ public class ShareLinksController : ControllerBase
     /// <summary>
     /// Add epoch keysto an existing share link (owner only, for epoch rotation)
     /// </summary>
-    [HttpPost("api/share-links/{id}/keys")]
+    [HttpPost("api/v1/share-links/{id}/keys")]
     public async Task<IActionResult> AddEpochKeys(Guid id, [FromBody] AddEpochKeysRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);

@@ -68,7 +68,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
         var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/dev-auth/login";
+        context.Request.Path = "/api/v1/dev-auth/login";
 
         // Act
         await middleware.InvokeAsync(context, _db);
@@ -85,7 +85,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
         var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/users/me";
+        context.Request.Path = "/api/v1/users/me";
 
         // Act
         await middleware.InvokeAsync(context, _db);
@@ -102,7 +102,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
         var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/users/me";
+        context.Request.Path = "/api/v1/users/me";
         context.Request.Headers.Cookie = "mosaic_session=not-valid-base64!!!";
 
         // Act
@@ -123,7 +123,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
         var tokenBase64 = Convert.ToBase64String(token);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/users/me";
+        context.Request.Path = "/api/v1/users/me";
         context.Request.Headers.Cookie = $"mosaic_session={tokenBase64}";
 
         // Act
@@ -171,7 +171,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
         var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/users/me";
+        context.Request.Path = "/api/v1/users/me";
         context.Request.Headers.Cookie = $"mosaic_session={tokenBase64}";
 
         // Act
@@ -221,7 +221,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
         var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/users/me";
+        context.Request.Path = "/api/v1/users/me";
         context.Request.Headers.Cookie = $"mosaic_session={tokenBase64}";
 
         // Act
@@ -264,7 +264,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
         var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/users/me";
+        context.Request.Path = "/api/v1/users/me";
         context.Request.Headers.Cookie = $"mosaic_session={tokenBase64}";
 
         // Act
@@ -307,7 +307,7 @@ public class LocalAuthMiddlewareTests : IAsyncLifetime
         var middleware = new LocalAuthMiddleware(next, _logger);
 
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/users/me";
+        context.Request.Path = "/api/v1/users/me";
         context.Request.Headers.Cookie = $"mosaic_session={tokenBase64}";
 
         // Act

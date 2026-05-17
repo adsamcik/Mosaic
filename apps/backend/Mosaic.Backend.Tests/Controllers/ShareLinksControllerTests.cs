@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
@@ -78,7 +78,7 @@ public class ShareLinksControllerTests
 
     #endregion
 
-    #region POST /api/albums/{albumId}/share-links
+    #region POST /api/v1/albums/{albumId}/share-links
 
     [Fact]
     public async Task Create_ReturnsCreated_WhenOwnerCreatesValidLink()
@@ -470,7 +470,7 @@ public class ShareLinksControllerTests
 
     #endregion
 
-    #region GET /api/albums/{albumId}/share-links
+    #region GET /api/v1/albums/{albumId}/share-links
 
     [Fact]
     public async Task List_ReturnsEmptyList_WhenNoLinksExist()
@@ -622,7 +622,7 @@ public class ShareLinksControllerTests
 
     #endregion
 
-    #region GET /api/albums/{albumId}/share-links/with-secrets
+    #region GET /api/v1/albums/{albumId}/share-links/with-secrets
 
     [Fact]
     public async Task ListWithSecrets_ReturnsActiveLinksWithSecrets()
@@ -841,7 +841,7 @@ public class ShareLinksControllerTests
 
     #endregion
 
-    #region DELETE /api/share-links/{id}
+    #region DELETE /api/v1/share-links/{id}
 
     [Fact]
     public async Task Revoke_ReturnsNoContent_WhenOwnerRevokesLink()
@@ -930,7 +930,7 @@ public class ShareLinksControllerTests
 
     #endregion
 
-    #region POST /api/share-links/{id}/keys
+    #region POST /api/v1/share-links/{id}/keys
 
     [Fact]
     public async Task AddEpochKeys_ReturnsOk_WhenOwnerAddsKeys()
@@ -1265,7 +1265,7 @@ public class ShareLinksControllerTests
 
     #endregion
 
-    #region GET /api/s/{linkId}
+    #region GET /api/v1/s/{linkId}
 
     [Fact]
     public async Task Access_ReturnsOk_WhenLinkIsValid()
@@ -1470,7 +1470,7 @@ public class ShareLinksControllerTests
 
     #endregion
 
-    #region GET /api/s/{linkId}/keys
+    #region GET /api/v1/s/{linkId}/keys
 
     [Fact]
     public async Task GetKeys_ReturnsAllKeys_WhenLinkIsValid()
@@ -1599,7 +1599,7 @@ public class ShareLinksControllerTests
 
     #endregion
 
-    #region GET /api/s/{linkId}/photos
+    #region GET /api/v1/s/{linkId}/photos
 
     [Fact]
     public async Task GetPhotos_ReturnsPhotos_WhenLinkIsValid()
@@ -1837,7 +1837,7 @@ public class ShareLinksControllerTests
 
     #endregion
 
-    #region GET /api/s/{linkId}/shards/{shardId}
+    #region GET /api/v1/s/{linkId}/shards/{shardId}
 
     [Fact]
     public async Task DownloadShard_ReturnsShard_WhenLinkIsValidAndShardBelongsToAlbum()
@@ -2220,7 +2220,7 @@ public class ShareLinksControllerTests
 
     #endregion
 
-    #region PATCH /api/albums/{albumId}/share-links/{linkId}/expiration
+    #region PATCH /api/v1/albums/{albumId}/share-links/{linkId}/expiration
 
     [Fact]
     public async Task UpdateLinkExpiration_ReturnsOk_WhenOwnerUpdatesExpiration()

@@ -10,7 +10,7 @@ using Mosaic.Backend.Services;
 namespace Mosaic.Backend.Controllers;
 
 [ApiController]
-[Route("api/admin/albums")]
+[Route("api/v1/admin/albums")]
 public class AdminAlbumsController : ControllerBase
 {
     private readonly MosaicDbContext _db;

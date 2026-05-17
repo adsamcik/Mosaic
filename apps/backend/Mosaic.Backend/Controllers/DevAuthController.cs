@@ -15,7 +15,7 @@ namespace Mosaic.Backend.Controllers;
 /// This controller is ONLY available when ASPNETCORE_ENVIRONMENT=Development AND Auth:Mode=LocalAuth.
 /// </summary>
 [ApiController]
-[Route("api/dev-auth")]
+[Route("api/v1/dev-auth")]
 public class DevAuthController : ControllerBase
 {
     private readonly MosaicDbContext _db;

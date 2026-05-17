@@ -25,7 +25,7 @@ namespace Mosaic.Backend.SidecarSignaling;
 /// </summary>
 public static partial class SidecarSignalingEndpoint
 {
-    private const string BasePath = "/api/sidecar";
+    private const string BasePath = "/api/v1/sidecar";
     private const string SignalPath = BasePath + "/signal/{roomId}";
     private const string HealthPath = BasePath + "/health";
 

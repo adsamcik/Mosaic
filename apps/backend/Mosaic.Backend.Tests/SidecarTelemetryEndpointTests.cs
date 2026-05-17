@@ -10,7 +10,7 @@ using Xunit;
 namespace Mosaic.Backend.Tests;
 
 /// <summary>
-/// Integration tests for <c>POST /api/sidecar/telemetry/v1</c>.
+/// Integration tests for <c>POST /api/v1/sidecar/telemetry/v1</c>.
 /// Validates the strict JSON envelope shape: only enum-valued fields are
 /// admitted; pseudonymous identifiers (room id, code, msg1, sessionId) and
 /// continuous values (raw bytes, raw timestamps) cannot be smuggled in.
@@ -52,7 +52,7 @@ public sealed class SidecarTelemetryEndpointTests
               "throughputBucket": "fast", "durationBucket": "short" }
         ]}
         """;
-        var resp = await http.PostAsync("/api/sidecar/telemetry/v1", Json(body));
+        var resp = await http.PostAsync("/api/v1/sidecar/telemetry/v1", Json(body));
         Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
     }
 
@@ -60,7 +60,7 @@ public sealed class SidecarTelemetryEndpointTests
     public async Task EmptyEvents_Returns204()
     {
         using var http = NewClient();
-        var resp = await http.PostAsync("/api/sidecar/telemetry/v1", Json("""{ "events": [] }"""));
+        var resp = await http.PostAsync("/api/v1/sidecar/telemetry/v1", Json("""{ "events": [] }"""));
         Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
     }
 
@@ -68,7 +68,7 @@ public sealed class SidecarTelemetryEndpointTests
     public async Task MalformedJson_Returns400()
     {
         using var http = NewClient();
-        var resp = await http.PostAsync("/api/sidecar/telemetry/v1", Json("{ not-json"));
+        var resp = await http.PostAsync("/api/v1/sidecar/telemetry/v1", Json("{ not-json"));
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
     }
 
@@ -76,7 +76,7 @@ public sealed class SidecarTelemetryEndpointTests
     public async Task MissingEvents_Returns400()
     {
         using var http = NewClient();
-        var resp = await http.PostAsync("/api/sidecar/telemetry/v1", Json("""{ "foo": 1 }"""));
+        var resp = await http.PostAsync("/api/v1/sidecar/telemetry/v1", Json("""{ "foo": 1 }"""));
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
     }
 
@@ -88,7 +88,7 @@ public sealed class SidecarTelemetryEndpointTests
     {
         using var http = NewClient();
         var body = $$"""{ "events": [ { "event": "{{evName}}" } ] }""";
-        var resp = await http.PostAsync("/api/sidecar/telemetry/v1", Json(body));
+        var resp = await http.PostAsync("/api/v1/sidecar/telemetry/v1", Json(body));
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
     }
 
@@ -102,7 +102,7 @@ public sealed class SidecarTelemetryEndpointTests
     {
         using var http = NewClient();
         var body = $$"""{ "events": [ { "event": "pair-completed", "{{field}}": "{{value}}" } ] }""";
-        var resp = await http.PostAsync("/api/sidecar/telemetry/v1", Json(body));
+        var resp = await http.PostAsync("/api/v1/sidecar/telemetry/v1", Json(body));
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
     }
 
@@ -154,7 +154,7 @@ public sealed class SidecarTelemetryEndpointTests
               "timestamp": 1700000000000 }
         ]}
         """;
-        var resp = await http.PostAsync("/api/sidecar/telemetry/v1", Json(body));
+        var resp = await http.PostAsync("/api/v1/sidecar/telemetry/v1", Json(body));
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
     }
 
@@ -170,7 +170,7 @@ public sealed class SidecarTelemetryEndpointTests
             sb.Append("""{ "event": "pair-initiated" }""");
         }
         sb.Append("] }");
-        var resp = await http.PostAsync("/api/sidecar/telemetry/v1", Json(sb.ToString()));
+        var resp = await http.PostAsync("/api/v1/sidecar/telemetry/v1", Json(sb.ToString()));
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
     }
 
@@ -182,7 +182,7 @@ public sealed class SidecarTelemetryEndpointTests
         // ignore — we want the read-cap to engage before deserialisation.
         var huge = new string('x', 17 * 1024);
         var body = $$"""{ "events": [ { "event": "pair-initiated" } ], "padding": "{{huge}}" }""";
-        var resp = await http.PostAsync("/api/sidecar/telemetry/v1", Json(body));
+        var resp = await http.PostAsync("/api/v1/sidecar/telemetry/v1", Json(body));
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, resp.StatusCode);
     }
 }

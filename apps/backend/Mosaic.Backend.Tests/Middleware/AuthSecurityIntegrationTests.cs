@@ -33,7 +33,7 @@ public class AuthSecurityIntegrationTests
 
         using var db = TestDbContextFactory.Create();
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/auth/verify-extra";
+        context.Request.Path = "/api/v1/auth/verify-extra";
 
         await middleware.InvokeAsync(context, db);
 
@@ -60,7 +60,7 @@ public class AuthSecurityIntegrationTests
 
         using var db = TestDbContextFactory.Create();
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/test-seed/reset";
+        context.Request.Path = "/api/v1/test-seed/reset";
 
         await middleware.InvokeAsync(context, db);
 
@@ -87,7 +87,7 @@ public class AuthSecurityIntegrationTests
 
         using var db = TestDbContextFactory.Create();
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/test-seed/reset";
+        context.Request.Path = "/api/v1/test-seed/reset";
 
         await middleware.InvokeAsync(context, db);
 
@@ -114,7 +114,7 @@ public class AuthSecurityIntegrationTests
 
         using var db = TestDbContextFactory.Create();
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/test-seed/reset";
+        context.Request.Path = "/api/v1/test-seed/reset";
 
         await middleware.InvokeAsync(context, db);
 
@@ -162,7 +162,7 @@ public class AuthSecurityIntegrationTests
         var tokenBase64 = Convert.ToBase64String(sessionToken);
         var context = new DefaultHttpContext();
         context.Request.Method = HttpMethods.Patch;
-        context.Request.Path = "/api/files/shard-1";
+        context.Request.Path = "/api/v1/files/shard-1";
         context.Request.Headers.Cookie = $"mosaic_session={tokenBase64}";
 
         await middleware.InvokeAsync(context, db);
@@ -214,7 +214,7 @@ public class AuthSecurityIntegrationTests
         var tokenBase64 = Convert.ToBase64String(sessionToken);
         var context = new DefaultHttpContext();
         context.Request.Method = HttpMethods.Get;
-        context.Request.Path = "/api/albums";
+        context.Request.Path = "/api/v1/albums";
         context.Request.Headers.Cookie = $"mosaic_session={tokenBase64}";
 
         await middleware.InvokeAsync(context, db);

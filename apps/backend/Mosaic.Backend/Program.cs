@@ -299,7 +299,7 @@ if (app.Environment.IsDevelopment())
 var storagePath = builder.Configuration["Storage:Path"] ?? "./data/blobs";
 Directory.CreateDirectory(storagePath);
 
-app.MapTus("/api/files", async httpContext => new tusdotnet.Models.DefaultTusConfiguration
+app.MapTus("/api/v1/files", async httpContext => new tusdotnet.Models.DefaultTusConfiguration
 {
     Store = new TusDiskStore(storagePath),
     // Max upload size: 100 MB per shard

@@ -9,7 +9,7 @@ using Mosaic.Backend.Services;
 namespace Mosaic.Backend.Controllers;
 
 [ApiController]
-[Route("api/albums/{albumId}/epoch-keys")]
+[Route("api/v1/albums/{albumId}/epoch-keys")]
 public class EpochKeysController : ControllerBase
 {
     private readonly MosaicDbContext _db;
@@ -159,7 +159,7 @@ public class EpochKeysController : ControllerBase
                 statusCode: StatusCodes.Status409Conflict);
         }
 
-        return Created($"/api/albums/{albumId}/epoch-keys/{epochKey.Id}", new
+        return Created($"/api/v1/albums/{albumId}/epoch-keys/{epochKey.Id}", new
         {
             epochKey.Id,
             epochKey.AlbumId,
@@ -209,7 +209,7 @@ public class EpochKeysController : ControllerBase
     /// <summary>
     /// Rotate to a new epoch (key rotation after member removal)
     /// </summary>
-    [HttpPost("/api/albums/{albumId}/epochs/{epochId}/rotate")]
+    [HttpPost("/api/v1/albums/{albumId}/epochs/{epochId}/rotate")]
     public async Task<IActionResult> Rotate(Guid albumId, int epochId, [FromBody] RotateEpochRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -258,7 +258,7 @@ public class EpochKeysController : ControllerBase
                 });
         }
 
-        return Created($"/api/albums/{albumId}/epochs/{epochId}", new
+        return Created($"/api/v1/albums/{albumId}/epochs/{epochId}", new
         {
             result.AlbumId,
             result.EpochId,

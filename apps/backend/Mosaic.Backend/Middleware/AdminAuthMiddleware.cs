@@ -6,7 +6,7 @@ using Mosaic.Backend.Logging;
 namespace Mosaic.Backend.Middleware;
 
 /// <summary>
-/// Middleware that protects /api/admin/* routes.
+/// Middleware that protects /api/v1/admin/* routes.
 /// Requires authenticated user with IsAdmin = true.
 /// </summary>
 public class AdminAuthMiddleware
@@ -23,7 +23,7 @@ public class AdminAuthMiddleware
     public async Task InvokeAsync(HttpContext context, MosaicDbContext db)
     {
         // Only check admin routes
-        if (!context.Request.Path.StartsWithSegments("/api/admin"))
+        if (!context.Request.Path.StartsWithSegments("/api/v1/admin"))
         {
             await _next(context);
             return;
@@ -32,7 +32,7 @@ public class AdminAuthMiddleware
         var authSub = context.Items["AuthSub"] as string;
         if (string.IsNullOrEmpty(authSub))
         {
-            _logger.AdminAccessDenied(Guid.Empty, context.Request.Path.Value ?? "/api/admin");
+            _logger.AdminAccessDenied(Guid.Empty, context.Request.Path.Value ?? "/api/v1/admin");
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new { error = "Authentication required" });
             return;
@@ -43,7 +43,7 @@ public class AdminAuthMiddleware
             ?? await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == authSub);
         if (user == null)
         {
-            _logger.AdminAccessDenied(Guid.Empty, context.Request.Path.Value ?? "/api/admin");
+            _logger.AdminAccessDenied(Guid.Empty, context.Request.Path.Value ?? "/api/v1/admin");
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new { error = "User not found" });
             return;
@@ -51,7 +51,7 @@ public class AdminAuthMiddleware
 
         if (!user.IsAdmin)
         {
-            _logger.AdminAccessDenied(user.Id, context.Request.Path.Value ?? "/api/admin");
+            _logger.AdminAccessDenied(user.Id, context.Request.Path.Value ?? "/api/v1/admin");
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             await context.Response.WriteAsJsonAsync(new { error = "Admin privileges required" });
             return;

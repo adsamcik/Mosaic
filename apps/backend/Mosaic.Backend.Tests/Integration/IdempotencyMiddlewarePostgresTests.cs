@@ -39,7 +39,7 @@ public sealed class IdempotencyMiddlewarePostgresTests : IClassFixture<Idempoten
             await context.Response.WriteAsync("""{"ok":true}""");
             await transaction.CommitAsync(context.RequestAborted);
         });
-        var context = CreateContext("/api/manifests", "POST", "{}", "nested-transaction-key");
+        var context = CreateContext("/api/v1/manifests", "POST", "{}", "nested-transaction-key");
 
         var exception = await Record.ExceptionAsync(() => middleware.InvokeAsync(context, db, new MockCurrentUserService(db)));
 
@@ -62,14 +62,14 @@ public sealed class IdempotencyMiddlewarePostgresTests : IClassFixture<Idempoten
             var call = Interlocked.Increment(ref sideEffectCount);
             await Task.Delay(50, context.RequestAborted);
             context.Response.StatusCode = StatusCodes.Status201Created;
-            context.Response.Headers.Location = $"/api/manifests/{call}";
+            context.Response.Headers.Location = $"/api/v1/manifests/{call}";
             await context.Response.WriteAsync($$"""{"id":"manifest-{{call}}"}""");
         });
 
         var tasks = Enumerable.Range(0, requestCount).Select(async _ =>
         {
             await using var db = CreateDbContext();
-            var context = CreateContext("/api/manifests", "POST", """{"albumId":"a","shardIds":["s"]}""", "pg-concurrent-key");
+            var context = CreateContext("/api/v1/manifests", "POST", """{"albumId":"a","shardIds":["s"]}""", "pg-concurrent-key");
 
             await middleware.InvokeAsync(context, db, new MockCurrentUserService(db));
 
@@ -87,7 +87,7 @@ public sealed class IdempotencyMiddlewarePostgresTests : IClassFixture<Idempoten
 
         Assert.Equal(1, sideEffectCount);
         Assert.All(results, result => Assert.Equal(StatusCodes.Status201Created, result.StatusCode));
-        Assert.All(results, result => Assert.Equal("/api/manifests/1", result.Location));
+        Assert.All(results, result => Assert.Equal("/api/v1/manifests/1", result.Location));
         Assert.All(results, result => Assert.Equal("""{"id":"manifest-1"}""", result.Body));
         Assert.Equal(requestCount - 1, results.Count(result => result.Replayed == "true"));
         Assert.Single(verifyDb.IdempotencyRecords);

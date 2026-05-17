@@ -21,7 +21,7 @@ public class ManifestIdempotencyIntegrationTests
         {
             executed++;
             context.Response.StatusCode = StatusCodes.Status201Created;
-            context.Response.Headers.Location = "/api/manifests/manifest-id";
+            context.Response.Headers.Location = "/api/v1/manifests/manifest-id";
             await context.Response.WriteAsync("""{"manifestId":"manifest-id"}""");
         });
 
@@ -68,7 +68,7 @@ public class ManifestIdempotencyIntegrationTests
         var context = new DefaultHttpContext();
         context.Items["AuthSub"] = AuthSub;
         context.Request.Method = HttpMethods.Post;
-        context.Request.Path = "/api/manifests";
+        context.Request.Path = "/api/v1/manifests";
         context.Request.ContentType = "application/json";
         context.Request.Headers[IdempotencyMiddleware.HeaderName] = idempotencyKey;
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));

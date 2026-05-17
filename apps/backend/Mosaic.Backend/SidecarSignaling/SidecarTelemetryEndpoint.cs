@@ -10,7 +10,7 @@ namespace Mosaic.Backend.SidecarSignaling;
 /// <summary>
 /// Sidecar Beacon — ZK-safe telemetry sink.
 ///
-/// Accepts <c>POST /api/sidecar/telemetry/v1</c> with a tiny JSON envelope of
+/// Accepts <c>POST /api/v1/sidecar/telemetry/v1</c> with a tiny JSON envelope of
 /// pre-bucketed events. The endpoint enforces the same ZK invariant the
 /// client does: ONLY the explicitly listed enum-valued fields are accepted;
 /// any other property is rejected (400) so the schema cannot drift to admit
@@ -23,7 +23,7 @@ namespace Mosaic.Backend.SidecarSignaling;
 /// </summary>
 public static class SidecarTelemetryEndpoint
 {
-    private const string TelemetryPath = "/api/sidecar/telemetry/v1";
+    private const string TelemetryPath = "/api/v1/sidecar/telemetry/v1";
     private const int MaxBodyBytes = 16 * 1024;
     private const int MaxEventsPerBatch = 256;
 

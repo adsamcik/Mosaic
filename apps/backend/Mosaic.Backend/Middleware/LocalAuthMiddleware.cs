@@ -21,15 +21,15 @@ public class LocalAuthMiddleware
     private static readonly string[] PublicPaths =
     [
         "/health",
-        "/api/health",
-        "/api/auth/init",
-        "/api/auth/verify",
-        "/api/auth/register",
-        "/api/dev-auth/",  // Development-only quick login
+        "/api/v1/health",
+        "/api/v1/auth/init",
+        "/api/v1/auth/verify",
+        "/api/v1/auth/register",
+        "/api/v1/dev-auth/",  // Development-only quick login
 #if DEBUG
-        "/api/test-seed/",  // E2E test seeding (dev/test environments only)
+        "/api/v1/test-seed/",  // E2E test seeding (dev/test environments only)
 #endif
-        "/api/s/",  // Anonymous share link access
+        "/api/v1/s/",  // Anonymous share link access
         "/swagger",
         "/openapi"
     ];
@@ -41,14 +41,14 @@ public class LocalAuthMiddleware
     /// request-scoped logging, tracing, or telemetry middleware cannot
     /// correlate visitor activity to a logged-in account.
     ///
-    /// Visitor share-link routes (<c>/api/s/*</c>) are the canonical
+    /// Visitor share-link routes (<c>/api/v1/s/*</c>) are the canonical
     /// example: a visitor browser may also have a valid session cookie
     /// for the same origin, but the visitor surface is by design
     /// untied to user identity.
     /// </summary>
     private static readonly string[] AnonymousOnlyPaths =
     [
-        "/api/s/",
+        "/api/v1/s/",
     ];
 
     public LocalAuthMiddleware(

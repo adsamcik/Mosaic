@@ -13,7 +13,7 @@ using Mosaic.Backend.Services;
 namespace Mosaic.Backend.Controllers;
 
 [ApiController]
-[Route("api/albums/{albumId}/members")]
+[Route("api/v1/albums/{albumId}/members")]
 public class MembersController : ControllerBase
 {
     private readonly MosaicDbContext _db;
@@ -198,7 +198,7 @@ public class MembersController : ControllerBase
                     });
             }
 
-            return Created($"/api/albums/{albumId}/members/{request.RecipientId}", new
+            return Created($"/api/v1/albums/{albumId}/members/{request.RecipientId}", new
             {
                 albumId,
                 userId = request.RecipientId,
@@ -430,7 +430,7 @@ public class MembersController : ControllerBase
                     });
             }
 
-            return Created($"/api/albums/{albumId}/epochs/{request.EpochId}", new
+            return Created($"/api/v1/albums/{albumId}/epochs/{request.EpochId}", new
             {
                 staged.AlbumId,
                 staged.EpochId,
