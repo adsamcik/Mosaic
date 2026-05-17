@@ -443,6 +443,15 @@ The zero-knowledge line for v1 is therefore precise: the server stores and moves
 opaque encrypted blobs and authenticated metadata, while clients own the bytes
 that make those blobs meaningful.
 
+> **Operator note on trusted-proxy auth (proxy-auth deployments).** Any host
+> inside an `Auth:TrustedProxies` CIDR can mint a session for any user by
+> setting the `Remote-User` header — `TrustedProxyMiddleware` validates that
+> the *peer* is in the trusted set but does not bind a given `Remote-User`
+> value to a specific proxy identity. The trusted-proxy network is therefore
+> part of the identity-impersonation TCB: operators MUST keep that CIDR as
+> tight as the authenticating reverse proxy itself and treat any host
+> reachable inside it as authentication-authoritative.
+
 ## Verification performed for this release note
 
 This document was drafted from:
