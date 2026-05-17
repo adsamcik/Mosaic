@@ -200,6 +200,39 @@ android {
   }
 }
 
+// ---------------------------------------------------------------------------------------
+// Dependabot CVE pinning for transitive Netty / Guava versions pulled in by the
+// Android Gradle Plugin's internal Unified Test Platform (UTP) configurations
+// (`_internal-unified-test-platform-*`). These artifacts are used only by the
+// instrumented Android test runner (`connectedAndroidTest`) and never end up
+// in the release APK — see `:apps:android-main:dependencies
+// --configuration releaseRuntimeClasspath`, which contains zero Netty
+// artifacts and only `com.google.guava:listenablefuture:1.0` (a stub).
+//
+// Dependabot scans every Gradle configuration including the UTP-internal ones
+// and reports the vulnerable versions against `settings.gradle.kts`. We force
+// patched versions across ALL configurations so the alerts close even though
+// the production artifact is unaffected.
+//
+// Netty 4.1.133.Final closes:
+//   CVE-2026-42587, CVE-2026-42585, CVE-2026-42584, CVE-2026-42583,
+//   CVE-2026-42581, CVE-2026-42580, CVE-2026-42578, CVE-2026-41417
+// Guava 33.4.0-jre closes:
+//   CVE-2023-2976, CVE-2020-8908 (both fixed-in 32.0.0-android)
+// ---------------------------------------------------------------------------------------
+configurations.all {
+  resolutionStrategy.eachDependency {
+    if (requested.group == "io.netty" && requested.version?.startsWith("4.1.") == true) {
+      useVersion("4.1.133.Final")
+      because("CVE-2026-42587/42585/42584/42583/42581/42580/42578/41417 — pinned via AGP UTP transitive")
+    }
+    if (requested.group == "com.google.guava" && requested.name == "guava") {
+      useVersion("33.4.0-jre")
+      because("CVE-2023-2976, CVE-2020-8908 — pinned via AGP UTP transitive")
+    }
+  }
+}
+
 dependencies {
   implementation(libs.androidx.activity)
   implementation(libs.androidx.appcompat)
