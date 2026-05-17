@@ -21,6 +21,14 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    # Cap json-file logs at ~30 MB per service to keep long-running deploys
+    # from filling disk with backend chatter / postgres slow-query traces.
+    # Override with LOG_MAX_SIZE / LOG_MAX_FILE in .env if needed.
+    logging:
+      driver: json-file
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILE:-3}"
 
   # .NET Backend API
   backend:
@@ -53,6 +61,11 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILE:-3}"
 
   # React Frontend
   frontend:
@@ -73,6 +86,11 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILE:-3}"
 
 volumes:
   postgres_data:
