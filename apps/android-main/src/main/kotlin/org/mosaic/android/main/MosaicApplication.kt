@@ -3,6 +3,8 @@ package org.mosaic.android.main
 import android.app.Application
 import androidx.work.Logger
 import org.mosaic.android.main.bridge.AndroidRustCoreLibraryLoader
+import org.mosaic.android.main.crypto.EnvelopeLayoutMigrator
+import org.mosaic.android.main.db.UploadQueueDatabase
 import org.mosaic.android.main.privacy.PrivacyAuditPeriodicWorker
 import org.mosaic.android.main.service.UploadForegroundService
 import org.mosaic.android.main.work.AutoImportRuntime
@@ -29,6 +31,8 @@ open class MosaicApplication : Application() {
     rustCoreWarmUp()
     runCatching { ShellStubRecordMigration.clearOnFirstLaunch(this) }
       .onFailure { Logger.get().warning(TAG, "A-pre-1 cleanup failed", it) }
+    runCatching { migrateEnvelopeLayout(this) }
+      .onFailure { Logger.get().warning(TAG, "Envelope layout migration scheduling failed", it) }
     installAutoImportRuntime(this)
     registerUploadNotificationChannel(this)
     enqueueAutoImportIfPolicyAllows(this)
@@ -39,6 +43,14 @@ open class MosaicApplication : Application() {
     private const val TAG = "MosaicApplication"
 
     internal var rustCoreWarmUp: () -> Unit = AndroidRustCoreLibraryLoader::warmUp
+    internal var migrateEnvelopeLayout: (MosaicApplication) -> Unit = { application ->
+      val database = UploadQueueDatabase.create(application)
+      try {
+        EnvelopeLayoutMigrator.migrateIfNeeded(application, database)
+      } finally {
+        database.close()
+      }
+    }
     internal var installAutoImportRuntime: (MosaicApplication) -> Unit = { application ->
       AutoImportRuntime.installRuntimeProvider(AutoImportRuntime.systemRuntimeProvider(application))
     }
@@ -55,6 +67,14 @@ open class MosaicApplication : Application() {
 
     internal fun resetTestHooks() {
       rustCoreWarmUp = AndroidRustCoreLibraryLoader::warmUp
+      migrateEnvelopeLayout = { application ->
+        val database = UploadQueueDatabase.create(application)
+        try {
+          EnvelopeLayoutMigrator.migrateIfNeeded(application, database)
+        } finally {
+          database.close()
+        }
+      }
       installAutoImportRuntime = { application ->
         AutoImportRuntime.installRuntimeProvider(AutoImportRuntime.systemRuntimeProvider(application))
       }

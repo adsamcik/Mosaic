@@ -30,6 +30,7 @@ class MosaicApplicationTest {
       mutableMapOf("auto_import_stub_records" to "prototype-records"),
     )
     MosaicApplication.rustCoreWarmUp = {}
+    MosaicApplication.migrateEnvelopeLayout = {}
     MosaicApplication.installAutoImportRuntime = {}
     MosaicApplication.registerUploadNotificationChannel = {}
     MosaicApplication.enqueueAutoImportIfPolicyAllows = {}
@@ -61,6 +62,7 @@ class MosaicApplicationTest {
   fun onCreateInvokesPrivacyAuditDailyEnqueueHook() {
     var invoked = false
     MosaicApplication.rustCoreWarmUp = {}
+    MosaicApplication.migrateEnvelopeLayout = {}
     MosaicApplication.installAutoImportRuntime = {}
     MosaicApplication.registerUploadNotificationChannel = {}
     MosaicApplication.enqueueAutoImportIfPolicyAllows = {}

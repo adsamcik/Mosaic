@@ -36,6 +36,24 @@ interface UploadQueueDao {
   @Query("SELECT job_id FROM upload_queue_records WHERE album_id = :albumId")
   fun jobIdsForAlbum(albumId: String): List<String>
 
+  /**
+   * Resolves the owning album for an envelope by joining shard staging refs
+   * (which carry the envelope sha256) against the upload-queue records that
+   * own them. Used by [org.mosaic.android.main.crypto.EnvelopeLayoutMigrator]
+   * to relocate legacy flat-layout envelope files into the per-album
+   * subdirectory introduced in v1.0.1. Returns null when the sha256 has no
+   * matching staging ref (orphan -> caller should delete).
+   */
+  @Query(
+    """
+      SELECT q.album_id FROM upload_queue_records q
+      INNER JOIN shard_staging_refs s ON s.job_id = q.job_id
+      WHERE s.sha256_hex = :sha256Hex
+      LIMIT 1
+    """,
+  )
+  fun albumIdForEnvelopeSha256(sha256Hex: String): String?
+
   @Query("DELETE FROM upload_queue_records WHERE album_id = :albumId")
   fun deleteForAlbum(albumId: String): Int
 }
