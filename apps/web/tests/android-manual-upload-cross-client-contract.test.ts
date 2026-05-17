@@ -424,7 +424,7 @@ describe('Android manual upload cross-client contract', () => {
     for (const [index, webShard] of fixture.webShards.entries()) {
       expect(fetchMock).toHaveBeenNthCalledWith(
         index + 1,
-        `/api/shards/${webShard.id}`,
+        `/api/v1/shards/${webShard.id}`,
         { credentials: 'same-origin' },
       );
       const shardBytes = shardBytesById.get(webShard.id);

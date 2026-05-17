@@ -60,7 +60,7 @@ describe('downloadShard', () => {
 
     const result = await downloadShard('shard-123');
 
-    expect(mockFetch).toHaveBeenCalledWith('/api/shards/shard-123', {
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/shards/shard-123', {
       credentials: 'same-origin',
     });
     expect(result).toEqual(testData);
@@ -102,7 +102,7 @@ describe('downloadShard', () => {
 
     const result = await downloadShard('shard-456', progressCallback);
 
-    expect(mockFetch).toHaveBeenCalledWith('/api/shards/shard-456', {
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/shards/shard-456', {
       credentials: 'same-origin',
     });
     expect(result).toEqual(testData);
@@ -304,7 +304,7 @@ describe('downloadShardViaShareLink', () => {
       'grant-token-123',
     );
 
-    expect(mockFetch).toHaveBeenCalledWith('/api/s/link-123/shards/shard-123', {
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/s/link-123/shards/shard-123', {
       credentials: 'same-origin',
       headers: {
         'X-Share-Grant': 'grant-token-123',

@@ -506,7 +506,7 @@ describe('session', () => {
       await session.logout();
 
       // Verify backend logout was called
-      expect(global.fetch).toHaveBeenCalledWith('/api/auth/logout', {
+      expect(global.fetch).toHaveBeenCalledWith('/api/v1/auth/logout', {
         method: 'POST',
         credentials: 'same-origin',
       });

@@ -317,7 +317,7 @@ describe('SharedGallery', () => {
       await waitFor(() => getByTestId('shared-photo-grid') !== null);
 
       expect(mocks.fetch).toHaveBeenCalledWith(
-        '/api/s/test-link-id/photos?skip=0&take=100',
+        '/api/v1/s/test-link-id/photos?skip=0&take=100',
         {
           headers: {
             'X-Share-Grant': 'grant-token-123',
@@ -534,7 +534,7 @@ describe('SharedGallery', () => {
       await waitFor(() => mocks.fetch.mock.calls.length > 0);
 
       expect(mocks.fetch).toHaveBeenCalledWith(
-        '/api/s/test-link-id/photos?skip=0&take=100',
+        '/api/v1/s/test-link-id/photos?skip=0&take=100',
         {},
       );
 
@@ -586,7 +586,7 @@ describe('SharedGallery', () => {
 
       expect(mocks.fetch).toHaveBeenNthCalledWith(
         1,
-        '/api/s/test-link-id/photos?skip=0&take=100',
+        '/api/v1/s/test-link-id/photos?skip=0&take=100',
         {
           headers: {
             'X-Share-Grant': 'grant-token-123',
@@ -595,7 +595,7 @@ describe('SharedGallery', () => {
       );
       expect(mocks.fetch).toHaveBeenNthCalledWith(
         2,
-        '/api/s/test-link-id/photos?skip=100&take=100',
+        '/api/v1/s/test-link-id/photos?skip=100&take=100',
         {
           headers: {
             'X-Share-Grant': 'grant-token-123',
@@ -638,7 +638,7 @@ describe('SharedGallery', () => {
       expect(mocks.fetch).toHaveBeenCalledTimes(2);
       expect(mocks.fetch).toHaveBeenNthCalledWith(
         2,
-        '/api/s/test-link-id/photos?skip=100&take=100',
+        '/api/v1/s/test-link-id/photos?skip=100&take=100',
         {},
       );
       expect(getByTestId('photo-count')?.textContent).toBe('100');

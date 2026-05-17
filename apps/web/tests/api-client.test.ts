@@ -284,7 +284,7 @@ describe('updateAlbumExpiration', () => {
       RequestInit,
     ];
     expect(url).toBe(
-      '/api/albums/0190a0d4-cffe-7a55-9b8a-94e4ad9c4e51/expiration',
+      '/api/v1/albums/0190a0d4-cffe-7a55-9b8a-94e4ad9c4e51/expiration',
     );
   });
 });
@@ -323,7 +323,7 @@ describe('updateCurrentUserWrappedKey (M9)', () => {
       string,
       RequestInit,
     ];
-    expect(url).toBe('/api/users/me/wrapped-key');
+    expect(url).toBe('/api/v1/users/me/wrapped-key');
     expect(init.method).toBe('PUT');
 
     const body = JSON.parse(init.body as string) as {
@@ -489,7 +489,7 @@ describe('updatePhotoExpiration', () => {
       string,
       RequestInit,
     ];
-    expect(url).toBe('/api/manifests/manifest-123/expiration');
+    expect(url).toBe('/api/v1/manifests/manifest-123/expiration');
     expect(init.method).toBe('PATCH');
     expect(JSON.parse(init.body as string)).toEqual({
       expiresAt: '2024-12-25T23:59:59Z',
