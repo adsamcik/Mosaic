@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useToast } from '../../contexts/ToastContext';
 import type { ToastType } from '../../contexts/ToastContext';
 import styles from './Toast.module.css';
@@ -123,6 +124,7 @@ function CloseIcon() {
  */
 export function ToastContainer() {
   const { toasts, removeToast } = useToast();
+  const { t } = useTranslation();
 
   if (toasts.length === 0) {
     return null;
@@ -159,7 +161,7 @@ export function ToastContainer() {
           <button
             className={styles.close}
             onClick={() => removeToast(toast.id)}
-            aria-label="Dismiss notification"
+            aria-label={t('common.dismissNotification')}
             data-testid="toast-dismiss"
           >
             <CloseIcon />

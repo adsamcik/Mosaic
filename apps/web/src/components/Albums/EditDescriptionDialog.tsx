@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Dialog } from '../Shared/Dialog';
 
 interface EditDescriptionDialogProps {
@@ -30,6 +31,7 @@ export function EditDescriptionDialog({
   error,
   currentDescription,
 }: EditDescriptionDialogProps) {
+  const { t } = useTranslation();
   const [description, setDescription] = useState(currentDescription ?? '');
   const [localError, setLocalError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -53,7 +55,7 @@ export function EditDescriptionDialog({
     const trimmedDescription = description.trim();
 
     if (trimmedDescription.length > 1000) {
-      setLocalError('Description must be 1000 characters or less');
+      setLocalError(t('album.editDescription.error.tooLong'));
       return;
     }
 
@@ -85,7 +87,7 @@ export function EditDescriptionDialog({
         disabled={isSaving}
         data-testid="edit-description-cancel"
       >
-        Cancel
+        {t('common.cancel')}
       </button>
       <button
         type="submit"
@@ -94,7 +96,7 @@ export function EditDescriptionDialog({
         disabled={isSaving}
         data-testid="edit-description-save"
       >
-        {isSaving ? 'Saving...' : 'Save'}
+        {isSaving ? t('common.saving') : t('common.save')}
       </button>
     </>
   );
@@ -103,7 +105,7 @@ export function EditDescriptionDialog({
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
-      title="Edit Album Description"
+      title={t('album.editDescription.title')}
       footer={footer}
       testId="edit-description-dialog"
       closeOnBackdropClick={!isSaving}
@@ -111,7 +113,7 @@ export function EditDescriptionDialog({
       <form onSubmit={handleSubmit} id="edit-description-form">
         <div className="form-field">
           <label htmlFor="album-description" className="form-label">
-            Description
+            {t('album.editDescription.label')}
           </label>
           <textarea
             ref={textareaRef}
@@ -119,7 +121,7 @@ export function EditDescriptionDialog({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             disabled={isSaving}
-            placeholder="Add a description for this album..."
+            placeholder={t('album.editDescription.placeholder')}
             rows={4}
             maxLength={1000}
             className="form-input"
@@ -134,7 +136,10 @@ export function EditDescriptionDialog({
               color: 'var(--color-text-tertiary)',
             }}
           >
-            {description.length}/1000 characters
+            {t('common.characterCount', {
+              count: description.length,
+              max: 1000,
+            })}
           </div>
         </div>
 
