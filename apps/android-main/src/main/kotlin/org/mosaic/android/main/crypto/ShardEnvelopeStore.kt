@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import java.io.File
 import java.io.InputStream
+import org.mosaic.android.main.net.dto.AlbumId
 import org.mosaic.android.main.upload.RustContentHasher
 
 internal class ShardEnvelopeStore(
@@ -62,10 +63,30 @@ internal class ShardEnvelopeStore(
 
   fun sha256HexForUri(uriString: String): String = sha256Hex(openStagingInputStream(uriString))
 
-  private fun envelopeFile(input: ShardEnvelopeInput): File =
-    File(envelopeDir(), "${input.cacheKey()}.envelope")
+  /**
+   * Recursively deletes every envelope persisted for [albumId] and returns the
+   * number of `*.envelope` files that were removed. Returns `0` when the
+   * per-album directory does not exist. File I/O is *not* transactional with
+   * Room state, so callers must invoke this after their Room transaction has
+   * committed (see [org.mosaic.android.main.sync.AlbumPurger]).
+   */
+  fun deleteForAlbum(albumId: AlbumId): Int {
+    val dir = albumEnvelopeDir(albumId.value)
+    if (!dir.exists()) return 0
+    val count = dir.walkTopDown()
+      .filter { it.isFile && it.name.endsWith(ENVELOPE_FILE_SUFFIX) }
+      .count()
+    dir.deleteRecursively()
+    return count
+  }
 
-  private fun envelopeDir(): File = File(context.filesDir, ENVELOPE_DIR_NAME).also { it.mkdirs() }
+  private fun envelopeFile(input: ShardEnvelopeInput): File =
+    File(albumEnvelopeDir(input.albumId), "${input.cacheKey()}$ENVELOPE_FILE_SUFFIX")
+
+  internal fun envelopeRoot(): File = File(context.filesDir, ENVELOPE_DIR_NAME).also { it.mkdirs() }
+
+  private fun albumEnvelopeDir(albumId: String): File =
+    File(envelopeRoot(), albumId).also { it.mkdirs() }
 
   private fun stagedFileFor(uri: Uri): File {
     val id = requireNotNull(uri.authority) { "mosaic-staged uri must include an id authority" }
@@ -80,7 +101,8 @@ internal class ShardEnvelopeStore(
 
   companion object {
     private const val MOSAIC_STAGED_SCHEME = "mosaic-staged"
-    private const val ENVELOPE_DIR_NAME = "encrypted-shards"
+    internal const val ENVELOPE_DIR_NAME = "encrypted-shards"
+    internal const val ENVELOPE_FILE_SUFFIX = ".envelope"
 
     fun sha256Hex(bytes: ByteArray): String = RustContentHasher.sha256Hex(bytes)
 
