@@ -226,6 +226,144 @@ Multi-device scenarios use Last-Writer-Wins:
 - **No persistent sessions:** Password required on each login
 - **Persistent storage:** OPFS with encrypted SQLite database
 
+## Right-to-Erasure (GDPR Article 17)
+
+Mosaic provides a full self-service account-deletion flow that satisfies the
+right-to-erasure under GDPR Article 17. Any logged-in user can permanently
+delete their own account, all owned content, and all derived state from the
+**Settings → Security → Delete Account** entry; no operator intervention is
+required.
+
+### Endpoint
+
+`DELETE /api/v1/users/me`
+
+The endpoint is protected by both the standard session cookie and an
+in-request defence-in-depth confirmation layer:
+
+1. **Confirmation text.** The request body's `confirmationText` MUST equal the
+   caller's username (case-sensitive). The web UI keeps the destructive button
+   disabled until the typed text matches.
+2. **Fresh authentication (LocalAuth mode only).** In LocalAuth deployments
+   the body MUST also include `challengeId` + `confirmationSignature` +
+   `timestamp` — a fresh Ed25519 attestation over a server-issued challenge,
+   produced via the same `signAuthChallenge` flow used at login. This proves
+   the caller still controls the password-derived auth key (and not just a
+   stolen session cookie). In ProxyAuth deployments the upstream trusted
+   proxy already gates every request, so this layer is skipped.
+
+### What is deleted
+
+| Category | Mechanism |
+| -------- | --------- |
+| User row, identity, wrapped account key | DB cascade from `users` |
+| Owned albums, manifests, manifest_shards, share_links, album_memberships, album_content | DB cascade |
+| Shards uploaded by the user (rows + encrypted blobs) | Explicit collect → orphan-row delete → post-commit blob delete |
+| `auth_challenges` keyed by the user's username | DB delete (no FK) |
+| Tus upload sessions started by the user | Post-commit cleanup |
+| Active session cookie | Cleared in the response |
+| Client-side state (OPFS, IDB, CacheStorage, localStorage, sessionStorage, crypto worker key cache) | Wiped client-side on 204 via `clearAllLocalState` |
+
+### What is retained (anonymised, legitimate interest)
+
+Audit log entries are **not** deleted. Instead, every row authored by the
+erased account is anonymised in the same transaction:
+
+- `audit_log_entries.actor_user_id = NULL`
+- `audit_log_entries.actor_was_erased = TRUE`
+
+The actor identifier is gone, so no PII remains; the
+`actor_was_erased` flag distinguishes anonymised-because-erased from
+NULL-because-system-event. Audit retention is justified under the **legitimate
+interest** legal basis (security incident investigation, abuse detection,
+quota fraud forensics) per GDPR Art.6(1)(f).
+
+### Three-phase server flow
+
+`UserErasureService` orchestrates deletion in three explicit phases:
+
+1. **Collect** — gather every shard the user owns (both `uploader_id = me`
+   and shards reachable through manifests in albums the user owns), every
+   blob storage key, and every active Tus upload session ID. This snapshot is
+   taken **before** the destructive transaction so post-commit cleanup has
+   a stable reference list.
+2. **Transactional DB delete** — cascade-delete the `users` row (drops
+   `albums`, `album_memberships`, `manifests`, `manifest_shards`,
+   `share_links`, etc.), then delete `auth_challenges` by username (no FK),
+   then explicitly delete the orphan `shards` rows whose `Uploader` FK is
+   `SetNull`, then anonymise audit entries with `ExecuteUpdateAsync`. The
+   entire DB mutation is one transaction — either the user is fully gone, or
+   nothing changes.
+3. **Post-commit cleanup** — best-effort delete of encrypted shard blobs
+   from the storage backend and abandoned Tus upload sessions. Failures
+   here are **logged but not rolled back** — the storage garbage collector
+   sweeps orphans on its next cycle, and rolling back the DB transaction
+   over a transient S3/filesystem error would leave the user re-able to log
+   in, which is worse.
+
+### Threat model and defences
+
+| Threat | Defence |
+| ------ | ------- |
+| Accidental click | Type-username confirmation |
+| Stolen session cookie | LocalAuth fresh-auth signature verification |
+| Replay of an old erasure request | Per-request `challengeId` consumed exactly once on the server |
+| Server-side bug leaves shard blobs behind | Post-commit collect + GC sweep |
+| Audit trail tampering by the erased user | Audit anonymisation is `ExecuteUpdateAsync` inside the same transaction; no row is deleted |
+| Cross-user data exposure during a partial failure | Single DB transaction — all-or-nothing |
+
+### Operator runbook (legacy users, manual DB deletion)
+
+For users created before this feature shipped, or for forced deletion of an
+inactive account, an operator can reproduce the same effect manually:
+
+```sql
+BEGIN;
+
+-- Collect the storage keys you'll need to delete from the blob backend AFTER commit
+SELECT s.id, s.storage_key
+FROM   shards s
+LEFT   JOIN album_memberships am ON am.user_id = s.uploader_id
+WHERE  s.uploader_id = '<uuid>'
+   OR  EXISTS (
+         SELECT 1 FROM manifest_shards ms
+         JOIN   manifests m ON m.id = ms.manifest_id
+         JOIN   albums a    ON a.id = m.album_id
+         WHERE  ms.shard_id = s.id AND a.owner_id = '<uuid>');
+
+-- Cascade-delete the user; drops albums, manifests, manifest_shards,
+-- share_links, album_memberships, album_content
+DELETE FROM users WHERE id = '<uuid>';
+
+-- Auth challenges live by username with no FK
+DELETE FROM auth_challenges WHERE username = '<the-username>';
+
+-- Orphan shards (uploader_id set to NULL by the cascade)
+DELETE FROM shards WHERE id IN (<list collected above>);
+
+-- Anonymise audit log entries
+UPDATE audit_log_entries
+SET    actor_user_id   = NULL,
+       actor_was_erased = TRUE
+WHERE  actor_user_id   = '<uuid>';
+
+COMMIT;
+```
+
+After commit:
+
+1. Delete the corresponding blobs from the storage backend (filesystem or S3)
+   using the `storage_key` values collected before the transaction.
+2. Delete any active Tus upload sessions for that user.
+
+If the operator deletion is requested for a user who never logged in (e.g.
+account provisioned by an admin but never claimed), step-3 cleanup is a no-op.
+
+### Tests
+
+- Backend: [`UserErasureIntegrationTests.cs`](../apps/backend/Mosaic.Backend.Tests/Integration/UserErasureIntegrationTests.cs) — 7 Postgres-backed tests covering the happy path, the confirmation-text guard, LocalAuth fresh-auth verification (challenge consumption, signature verification, expired-timestamp rejection), audit-log anonymisation, shard cleanup, and idempotence.
+- Frontend: [`delete-account-dialog.test.tsx`](../apps/web/tests/delete-account-dialog.test.tsx) — 5 unit tests covering the disabled-until-match guard, the ProxyAuth body shape, the LocalAuth fresh-auth signing path, the signing-failure abort, and the generic API-failure rendering.
+
 ## Share Link Security
 
 Share links enable album owners to grant anonymous access to album content without requiring recipients to have accounts. The cryptographic model ensures zero-knowledge properties are maintained.

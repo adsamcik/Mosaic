@@ -123,6 +123,57 @@ npx playwright test auth-modes.spec.ts --project=chromium
 
 ---
 
+### Right-to-Erasure (GDPR Article 17)
+
+**Purpose:** Allow any logged-in user to permanently delete their own account, all owned content, and all derived state with one click — no admin intervention required.
+
+**Implementation:**
+| Layer    | Location                                                                                                                |
+| -------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Backend  | [Controllers/UsersController.cs](../apps/backend/Mosaic.Backend/Controllers/UsersController.cs) `DeleteMe` endpoint     |
+| Backend  | [Services/UserErasureService.cs](../apps/backend/Mosaic.Backend/Services/UserErasureService.cs) 3-phase orchestrator    |
+| Backend  | [Models/Users/DeleteMeRequest.cs](../apps/backend/Mosaic.Backend/Models/Users/DeleteMeRequest.cs)                       |
+| Frontend | [Settings/DeleteAccountConfirmationDialog.tsx](../apps/web/src/components/Settings/DeleteAccountConfirmationDialog.tsx) |
+| Frontend | [Settings/SettingsPage.tsx](../apps/web/src/components/Settings/SettingsPage.tsx)                                       |
+
+**Endpoint:** `DELETE /api/v1/users/me`
+
+**Two-guard confirmation flow:**
+1. User must type their exact username into a text field; the "Delete forever" button stays disabled until the text matches. Defends against accidental clicks.
+2. In **LocalAuth** mode the request body must include a fresh `challengeId` + Ed25519 `confirmationSignature` + `timestamp` triple, proving the caller still holds the password-derived auth key (not just a stolen session cookie). In **ProxyAuth** mode the signature is skipped — the upstream trusted proxy already gates each request.
+
+**3-phase erasure (server side):**
+1. **Collect** — gather shard refs (both uploader=me and shards in owned albums), Tus session IDs, and storage blob keys.
+2. **Transactional DB delete** — cascade `users` row (drops `albums`, `album_memberships`, `manifests`, `manifest_shards`, `share_links`, `auth_challenges` by username, etc.), then explicitly delete orphan `shards` rows (their `Uploader=SetNull` FK leaves them dangling), then anonymise `audit_log_entries.ActorUserId` to `NULL` with `ActorWasErased=true` (retained under legitimate-interest legal basis).
+3. **Post-commit blob/Tus cleanup** — best-effort delete of encrypted shard blobs and abandoned Tus upload sessions. Failures here are logged but do not roll back the DB transaction; the storage GC sweeps orphans.
+
+**What is deleted:**
+- User row + identity + wrapped account key
+- All owned albums, manifests, manifest_shards, share_links, album_memberships, album_content
+- All shards uploaded by the user (encrypted blobs included)
+- All auth_challenges keyed by the user's username
+- Active session cookies cleared in the response
+
+**What is retained (anonymised, legitimate interest):**
+- Audit log entries (`actor_user_id=NULL`, `actor_was_erased=TRUE`) — preserved for security incident investigation, set to NULL so no PII remains
+
+**Client-side cleanup on 204:**
+- `closeDbClient()` then `clearAllLocalState()` wipes OPFS, IndexedDB, CacheStorage, localStorage, sessionStorage, and the crypto worker's in-memory key cache
+- `session.logout()` clears the client session
+
+**Operator runbook (legacy users without the self-service path):**
+1. `DELETE FROM users WHERE id = '<uuid>';` (cascades most child rows)
+2. `DELETE FROM shards WHERE uploader_id IS NULL AND id IN (...);` for orphan shards left behind by SetNull
+3. `UPDATE audit_log_entries SET actor_user_id = NULL, actor_was_erased = TRUE WHERE actor_user_id = '<uuid>';`
+4. Manually delete shard blobs from the storage backend (filesystem or S3) using the `storage_key` values collected before step 1
+5. Manually delete any active Tus upload sessions for the user
+
+**Tests:**
+- Backend: [UserErasureIntegrationTests.cs](../apps/backend/Mosaic.Backend.Tests/Integration/UserErasureIntegrationTests.cs) — 7 Postgres-backed tests covering happy path, confirmation-text guard, LocalAuth fresh-auth verification, audit-log anonymisation, shard cleanup, and idempotence
+- Frontend: [delete-account-dialog.test.tsx](../apps/web/tests/delete-account-dialog.test.tsx) — 5 unit tests covering disabled-until-match guard, ProxyAuth body shape, LocalAuth fresh-auth signing, signing-failure abort, and generic API failure
+
+---
+
 ## Albums & Organization
 
 ### Album Creation & Management
@@ -1093,6 +1144,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-05-20 | Right-to-Erasure (GDPR Art.17) (v1.0.1 s15) | Added | Self-service account deletion via `DELETE /api/v1/users/me`; type-username confirmation + LocalAuth fresh-auth signature; 3-phase server erasure (collect → tx cascade + orphan shards → post-commit blob/Tus cleanup); audit log entries retained but anonymised (`actor_user_id=NULL`, `actor_was_erased=TRUE`) under legitimate-interest basis; client purges all local state (OPFS, IDB, cache, storage, crypto worker key cache) on 204 |
 | 2026-05-14 | Android per-album envelope layout + AlbumPurger completeness (v1.0.1 s34) | Fixed | Android envelope storage migrated from flat content-addressed layout (`filesDir/encrypted-shards/<sha256>.envelope`) to per-album subdirectory layout (`filesDir/encrypted-shards/<albumId>/<sha256>.envelope`); one-time `EnvelopeLayoutMigrator` runs on first launch after upgrade (orphan envelopes deleted, idempotency-flag-gated). `AlbumPurger` now also clears `album_epoch_keys` rows and deletes the per-album envelope subdirectory on remote-album-gone, closing a multi-account exposure where epoch keys + envelope ciphertexts could survive album deletion |
 | 2026-05-13 | LocalAuth server-pinned KDF profile | Fixed | Backend stores per-account Argon2id parameters and web login/unlock consumes the server profile to prevent cross-device key-derivation drift |
 | 2026-05-13 | Cross-Origin Isolation Guard | Added | Web startup now blocks unsupported non-isolated browsers before loading WASM/workers and shows Safari 17.4+/Chrome 102+/Firefox 111+/Edge 102+ guidance |
