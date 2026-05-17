@@ -28,7 +28,7 @@ fn identity_public_golden_vector_matches_rfc8032_seed() {
     );
     assert_eq!(
         hex(vector.signature()),
-        "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+        "59ffadf809f7cc8ea13d573825d7e96d2f81e63a2d4962e13be1eb1e8f00f088802dd138edbcd556515271044ce6d92ddeaaf167c90b1b2dc1fd84193b95a10c"
     );
 
     let public_key = match IdentitySigningPublicKey::from_bytes(vector.signing_pubkey()) {

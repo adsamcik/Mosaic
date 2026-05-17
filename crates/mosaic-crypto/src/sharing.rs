@@ -16,6 +16,10 @@ use core::convert::TryInto;
 use core::num::NonZeroU32;
 
 use crypto_box::{PublicKey as BoxPublicKey, SecretKey as BoxSecretKey};
+use ed25519_dalek::{
+    Signature as Ed25519Signature, Signer, SigningKey as Ed25519SigningKey,
+    VerifyingKey as Ed25519VerifyingKey,
+};
 use rand_core::{CryptoRng, Error as RandError, RngCore, impls};
 use serde::Deserialize;
 use zeroize::Zeroizing;
@@ -23,7 +27,7 @@ use zeroize::Zeroizing;
 use crate::{
     BUNDLE_SIGN_CONTEXT, IdentityKeypair, IdentitySignature, IdentitySigningPublicKey,
     ManifestSigningPublicKey, ManifestSigningSecretKey, MosaicCryptoError, SecretKey,
-    base64url_no_pad, sign_manifest_with_identity, verify_manifest_identity_signature,
+    base64url_no_pad,
 };
 
 const SIGNATURE_BYTES: usize = 64;
@@ -136,7 +140,15 @@ pub fn seal_and_sign_bundle(
     to_sign.extend_from_slice(BUNDLE_SIGN_CONTEXT);
     to_sign.extend_from_slice(&sealed);
 
-    let signature = sign_manifest_with_identity(&to_sign, owner_identity.secret_key());
+    // Sign Ed25519 directly with `BUNDLE_SIGN_CONTEXT || sealed` rather than
+    // routing through `sign_manifest_with_identity`, whose v1.0.1 f14-1 domain
+    // prefix would otherwise stack and (more importantly) allow an FFI caller
+    // to forge bundle signatures by passing `BUNDLE_SIGN_CONTEXT || sealed`
+    // as a manifest transcript. The two paths now produce structurally
+    // distinct signed byte streams.
+    let signing_key = Ed25519SigningKey::from_bytes(&owner_identity.secret_key().0);
+    let raw_signature: Ed25519Signature = signing_key.sign(&to_sign);
+    let signature = IdentitySignature(raw_signature.to_bytes());
 
     Ok(SealedBundle {
         sealed,
@@ -176,7 +188,17 @@ pub fn verify_and_open_bundle(
     to_verify.extend_from_slice(BUNDLE_SIGN_CONTEXT);
     to_verify.extend_from_slice(&sealed.sealed);
 
-    if !verify_manifest_identity_signature(&to_verify, &signature, &signing_public_key) {
+    // Verify Ed25519 directly with `BUNDLE_SIGN_CONTEXT || sealed`, matching
+    // the bypass in `seal_and_sign_bundle` (v1.0.1 f14-1).
+    let verifying_key = match Ed25519VerifyingKey::from_bytes(signing_public_key.as_bytes()) {
+        Ok(value) => value,
+        Err(_) => return Err(MosaicCryptoError::BundleSignatureInvalid),
+    };
+    let raw_signature = Ed25519Signature::from_bytes(signature.as_bytes());
+    if verifying_key
+        .verify_strict(&to_verify, &raw_signature)
+        .is_err()
+    {
         return Err(MosaicCryptoError::BundleSignatureInvalid);
     }
 

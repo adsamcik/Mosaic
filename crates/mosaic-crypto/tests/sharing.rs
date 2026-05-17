@@ -4,7 +4,7 @@ use mosaic_crypto::{
     BUNDLE_SIGN_CONTEXT, BundleValidationContext, EpochKeyBundle, IdentityKeypair,
     IdentitySigningPublicKey, ManifestSigningPublicKey, ManifestSigningSecretKey,
     MosaicCryptoError, SealedBundle, SecretKey, derive_identity_keypair, seal_and_sign_bundle,
-    sign_manifest_with_identity, verify_and_open_bundle,
+    verify_and_open_bundle,
 };
 
 const ALBUM_ID: &str = "album-0001";
@@ -299,11 +299,18 @@ fn open_rejects_malformed_json() {
     let mut to_sign = Vec::with_capacity(BUNDLE_SIGN_CONTEXT.len() + sealed_bytes.len());
     to_sign.extend_from_slice(BUNDLE_SIGN_CONTEXT);
     to_sign.extend_from_slice(&sealed_bytes);
-    let signature = sign_manifest_with_identity(&to_sign, owner.secret_key());
+    // Sign Ed25519 directly with `BUNDLE_SIGN_CONTEXT || sealed` to match
+    // `seal_and_sign_bundle`'s domain-separated bypass (v1.0.1 f14-1). Routing
+    // this through `sign_manifest_with_identity` would now double-prefix.
+    let seed = fixed_seed(0x10);
+    let raw_signing_key = ed25519_dalek::SigningKey::from_bytes(&seed);
+    let raw_signature: ed25519_dalek::Signature =
+        ed25519_dalek::Signer::sign(&raw_signing_key, &to_sign);
+    let sig_bytes = raw_signature.to_bytes();
 
     let sealed = SealedBundle {
         sealed: sealed_bytes,
-        signature: *signature.as_bytes(),
+        signature: sig_bytes,
         sharer_pubkey: *owner.signing_public_key().as_bytes(),
     };
     let context = validation_context(&owner, ALBUM_ID);

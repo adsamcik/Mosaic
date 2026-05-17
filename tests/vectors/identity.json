@@ -3,7 +3,7 @@
   "operation": "identity.derive-from-seed.v1",
   "protocolVersion": "mosaic-v1",
   "rust_canonical": false,
-  "description": "Derive identity Ed25519 signing keypair and X25519 encryption public key from a 32-byte identity seed.",
+  "description": "Derive identity Ed25519 signing keypair and X25519 encryption public key from a 32-byte identity seed. Since v1.0.1 f14-1 the Ed25519 signature is computed over `MANIFEST_SIGN_CONTEXT (b\"Mosaic_Manifest_v1\") || identityMessage` to prevent FFI signing-oracle attacks where an attacker could otherwise forge a sealed-bundle signature by passing `BUNDLE_SIGN_CONTEXT || crafted-sealed-box` to `signManifestWithIdentity`. The bundle path now bypasses `sign_manifest_with_identity` and signs Ed25519 directly over `BUNDLE_SIGN_CONTEXT || sealed`, so the two domains never alias.",
   "algorithms": {
     "signing": "Ed25519 (RFC 8032 deterministic)",
     "encryption": "X25519 derived via libsodium ed25519_pk_to_curve25519 / ed25519_sk_to_curve25519"
@@ -18,7 +18,7 @@
   "expected": {
     "signingPubkeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
     "encryptionPubkeyHex": "d85e07ec22b0ad881537c2f44d662d1a143cf830c57aca4305d85c7a90f6b62e",
-    "signatureHex": "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+    "signatureHex": "59ffadf809f7cc8ea13d573825d7e96d2f81e63a2d4962e13be1eb1e8f00f088802dd138edbcd556515271044ce6d92ddeaaf167c90b1b2dc1fd84193b95a10c"
   },
   "negativeCases": [
     {

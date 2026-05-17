@@ -238,6 +238,22 @@ pub const AUTH_CHALLENGE_CONTEXT: &[u8] = b"Mosaic_Auth_Challenge_v1";
 /// produced by either side verify cross-implementation.
 pub const BUNDLE_SIGN_CONTEXT: &[u8] = b"Mosaic_EpochBundle_v1";
 
+/// Domain separator prepended to manifest transcript bytes before signing
+/// with the account identity Ed25519 key (v1.0.1 f14-1).
+///
+/// Prevents cross-protocol signing-oracle attacks where an attacker who can
+/// call `sign_manifest_with_identity` with arbitrary bytes via FFI (WASM /
+/// UniFFI) could otherwise forge a sibling-context signature (e.g. a bundle
+/// signature) by passing `<sibling-context> || <crafted-payload>`. Every
+/// identity-signed payload type MUST use its own distinct prefix, and any
+/// internal caller that signs with a different domain MUST bypass
+/// `sign_manifest_with_identity` and sign directly with the Ed25519 key over
+/// `<sibling-context> || <payload>` (see `sharing::seal_and_sign_bundle`).
+///
+/// Must match the TypeScript and Kotlin counterparts so signatures are
+/// cross-platform-verifiable.
+pub const MANIFEST_SIGN_CONTEXT: &[u8] = b"Mosaic_Manifest_v1";
+
 /// LocalAuth server challenge length.
 pub const AUTH_CHALLENGE_BYTES: usize = 32;
 
@@ -1784,19 +1800,30 @@ pub fn identity_encryption_public_key_from_signing_public_key(
 }
 
 /// Signs canonical manifest transcript bytes with the account identity key.
+///
+/// Prepends [`MANIFEST_SIGN_CONTEXT`] to `transcript_bytes` before signing so
+/// the identity key cannot be used as a generic signing oracle across
+/// protocols (v1.0.1 f14-1). Internal callers that need to sign under a
+/// different domain (e.g. `seal_and_sign_bundle` with `BUNDLE_SIGN_CONTEXT`)
+/// MUST bypass this function and sign Ed25519 directly.
 #[must_use]
 pub fn sign_manifest_with_identity(
     transcript_bytes: &[u8],
     secret_key: &IdentitySigningSecretKey,
 ) -> IdentitySignature {
     let signing_key = SigningKey::from_bytes(&secret_key.0);
-    let signature: Ed25519Signature = signing_key.sign(transcript_bytes);
+    let mut to_sign = Vec::with_capacity(MANIFEST_SIGN_CONTEXT.len() + transcript_bytes.len());
+    to_sign.extend_from_slice(MANIFEST_SIGN_CONTEXT);
+    to_sign.extend_from_slice(transcript_bytes);
+    let signature: Ed25519Signature = signing_key.sign(&to_sign);
     IdentitySignature(signature.to_bytes())
 }
 
 /// Verifies a canonical manifest transcript signature made by an identity key.
 ///
-/// Returns `false` for wrong keys, tampered transcripts, or tampered signatures.
+/// Prepends [`MANIFEST_SIGN_CONTEXT`] to `transcript_bytes` symmetrically with
+/// [`sign_manifest_with_identity`] (v1.0.1 f14-1). Returns `false` for wrong
+/// keys, tampered transcripts, or tampered signatures.
 #[must_use]
 pub fn verify_manifest_identity_signature(
     transcript_bytes: &[u8],
@@ -1808,10 +1835,11 @@ pub fn verify_manifest_identity_signature(
         Err(_) => return false,
     };
     let signature = Ed25519Signature::from_bytes(signature.as_bytes());
+    let mut to_verify = Vec::with_capacity(MANIFEST_SIGN_CONTEXT.len() + transcript_bytes.len());
+    to_verify.extend_from_slice(MANIFEST_SIGN_CONTEXT);
+    to_verify.extend_from_slice(transcript_bytes);
 
-    verifying_key
-        .verify_strict(transcript_bytes, &signature)
-        .is_ok()
+    verifying_key.verify_strict(&to_verify, &signature).is_ok()
 }
 
 /// Deterministic public crypto vectors shared by native Rust and FFI facades.
