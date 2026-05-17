@@ -15,12 +15,18 @@ public class EpochKeysController : ControllerBase
     private readonly MosaicDbContext _db;
     private readonly ICurrentUserService _currentUserService;
     private readonly IEpochKeyRotationService _epochKeyRotationService;
+    private readonly IAuditLogService? _auditLog;
 
-    public EpochKeysController(MosaicDbContext db, ICurrentUserService currentUserService, IEpochKeyRotationService epochKeyRotationService)
+    public EpochKeysController(
+        MosaicDbContext db,
+        ICurrentUserService currentUserService,
+        IEpochKeyRotationService epochKeyRotationService,
+        IAuditLogService? auditLog = null)
     {
         _db = db;
         _currentUserService = currentUserService;
         _epochKeyRotationService = epochKeyRotationService;
+        _auditLog = auditLog;
     }
 
     /// <summary>
@@ -230,6 +236,26 @@ public class EpochKeysController : ControllerBase
             return Problem(
                 detail: result.ErrorDetail,
                 statusCode: result.StatusCode);
+        }
+
+        // D1 audit (batch 7 follow-up): record standalone epoch
+        // rotation. ZK-safe: only opaque album+epoch ids + non-secret
+        // key/sharelink counts logged.
+        if (_auditLog is not null)
+        {
+            await _auditLog.WriteAsync(
+                AuditEventTypes.AlbumEpochRotated,
+                AuditOutcomes.Success,
+                HttpContext,
+                actorUserId: user.Id,
+                targetType: "album",
+                targetId: albumId.ToString(),
+                details: new
+                {
+                    newEpochId = epochId,
+                    keyCount = result.KeyCount,
+                    shareLinkKeysUpdated = result.ShareLinkKeysUpdated,
+                });
         }
 
         return Created($"/api/albums/{albumId}/epochs/{epochId}", new

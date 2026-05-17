@@ -20,13 +20,20 @@ public class MembersController : ControllerBase
     private readonly IConfiguration _config;
     private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<MembersController> _logger;
+    private readonly IAuditLogService? _auditLog;
 
-    public MembersController(MosaicDbContext db, IConfiguration config, ICurrentUserService currentUserService, ILogger<MembersController> logger)
+    public MembersController(
+        MosaicDbContext db,
+        IConfiguration config,
+        ICurrentUserService currentUserService,
+        ILogger<MembersController> logger,
+        IAuditLogService? auditLog = null)
     {
         _db = db;
         _config = config;
         _currentUserService = currentUserService;
         _logger = logger;
+        _auditLog = auditLog;
     }
 
     /// <summary>
@@ -170,6 +177,27 @@ public class MembersController : ControllerBase
 
             _logger.MemberAdded(request.RecipientId, albumId, request.Role, user.Id);
 
+            // D1 audit (batch 7 follow-up): record member add. ZK-safe:
+            // we log opaque album/user IDs + non-secret role + epoch-key
+            // count. No key material crosses into the audit log.
+            if (_auditLog is not null)
+            {
+                await _auditLog.WriteAsync(
+                    AuditEventTypes.AlbumMemberAdded,
+                    AuditOutcomes.Success,
+                    HttpContext,
+                    actorUserId: user.Id,
+                    targetType: "album",
+                    targetId: albumId.ToString(),
+                    details: new
+                    {
+                        recipientId = request.RecipientId,
+                        role = request.Role,
+                        epochKeysCount = request.EpochKeys.Length,
+                        reactivated = existing != null,
+                    });
+            }
+
             return Created($"/api/albums/{albumId}/members/{request.RecipientId}", new
             {
                 albumId,
@@ -227,6 +255,24 @@ public class MembersController : ControllerBase
         await _db.SaveChangesAsync();
 
         _logger.MemberRemoved(userId, albumId, user.Id);
+
+        // D1 audit (batch 7 follow-up): record member removal. Without
+        // an accompanying epoch rotation this is a soft-revoke — the
+        // removed user retained their copy of the existing epoch keys
+        // and CAN still decrypt content uploaded before the rotation.
+        // Operators triaging incidents need to see both this event AND
+        // the subsequent rotation event to confirm full key-rotation.
+        if (_auditLog is not null)
+        {
+            await _auditLog.WriteAsync(
+                AuditEventTypes.AlbumMemberRemoved,
+                AuditOutcomes.Success,
+                HttpContext,
+                actorUserId: user.Id,
+                targetType: "album",
+                targetId: albumId.ToString(),
+                details: new { removedUserId = userId, rotated = false });
+        }
 
         return NoContent();
     }
@@ -347,6 +393,42 @@ public class MembersController : ControllerBase
             await tx.CommitAsync();
 
             _logger.MemberRemoved(userId, albumId, user.Id);
+
+            // D1 audit (batch 7 follow-up): record BOTH the member
+            // removal AND the epoch rotation as a single correlated
+            // event pair. Operators see at a glance that the removal
+            // was accompanied by a full key rotation — confirming the
+            // removed user can no longer decrypt new uploads.
+            if (_auditLog is not null)
+            {
+                await _auditLog.WriteAsync(
+                    AuditEventTypes.AlbumMemberRemoved,
+                    AuditOutcomes.Success,
+                    HttpContext,
+                    actorUserId: user.Id,
+                    targetType: "album",
+                    targetId: albumId.ToString(),
+                    details: new
+                    {
+                        removedUserId = userId,
+                        rotated = true,
+                        newEpochId = request.EpochId,
+                    });
+                await _auditLog.WriteAsync(
+                    AuditEventTypes.AlbumEpochRotated,
+                    AuditOutcomes.Success,
+                    HttpContext,
+                    actorUserId: user.Id,
+                    targetType: "album",
+                    targetId: albumId.ToString(),
+                    details: new
+                    {
+                        newEpochId = request.EpochId,
+                        keyCount = staged.KeyCount,
+                        shareLinkKeysUpdated = staged.ShareLinkKeysUpdated,
+                        triggeredByRemovalOf = userId,
+                    });
+            }
 
             return Created($"/api/albums/{albumId}/epochs/{request.EpochId}", new
             {
