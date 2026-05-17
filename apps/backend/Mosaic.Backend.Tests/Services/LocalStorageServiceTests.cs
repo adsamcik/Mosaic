@@ -58,7 +58,12 @@ public class LocalStorageServiceTests : IDisposable
         var key = "nonexistent-file.bin";
 
         // Act & Assert
-        await Assert.ThrowsAsync<FileNotFoundException>(() => _storage.OpenReadAsync(key));
+        // v1.0.1 s20: ShardMissingException (inherits FileNotFoundException) is
+        // thrown so controllers can translate ENOENT into HTTP 410 TRASHED
+        // instead of a generic 500.
+        var ex = await Assert.ThrowsAsync<ShardMissingException>(() => _storage.OpenReadAsync(key));
+        Assert.Equal(key, ex.StorageKey);
+        Assert.IsAssignableFrom<FileNotFoundException>(ex);
     }
 
     [Theory]

@@ -38,7 +38,20 @@ public class LocalStorageService : IStorageService
     {
         ValidateKey(key);
         var path = Path.Combine(_basePath, key);
-        return Task.FromResult<Stream>(File.OpenRead(path));
+        try
+        {
+            return Task.FromResult<Stream>(File.OpenRead(path));
+        }
+        catch (FileNotFoundException ex)
+        {
+            // Translate to a typed exception so callers can return 410 TRASHED
+            // (v1.0.1 s20) instead of letting the raw ENOENT bubble to 500.
+            throw new ShardMissingException(key, ex);
+        }
+        catch (DirectoryNotFoundException ex)
+        {
+            throw new ShardMissingException(key, ex);
+        }
     }
 
     public Task DeleteAsync(string key)

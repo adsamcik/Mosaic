@@ -30,7 +30,7 @@ public class MockStorageService : IStorageService
     {
         if (!_files.TryGetValue(key, out var content))
         {
-            throw new FileNotFoundException($"File not found: {key}");
+            throw new ShardMissingException(key);
         }
         return Task.FromResult<Stream>(new MemoryStream(content));
     }

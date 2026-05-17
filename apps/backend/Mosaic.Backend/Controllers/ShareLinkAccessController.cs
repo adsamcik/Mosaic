@@ -437,8 +437,17 @@ public class ShareLinkAccessController : ControllerBase
             Response.Headers["X-Content-SHA256"] = shard.Sha256;
         }
 
-        var stream = await _storage.OpenReadAsync(shard.StorageKey);
-        return File(stream, "application/octet-stream");
+        try
+        {
+            var stream = await _storage.OpenReadAsync(shard.StorageKey);
+            return File(stream, "application/octet-stream");
+        }
+        catch (ShardMissingException)
+        {
+            // Blob was purged from local storage (likely trashed by GC). Translate
+            // ENOENT to an authoritative 410 instead of a generic 500 (v1.0.1 s20).
+            return StatusCode(StatusCodes.Status410Gone, new { code = "TRASHED" });
+        }
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 using Mosaic.Backend.Controllers;
@@ -451,5 +452,41 @@ public class ShardsControllerTests
         // Assert
         var okResult = Assert.IsType<OkObjectResult>(result);
         Assert.NotNull(okResult.Value);
+    }
+
+    [Fact]
+    public async Task Download_Returns410Trashed_WhenStorageBlobMissing()
+    {
+        // Arrange — shard row exists & user has access, but the blob has been
+        // purged from local storage (e.g. trashed by GC). Storage throws
+        // ShardMissingException which the controller must translate into
+        // HTTP 410 Gone with { code: "TRASHED" } instead of a generic 500.
+        // Regression for v1.0.1 s20.
+        using var db = TestDbContextFactory.Create();
+        var storage = new MockStorageService();
+        var builder = new TestDataBuilder(db);
+
+        var uploader = await builder.CreateUserAsync(UploaderAuthSub);
+        var album = await builder.CreateAlbumAsync(uploader);
+        var shard = await builder.CreateShardAsync(uploader, ShardStatus.ACTIVE);
+        await builder.CreateManifestAsync(album, [shard]);
+        // Intentionally do NOT call storage.AddFile — simulates a missing blob.
+
+        var controller = new ShardsController(db, storage, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(UploaderAuthSub)
+            }
+        };
+
+        // Act
+        var result = await controller.Download(shard.Id);
+
+        // Assert
+        var statusResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status410Gone, statusResult.StatusCode);
+        var body = JsonSerializer.Serialize(statusResult.Value);
+        Assert.Contains("TRASHED", body);
     }
 }
