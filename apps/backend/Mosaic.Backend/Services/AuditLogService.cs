@@ -43,6 +43,9 @@ public static class AuditEventTypes
     // Admin
     public const string AdminQuotaChanged = "admin.quota.changed";
     public const string AdminUserPurged = "admin.user.purged";
+
+    // User account lifecycle (v1.0.1 s15 — right-to-erasure)
+    public const string UserSelfErased = "user.erased";
 }
 
 /// <summary>

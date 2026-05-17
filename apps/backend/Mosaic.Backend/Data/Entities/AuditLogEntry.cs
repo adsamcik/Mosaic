@@ -98,4 +98,27 @@ public class AuditLogEntry
     /// </summary>
     [MaxLength(4096)]
     public string? DetailsJson { get; set; }
+
+    /// <summary>
+    /// GDPR Article 17 right-to-erasure marker (v1.0.1 s15).
+    ///
+    /// <para>
+    /// Set to <c>true</c> when the actor referenced by
+    /// <see cref="ActorUserId"/> has invoked the self-service "delete
+    /// my account" flow. At that point we anonymise the row by setting
+    /// <see cref="ActorUserId"/> to <c>NULL</c> and flipping this flag,
+    /// which preserves the audit trail (legitimate-interest legal basis
+    /// for security incident response) while removing the personal
+    /// reference required by Article 17.
+    /// </para>
+    ///
+    /// <para>
+    /// Rows where this flag is <c>true</c> and <see cref="ActorUserId"/>
+    /// is <c>NULL</c> describe events whose original actor was a real
+    /// user account that has since been erased — distinct from system
+    /// or pre-auth events, which also have a <c>NULL</c> actor but with
+    /// this flag <c>false</c>.
+    /// </para>
+    /// </summary>
+    public bool ActorWasErased { get; set; }
 }
