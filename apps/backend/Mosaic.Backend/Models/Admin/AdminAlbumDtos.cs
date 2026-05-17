@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Mosaic.Backend.Models.Admin;
 
 public record AlbumWithLimitsResponse(
@@ -17,6 +19,6 @@ public record AlbumLimitsResponse(
 );
 
 public record UpdateAlbumLimitsRequest(
-    int? MaxPhotos,
-    long? MaxSizeBytes
+    [Range(1, int.MaxValue, ErrorMessage = "MaxPhotos must be positive")] int? MaxPhotos,
+    [Range(1, long.MaxValue, ErrorMessage = "MaxSizeBytes must be positive")] long? MaxSizeBytes
 );

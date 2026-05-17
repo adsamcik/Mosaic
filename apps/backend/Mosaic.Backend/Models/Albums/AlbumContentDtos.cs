@@ -49,6 +49,8 @@ public class UpdateAlbumContentRequest
     /// 24-byte nonce used for encryption
     /// </summary>
     [Required]
+    [MinLength(24, ErrorMessage = "Nonce must be exactly 24 bytes")]
+    [MaxLength(24, ErrorMessage = "Nonce must be exactly 24 bytes")]
     public required byte[] Nonce { get; set; }
 
     /// <summary>

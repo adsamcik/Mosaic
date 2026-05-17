@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Mosaic.Backend.Models.Admin;
 
 public record UserWithQuotaResponse(
@@ -17,6 +19,6 @@ public record UserQuotaResponse(
 );
 
 public record UpdateUserQuotaRequest(
-    long? MaxStorageBytes,
-    int? MaxAlbums
+    [Range(1, long.MaxValue, ErrorMessage = "MaxStorageBytes must be positive")] long? MaxStorageBytes,
+    [Range(1, int.MaxValue, ErrorMessage = "MaxAlbums must be positive")] int? MaxAlbums
 );

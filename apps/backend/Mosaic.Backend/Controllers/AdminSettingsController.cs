@@ -7,7 +7,7 @@ using Mosaic.Backend.Services;
 namespace Mosaic.Backend.Controllers;
 
 [ApiController]
-[Route("api/admin/settings")]
+[Route("api/v1/admin/settings")]
 public class AdminSettingsController : ControllerBase
 {
     private readonly MosaicDbContext _db;
@@ -49,32 +49,14 @@ public class AdminSettingsController : ControllerBase
     {
         var admin = GetAdminUser();
 
-        if (request.MaxStorageBytesPerUser <= 0)
+        // Positivity bounds are declared via [Range] on UpdateQuotaDefaultsRequest
+        // (v1.0.1 s36). In the ASP.NET pipeline [ApiController] auto-translates
+        // DataAnnotation failures to 400 before the action runs; this explicit
+        // TryValidateModel call preserves the same contract when the controller
+        // is invoked directly (unit tests).
+        if (!TryValidateModel(request))
         {
-            return Problem(
-                detail: "MaxStorageBytesPerUser must be positive",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        if (request.MaxAlbumsPerUser <= 0)
-        {
-            return Problem(
-                detail: "MaxAlbumsPerUser must be positive",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        if (request.MaxPhotosPerAlbum <= 0)
-        {
-            return Problem(
-                detail: "MaxPhotosPerAlbum must be positive",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        if (request.MaxBytesPerAlbum <= 0)
-        {
-            return Problem(
-                detail: "MaxBytesPerAlbum must be positive",
-                statusCode: StatusCodes.Status400BadRequest);
+            return ValidationProblem(ModelState);
         }
 
         var defaults = new QuotaDefaults(
