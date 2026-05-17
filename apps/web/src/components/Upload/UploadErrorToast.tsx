@@ -3,6 +3,24 @@ import { useTranslation } from 'react-i18next';
 import { useUploadContext } from '../../contexts/UploadContext';
 
 /**
+ * Walk the error chain (error → error.cause → ...) to find an i18n
+ * messageKey carried by typed errors like UploadAuthRequiredError /
+ * TusUploadError. Returns the first one found, or undefined.
+ */
+function findMessageKey(err: unknown, depth = 0): string | undefined {
+  if (!err || depth > 5) return undefined;
+  if (typeof err === 'object') {
+    const key = (err as { messageKey?: unknown }).messageKey;
+    if (typeof key === 'string' && key.length > 0) return key;
+    const cause = (err as { cause?: unknown }).cause;
+    if (cause !== undefined && cause !== err) {
+      return findMessageKey(cause, depth + 1);
+    }
+  }
+  return undefined;
+}
+
+/**
  * Upload Error Toast Component
  * Displays upload errors as a dismissable notification.
  */
@@ -22,6 +40,9 @@ export function UploadErrorToast() {
   }, [error, clearError]);
 
   if (!error) return null;
+
+  const messageKey = findMessageKey(error);
+  const displayMessage = messageKey ? t(messageKey) : error.message;
 
   return (
     <div
@@ -50,7 +71,7 @@ export function UploadErrorToast() {
         </span>
         <div className="upload-error-toast-message">
           <strong>{t('upload.failed')}</strong>
-          <p>{error.message}</p>
+          <p>{displayMessage}</p>
         </div>
         <button
           className="upload-error-toast-close"

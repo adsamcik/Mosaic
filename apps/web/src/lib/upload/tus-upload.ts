@@ -9,6 +9,7 @@ const SHA256_HEX = /^[0-9a-fA-F]{64}$/;
 
 export class UploadAuthRequiredError extends Error {
   readonly status = 401;
+  readonly messageKey = 'upload.errors.authRequired';
 
   constructor(message = 'Authentication required to continue upload') {
     super(message);
@@ -18,6 +19,21 @@ export class UploadAuthRequiredError extends Error {
 
 export function isUploadAuthRequiredError(error: unknown): error is UploadAuthRequiredError {
   return error instanceof UploadAuthRequiredError;
+}
+
+/**
+ * Error thrown by tus-upload for non-auth failures.
+ * Carries an i18n `messageKey` so UI can render a localized message
+ * while logs / persistence keep the English `message` for diagnostics.
+ */
+export class TusUploadError extends Error {
+  readonly messageKey: string;
+
+  constructor(message: string, messageKey: string) {
+    super(message);
+    this.name = 'TusUploadError';
+    this.messageKey = messageKey;
+  }
 }
 
 function getTusResponseStatus(error: Error | tus.DetailedError): number | undefined {
@@ -91,13 +107,13 @@ export async function tusUpload(
           reject(new UploadAuthRequiredError());
           return;
         }
-        reject(new Error(`Upload failed: ${error.message}`));
+        reject(new TusUploadError(`Upload failed: ${error.message}`, 'upload.errors.failed'));
       },
       onSuccess: () => {
         // Extract shard ID from the upload URL
         const url = upload.url;
         if (!url) {
-          reject(new Error('No upload URL returned'));
+          reject(new TusUploadError('No upload URL returned', 'upload.errors.noUrl'));
           return;
         }
         // URL format: /api/files/{shardId}
@@ -126,7 +142,7 @@ function sha256ToTusMetadataHex(sha256: string): string {
 
   const bytes = base64UrlToBytes(trimmed);
   if (bytes.byteLength !== SHA256_HEX_BYTES) {
-    throw new Error('Invalid SHA-256 hash for Tus metadata');
+    throw new TusUploadError('Invalid SHA-256 hash for Tus metadata', 'upload.errors.invalidSha256');
   }
   return bytesToHex(bytes);
 }
@@ -135,7 +151,7 @@ function base64UrlToBytes(value: string): Uint8Array {
   let normalized = value.replace(/-/g, '+').replace(/_/g, '/');
   const remainder = normalized.length % 4;
   if (remainder === 1) {
-    throw new Error('Invalid SHA-256 hash for Tus metadata');
+    throw new TusUploadError('Invalid SHA-256 hash for Tus metadata', 'upload.errors.invalidSha256');
   }
   if (remainder !== 0) {
     normalized = normalized.padEnd(normalized.length + 4 - remainder, '=');

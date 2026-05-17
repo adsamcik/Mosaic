@@ -73,7 +73,13 @@ class AndroidRustAlbumSyncApi : GeneratedRustAlbumSyncApi {
     snapshot: RustClientCoreAlbumSyncFfiSnapshot,
     event: RustClientCoreAlbumSyncFfiEvent,
   ): RustClientCoreAlbumSyncTransitionFfiResult {
-    val uniSnapshot = snapshot.toUniFfiSnapshot()
+    // v1.0.1 s31: a user-initiated sync trigger (the `StartRequested` event)
+    // must reset the retry budget. Without this, a re-trigger over a stale
+    // snapshot whose `retryCount` was drained in a prior session would fail
+    // on the first transient error. Automatic retries (PageFailed → retries)
+    // intentionally preserve the running budget.
+    val normalizedSnapshot = normalizeSnapshotForUserTrigger(snapshot, event)
+    val uniSnapshot = normalizedSnapshot.toUniFfiSnapshot()
     val uniEvent = event.toUniFfiEvent()
     val uniResult = rustAdvanceAlbumSync(uniSnapshot, uniEvent)
     val rustCode = uniResult.code.toInt()
@@ -97,6 +103,34 @@ class AndroidRustAlbumSyncApi : GeneratedRustAlbumSyncApi {
           effects = emptyList(),
         ),
       )
+    }
+  }
+
+  internal companion object {
+    /**
+     * The Rust core event kind emitted when the user explicitly triggers a
+     * sync (Pull-to-Refresh, "Retry now" button, swipe). Distinct from the
+     * automatic retry path (`PageFailed` → scheduled re-fetch) which must
+     * keep the running budget so genuinely flaky albums don't loop forever.
+     */
+    const val USER_TRIGGER_EVENT_KIND: String = "StartRequested"
+
+    /**
+     * Reset the retry budget when the user explicitly re-triggers a sync.
+     *
+     * The retry budget on the snapshot is per-attempt; when a user issues a
+     * fresh sync request we treat it as attempt #1 regardless of how many
+     * automatic retries the previous session burned. For any non-user event
+     * (e.g. PageFetched, PageFailed) the snapshot is returned unchanged so
+     * automatic retry accounting continues normally.
+     */
+    fun normalizeSnapshotForUserTrigger(
+      snapshot: RustClientCoreAlbumSyncFfiSnapshot,
+      event: RustClientCoreAlbumSyncFfiEvent,
+    ): RustClientCoreAlbumSyncFfiSnapshot = if (event.kind == USER_TRIGGER_EVENT_KIND && snapshot.retryCount != 0) {
+      snapshot.copy(retryCount = 0, nextRetryUnixMs = 0)
+    } else {
+      snapshot
     }
   }
 

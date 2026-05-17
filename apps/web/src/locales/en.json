@@ -538,7 +538,13 @@
     "encrypting": "Encrypting...",
     "uploading": "Uploading...",
     "dropHere": "Drop photos and videos here",
-    "failed": "Upload failed"
+    "failed": "Upload failed",
+    "errors": {
+      "authRequired": "Authentication required to continue upload. Please log in again.",
+      "failed": "Upload failed. Please check your connection and try again.",
+      "noUrl": "Upload failed: no upload URL was returned by the server.",
+      "invalidSha256": "Upload failed due to an internal integrity check error."
+    }
   },
   "member": {
     "title": "Members",

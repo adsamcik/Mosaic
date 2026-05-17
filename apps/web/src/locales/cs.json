@@ -549,7 +549,13 @@
     "encrypting": "Šifrování...",
     "uploading": "Nahrávání...",
     "dropHere": "Přetáhněte fotky a videa sem",
-    "failed": "Nahrávání selhalo"
+    "failed": "Nahrávání selhalo",
+    "errors": {
+      "authRequired": "Pro pokračování nahrávání je vyžadováno přihlášení. Přihlaste se prosím znovu.",
+      "failed": "Nahrávání selhalo. Zkontrolujte připojení a zkuste to znovu.",
+      "noUrl": "Nahrávání selhalo: server nevrátil URL nahrávání.",
+      "invalidSha256": "Nahrávání selhalo kvůli interní chybě kontroly integrity."
+    }
   },
   "member": {
     "title": "Členové",
