@@ -329,6 +329,34 @@ docker system df
 docker system prune -a
 ```
 
+### HTTP 400 "Bad Request" / "BadHost" After Putting Mosaic Behind a Custom Domain
+
+`appsettings.Production.json` ships with `AllowedHosts=localhost` so the default
+docker compose stack works out of the box (browser → `localhost:8080` → nginx →
+backend). The frontend nginx forwards the inbound `Host` header verbatim, so as
+soon as you put Mosaic behind a reverse proxy that terminates a different
+hostname (Caddy, Traefik, Authelia, an outer nginx), every backend API call is
+rejected with HTTP 400 BadHost until you override `AllowedHosts`.
+
+Fix by setting `AllowedHosts` to the hostname(s) you actually serve from in
+`.env`:
+
+```ini
+AllowedHosts=photos.example.com
+# or, for multiple hosts (semicolon-separated):
+# AllowedHosts=photos.example.com;photos.internal
+```
+
+Then forward it into the backend by adding to the `backend.environment` block
+in your compose override:
+
+```yaml
+environment:
+  AllowedHosts: "${AllowedHosts:-localhost}"
+```
+
+Restart the backend (`docker compose up -d backend`) and the 400s clear.
+
 ---
 
 ## Architecture Overview
@@ -372,6 +400,7 @@ docker system prune -a
 | `POSTGRES_PASSWORD` | Database password | `changeme` (change this!) |
 | `FRONTEND_PORT` | Port to access Mosaic | `8080` |
 | `DEFAULT_QUOTA_BYTES` | Storage quota per user | `10737418240` (10 GB) |
+| `AllowedHosts` | Semicolon-separated host allow-list for the backend. Override when serving behind a custom domain or you will see HTTP 400 BadHost on every API call. | `localhost` |
 
 For advanced configuration, see [DOCKER.md](DOCKER.md#configuration-reference).
 
