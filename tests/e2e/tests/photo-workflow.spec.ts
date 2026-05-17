@@ -389,7 +389,7 @@ test.describe('Photo Workflow: Deletion @p1 @photo', () => {
     const page = await context.newPage();
 
     // Set up Remote-User header injection
-    await page.route('**/api/**', async (route) => {
+    await page.route('**/api/v1/**', async (route) => {
       const headers = { ...route.request().headers(), 'Remote-User': testUser };
       await route.continue({ headers });
     });

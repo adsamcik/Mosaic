@@ -46,20 +46,20 @@ describe('Epoch Keys API', () => {
 
     // Initialize owner with a pubkey and get their ID
     api.setUser(owner);
-    const user = await api.put<User>('/api/users/me', {
+    const user = await api.put<User>('/api/v1/users/me', {
       identityPubkey: randomBase64(32),
     });
     ownerId = user.data.id;
   });
 
-  describe('POST /api/albums/:id/epoch-keys', () => {
+  describe('POST /api/v1/albums/:id/epoch-keys', () => {
     it('creates an epoch key', async () => {
       const album = await createTestAlbum(api, owner);
       const epochKeyData = generateEpochKeyData(2);
       epochKeyData.recipientId = ownerId;
 
       const response = await api.post<EpochKeyResponse>(
-        `/api/albums/${album.id}/epoch-keys`,
+        `/api/v1/albums/${album.id}/epoch-keys`,
         epochKeyData
       );
 
@@ -75,11 +75,11 @@ describe('Epoch Keys API', () => {
 
       // Get member user
       api.setUser(member);
-      const memberUser = await api.get<User>('/api/users/me');
+      const memberUser = await api.get<User>('/api/v1/users/me');
 
       // Add member via invite with epoch keys
       api.setUser(owner);
-      await api.post(`/api/albums/${album.id}/members`, {
+      await api.post(`/api/v1/albums/${album.id}/members`, {
         recipientId: memberUser.data.id,
         role: 'viewer',
         epochKeys: [{
@@ -95,19 +95,19 @@ describe('Epoch Keys API', () => {
       api.setUser(member);
       const epochKeyData = generateEpochKeyData(2);
       epochKeyData.recipientId = memberUser.data.id;
-      const response = await api.post(`/api/albums/${album.id}/epoch-keys`, epochKeyData);
+      const response = await api.post(`/api/v1/albums/${album.id}/epoch-keys`, epochKeyData);
 
       expect(response.status).toBe(403);
     });
   });
 
-  describe('GET /api/albums/:id/epoch-keys', () => {
+  describe('GET /api/v1/albums/:id/epoch-keys', () => {
     it('lists epoch keys for user', async () => {
       const album = await createTestAlbum(api, owner);
 
       // Album creation already creates epoch 1, so we should have one key
       const response = await api.get<EpochKeyResponse[]>(
-        `/api/albums/${album.id}/epoch-keys`
+        `/api/v1/albums/${album.id}/epoch-keys`
       );
 
       expect(response.status).toBe(200);
@@ -121,11 +121,11 @@ describe('Epoch Keys API', () => {
 
       // Get member user
       api.setUser(member);
-      const memberUser = await api.get<User>('/api/users/me');
+      const memberUser = await api.get<User>('/api/v1/users/me');
 
       // Add member via invite with epoch keys
       api.setUser(owner);
-      await api.post(`/api/albums/${album.id}/members`, {
+      await api.post(`/api/v1/albums/${album.id}/members`, {
         recipientId: memberUser.data.id,
         role: 'viewer',
         epochKeys: [{
@@ -140,7 +140,7 @@ describe('Epoch Keys API', () => {
       // Member should only see their own key
       api.setUser(member);
       const response = await api.get<EpochKeyResponse[]>(
-        `/api/albums/${album.id}/epoch-keys`
+        `/api/v1/albums/${album.id}/epoch-keys`
       );
 
       expect(response.status).toBe(200);

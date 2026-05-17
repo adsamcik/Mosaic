@@ -13,7 +13,7 @@ import { API_URL } from './framework/constants';
 async function resetTestData(): Promise<void> {
   console.log('[Global Teardown] Resetting test data...');
   try {
-    const response = await fetch(`${API_URL}/api/test-seed/reset`, { method: 'POST' });
+    const response = await fetch(`${API_URL}/api/v1/test-seed/reset`, { method: 'POST' });
     if (!response.ok) {
       // Log warning but don't fail - endpoint might not exist in non-test builds
       console.warn(`[Global Teardown] Reset endpoint returned ${response.status}`);

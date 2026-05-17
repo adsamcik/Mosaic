@@ -165,7 +165,7 @@ test.describe('Toast & Feedback Notifications @p1 @ui', () => {
     await appShell.waitForLoad();
 
     // Mock API error for album creation endpoint
-    await mockApiError(user.page, '**/api/albums', 500, {
+    await mockApiError(user.page, '**/api/v1/albums', 500, {
       error: 'Internal Server Error',
     });
 
@@ -258,7 +258,7 @@ test.describe('Toast & Feedback Notifications @p1 @ui', () => {
 
     // Mock TUS upload endpoint to fail
     // The upload uses TUS protocol, so mock the endpoint to return an error
-    await user.page.route('**/api/files/**', (route) => {
+    await user.page.route('**/api/v1/files/**', (route) => {
       route.fulfill({
         status: 500,
         contentType: 'application/json',
@@ -305,6 +305,6 @@ test.describe('Toast & Feedback Notifications @p1 @ui', () => {
     await expect(appShell.shell).toBeVisible();
 
     // Unroute to restore normal behavior
-    await user.page.unroute('**/api/files/**');
+    await user.page.unroute('**/api/v1/files/**');
   });
 });

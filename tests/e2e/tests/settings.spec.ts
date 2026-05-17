@@ -367,7 +367,7 @@ test.describe('Language Detection @p2 @ui', () => {
     const page = await context.newPage();
 
     // Inject auth headers for API calls (for ProxyAuth mode support)
-    await page.route('**/api/**', async (route) => {
+    await page.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,
@@ -424,7 +424,7 @@ test.describe('Language Detection @p2 @ui', () => {
     const page = await context.newPage();
 
     // Inject auth headers for API calls (for ProxyAuth mode support)
-    await page.route('**/api/**', async (route) => {
+    await page.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,
@@ -476,7 +476,7 @@ test.describe('Language Detection @p2 @ui', () => {
     const page = await context.newPage();
 
     // Inject auth headers for API calls (for ProxyAuth mode support)
-    await page.route('**/api/**', async (route) => {
+    await page.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,

@@ -102,7 +102,7 @@ export async function createTestAlbum(client: ApiClient, user: string) {
     currentEpochId: number | null;
     currentVersion: number;
     createdAt: string;
-  }>('/api/albums', generateCreateAlbumRequest());
+  }>('/api/v1/albums', generateCreateAlbumRequest());
 
   if (response.status !== 201) {
     throw new Error(`Failed to create album: ${response.status}`);
@@ -121,7 +121,7 @@ export async function uploadEpochKey(
   wrappedKey: string,
   targetUserId: string
 ) {
-  const response = await client.post(`/api/albums/${albumId}/epoch-keys`, {
+  const response = await client.post(`/api/v1/albums/${albumId}/epoch-keys`, {
     epochId,
     wrappedKey,
     wrappedFor: targetUserId,

@@ -23,7 +23,7 @@ describe('Manifests API', () => {
 
     // Initialize owner with a pubkey
     api.setUser(owner);
-    await api.put<User>('/api/users/me', {
+    await api.put<User>('/api/v1/users/me', {
       identityPubkey: randomBase64(32),
     });
   });
@@ -44,12 +44,12 @@ describe('Manifests API', () => {
     };
   }
 
-  describe('POST /api/manifests', () => {
+  describe('POST /api/v1/manifests', () => {
     it('returns 400 when shards not found', async () => {
       const album = await createTestAlbum(api, owner);
 
       // Try to create manifest with non-existent shard IDs
-      const response = await api.post('/api/manifests', manifestRequest(album.id));
+      const response = await api.post('/api/v1/manifests', manifestRequest(album.id));
 
       // Should fail because shards don't exist
       expect(response.status).toBe(400);
@@ -59,7 +59,7 @@ describe('Manifests API', () => {
       const album = await createTestAlbum(api, owner);
 
       api.setUser(uniqueUser());
-      const response = await api.post('/api/manifests', manifestRequest(album.id));
+      const response = await api.post('/api/v1/manifests', manifestRequest(album.id));
 
       // Non-member should be forbidden
       expect(response.status).toBe(403);
@@ -68,7 +68,7 @@ describe('Manifests API', () => {
     it('returns 404 for non-existent album', async () => {
       api.setUser(owner);
       const response = await api.post(
-        '/api/manifests',
+        '/api/v1/manifests',
         manifestRequest('00000000-0000-0000-0000-000000000000')
       );
 
@@ -76,10 +76,10 @@ describe('Manifests API', () => {
     });
   });
 
-  describe('GET /api/manifests/:manifestId', () => {
+  describe('GET /api/v1/manifests/:manifestId', () => {
     it('returns 404 for non-existent manifest', async () => {
       api.setUser(owner);
-      const response = await api.get('/api/manifests/00000000-0000-0000-0000-000000000000');
+      const response = await api.get('/api/v1/manifests/00000000-0000-0000-0000-000000000000');
 
       expect(response.status).toBe(404);
     });

@@ -209,7 +209,7 @@ export interface AlbumCreationResult {
  * Returns true if the user was created, false if they already existed.
  */
 export async function ensureUserExists(userEmail: string): Promise<boolean> {
-  const response = await fetch(`${API_URL}/api/test-seed/create-authenticated-user`, {
+  const response = await fetch(`${API_URL}/api/v1/test-seed/create-authenticated-user`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -247,7 +247,7 @@ export async function createAlbumViaAPI(
   const dummyBytes32 = Buffer.alloc(32).toString('base64');
   const dummyBytes64 = Buffer.alloc(64).toString('base64');
 
-  const response = await fetch(`${API_URL}/api/albums`, {
+  const response = await fetch(`${API_URL}/api/v1/albums`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -283,7 +283,7 @@ export async function deleteAlbumViaAPI(
   userEmail: string,
   albumId: string
 ): Promise<void> {
-  const response = await fetch(`${API_URL}/api/albums/${albumId}`, {
+  const response = await fetch(`${API_URL}/api/v1/albums/${albumId}`, {
     method: 'DELETE',
     headers: {
       'Remote-User': userEmail,
@@ -301,7 +301,7 @@ export async function deleteAlbumViaAPI(
 export async function getAlbumsViaAPI(
   userEmail: string
 ): Promise<{ id: string; name?: string }[]> {
-  const response = await fetch(`${API_URL}/api/albums`, {
+  const response = await fetch(`${API_URL}/api/v1/albums`, {
     headers: {
       'Remote-User': userEmail,
     },
@@ -320,7 +320,7 @@ export async function getAlbumsViaAPI(
 export async function getCurrentUserViaAPI(
   userEmail: string
 ): Promise<{ id: string; authSub: string }> {
-  const response = await fetch(`${API_URL}/api/users/me`, {
+  const response = await fetch(`${API_URL}/api/v1/users/me`, {
     headers: {
       'Remote-User': userEmail,
     },

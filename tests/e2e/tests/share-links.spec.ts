@@ -308,7 +308,7 @@ test.describe('Share Link Access @p2 @sharing', () => {
     const linkId = linkIdMatch![1];
 
     // Call test-seed API to expire this link
-    const expireResponse = await page.request.post(`/api/test-seed/expire-link/${linkId}`);
+    const expireResponse = await page.request.post(`/api/v1/test-seed/expire-link/${linkId}`);
     expect(expireResponse.ok()).toBe(true);
 
     // Open the expired link in a fresh browser context

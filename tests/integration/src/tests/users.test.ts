@@ -13,10 +13,10 @@ describe('Users API', () => {
     await waitForApi(api);
   });
 
-  describe('GET /api/users/me', () => {
+  describe('GET /api/v1/users/me', () => {
     it('returns 401 without auth header', async () => {
       api.clearAuth();
-      const response = await api.get('/api/users/me');
+      const response = await api.get('/api/v1/users/me');
       expect(response.status).toBe(401);
     });
 
@@ -24,7 +24,7 @@ describe('Users API', () => {
       const username = uniqueUser();
       api.setUser(username);
 
-      const response = await api.get<User>('/api/users/me');
+      const response = await api.get<User>('/api/v1/users/me');
 
       expect(response.status).toBe(200);
       expect(response.data.authSub).toBe(username);
@@ -36,8 +36,8 @@ describe('Users API', () => {
       const username = uniqueUser();
       api.setUser(username);
 
-      const first = await api.get<User>('/api/users/me');
-      const second = await api.get<User>('/api/users/me');
+      const first = await api.get<User>('/api/v1/users/me');
+      const second = await api.get<User>('/api/v1/users/me');
 
       expect(first.data.id).toBe(second.data.id);
       // Compare timestamps with tolerance for precision differences
@@ -47,16 +47,16 @@ describe('Users API', () => {
     });
   });
 
-  describe('PUT /api/users/me', () => {
+  describe('PUT /api/v1/users/me', () => {
     it('updates identity pubkey', async () => {
       const username = uniqueUser();
       api.setUser(username);
 
       // Create user first
-      await api.get<User>('/api/users/me');
+      await api.get<User>('/api/v1/users/me');
 
       const pubkey = randomBase64(32);
-      const updateResponse = await api.put<User>('/api/users/me', {
+      const updateResponse = await api.put<User>('/api/v1/users/me', {
         identityPubkey: pubkey,
       });
 
@@ -64,7 +64,7 @@ describe('Users API', () => {
       expect(updateResponse.data.identityPubkey).toBe(pubkey);
 
       // Verify persistence
-      const getResponse = await api.get<User>('/api/users/me');
+      const getResponse = await api.get<User>('/api/v1/users/me');
       expect(getResponse.data.identityPubkey).toBe(pubkey);
     });
   });

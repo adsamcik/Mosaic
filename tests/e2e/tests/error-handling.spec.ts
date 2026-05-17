@@ -57,7 +57,7 @@ test.describe('Error Handling @p1 @security', () => {
       await appShell.waitForLoad();
 
       // Mock API error for next request
-      await mockApiError(user.page, '**/api/albums', 500, {
+      await mockApiError(user.page, '**/api/v1/albums', 500, {
         error: 'Internal Server Error',
       });
 

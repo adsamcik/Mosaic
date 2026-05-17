@@ -189,7 +189,7 @@ test.describe('Photo Upload @p1 @photo', () => {
       await createDialog.createAlbum(`Error Test ${Date.now()}`);
 
       // Block API calls to simulate error
-      await page.route('**/api/files/**', (route) => {
+      await page.route('**/api/v1/files/**', (route) => {
         route.abort('failed');
       });
 

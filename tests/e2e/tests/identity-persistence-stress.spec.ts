@@ -73,7 +73,7 @@ test.describe('Identity Persistence: Stress and Logout Tests @p1 @auth @crypto @
     const logCollector = new LogCollector(page);
 
     // Set up Remote-User header injection
-    await page.route('**/api/**', async (route) => {
+    await page.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,
@@ -257,7 +257,7 @@ test.describe('Identity Persistence: Stress and Logout Tests @p1 @auth @crypto @
     const logCollector = new LogCollector(page);
 
     // Set up Remote-User header injection for ProxyAuth
-    await page.route('**/api/**', async (route) => {
+    await page.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,

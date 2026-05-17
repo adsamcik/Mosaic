@@ -296,7 +296,7 @@ test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @s
       await gallery.expectPhotoCount(1);
 
       // Slow down network to catch loading state
-      await user.page.route('**/api/shards/**', async (route) => {
+      await user.page.route('**/api/v1/shards/**', async (route) => {
         await new Promise((resolve) => setTimeout(resolve, 500));
         await route.continue();
       });

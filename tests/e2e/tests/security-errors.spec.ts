@@ -202,7 +202,7 @@ test.describe('Security: Authorization @p1 @security', () => {
     await page.goto('/');
 
     // Make direct API request without auth
-    const response = await page.request.get('/api/albums');
+    const response = await page.request.get('/api/v1/albums');
 
     // Should be rejected
     expect(response.status()).toBe(401);
@@ -224,7 +224,7 @@ test.describe('Security: Authorization @p1 @security', () => {
     await loginPage.expectLoginSuccess();
 
     // Try to access other user's album directly
-    const response = await page.request.get(`/api/albums/${album.id}`, {
+    const response = await page.request.get(`/api/v1/albums/${album.id}`, {
       headers: {
         'Remote-User': testUser,
       },
@@ -241,7 +241,7 @@ test.describe('Error Handling: Network Failures @p2 @security', () => {
     testUser,
   }) => {
     // Mock API to fail
-    await page.route('**/api/albums', (route) => {
+    await page.route('**/api/v1/albums', (route) => {
       route.abort('failed');
     });
 
@@ -302,7 +302,7 @@ test.describe('Error Handling: Network Failures @p2 @security', () => {
     await gallery.waitForLoad();
 
     // Now make API fail for manifest creation
-    await page.route('**/api/manifests', (route) => {
+    await page.route('**/api/v1/manifests', (route) => {
       route.fulfill({
         status: 500,
         contentType: 'application/json',
@@ -478,7 +478,7 @@ test.describe('Error Handling: Crypto Failures @p2 @security @crypto', () => {
     await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
 
     // Mock shard download to return corrupted data
-    await page.route('**/api/shards/*', (route) => {
+    await page.route('**/api/v1/shards/*', (route) => {
       route.fulfill({
         status: 200,
         contentType: 'application/octet-stream',

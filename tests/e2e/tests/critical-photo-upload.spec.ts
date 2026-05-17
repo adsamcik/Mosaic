@@ -117,7 +117,7 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
       }
     });
     page.on('response', response => {
-      if (response.url().includes('/api/') && response.status() >= 400) {
+      if (response.url().includes('/api/v1/') && response.status() >= 400) {
         console.log(`[API Error] ${response.status()} ${response.url()}`);
       }
     });

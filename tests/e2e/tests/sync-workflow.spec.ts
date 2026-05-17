@@ -47,7 +47,7 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
     const context1 = await browser.newContext();
     const page1 = await context1.newPage();
 
-    await page1.route('**/api/**', async (route) => {
+    await page1.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,
@@ -92,7 +92,7 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
     const context2 = await browser.newContext();
     const page2 = await context2.newPage();
 
-    await page2.route('**/api/**', async (route) => {
+    await page2.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,
@@ -136,7 +136,7 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
     const page = await context.newPage();
 
     // Set up Remote-User header injection
-    await page.route('**/api/**', async (route) => {
+    await page.route('**/api/v1/**', async (route) => {
       const headers = { ...route.request().headers(), 'Remote-User': testUser };
       await route.continue({ headers });
     });
@@ -512,7 +512,7 @@ test.describe('Sync: Version Tracking @p2 @sync', () => {
     const context1 = await browser.newContext();
     const page1 = await context1.newPage();
 
-    await page1.route('**/api/**', async (route) => {
+    await page1.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,
@@ -563,7 +563,7 @@ test.describe('Sync: Version Tracking @p2 @sync', () => {
 
     // Track API calls to monitor sync behavior
     const syncCalls: string[] = [];
-    await page2.route('**/api/**', async (route) => {
+    await page2.route('**/api/v1/**', async (route) => {
       const url = route.request().url();
       if (url.includes('/sync')) {
         syncCalls.push(url);
@@ -614,7 +614,7 @@ test.describe('Sync: Conflict Handling @p2 @sync', () => {
 
     // Set up auth for both
     for (const page of [page1, page2]) {
-      await page.route('**/api/**', async (route) => {
+      await page.route('**/api/v1/**', async (route) => {
         const headers = {
           ...route.request().headers(),
           'Remote-User': testUser,

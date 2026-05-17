@@ -84,11 +84,11 @@ function observeUploadStages(page: Page): Set<string> {
     const url = request.url();
     const method = request.method();
 
-    if (url.includes('/api/files')) {
+    if (url.includes('/api/v1/files')) {
       stages.add(method === 'POST' ? 'upload-create' : 'upload-bytes');
     }
 
-    if (method === 'POST' && url.includes('/api/manifests')) {
+    if (method === 'POST' && url.includes('/api/v1/manifests')) {
       stages.add('finalize-manifest');
     }
 
@@ -112,7 +112,7 @@ function registerContext(context: BrowserContext): void {
 async function stabilizeManifestFinalizeForE2e(context: BrowserContext): Promise<void> {
   // The roadmap tests exercise browser upload orchestration; keep them isolated
   // from transient backend manifest-finalize schema drift in the test database.
-  await context.route('**/api/manifests/**/finalize', async (route) => {
+  await context.route('**/api/v1/manifests/**/finalize', async (route) => {
     const request = route.request();
     const manifestId = new URL(request.url()).pathname.split('/').at(-2) ?? crypto.randomUUID();
     const body = (request.postDataJSON() ?? {}) as { tieredShards?: unknown };
@@ -170,7 +170,7 @@ async function openAlbumWithFreshUser(
 
 async function getOnlyAlbumId(page: Page): Promise<string> {
   return page.evaluate(async () => {
-    const response = await fetch('/api/albums');
+    const response = await fetch('/api/v1/albums');
     if (!response.ok) {
       throw new Error(`Failed to list albums: ${response.status}`);
     }
@@ -184,7 +184,7 @@ async function getOnlyAlbumId(page: Page): Promise<string> {
 
 async function getAlbumContentVersion(page: Page, albumId: string): Promise<number> {
   return page.evaluate(async (id) => {
-    const response = await fetch(`/api/albums/${id}/content`);
+    const response = await fetch(`/api/v1/albums/${id}/content`);
     if (response.status === 404) {
       return 0;
     }
@@ -224,7 +224,7 @@ async function uploadFilesSequentially(
             const method = response.request().method();
             return (
               response.ok() &&
-              ((method === 'POST' && url.includes('/api/manifests')) ||
+              ((method === 'POST' && url.includes('/api/v1/manifests')) ||
                 (method === 'PUT' && /\/api\/albums\/[^/]+\/content$/.test(new URL(url).pathname)))
             );
           },

@@ -46,7 +46,7 @@ export class LogCollector {
 
     // Capture network requests
     this.page.on('request', (request: Request) => {
-      if (request.url().includes('/api/')) {
+      if (request.url().includes('/api/v1/')) {
         this.logs.push({
           timestamp: Date.now(),
           type: 'network-request',
@@ -61,7 +61,7 @@ export class LogCollector {
 
     // Capture network responses
     this.page.on('response', (response: Response) => {
-      if (response.url().includes('/api/')) {
+      if (response.url().includes('/api/v1/')) {
         this.logs.push({
           timestamp: Date.now(),
           type: 'network-response',
@@ -156,7 +156,7 @@ export class TestAPIClient {
    * Returns the session token and user salts.
    */
   async createAuthenticatedUser(email: string): Promise<CreateAuthenticatedUserResponse> {
-    const response = await fetch(`${this.apiUrl}/api/test-seed/create-authenticated-user`, {
+    const response = await fetch(`${this.apiUrl}/api/v1/test-seed/create-authenticated-user`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

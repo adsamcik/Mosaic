@@ -43,7 +43,7 @@ async function waitForBackend(): Promise<void> {
 async function verifyEndpoints(): Promise<void> {
   console.log('[Global Setup] Verifying critical endpoints...');
 
-  const endpoints = ['/api/albums', '/api/users/me'];
+  const endpoints = ['/api/v1/albums', '/api/v1/users/me'];
 
   for (const endpoint of endpoints) {
     try {
@@ -77,7 +77,7 @@ async function verifyEndpoints(): Promise<void> {
 async function resetTestData(): Promise<void> {
   console.log('[Global Setup] Resetting test data...');
   try {
-    const response = await fetch(`${API_URL}/api/test-seed/reset`, { method: 'POST' });
+    const response = await fetch(`${API_URL}/api/v1/test-seed/reset`, { method: 'POST' });
     if (!response.ok) {
       // Log warning but don't fail - endpoint might not exist in non-test builds
       console.warn(`[Global Setup] Reset endpoint returned ${response.status}`);
@@ -98,7 +98,7 @@ async function resetTestData(): Promise<void> {
 async function seedUserPool(): Promise<void> {
   console.log('[Global Setup] Seeding user pool...');
   try {
-    const response = await fetch(`${API_URL}/api/test-seed/ensure-pool`, { method: 'POST' });
+    const response = await fetch(`${API_URL}/api/v1/test-seed/ensure-pool`, { method: 'POST' });
     if (!response.ok) {
       console.warn(`[Global Setup] Seed pool endpoint returned ${response.status}`);
       return;

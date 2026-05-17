@@ -47,16 +47,16 @@ describe('Members API', () => {
 
     // Initialize member user with a pubkey
     api.setUser(member);
-    await api.put<User>('/api/users/me', {
+    await api.put<User>('/api/v1/users/me', {
       identityPubkey: randomBase64(32),
     });
   });
 
-  describe('GET /api/albums/:id/members', () => {
+  describe('GET /api/v1/albums/:id/members', () => {
     it('lists album members', async () => {
       const album = await createTestAlbum(api, owner);
 
-      const response = await api.get<PagedResponse<MemberResponse>>(`/api/albums/${album.id}/members`);
+      const response = await api.get<PagedResponse<MemberResponse>>(`/api/v1/albums/${album.id}/members`);
 
       expect(response.status).toBe(200);
       expect(response.data.items).toHaveLength(1);
@@ -68,25 +68,25 @@ describe('Members API', () => {
 
       const nonMember = uniqueUser();
       api.setUser(nonMember);
-      await api.get('/api/users/me'); // Ensure user exists
-      const response = await api.get(`/api/albums/${album.id}/members`);
+      await api.get('/api/v1/users/me'); // Ensure user exists
+      const response = await api.get(`/api/v1/albums/${album.id}/members`);
 
       expect(response.status).toBe(403);
     });
   });
 
-  describe('POST /api/albums/:id/members', () => {
+  describe('POST /api/v1/albums/:id/members', () => {
     it('adds a new member', async () => {
       const album = await createTestAlbum(api, owner);
 
       // Get member's user ID
       api.setUser(member);
-      const memberUser = await api.get<User>('/api/users/me');
+      const memberUser = await api.get<User>('/api/v1/users/me');
 
       // Add member as owner
       api.setUser(owner);
       const response = await api.post<MemberResponse>(
-        `/api/albums/${album.id}/members`,
+        `/api/v1/albums/${album.id}/members`,
         generateInviteRequest(memberUser.data.id, 'viewer')
       );
 
@@ -99,18 +99,18 @@ describe('Members API', () => {
 
       // Get member's user ID
       api.setUser(member);
-      const memberUser = await api.get<User>('/api/users/me');
+      const memberUser = await api.get<User>('/api/v1/users/me');
 
       // Add member
       api.setUser(owner);
       await api.post(
-        `/api/albums/${album.id}/members`,
+        `/api/v1/albums/${album.id}/members`,
         generateInviteRequest(memberUser.data.id, 'viewer')
       );
 
       // Member should now have access
       api.setUser(member);
-      const response = await api.get(`/api/albums/${album.id}`);
+      const response = await api.get(`/api/v1/albums/${album.id}`);
 
       expect(response.status).toBe(200);
     });
@@ -120,11 +120,11 @@ describe('Members API', () => {
 
       // Get member's user ID and add them as viewer
       api.setUser(member);
-      const memberUser = await api.get<User>('/api/users/me');
+      const memberUser = await api.get<User>('/api/v1/users/me');
 
       api.setUser(owner);
       await api.post(
-        `/api/albums/${album.id}/members`,
+        `/api/v1/albums/${album.id}/members`,
         generateInviteRequest(memberUser.data.id, 'viewer')
       );
 
@@ -132,11 +132,11 @@ describe('Members API', () => {
       api.setUser(member);
       const newMember = uniqueUser();
       api.setUser(newMember);
-      const newMemberUser = await api.get<User>('/api/users/me');
+      const newMemberUser = await api.get<User>('/api/v1/users/me');
 
       api.setUser(member);
       const response = await api.post(
-        `/api/albums/${album.id}/members`,
+        `/api/v1/albums/${album.id}/members`,
         generateInviteRequest(newMemberUser.data.id, 'viewer')
       );
 
@@ -144,30 +144,30 @@ describe('Members API', () => {
     });
   });
 
-  describe('DELETE /api/albums/:id/members/:userId', () => {
+  describe('DELETE /api/v1/albums/:id/members/:userId', () => {
     it('removes a member', async () => {
       const album = await createTestAlbum(api, owner);
 
       // Add member
       api.setUser(member);
-      const memberUser = await api.get<User>('/api/users/me');
+      const memberUser = await api.get<User>('/api/v1/users/me');
 
       api.setUser(owner);
       await api.post(
-        `/api/albums/${album.id}/members`,
+        `/api/v1/albums/${album.id}/members`,
         generateInviteRequest(memberUser.data.id, 'viewer')
       );
 
       // Remove member
       const deleteResponse = await api.delete(
-        `/api/albums/${album.id}/members/${memberUser.data.id}`
+        `/api/v1/albums/${album.id}/members/${memberUser.data.id}`
       );
 
       expect(deleteResponse.status).toBe(204);
 
       // Member should no longer have access
       api.setUser(member);
-      const accessResponse = await api.get(`/api/albums/${album.id}`);
+      const accessResponse = await api.get(`/api/v1/albums/${album.id}`);
 
       expect(accessResponse.status).toBe(403);
     });
@@ -177,18 +177,18 @@ describe('Members API', () => {
 
       // Add member
       api.setUser(member);
-      const memberUser = await api.get<User>('/api/users/me');
+      const memberUser = await api.get<User>('/api/v1/users/me');
 
       api.setUser(owner);
       await api.post(
-        `/api/albums/${album.id}/members`,
+        `/api/v1/albums/${album.id}/members`,
         generateInviteRequest(memberUser.data.id, 'viewer')
       );
 
       // Viewer cannot remove other members
       api.setUser(member);
       const response = await api.delete(
-        `/api/albums/${album.id}/members/${memberUser.data.id}`
+        `/api/v1/albums/${album.id}/members/${memberUser.data.id}`
       );
 
       expect(response.status).toBe(403);

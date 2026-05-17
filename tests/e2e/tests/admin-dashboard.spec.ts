@@ -19,7 +19,7 @@ import type { Page } from '@playwright/test';
  */
 async function promoteToAdmin(email: string): Promise<void> {
   const response = await fetch(
-    `${API_URL}/api/test-seed/promote-admin/${encodeURIComponent(email)}`,
+    `${API_URL}/api/v1/test-seed/promote-admin/${encodeURIComponent(email)}`,
     { method: 'POST' },
   );
   if (!response.ok) {
@@ -29,7 +29,7 @@ async function promoteToAdmin(email: string): Promise<void> {
 
 /**
  * Mock the 4 expensive admin API endpoints so the admin page loads instantly.
- * Only `/api/admin/quota-defaults` hits the real backend (lightweight call).
+ * Only `/api/v1/admin/quota-defaults` hits the real backend (lightweight call).
  */
 async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
   const userId = '00000000-0000-0000-0000-000000000001';
@@ -37,8 +37,8 @@ async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
   const now = new Date().toISOString();
 
   // Register near-limits BEFORE stats — Playwright matches routes in order,
-  // and **/api/admin/stats would also match **/api/admin/stats/near-limits
-  await page.route('**/api/admin/stats/near-limits', async (route) => {
+  // and **/api/v1/admin/stats would also match **/api/v1/admin/stats/near-limits
+  await page.route('**/api/v1/admin/stats/near-limits', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -51,7 +51,7 @@ async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
     });
   });
 
-  await page.route('**/api/admin/stats', async (route) => {
+  await page.route('**/api/v1/admin/stats', async (route) => {
     // Skip if this is actually the near-limits endpoint (shouldn't happen
     // because it's registered above, but guard anyway)
     if (route.request().url().includes('near-limits')) {
@@ -69,7 +69,7 @@ async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
     });
   });
 
-  await page.route('**/api/admin/users', async (route) => {
+  await page.route('**/api/v1/admin/users', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -102,7 +102,7 @@ async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
     });
   });
 
-  await page.route('**/api/admin/albums', async (route) => {
+  await page.route('**/api/v1/admin/albums', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -127,7 +127,7 @@ async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
     });
   });
 
-  await page.route('**/api/admin/settings/quota', async (route) => {
+  await page.route('**/api/v1/admin/settings/quota', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -150,8 +150,8 @@ async function loginAsAdmin(user: AuthenticatedUser): Promise<void> {
   // Step 1: Mock expensive admin APIs (before any navigation)
   await mockAdminApis(user.page, user.email);
 
-  // Step 2: Intercept GET /api/users/me to inject isAdmin: true.
-  await user.page.route('**/api/users/me', async (route) => {
+  // Step 2: Intercept GET /api/v1/users/me to inject isAdmin: true.
+  await user.page.route('**/api/v1/users/me', async (route) => {
     if (route.request().method() !== 'GET') {
       return route.continue();
     }

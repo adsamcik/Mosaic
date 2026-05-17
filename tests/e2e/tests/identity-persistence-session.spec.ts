@@ -64,7 +64,7 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
     const logCollector = new LogCollector(page);
 
     // Set up Remote-User header injection for ProxyAuth
-    await page.route('**/api/**', async (route) => {
+    await page.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,
@@ -131,7 +131,7 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
       await appShell.waitForLoad();
 
       // Wait for album list to finish loading (either cards appear or empty state)
-      // This ensures the /api/albums call has completed before we check for album-card
+      // This ensures the /api/v1/albums call has completed before we check for album-card
       await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {
         console.log('[TEST] Network did not become fully idle, continuing...');
       });
@@ -190,8 +190,8 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
     // Track identity pubkey from API responses using an object to avoid TypeScript narrowing issues
     const capturedPubkeys: { first?: string; second?: string } = {};
 
-    // Set up Remote-User header injection AND capture /api/users/me response
-    await page.route('**/api/**', async (route) => {
+    // Set up Remote-User header injection AND capture /api/v1/users/me response
+    await page.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,
@@ -202,11 +202,11 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
       const responseBody = await response.text();
 
       // Log user/me responses to check identity pubkey
-      if (route.request().url().includes('/api/users/me') && route.request().method() === 'GET') {
+      if (route.request().url().includes('/api/v1/users/me') && route.request().method() === 'GET') {
         try {
           const userData = JSON.parse(responseBody);
           const pubkeyShort = userData.identityPubkey?.substring(0, 20) ?? 'not set';
-          console.log(`[TEST] /api/users/me response: identityPubkey=${pubkeyShort}...`);
+          console.log(`[TEST] /api/v1/users/me response: identityPubkey=${pubkeyShort}...`);
           
           if (!capturedPubkeys.first && userData.identityPubkey) {
             capturedPubkeys.first = userData.identityPubkey;
@@ -237,7 +237,7 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
       const appShell = new AppShell(page);
       await appShell.waitForLoad();
 
-      // Wait for identity pubkey to be captured from /api/users/me response
+      // Wait for identity pubkey to be captured from /api/v1/users/me response
       await waitForCondition(
         () => capturedPubkeys.first !== undefined,
         { timeout: UI_TIMEOUT.DIALOG, message: 'Identity pubkey not captured from first login' }
@@ -259,7 +259,7 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
       await loginPage.expectLoginSuccess();
       await appShell.waitForLoad();
 
-      // Wait for second identity pubkey to be captured from /api/users/me response
+      // Wait for second identity pubkey to be captured from /api/v1/users/me response
       await waitForCondition(
         () => capturedPubkeys.second !== undefined,
         { timeout: UI_TIMEOUT.DIALOG, message: 'Identity pubkey not captured from second login' }
@@ -298,7 +298,7 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
     let wrappedKeyReturned = false;
 
     // Track wrapped-key API calls
-    await page.route('**/api/**', async (route) => {
+    await page.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,
@@ -308,7 +308,7 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
       const method = route.request().method();
 
       // Check for wrapped-key PUT request (ProxyAuth mode)
-      if (url.includes('/api/users/me/wrapped-key') && method === 'PUT') {
+      if (url.includes('/api/v1/users/me/wrapped-key') && method === 'PUT') {
         console.log('[TEST] Wrapped key being stored on server via PUT');
         wrappedKeyStored = true;
         // Continue without fetching response - we only need to detect the request
@@ -317,7 +317,7 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
       }
       
       // Check for wrapped key in registration request (LocalAuth mode)
-      if (url.includes('/api/auth/register') && method === 'POST') {
+      if (url.includes('/api/v1/auth/register') && method === 'POST') {
         try {
           const postData = route.request().postData();
           if (postData) {
@@ -335,8 +335,8 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
         return;
       }
 
-      // For /api/users/me GET, we need to inspect the response
-      if (url.includes('/api/users/me') && method === 'GET') {
+      // For /api/v1/users/me GET, we need to inspect the response
+      if (url.includes('/api/v1/users/me') && method === 'GET') {
         const response = await route.fetch({ headers });
         const responseBody = await response.text();
 
@@ -392,7 +392,7 @@ test.describe('Identity Persistence: Session Tests @p1 @auth @crypto @slow', () 
       await loginPage.loginWithUsername(testUser, TEST_CONSTANTS.PASSWORD);
       await loginPage.expectLoginSuccess();
 
-      // Wait for wrapped key to be returned from /api/users/me response
+      // Wait for wrapped key to be returned from /api/v1/users/me response
       await waitForCondition(
         () => wrappedKeyReturned,
         { timeout: UI_TIMEOUT.DIALOG, message: 'Wrapped account key was not returned on second login' }

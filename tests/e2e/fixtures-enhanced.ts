@@ -83,7 +83,7 @@ export const test = base.extend<{
    * Page with authentication headers set (API-level auth only)
    */
   authenticatedPage: async ({ page, testUser }, use) => {
-    await page.route('**/api/**', async (route) => {
+    await page.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,
@@ -102,7 +102,7 @@ export const test = base.extend<{
     const context = await browser.newContext();
     const page = await context.newPage();
 
-    await page.route('**/api/**', async (route) => {
+    await page.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,
@@ -145,7 +145,7 @@ export const test = base.extend<{
     const alice = await aliceContext.newPage();
     const bob = await bobContext.newPage();
 
-    await alice.route('**/api/**', async (route) => {
+    await alice.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': aliceUser,
@@ -153,7 +153,7 @@ export const test = base.extend<{
       await route.continue({ headers });
     });
 
-    await bob.route('**/api/**', async (route) => {
+    await bob.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': bobUser,
@@ -365,7 +365,7 @@ export class ApiHelper {
     const dummyBytes32 = Buffer.alloc(32).toString('base64');
     const dummyBytes64 = Buffer.alloc(64).toString('base64');
 
-    const response = await fetch(`${this.baseUrl}/api/albums`, {
+    const response = await fetch(`${this.baseUrl}/api/v1/albums`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -389,7 +389,7 @@ export class ApiHelper {
   }
 
   async getAlbums(user: string): Promise<{ id: string }[]> {
-    const response = await fetch(`${this.baseUrl}/api/albums`, {
+    const response = await fetch(`${this.baseUrl}/api/v1/albums`, {
       headers: { 'Remote-User': user },
     });
 
@@ -401,7 +401,7 @@ export class ApiHelper {
   }
 
   async deleteAlbum(user: string, albumId: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/api/albums/${albumId}`, {
+    const response = await fetch(`${this.baseUrl}/api/v1/albums/${albumId}`, {
       method: 'DELETE',
       headers: { 'Remote-User': user },
     });
@@ -412,7 +412,7 @@ export class ApiHelper {
   }
 
   async getCurrentUser(user: string): Promise<{ id: string; authSub: string }> {
-    const response = await fetch(`${this.baseUrl}/api/users/me`, {
+    const response = await fetch(`${this.baseUrl}/api/v1/users/me`, {
       headers: { 'Remote-User': user },
     });
 

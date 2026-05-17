@@ -25,12 +25,12 @@ import { test, expect, LoginPage, AppShell, TEST_CONSTANTS, API_URL } from '../f
 
 /**
  * Detect which auth mode the backend is running in.
- * LocalAuth mode: /api/auth/init returns 200 with challenge
- * ProxyAuth mode: /api/auth/init returns 404
+ * LocalAuth mode: /api/v1/auth/init returns 200 with challenge
+ * ProxyAuth mode: /api/v1/auth/init returns 404
  */
 async function detectAuthMode(): Promise<'LocalAuth' | 'ProxyAuth'> {
   try {
-    const response = await fetch(`${API_URL}/api/auth/init`, {
+    const response = await fetch(`${API_URL}/api/v1/auth/init`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: 'mode-detect-test' }),
@@ -49,7 +49,7 @@ async function detectAuthMode(): Promise<'LocalAuth' | 'ProxyAuth'> {
 test.describe('Authentication Modes @p1 @auth', () => {
   test.describe('Mode Detection', () => {
     test('frontend detects auth mode from backend', async ({ page }) => {
-      // The frontend should detect the auth mode by calling /api/auth/init
+      // The frontend should detect the auth mode by calling /api/v1/auth/init
       // In LocalAuth mode: returns challenge data
       // In ProxyAuth mode: returns 404
 
@@ -70,9 +70,9 @@ test.describe('Authentication Modes @p1 @auth', () => {
       await loginPage.expectLoginFormVisible();
     });
 
-    test('/api/auth/init returns expected response based on mode', async ({ page }) => {
+    test('/api/v1/auth/init returns expected response based on mode', async ({ page }) => {
       // Test the init endpoint behavior
-      const response = await page.request.post(`${API_URL}/api/auth/init`, {
+      const response = await page.request.post(`${API_URL}/api/v1/auth/init`, {
         data: { username: 'test-user' },
         headers: {
           'Content-Type': 'application/json',
@@ -101,7 +101,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
 
     test('protected endpoints require authentication', async ({ page }) => {
       // Try to access protected endpoint without auth header
-      const response = await page.request.get(`${API_URL}/api/albums`, {
+      const response = await page.request.get(`${API_URL}/api/v1/albums`, {
         headers: {
           // No Remote-User header
         },
@@ -123,7 +123,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
 
     test('new user can register with username and password', async ({ page, testUser }) => {
       // Setup Remote-User header (still needed for API routing)
-      await page.route('**/api/**', async (route) => {
+      await page.route('**/api/v1/**', async (route) => {
         const headers = { ...route.request().headers(), 'Remote-User': testUser };
         await route.continue({ headers });
       });
@@ -145,7 +145,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
       const context = await browser.newContext();
       const page = await context.newPage();
 
-      await page.route('**/api/**', async (route) => {
+      await page.route('**/api/v1/**', async (route) => {
         const headers = { ...route.request().headers(), 'Remote-User': testUser };
         await route.continue({ headers });
       });
@@ -209,7 +209,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
       const context = await browser.newContext();
       const page = await context.newPage();
 
-      await page.route('**/api/**', async (route) => {
+      await page.route('**/api/v1/**', async (route) => {
         const headers = { ...route.request().headers(), 'Remote-User': testUser };
         await route.continue({ headers });
       });
@@ -257,7 +257,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
       const context = await browser.newContext();
       const page = await context.newPage();
 
-      await page.route('**/api/**', async (route) => {
+      await page.route('**/api/v1/**', async (route) => {
         const headers = { ...route.request().headers(), 'Remote-User': testUser };
         await route.continue({ headers });
       });
@@ -304,7 +304,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
       const context = await browser.newContext();
       const page = await context.newPage();
 
-      await page.route('**/api/**', async (route) => {
+      await page.route('**/api/v1/**', async (route) => {
         const headers = { ...route.request().headers(), 'Remote-User': testUser };
         await route.continue({ headers });
       });
@@ -352,7 +352,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
 
     test('API accepts requests with valid Remote-User header', async ({ page, testUser }) => {
       // Setup Remote-User header injection
-      await page.route('**/api/**', async (route) => {
+      await page.route('**/api/v1/**', async (route) => {
         const headers = {
           ...route.request().headers(),
           'Remote-User': testUser,
@@ -387,14 +387,14 @@ test.describe('Authentication Modes @p1 @auth', () => {
       // Track API responses
       const userResponses: string[] = [];
 
-      await page.route('**/api/**', async (route) => {
+      await page.route('**/api/v1/**', async (route) => {
         const headers = {
           ...route.request().headers(),
           'Remote-User': testUser,
         };
 
-        // Intercept /api/users/me responses
-        if (route.request().url().includes('/api/users/me')) {
+        // Intercept /api/v1/users/me responses
+        if (route.request().url().includes('/api/v1/users/me')) {
           const response = await route.fetch({ headers });
           const body = await response.text();
           userResponses.push(body);
@@ -414,7 +414,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
       await loginPage.loginButton.click();
       await loginPage.expectLoginSuccess();
 
-      // Reload page to trigger another /api/users/me call
+      // Reload page to trigger another /api/v1/users/me call
       await page.reload();
 
       // Wait for app to stabilize
@@ -456,12 +456,12 @@ test.describe('Authentication Modes @p1 @auth', () => {
       const page1 = await context1.newPage();
       const page2 = await context2.newPage();
 
-      await page1.route('**/api/**', async (route) => {
+      await page1.route('**/api/v1/**', async (route) => {
         const headers = { ...route.request().headers(), 'Remote-User': user1 };
         await route.continue({ headers });
       });
 
-      await page2.route('**/api/**', async (route) => {
+      await page2.route('**/api/v1/**', async (route) => {
         const headers = { ...route.request().headers(), 'Remote-User': user2 };
         await route.continue({ headers });
       });
@@ -512,7 +512,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
       const page = await context.newPage();
 
       // Simulate Authelia's header forwarding
-      await page.route('**/api/**', async (route) => {
+      await page.route('**/api/v1/**', async (route) => {
         const headers = {
           ...route.request().headers(),
           // Authelia typically forwards these headers
@@ -549,7 +549,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
 
     test('validates Remote-User header format', async ({ page }) => {
       // Test that invalid header format is rejected
-      const response = await page.request.get(`${API_URL}/api/albums`, {
+      const response = await page.request.get(`${API_URL}/api/v1/albums`, {
         headers: {
           'Remote-User': 'invalid user with spaces!@#$%', // Invalid characters
         },
@@ -560,7 +560,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
     });
 
     test('accepts valid email-style Remote-User', async ({ page }) => {
-      const response = await page.request.get(`${API_URL}/api/users/me`, {
+      const response = await page.request.get(`${API_URL}/api/v1/users/me`, {
         headers: {
           'Remote-User': 'valid-user@domain.local',
         },
@@ -571,7 +571,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
     });
 
     test('accepts valid username-style Remote-User', async ({ page }) => {
-      const response = await page.request.get(`${API_URL}/api/users/me`, {
+      const response = await page.request.get(`${API_URL}/api/v1/users/me`, {
         headers: {
           'Remote-User': 'valid_user_123',
         },
@@ -588,7 +588,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
 
       if (mode === 'ProxyAuth') {
         // ProxyAuth mode - test that invalid headers are rejected
-        const response = await page.request.get(`${API_URL}/api/albums`, {
+        const response = await page.request.get(`${API_URL}/api/v1/albums`, {
           headers: {
             'Remote-User': 'invalid user with spaces!@#$%',
           },
@@ -598,7 +598,7 @@ test.describe('Authentication Modes @p1 @auth', () => {
       } else {
         // LocalAuth mode - header validation happens in middleware
         // Test that the endpoint still requires authentication
-        const response = await page.request.get(`${API_URL}/api/albums`);
+        const response = await page.request.get(`${API_URL}/api/v1/albums`);
         expect(response.status()).toBe(401);
       }
     });

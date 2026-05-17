@@ -18,7 +18,7 @@ import {
 const TEST_EPOCH_ID = 1;
 
 test.describe('Album Content API @p1 @album', () => {
-  test.describe('GET /api/albums/:albumId/content', () => {
+  test.describe('GET /api/v1/albums/:albumId/content', () => {
     test('returns 404 for album with no content', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('content-reader');
       await loginUser(user, TEST_PASSWORD);
@@ -28,7 +28,7 @@ test.describe('Album Content API @p1 @album', () => {
 
       // GET content - should return 404 since no content exists
       const response = await user.page.request.get(
-        `${API_URL}/api/albums/${album.id}/content`,
+        `${API_URL}/api/v1/albums/${album.id}/content`,
         { headers: { 'Remote-User': user.email } }
       );
 
@@ -42,7 +42,7 @@ test.describe('Album Content API @p1 @album', () => {
       const fakeAlbumId = '00000000-0000-0000-0000-000000000000';
       
       const response = await user.page.request.get(
-        `${API_URL}/api/albums/${fakeAlbumId}/content`,
+        `${API_URL}/api/v1/albums/${fakeAlbumId}/content`,
         { headers: { 'Remote-User': user.email } }
       );
 
@@ -60,7 +60,7 @@ test.describe('Album Content API @p1 @album', () => {
       await loginUser(intruder, TEST_PASSWORD);
 
       const response = await intruder.page.request.get(
-        `${API_URL}/api/albums/${album.id}/content`,
+        `${API_URL}/api/v1/albums/${album.id}/content`,
         { headers: { 'Remote-User': intruder.email } }
       );
 
@@ -68,7 +68,7 @@ test.describe('Album Content API @p1 @album', () => {
     });
   });
 
-  test.describe('PUT /api/albums/:albumId/content', () => {
+  test.describe('PUT /api/v1/albums/:albumId/content', () => {
     test('creates content for album with no existing content', async ({ testContext }) => {
       const user = await testContext.createAuthenticatedUser('content-creator');
       await loginUser(user, TEST_PASSWORD);
@@ -84,7 +84,7 @@ test.describe('Album Content API @p1 @album', () => {
 
       // PUT content
       const response = await user.page.request.put(
-        `${API_URL}/api/albums/${album.id}/content`,
+        `${API_URL}/api/v1/albums/${album.id}/content`,
         {
           headers: {
             'Remote-User': user.email,
@@ -119,7 +119,7 @@ test.describe('Album Content API @p1 @album', () => {
       crypto.getRandomValues(nonce1);
 
       await user.page.request.put(
-        `${API_URL}/api/albums/${album.id}/content`,
+        `${API_URL}/api/v1/albums/${album.id}/content`,
         {
           headers: {
             'Remote-User': user.email,
@@ -141,7 +141,7 @@ test.describe('Album Content API @p1 @album', () => {
       crypto.getRandomValues(nonce2);
 
       const updateResponse = await user.page.request.put(
-        `${API_URL}/api/albums/${album.id}/content`,
+        `${API_URL}/api/v1/albums/${album.id}/content`,
         {
           headers: {
             'Remote-User': user.email,
@@ -174,7 +174,7 @@ test.describe('Album Content API @p1 @album', () => {
       crypto.getRandomValues(nonce1);
 
       await user.page.request.put(
-        `${API_URL}/api/albums/${album.id}/content`,
+        `${API_URL}/api/v1/albums/${album.id}/content`,
         {
           headers: {
             'Remote-User': user.email,
@@ -196,7 +196,7 @@ test.describe('Album Content API @p1 @album', () => {
       crypto.getRandomValues(nonce2);
 
       const conflictResponse = await user.page.request.put(
-        `${API_URL}/api/albums/${album.id}/content`,
+        `${API_URL}/api/v1/albums/${album.id}/content`,
         {
           headers: {
             'Remote-User': user.email,
@@ -223,7 +223,7 @@ test.describe('Album Content API @p1 @album', () => {
 
       // Verify the album is accessible by the owner before testing non-owner access
       const verifyResponse = await owner.page.request.get(
-        `${API_URL}/api/albums/${album.id}`,
+        `${API_URL}/api/v1/albums/${album.id}`,
         { headers: { 'Remote-User': owner.email } }
       );
       expect(verifyResponse.status(), 'Album should exist and be accessible by owner').toBe(200);
@@ -238,7 +238,7 @@ test.describe('Album Content API @p1 @album', () => {
       crypto.getRandomValues(nonce);
 
       const response = await other.page.request.put(
-        `${API_URL}/api/albums/${album.id}/content`,
+        `${API_URL}/api/v1/albums/${album.id}/content`,
         {
           headers: {
             'Remote-User': other.email,
@@ -276,7 +276,7 @@ test.describe('Album Content API @p1 @album', () => {
       crypto.getRandomValues(shortNonce);
 
       const response = await user.page.request.put(
-        `${API_URL}/api/albums/${album.id}/content`,
+        `${API_URL}/api/v1/albums/${album.id}/content`,
         {
           headers: {
             'Remote-User': user.email,
@@ -310,7 +310,7 @@ test.describe('Album Content API @p1 @album', () => {
 
       // PUT content
       await user.page.request.put(
-        `${API_URL}/api/albums/${album.id}/content`,
+        `${API_URL}/api/v1/albums/${album.id}/content`,
         {
           headers: {
             'Remote-User': user.email,
@@ -327,7 +327,7 @@ test.describe('Album Content API @p1 @album', () => {
 
       // GET content
       const getResponse = await user.page.request.get(
-        `${API_URL}/api/albums/${album.id}/content`,
+        `${API_URL}/api/v1/albums/${album.id}/content`,
         { headers: { 'Remote-User': user.email } }
       );
 

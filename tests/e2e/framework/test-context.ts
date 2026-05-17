@@ -97,7 +97,7 @@ export class TestContext {
     const page = await context.newPage();
 
     // Inject auth header for all API calls
-    await page.route('**/api/**', async (route) => {
+    await page.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': email,
@@ -193,7 +193,7 @@ export class TestContext {
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     try {
-      const response = await fetch(`${this.apiBaseUrl}/api/albums/${albumId}`, {
+      const response = await fetch(`${this.apiBaseUrl}/api/v1/albums/${albumId}`, {
         method: 'DELETE',
         headers: {
           'Remote-User': userEmail,

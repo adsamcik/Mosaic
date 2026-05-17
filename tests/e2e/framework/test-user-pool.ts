@@ -95,7 +95,7 @@ export async function createCustomUser(
 ): Promise<PoolUser> {
   const email = `custom-${name}-${Date.now()}@e2e.local`;
 
-  const response = await fetch(`${API_URL}/api/test-seed/create-user`, {
+  const response = await fetch(`${API_URL}/api/v1/test-seed/create-user`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, authMode }),

@@ -198,7 +198,7 @@ test.describe('Session Management @p1 @auth', () => {
       const page2 = await user.context.newPage();
 
       // Set up auth for second page (for ProxyAuth mode)
-      await page2.route('**/api/**', async (route) => {
+      await page2.route('**/api/v1/**', async (route) => {
         const headers = {
           ...route.request().headers(),
           'Remote-User': user.email,

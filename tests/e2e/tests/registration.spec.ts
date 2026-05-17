@@ -301,7 +301,7 @@ test.describe('Registration @p1 @auth @crypto', () => {
       const sharedUsername = `shared-user-${Date.now()}`;
 
       // Set up auth route for both pages
-      await page1.route('**/api/**', async (route) => {
+      await page1.route('**/api/v1/**', async (route) => {
         const headers = {
           ...route.request().headers(),
           'Remote-User': sharedUsername,
@@ -309,7 +309,7 @@ test.describe('Registration @p1 @auth @crypto', () => {
         await route.continue({ headers });
       });
 
-      await page2.route('**/api/**', async (route) => {
+      await page2.route('**/api/v1/**', async (route) => {
         const headers = {
           ...route.request().headers(),
           'Remote-User': sharedUsername,

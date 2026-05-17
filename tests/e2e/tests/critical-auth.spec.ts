@@ -122,7 +122,7 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
     const context1 = await browser.newContext();
     const page1 = await context1.newPage();
 
-    await page1.route('**/api/**', async (route) => {
+    await page1.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,
@@ -147,7 +147,7 @@ test.describe('Critical Flow: Complete Authentication @p0 @critical @auth @crypt
     const context2 = await browser.newContext();
     const page2 = await context2.newPage();
 
-    await page2.route('**/api/**', async (route) => {
+    await page2.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': testUser,
