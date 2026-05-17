@@ -787,13 +787,15 @@
       "expiry7Days": "7 days",
       "expiry30Days": "30 days",
       "expiry90Days": "90 days",
+      "expiry1Year": "1 year",
       "expiryNever": "Never",
       "neverExpiryWarning": "⚠️ Link will never expire.",
       "limitUses": "Limit number of uses",
       "usesMax": "uses maximum",
       "usesError": "Max uses must be at least 1",
       "generating": "Generating...",
-      "generateLink": "Generate Link"
+      "generateLink": "Generate Link",
+      "pressCtrlCToCopy": "Press Ctrl+C to copy"
     },
     "edit": {
       "description": "You can extend the expiration or limit uses.",

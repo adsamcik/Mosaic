@@ -6,7 +6,8 @@
  * Designed to be rendered within the ShareLinksPanel.
  */
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type {
   CreateShareLinkOptions,
   CreateShareLinkResult,
@@ -39,7 +40,10 @@ export interface ExpiryPreset {
   hours: number | null;
 }
 
-/** Expiry presets for quick selection */
+/**
+ * Expiry presets for quick selection — labels are EN fallback; the
+ * component re-labels them through i18n when rendering.
+ */
 export const EXPIRY_PRESETS: ExpiryPreset[] = [
   { label: '1 hour', hours: 1 },
   { label: '24 hours', hours: 24 },
@@ -49,23 +53,7 @@ export const EXPIRY_PRESETS: ExpiryPreset[] = [
   { label: 'Never', hours: null },
 ];
 
-const TIER_OPTIONS: TierOption[] = [
-  {
-    value: 1,
-    label: 'Thumbnails Only',
-    description: 'Low resolution thumbnails (300px)',
-  },
-  {
-    value: 2,
-    label: 'Preview',
-    description: 'Medium resolution previews (1200px)',
-  },
-  {
-    value: 3,
-    label: 'Full Access',
-    description: 'Original full resolution photos',
-  },
-];
+const TIER_VALUES: readonly AccessTier[] = [1, 2, 3];
 
 /**
  * CreateShareLinkView Component
@@ -77,6 +65,7 @@ export function CreateShareLinkView({
   isCreating,
   error,
 }: CreateShareLinkViewProps) {
+  const { t } = useTranslation();
   const [accessTier, setAccessTier] = useState<AccessTier>(2);
   const [expiryEnabled, setExpiryEnabled] = useState(true);
   const [expiryHours, setExpiryHours] = useState(24 * 7); // Default to 7 days
@@ -86,6 +75,42 @@ export function CreateShareLinkView({
   const [localError, setLocalError] = useState<string | null>(null);
   const [result, setResult] = useState<CreateShareLinkResult | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Build i18n-keyed tier options inside the component so they react
+  // to language changes without a full reload.
+  const tierOptions = useMemo<TierOption[]>(
+    () =>
+      TIER_VALUES.map((value) => ({
+        value,
+        label:
+          value === 1
+            ? t('shareLink.create.tierThumbnails')
+            : value === 2
+              ? t('shareLink.create.tierPreview')
+              : t('shareLink.create.tierFull'),
+        description:
+          value === 1
+            ? t('shareLink.create.tierThumbnailsDesc')
+            : value === 2
+              ? t('shareLink.create.tierPreviewDesc')
+              : t('shareLink.create.tierFullDesc'),
+      })),
+    [t],
+  );
+
+  // i18n preset labels — order MUST match EXPIRY_PRESETS so
+  // selectedPresetIndex remains correct.
+  const presetLabels = useMemo(
+    () => [
+      t('shareLink.create.expiry1Hour'),
+      t('shareLink.create.expiry24Hours'),
+      t('shareLink.create.expiry7Days'),
+      t('shareLink.create.expiry30Days'),
+      t('shareLink.create.expiry1Year'),
+      t('shareLink.create.expiryNever'),
+    ],
+    [t],
+  );
 
   const urlInputRef = useRef<HTMLInputElement>(null);
 
@@ -149,7 +174,7 @@ export function CreateShareLinkView({
     } catch (_err) {
       // Fallback: select the input text
       urlInputRef.current?.select();
-      setLocalError('Press Ctrl+C to copy');
+      setLocalError(t('shareLink.create.pressCtrlCToCopy'));
     }
   };
 
@@ -164,16 +189,16 @@ export function CreateShareLinkView({
       >
         <div className="share-link-success-header">
           <div className="success-icon-circle">✓</div>
-          <h3>Link Created</h3>
+          <h3>{t('shareLink.create.successTitle')}</h3>
         </div>
 
         <p className="panel-description">
-          Copy the URL below to share with others.
+          {t('shareLink.create.successDescription')}
         </p>
 
         <div className="form-group">
           <label htmlFor="share-url" className="form-label">
-            Share URL
+            {t('shareLink.create.urlLabel')}
           </label>
           <div className="input-with-button">
             <input
@@ -192,21 +217,21 @@ export function CreateShareLinkView({
               onClick={handleCopyLink}
               data-testid="copy-link-button"
             >
-              {copied ? 'Copied' : 'Copy'}
+              {copied ? t('common.copied') : t('common.copy')}
             </button>
           </div>
         </div>
 
         <div className="share-link-info-card" data-testid="share-link-info">
           <div className="info-item">
-            <span className="info-label">Access</span>
+            <span className="info-label">{t('shareLink.create.accessLabel')}</span>
             <span className="info-value">
               {result.shareLink.accessTierDisplay}
             </span>
           </div>
           {result.shareLink.expiryDisplay && (
             <div className="info-item">
-              <span className="info-label">Expires</span>
+              <span className="info-label">{t('shareLink.create.expiresLabel')}</span>
               <span className="info-value">
                 {result.shareLink.expiryDisplay}
               </span>
@@ -214,7 +239,7 @@ export function CreateShareLinkView({
           )}
           {result.shareLink.maxUses && (
             <div className="info-item">
-              <span className="info-label">Max uses</span>
+              <span className="info-label">{t('shareLink.create.maxUsesLabel')}</span>
               <span className="info-value">{result.shareLink.maxUses}</span>
             </div>
           )}
@@ -227,7 +252,7 @@ export function CreateShareLinkView({
             onClick={onDone}
             data-testid="done-button"
           >
-            Done
+            {t('common.done')}
           </button>
         </div>
       </div>
@@ -238,13 +263,13 @@ export function CreateShareLinkView({
     <div className="panel-content-view" data-testid="create-share-link-view">
       <form onSubmit={handleSubmit} className="panel-form">
         <p className="panel-description">
-          Anyone with the link can view photos at the selected access level.
+          {t('shareLink.create.description')}
         </p>
 
         <div className="form-group">
-          <label className="form-label">Access Level</label>
+          <label className="form-label">{t('shareLink.create.accessLevelLabel')}</label>
           <div className="tier-selector vertical" data-testid="tier-selector">
-            {TIER_OPTIONS.map((option) => (
+            {tierOptions.map((option) => (
               <label
                 key={option.value}
                 className={`tier-option ${accessTier === option.value ? 'selected' : ''}`}
@@ -269,7 +294,7 @@ export function CreateShareLinkView({
         </div>
 
         <div className="form-group">
-          <label className="form-label">Link Expiration</label>
+          <label className="form-label">{t('shareLink.create.expirationLabel')}</label>
           <div className="expiry-presets grid-3" data-testid="expiry-presets">
             {EXPIRY_PRESETS.map((preset, index) => (
               <button
@@ -280,13 +305,13 @@ export function CreateShareLinkView({
                 disabled={isCreating}
                 data-testid={`expiry-preset-${preset.label.toLowerCase().replace(/\s/g, '-')}`}
               >
-                {preset.label}
+                {presetLabels[index] ?? preset.label}
               </button>
             ))}
           </div>
           {!expiryEnabled && (
             <div className="warning-banner" data-testid="never-expires-warning">
-              ⚠️ Link will never expire.
+              {t('shareLink.create.neverExpiryWarning')}
             </div>
           )}
         </div>
@@ -300,7 +325,7 @@ export function CreateShareLinkView({
               disabled={isCreating}
               data-testid="max-uses-checkbox"
             />
-            <span>Limit number of uses</span>
+            <span>{t('shareLink.create.limitUses')}</span>
           </label>
           {maxUsesEnabled && (
             <div className="max-uses-input" data-testid="max-uses-input-group">
@@ -314,7 +339,7 @@ export function CreateShareLinkView({
                 className="form-input number-input"
                 data-testid="max-uses-input"
               />
-              <span>uses maximum</span>
+              <span>{t('shareLink.create.usesMax')}</span>
             </div>
           )}
         </div>
@@ -338,7 +363,7 @@ export function CreateShareLinkView({
             disabled={isCreating}
             data-testid="cancel-button"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="submit"
@@ -346,7 +371,9 @@ export function CreateShareLinkView({
             disabled={isCreating}
             data-testid="generate-button"
           >
-            {isCreating ? 'Generating...' : 'Generate Link'}
+            {isCreating
+              ? t('shareLink.create.generating')
+              : t('shareLink.create.generateLink')}
           </button>
         </div>
       </form>

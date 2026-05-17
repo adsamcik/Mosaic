@@ -798,13 +798,15 @@
       "expiry7Days": "7 dní",
       "expiry30Days": "30 dní",
       "expiry90Days": "90 dní",
+      "expiry1Year": "1 rok",
       "expiryNever": "Nikdy",
       "neverExpiryWarning": "⚠️ Odkaz nikdy nevyprší.",
       "limitUses": "Omezit počet použití",
       "usesMax": "použití maximálně",
       "usesError": "Max. použití musí být alespoň 1",
       "generating": "Generování...",
-      "generateLink": "Vygenerovat odkaz"
+      "generateLink": "Vygenerovat odkaz",
+      "pressCtrlCToCopy": "Pro kopírování stiskněte Ctrl+C"
     },
     "edit": {
       "description": "Můžete prodloužit vypršení nebo omezit použití.",
