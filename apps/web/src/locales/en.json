@@ -818,6 +818,8 @@
     "albumHeader": "🖼️ {{name}}",
     "mosaicHeader": "🖼️ Mosaic",
     "sharedAlbum": "Shared Album",
+    "unableToAccess": "Unable to Access Album",
+    "accessLevelLabel": "Access level",
     "tierThumbnails": "Thumbnails Only",
     "tierPreview": "Preview",
     "tierFull": "Full Access",

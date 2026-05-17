@@ -10,6 +10,7 @@ import type { LinkDecryptionKey } from '../../workers/types';
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import '../../../src/styles/globals.css';
 import { parseLinkFragment, useLinkKeys } from '../../hooks/useLinkKeys';
 import type { AccessTier as AccessTierType } from '../../lib/api-types';
@@ -88,6 +89,7 @@ function getAccessTierName(tier: 1 | 2 | 3): string {
 export function SharedAlbumViewer({
   linkId: propLinkId,
 }: SharedAlbumViewerProps) {
+  const { t } = useTranslation();
   // Parse URL params (use prop if provided, otherwise parse from URL)
   const urlParams = useShareLinkParams();
   const linkId = propLinkId || urlParams.linkId;
@@ -200,13 +202,10 @@ export function SharedAlbumViewer({
         <div className="shared-viewer-container">
           <div className="shared-viewer-error">
             <span className="error-icon">🔗</span>
-            <h2>Invalid Share Link</h2>
-            <p>
-              This link appears to be incomplete. The secret key is missing from
-              the URL.
-            </p>
+            <h2>{t('shared.invalidLink')}</h2>
+            <p>{t('shared.missingSecret')}</p>
             <p className="error-hint">
-              Share links should end with <code>#k=...</code>
+              {t('shared.linkFormatHint')}
             </p>
           </div>
         </div>
@@ -221,7 +220,7 @@ export function SharedAlbumViewer({
         <div className="shared-viewer-container">
           <div className="shared-viewer-loading">
             <div className="loading-spinner loading-spinner-large" />
-            <p>Validating share link...</p>
+            <p>{t('shared.validating')}</p>
           </div>
         </div>
       </div>
@@ -235,9 +234,9 @@ export function SharedAlbumViewer({
         <div className="shared-viewer-container">
           <div className="shared-viewer-error">
             <span className="error-icon">⚠️</span>
-            <h2>Unable to Access Album</h2>
+            <h2>{t('shared.unableToAccess')}</h2>
             <p>
-              {error?.message || 'This share link is invalid or has expired.'}
+              {error?.message || t('shared.linkInvalidOrExpired')}
             </p>
           </div>
         </div>
@@ -251,13 +250,13 @@ export function SharedAlbumViewer({
       <header className="shared-viewer-header">
         <div className="header-left">
           <h1 className="app-title">
-            {albumName ? `🖼️ ${albumName}` : '🖼️ Mosaic'}
+            {albumName ? `🖼️ ${albumName}` : t('shared.mosaicHeader')}
           </h1>
-          <span className="shared-badge">Shared Album</span>
+          <span className="shared-badge">{t('shared.sharedAlbum')}</span>
         </div>
         <div className="header-right">
           {effectiveTier && (
-            <span className="access-tier-badge" title="Access level">
+            <span className="access-tier-badge" title={t('shared.accessLevelLabel')}>
               {getAccessTierName(effectiveTier)}
             </span>
           )}

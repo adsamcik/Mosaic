@@ -829,6 +829,8 @@
     "albumHeader": "🖼️ {{name}}",
     "mosaicHeader": "🖼️ Mosaic",
     "sharedAlbum": "Sdílené album",
+    "unableToAccess": "Nelze získat přístup k albu",
+    "accessLevelLabel": "Úroveň přístupu",
     "tierThumbnails": "Pouze náhledy",
     "tierPreview": "Náhled",
     "tierFull": "Plný přístup",
