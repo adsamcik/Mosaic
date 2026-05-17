@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.work.Data
 import androidx.work.ListenableWorker
 import androidx.work.NetworkType
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
@@ -257,6 +258,50 @@ class ShardUploadWorkerTest {
     assertTrue(plan.uploadRequest.tags.contains("upload-job-job-456"))
     assertTrue(plan.cancellationTags.contains("upload-job-job-456"))
     assertTrue(plan.cancellationTags.contains(ShardUploadScheduler.SHARD_UPLOAD_TAG))
+  }
+
+  @Test
+  fun schedulerMarksFirstAttemptUploadExpeditedWithRunAsNonExpeditedFallback() {
+    val request = ShardUploadScheduler.buildRequest(
+      jobId = "job-expedite",
+      shardId = "shard-expedite",
+      tusEndpoint = "https://uploads.example.test/files",
+    )
+
+    assertTrue("first-attempt shard upload must be expedited to bypass Doze", request.workSpec.expedited)
+    assertEquals(
+      "fallback policy must keep the worker runnable when expedited quota is exhausted",
+      OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST,
+      request.workSpec.outOfQuotaPolicy,
+    )
+  }
+
+  @Test
+  fun schedulerDoesNotExpediteDelayedRetryBecauseWorkRequestRejectsTheCombination() {
+    val request = ShardUploadScheduler.buildRequest(
+      jobId = "job-retry",
+      shardId = "shard-retry",
+      tusEndpoint = "https://uploads.example.test/files",
+      initialDelayMs = 5_000L,
+    )
+
+    assertFalse(
+      "delayed retries cannot be expedited (WorkRequest.Builder throws 'Expedited jobs cannot be delayed')",
+      request.workSpec.expedited,
+    )
+  }
+
+  @Test
+  fun getForegroundInfoReturnsSharedShardUploadChannelAndUploadId() {
+    val envelope = envelopeFile("foreground-body")
+    val sha256 = sha256Hex(envelope.readBytes())
+    val worker = workerFor(envelope, sha256, shardId = "shard-fg", tusEndpoint = "https://uploads.example.test/files")
+
+    val info = kotlinx.coroutines.runBlocking { worker.getForegroundInfo() }
+
+    assertNotNull("getForegroundInfo() must return non-null so setExpedited can promote", info)
+    assertEquals(ShardWorkerForegroundInfo.UPLOAD_NOTIFICATION_ID, info.notificationId)
+    assertEquals(ShardWorkerForegroundInfo.CHANNEL_ID, info.notification.channelId)
   }
 
   private fun workerFor(

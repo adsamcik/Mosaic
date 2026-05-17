@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.work.Data
 import androidx.work.ListenableWorker
 import androidx.work.NetworkType
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
@@ -16,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,6 +26,7 @@ import org.robolectric.annotation.Config
 import org.mosaic.android.main.upload.ContentHashDedup
 import org.mosaic.android.main.upload.DuplicateContent
 import org.mosaic.android.main.upload.NoOpContentHashDedup
+import org.mosaic.android.main.upload.ShardWorkerForegroundInfo
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -355,6 +358,38 @@ class ShardEncryptionWorkerTest {
     assertEquals(2, request.workSpec.input.getInt(ShardEncryptionWorker.KEY_TIER, 0))
     assertEquals(9, request.workSpec.input.getInt(ShardEncryptionWorker.KEY_SHARD_INDEX, -1))
     assertEquals("1".repeat(64), request.workSpec.input.getString(ShardEncryptionWorker.KEY_ALBUM_CONTENT_HASH_HEX))
+  }
+
+  @Test
+  fun schedulerMarksEncryptionWorkExpeditedWithRunAsNonExpeditedFallback() {
+    val request = ShardEncryptionScheduler.buildRequest(
+      jobId = "job-expedite",
+      stagingUri = "file:///staged-expedite.bin",
+      albumId = "album-expedite",
+      epochId = 1,
+      tier = 1,
+      shardIndex = 0,
+      albumContentHashHex = "0".repeat(64),
+    )
+
+    assertTrue("shard-encrypt work must be expedited to bypass Doze", request.workSpec.expedited)
+    assertEquals(
+      "fallback policy must keep the worker runnable when expedited quota is exhausted",
+      OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST,
+      request.workSpec.outOfQuotaPolicy,
+    )
+  }
+
+  @Test
+  fun getForegroundInfoReturnsSharedShardUploadChannelAndEncryptionId() = runBlocking {
+    val staging = stageBytes("foreground".toByteArray())
+    val worker = workerFor(staging)
+
+    val info = worker.getForegroundInfo()
+
+    assertNotNull("getForegroundInfo() must return non-null so setExpedited can promote", info)
+    assertEquals(ShardWorkerForegroundInfo.ENCRYPTION_NOTIFICATION_ID, info.notificationId)
+    assertEquals(ShardWorkerForegroundInfo.CHANNEL_ID, info.notification.channelId)
   }
 
   private fun workerFor(
