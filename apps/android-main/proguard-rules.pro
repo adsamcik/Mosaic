@@ -45,3 +45,16 @@
 
 # AndroidX Activity / AppCompat keep rules are provided by their own consumer
 # rules; nothing extra is required here.
+
+# JNA pulls in java.awt.* references via com.sun.jna.platform.* (used for
+# desktop platforms). Android does not ship java.awt, so R8 flags these as
+# "missing class" errors during release minification. The references are
+# never reached at runtime on Android because the platform-specific code
+# paths are class-loaded only on Linux/macOS/Windows JREs. Suppress the
+# warnings so :assembleRelease succeeds; do NOT add -keep rules here —
+# we want R8 to drop the unreachable code, not retain it.
+-dontwarn java.awt.**
+-dontwarn javax.swing.**
+-dontwarn com.sun.jna.platform.win32.**
+-dontwarn com.sun.jna.platform.mac.**
+-dontwarn com.sun.jna.platform.unix.**
