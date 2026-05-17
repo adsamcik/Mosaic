@@ -37,6 +37,7 @@ import {
   type ThumbnailQuality,
   type UserSettings,
 } from '../../lib/settings-service';
+import { DeleteAccountConfirmationDialog } from './DeleteAccountConfirmationDialog';
 
 // =============================================================================
 // Types
@@ -107,6 +108,9 @@ export function SettingsPage() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
+
+  // Delete account state (v1.0.1 s15 — GDPR right-to-erasure).
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
 
   // Load user data
   useEffect(() => {
@@ -586,6 +590,25 @@ export function SettingsPage() {
                 <span>{clearError}</span>
               </div>
             )}
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">
+                  {t('settings.deleteAccount.heading')}
+                </span>
+                <span className="setting-description">
+                  {t('settings.deleteAccount.description')}
+                </span>
+              </div>
+              <button
+                className="button-danger"
+                onClick={() => setShowDeleteAccountConfirm(true)}
+                type="button"
+                data-testid="delete-account-button"
+                disabled={!user}
+              >
+                {t('settings.deleteAccount.button')}
+              </button>
+            </div>
           </div>
         </section>
 
@@ -671,6 +694,13 @@ export function SettingsPage() {
             </div>
           </div>
         </div>
+      )}
+      {/* Delete Account Confirmation Dialog (v1.0.1 s15 — GDPR Art.17) */}
+      {showDeleteAccountConfirm && user && (
+        <DeleteAccountConfirmationDialog
+          username={user.authSub}
+          onClose={() => setShowDeleteAccountConfirm(false)}
+        />
       )}
     </div>
   );

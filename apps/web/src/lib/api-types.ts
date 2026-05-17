@@ -89,6 +89,28 @@ export interface UpdateUserRequest {
   saltNonce?: string;
 }
 
+/**
+ * Body for {@link MosaicApi.deleteCurrentUser} — GDPR Article 17 self-service
+ * erasure of the calling user (v1.0.1 s15).
+ *
+ * - `confirmationText` MUST equal the caller's username; the server rejects
+ *   any other value with 400. Acts as a type-your-name guard against
+ *   accidental clicks (a stolen session cookie alone is not enough).
+ * - `challengeId` + `confirmationSignature` + `timestamp` form a fresh
+ *   challenge-response attestation in LocalAuth mode (proves possession of
+ *   the password-derived auth key). All three are required together; in
+ *   ProxyAuth mode they may be omitted because the upstream proxy already
+ *   re-authenticates each request.
+ */
+export interface DeleteCurrentUserRequest {
+  confirmationText: string;
+  challengeId?: string;
+  /** Base64-encoded Ed25519 signature over the standard auth transcript. */
+  confirmationSignature?: string;
+  /** Client-issued millisecond timestamp bound into the transcript. */
+  timestamp?: number;
+}
+
 // =============================================================================
 // Album Types
 // =============================================================================
@@ -560,6 +582,17 @@ export interface MosaicApi {
   // Users
   getCurrentUser(): Promise<User>;
   updateCurrentUser(request: UpdateUserRequest): Promise<User>;
+  /**
+   * Permanently delete the calling user's account and all associated data
+   * (GDPR Article 17 right-to-erasure self-service). Returns 204 on success
+   * and clears the session cookie server-side; the caller is expected to
+   * wipe local IDB / OPFS / session state immediately after.
+   *
+   * In LocalAuth mode the request MUST include a fresh challenge/signature
+   * triple — proving the caller still holds the password-derived key, not
+   * just a session cookie. In ProxyAuth mode the triple is optional.
+   */
+  deleteCurrentUser(request: DeleteCurrentUserRequest): Promise<void>;
   /**
    * Upload the wrapped account key for the current user (PUT /users/me/wrapped-key).
    * Used during first login to persist the L2 account key wrapped under the

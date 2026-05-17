@@ -673,6 +673,27 @@
       "warning": "You will be logged out and need to re-download your data.",
       "clearing": "Clearing...",
       "confirm": "Clear Data"
+    },
+    "deleteAccount": {
+      "heading": "Delete Account",
+      "description": "Permanently delete your Mosaic account and every photo, album, share link and key associated with it. This action cannot be undone.",
+      "button": "Delete account…",
+      "dialogTitle": "Delete account permanently?",
+      "warning": "This is irreversible. Once confirmed, the server will erase your data and no recovery is possible.",
+      "listAlbumsDeleted": "Every album you own (and every photo in those albums) will be deleted from the server.",
+      "listSharesInvalidated": "All share links you created will stop working immediately.",
+      "listMembershipsRemoved": "You will be removed from every album you joined as a member.",
+      "listAccountRemoved": "Your account, identity keys and local data on this device will be wiped.",
+      "listCannotUndo": "Mosaic operators cannot restore your data — there is no backdoor.",
+      "confirmationLabel": "Type your username ({{username}}) to confirm:",
+      "confirmationPlaceholder": "Type username here",
+      "confirmButton": "Delete forever",
+      "cancelButton": "Cancel",
+      "deleting": "Deleting…",
+      "successToast": "Account deleted. Goodbye.",
+      "errorGeneric": "Failed to delete account. Please try again or contact your administrator.",
+      "errorConfirmationMismatch": "Confirmation text must match your username exactly.",
+      "errorFreshAuth": "Re-authentication failed. Please log out and log back in, then try again."
     }
   },
   "admin": {

@@ -285,6 +285,12 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       // path; this PUT endpoint is implemented in the real API only.
     },
 
+    async deleteCurrentUser(_request: unknown): Promise<void> {
+      // GDPR Art.17 — mock backend has no persistence to erase. We just
+      // delay so callers can exercise their loading state.
+      await delay();
+    },
+
     async getUser(userId: string): Promise<UserPublic> {
       await delay();
       const user = store.users.get(userId);

@@ -20,6 +20,7 @@ import type {
   User,
   UserPublic,
   UpdateUserRequest,
+  DeleteCurrentUserRequest,
   Album,
   CreateAlbumRequest,
   RenameAlbumRequest,
@@ -562,6 +563,18 @@ export function createApiClient(): MosaicApi {
         method: 'PUT',
         body: request,
         schema: UserSchema,
+      });
+    },
+
+    async deleteCurrentUser(request: DeleteCurrentUserRequest): Promise<void> {
+      // DELETE /users/me returns 204 No Content on success; apiRequest's
+      // 204 short-circuit returns undefined as T. We deliberately omit a
+      // response schema — the body is empty on success and the error
+      // envelope is the same as every other endpoint, so failures surface
+      // as ApiError with the server's ProblemDetails.
+      return apiRequest('/users/me', {
+        method: 'DELETE',
+        body: request,
       });
     },
 

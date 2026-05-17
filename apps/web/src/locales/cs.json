@@ -684,6 +684,27 @@
       "warning": "Budete odhlášeni a budete muset znovu stáhnout data.",
       "clearing": "Mazání...",
       "confirm": "Vymazat data"
+    },
+    "deleteAccount": {
+      "heading": "Smazat účet",
+      "description": "Trvale smaže váš účet Mosaic a všechny fotografie, alba, sdílecí odkazy a klíče, které k němu patří. Tuto akci nelze vrátit.",
+      "button": "Smazat účet…",
+      "dialogTitle": "Trvale smazat účet?",
+      "warning": "Tato akce je nevratná. Po potvrzení server smaže vaše data a obnovení není možné.",
+      "listAlbumsDeleted": "Všechna alba, která vlastníte (a všechny fotky v nich), budou ze serveru smazána.",
+      "listSharesInvalidated": "Všechny odkazy ke sdílení, které jste vytvořili, okamžitě přestanou fungovat.",
+      "listMembershipsRemoved": "Budete odebráni ze všech alb, do kterých jste se připojili jako člen.",
+      "listAccountRemoved": "Váš účet, identitní klíče a lokální data na tomto zařízení budou smazána.",
+      "listCannotUndo": "Operátoři Mosaic nemohou obnovit vaše data — žádná zadní vrátka neexistují.",
+      "confirmationLabel": "Pro potvrzení napište své uživatelské jméno ({{username}}):",
+      "confirmationPlaceholder": "Sem napište uživatelské jméno",
+      "confirmButton": "Smazat navždy",
+      "cancelButton": "Zrušit",
+      "deleting": "Mazání…",
+      "successToast": "Účet smazán. Sbohem.",
+      "errorGeneric": "Smazání účtu se nezdařilo. Zkuste to znovu nebo kontaktujte administrátora.",
+      "errorConfirmationMismatch": "Potvrzovací text musí přesně odpovídat vašemu uživatelskému jménu.",
+      "errorFreshAuth": "Opětovná autentizace selhala. Odhlaste se, znovu přihlaste a zkuste to znovu."
     }
   },
   "admin": {
