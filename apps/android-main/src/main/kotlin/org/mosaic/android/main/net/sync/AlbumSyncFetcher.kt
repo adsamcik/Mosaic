@@ -28,7 +28,7 @@ class AlbumSyncFetcher(
 
   suspend fun fetchSyncState(albumId: AlbumId): AlbumSyncResult = withContext(Dispatchers.IO) {
     val req = Request.Builder()
-      .url(baseUrl.newBuilder().addPathSegments("api/albums/${albumId.value}/sync").build())
+      .url(baseUrl.newBuilder().addPathSegments("api/v1/albums/${albumId.value}/sync").build())
       .get()
       .build()
 

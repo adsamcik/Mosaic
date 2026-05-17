@@ -280,8 +280,8 @@ class ContractBackendServer {
         .setResponseCode(200)
         .setHeader("Upload-Offset", "0")
       request.method == "PATCH" && path.startsWith("/uploads/") -> patch(path)
-      request.method == "POST" && path.startsWith("/api/manifests/") && path.endsWith("/finalize") -> finalize()
-      request.method == "GET" && path.startsWith("/api/albums/") && path.endsWith("/sync") -> sync()
+      request.method == "POST" && path.startsWith("/api/v1/manifests/") && path.endsWith("/finalize") -> finalize()
+      request.method == "GET" && path.startsWith("/api/v1/albums/") && path.endsWith("/sync") -> sync()
       else -> MockResponse().setResponseCode(404)
     }
   }
@@ -343,7 +343,7 @@ class ContractBackendServer {
     """{"protocolVersion":1,"manifestId":"${E2ETestSupport.JOB_ID}","metadataVersion":1,"createdAt":"2025-01-02T03:04:05Z","tieredShards":${tieredShardsJson()}}"""
 
   private fun albumSyncJson(): String =
-    """{"albumId":"${E2ETestSupport.ALBUM_ID}","currentVersion":1,"manifestId":"${E2ETestSupport.JOB_ID}","manifestUrl":"/api/manifests/${E2ETestSupport.JOB_ID}","expectedSha256":"${"d".repeat(64)}","manifests":[{"id":"${E2ETestSupport.JOB_ID}","albumId":"${E2ETestSupport.ALBUM_ID}","versionCreated":1,"isDeleted":false,"encryptedMeta":"ZW5jcnlwdGVkLW1ldGE=","signature":"c2lnbmF0dXJl","signerPubkey":"cHVia2V5","shardIds":[],"shards":${tieredShardsJson()}}],"currentEpochId":7,"albumVersion":1,"hasMore":false}"""
+    """{"albumId":"${E2ETestSupport.ALBUM_ID}","currentVersion":1,"manifestId":"${E2ETestSupport.JOB_ID}","manifestUrl":"/api/v1/manifests/${E2ETestSupport.JOB_ID}","expectedSha256":"${"d".repeat(64)}","manifests":[{"id":"${E2ETestSupport.JOB_ID}","albumId":"${E2ETestSupport.ALBUM_ID}","versionCreated":1,"isDeleted":false,"encryptedMeta":"ZW5jcnlwdGVkLW1ldGE=","signature":"c2lnbmF0dXJl","signerPubkey":"cHVia2V5","shardIds":[],"shards":${tieredShardsJson()}}],"currentEpochId":7,"albumVersion":1,"hasMore":false}"""
 
   private fun tieredShardsJson(): String = E2ETestSupport.allTierShards(uploaded = true).joinToString(prefix = "[", postfix = "]") { shard ->
     """{"shardId":"${shard.shardId}","tier":${shard.tier},"shardIndex":${shard.shardIndex},"sha256":"${shard.sha256.toHex()}","contentLength":${shard.contentLength},"envelopeVersion":${shard.envelopeVersion}}"""

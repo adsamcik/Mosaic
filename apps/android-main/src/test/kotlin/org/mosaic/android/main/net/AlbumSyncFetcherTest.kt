@@ -32,7 +32,7 @@ class AlbumSyncFetcherTest {
     assertEquals(42L, (result as AlbumSyncResult.Success).response.currentVersion)
     val request = server.takeRequest()
     assertEquals("GET", request.method)
-    assertEquals("/api/albums/${AlbumSyncFixtures.albumId}/sync", request.path)
+    assertEquals("/api/v1/albums/${AlbumSyncFixtures.albumId}/sync", request.path)
   }
 
   @Test

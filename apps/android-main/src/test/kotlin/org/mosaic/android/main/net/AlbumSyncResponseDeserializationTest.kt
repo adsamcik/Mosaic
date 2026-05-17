@@ -19,7 +19,7 @@ class AlbumSyncResponseDeserializationTest {
     assertEquals(AlbumSyncFixtures.albumId, decoded.albumId)
     assertEquals(42L, decoded.currentVersion)
     assertEquals(AlbumSyncFixtures.manifestId, decoded.manifestId)
-    assertEquals("/api/manifests/${AlbumSyncFixtures.manifestId}", decoded.manifestUrl)
+    assertEquals("/api/v1/manifests/${AlbumSyncFixtures.manifestId}", decoded.manifestUrl)
     assertEquals("d".repeat(64), decoded.expectedSha256)
   }
 }

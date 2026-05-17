@@ -15,7 +15,7 @@ internal object AlbumSyncFixtures {
     albumId = albumId,
     currentVersion = 42,
     manifestId = manifestId,
-    manifestUrl = "/api/manifests/$manifestId",
+    manifestUrl = "/api/v1/manifests/$manifestId",
     expectedSha256 = "d".repeat(64),
     manifests = listOf(
       AlbumSyncManifest(

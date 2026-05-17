@@ -39,7 +39,7 @@ class ManifestCommitClientTest {
     assertEquals(ManifestFinalizeFixtures.manifestId, (result as ManifestFinalizeResult.Success).response.manifestId)
     val request = server.takeRequest()
     assertEquals("POST", request.method)
-    assertEquals("/api/manifests/${ManifestFinalizeFixtures.manifestId}/finalize", request.path)
+    assertEquals("/api/v1/manifests/${ManifestFinalizeFixtures.manifestId}/finalize", request.path)
     assertEquals(
       "mosaic-finalize-${ManifestFinalizeFixtures.uploadJobId.value}",
       request.getHeader("Idempotency-Key"),

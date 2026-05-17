@@ -39,7 +39,7 @@ class ManifestCommitClient(
     val body = json.encodeToString(ManifestFinalizeRequest.serializer(), request)
       .toRequestBody("application/json".toMediaType())
     val req = Request.Builder()
-      .url(baseUrl.newBuilder().addPathSegments("api/manifests/${manifestId.value}/finalize").build())
+      .url(baseUrl.newBuilder().addPathSegments("api/v1/manifests/${manifestId.value}/finalize").build())
       .post(body)
       .header("Idempotency-Key", idempotencyKey)
       .build()
