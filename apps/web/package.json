@@ -42,7 +42,7 @@
     "qrcode-generator": "^1.4.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-i18next": "^16.5.0",
+    "react-i18next": "^17.0.8",
     "supercluster": "^8.0.1",
     "thumbhash": "^0.1.1",
     "tus-js-client": "^4.3.1",
