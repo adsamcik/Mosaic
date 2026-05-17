@@ -103,7 +103,11 @@ const log = createLogger('ApiClient');
 // API Configuration
 // =============================================================================
 
-const API_BASE = '/api';
+const API_BASE = '/api/v1';
+// Unversioned operational endpoints (e.g. /health) live outside the
+// versioned API surface and are addressed by passing the absolute path
+// here. The backend exposes them at the application root.
+const ROOT_BASE = '';
 const DEFAULT_API_TIMEOUT_MS = 30_000;
 
 // =============================================================================
@@ -295,6 +299,12 @@ export interface RequestOptions {
    * them directly.
    */
   schema?: z.ZodTypeAny;
+  /**
+   * When true, the path is mounted at the application root (e.g. `/health`)
+   * instead of beneath {@link API_BASE} (`/api/v1`). Use for operational
+   * endpoints that intentionally live outside the versioned API surface.
+   */
+  unversioned?: boolean;
 }
 
 function composeSignals(
@@ -377,7 +387,9 @@ export async function apiRequest<T>(
     signal,
     schema,
     timeoutMs = DEFAULT_API_TIMEOUT_MS,
+    unversioned = false,
   } = options;
+  const baseUrl = unversioned ? ROOT_BASE : API_BASE;
 
   // D3: every API call gets a fresh client-side correlation ID. The
   // backend's CorrelationIdMiddleware will echo this back on the response
@@ -423,12 +435,12 @@ export async function apiRequest<T>(
     return init;
   };
 
-  let response = await fetch(`${API_BASE}${path}`, createRequestInit());
+  let response = await fetch(`${baseUrl}${path}`, createRequestInit());
   if (method === 'GET' && response.status === 429) {
     const retryAfterMs = parseRetryAfterMs(response.headers?.get('retry-after') ?? null);
     if (retryAfterMs !== undefined) {
       await sleep(retryAfterMs, signal);
-      response = await fetch(`${API_BASE}${path}`, createRequestInit());
+      response = await fetch(`${baseUrl}${path}`, createRequestInit());
     }
   }
 
@@ -535,7 +547,7 @@ export function createApiClient(): MosaicApi {
     // Health
     // =========================================================================
     async getHealth(): Promise<HealthResponse> {
-      return apiRequest('/health', { schema: HealthResponseSchema });
+      return apiRequest('/health', { schema: HealthResponseSchema, unversioned: true });
     },
 
     // =========================================================================
@@ -876,7 +888,7 @@ export function createApiClient(): MosaicApi {
     async createShardUpload(
       _request: CreateShardRequest,
     ): Promise<ShardCreated> {
-      // Note: Actual shard uploads use TUS protocol at /api/files
+      // Note: Actual shard uploads use TUS protocol at /api/v1/files
       // This method returns the upload URL for the TUS client
       return {
         id: '', // Will be set by TUS server

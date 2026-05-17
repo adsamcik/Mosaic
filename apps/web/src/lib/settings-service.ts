@@ -62,7 +62,7 @@ export interface UserSettings {
 // write of `{ idleTimeout: 9999 }` is reduced to POLICY_MAX_IDLE_TIMEOUT_MINUTES.
 //
 // FOLLOW-UP: For true kiosk-grade enforcement the server should push policy
-// (idle timeout, key-cache cap) via `/api/auth/config`, and the client should
+// (idle timeout, key-cache cap) via `/api/v1/auth/config`, and the client should
 // clamp against that server-pushed value rather than only a compile-time
 // constant. This is tracked separately and intentionally out of scope for v1.
 

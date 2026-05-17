@@ -30,7 +30,7 @@ vi.mock('../../logger', () => ({
 vi.mock('tus-js-client', () => ({
   Upload: vi.fn().mockImplementation(function TusUploadMock(file: Blob, options: CapturedTusUpload['options']) {
     const instance = {
-      url: 'http://localhost:5000/api/files/018f0000-0000-7000-8000-000000000201',
+      url: 'http://localhost:5000/api/v1/files/018f0000-0000-7000-8000-000000000201',
       start: vi.fn(() => options.onSuccess?.()),
     };
     tusMock.uploads.push({ file, options, instance });

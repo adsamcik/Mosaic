@@ -316,7 +316,7 @@ export async function rotateEpoch(
  * backend transaction. Mirrors {@link rotateEpoch} but:
  *   - excludes the removed user from the recipients list (the server
  *     additionally rejects them if mistakenly included),
- *   - posts to `POST /api/albums/:id/members/:userId/remove-and-rotate`
+ *   - posts to `POST /api/v1/albums/:id/members/:userId/remove-and-rotate`
  *     instead of the two separate DELETE + POST endpoints,
  *   - so member revocation and epoch rotation commit (or roll back) as
  *     one unit. Closes the TOCTOU window where a still-active member

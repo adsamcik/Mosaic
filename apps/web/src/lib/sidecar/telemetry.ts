@@ -7,7 +7,7 @@
  *   * Continuous numeric values are ALWAYS bucketed before they leave the
  *     module — the public `record()` API only accepts pre-bucketed shapes.
  *   * Events are batched in memory and flushed periodically to
- *     `POST /api/sidecar/telemetry/v1`. A best-effort flush is also
+ *     `POST /api/v1/sidecar/telemetry/v1`. A best-effort flush is also
  *     attempted on `pagehide` / `beforeunload`.
  *
  * Telemetry is gated by TWO independent flags so devs can disable it
@@ -110,7 +110,7 @@ export interface SidecarTelemetrySink {
 }
 
 export interface SidecarTelemetryCollectorOptions {
-  /** Endpoint URL. Defaults to `/api/sidecar/telemetry/v1`. */
+  /** Endpoint URL. Defaults to `/api/v1/sidecar/telemetry/v1`. */
   readonly endpoint?: string;
   /** Flush interval in ms. Defaults to 5 minutes. */
   readonly flushIntervalMs?: number;
@@ -141,7 +141,7 @@ export class SidecarTelemetryCollector {
   private disposed = false;
 
   constructor(opts: SidecarTelemetryCollectorOptions = {}) {
-    const endpoint = opts.endpoint ?? '/api/sidecar/telemetry/v1';
+    const endpoint = opts.endpoint ?? '/api/v1/sidecar/telemetry/v1';
     const flushIntervalMs = opts.flushIntervalMs ?? DEFAULT_FLUSH_MS;
     const maxBatchSize = opts.maxBatchSize ?? DEFAULT_MAX_BATCH;
     const sink = opts.sink ?? makeFetchSink(endpoint);

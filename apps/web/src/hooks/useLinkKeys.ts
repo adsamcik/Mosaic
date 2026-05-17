@@ -39,7 +39,7 @@ export interface LinkKeyState {
   /** The link ID from URL */
   linkId: string | null;
   /**
-   * Access tier as claimed by the server in `/api/s/:linkId`. Surfaced
+   * Access tier as claimed by the server in `/api/v1/s/:linkId`. Surfaced
    * for diagnostics only — do NOT use this to decide which UI affordances
    * to show. The server is the untrusted party in the zero-knowledge
    * model and can lie about this number. Use {@link unwrappedAccessTier}

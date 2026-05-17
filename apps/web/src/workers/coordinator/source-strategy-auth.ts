@@ -8,7 +8,7 @@ const DEFAULT_MAX_CONCURRENT = 4;
 /**
  * Authenticated viewer source strategy.
  *
- * Wraps the `/api/shards/{id}` endpoint and the user's epoch-key service.
+ * Wraps the `/api/v1/shards/{id}` endpoint and the user's epoch-key service.
  *
  * `accountId` is the non-secret stable account identifier used to derive the
  * tray scope key. Caller MUST await `ensureScopeKeySodiumReady()` before

@@ -8,7 +8,7 @@ import { purgeLocalAlbum } from './local-purge';
 import { ManifestFinalizeResponseSchema } from './api-schemas';
 import { normalizeManifestFilename } from './manifest-filename';
 
-const API_BASE = '/api';
+const API_BASE = '/api/v1';
 const SHA256_BYTES = 32;
 const MANIFEST_FINALIZE_TIMEOUT_MS = 30_000;
 

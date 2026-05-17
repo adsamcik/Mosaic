@@ -228,7 +228,7 @@ export function MapView({
     });
 
     // Add OpenStreetMap tile layer
-    L.tileLayer('/api/tiles/{z}/{x}/{y}.png', {
+    L.tileLayer('/api/v1/tiles/{z}/{x}/{y}.png', {
       attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       maxZoom: MAX_ZOOM,

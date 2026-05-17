@@ -120,13 +120,13 @@ describe('useBackgroundFetch', () => {
     const h = await renderHook();
     expect(h.result().support.supported).toBe(true);
     const handle = await h.result().start(
-      ['https://x/api/shards/a'],
+      ['https://x/api/v1/shards/a'],
       { id: 'job-7', title: 'Mosaic download', downloadTotal: 1024 },
     );
     expect(handle.id).toBe('job-7');
     expect(fetchSpy).toHaveBeenCalledWith(
       'job-7',
-      ['https://x/api/shards/a'],
+      ['https://x/api/v1/shards/a'],
       expect.objectContaining({ title: 'Mosaic download', downloadTotal: 1024 }),
     );
     await handle.abort();

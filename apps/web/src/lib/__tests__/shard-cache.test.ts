@@ -38,22 +38,22 @@ function installCaches(map: Map<string, Response>): { deletes: string[] } {
 describe('lookupCachedShardBytes', () => {
   it('returns null when caches API is missing', async () => {
     delete (globalThis as { caches?: FakeCacheStorage }).caches;
-    expect(await lookupCachedShardBytes('https://x/api/shards/a')).toBeNull();
+    expect(await lookupCachedShardBytes('https://x/api/v1/shards/a')).toBeNull();
   });
 
   it('returns bytes on cache hit', async () => {
     const map = new Map<string, Response>([
-      ['https://x/api/shards/a', new Response(new Uint8Array([1, 2, 3]))],
+      ['https://x/api/v1/shards/a', new Response(new Uint8Array([1, 2, 3]))],
     ]);
     installCaches(map);
-    const out = await lookupCachedShardBytes('https://x/api/shards/a');
+    const out = await lookupCachedShardBytes('https://x/api/v1/shards/a');
     expect(out).not.toBeNull();
     expect(Array.from(out!)).toEqual([1, 2, 3]);
   });
 
   it('returns null on cache miss', async () => {
     installCaches(new Map());
-    expect(await lookupCachedShardBytes('https://x/api/shards/missing')).toBeNull();
+    expect(await lookupCachedShardBytes('https://x/api/v1/shards/missing')).toBeNull();
   });
 
   it('returns null when cache.open throws (graceful fallback)', async () => {

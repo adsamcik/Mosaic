@@ -6,10 +6,10 @@
  * can drive multiple access modes:
  *
  *   1. {@link createAuthenticatedSourceStrategy} - uses the authenticated
- *      `/api/shards/{id}` endpoint and the user's epoch-key service.
+ *      `/api/v1/shards/{id}` endpoint and the user's epoch-key service.
  *
  *   2. {@link createShareLinkSourceStrategy} - uses
- *      `/api/s/{linkId}/shards/{shardId}` with a grant token and a tier-3
+ *      `/api/v1/s/{linkId}/shards/{shardId}` with a grant token and a tier-3
  *      `LinkDecryptionKey` from the link tier-key store.
  *
  * Strategies resolve opaque worker-owned handles for production decrypt paths.

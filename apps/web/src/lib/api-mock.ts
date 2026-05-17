@@ -824,7 +824,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       const id = `shard-${generateUuid()}`;
       return {
         id,
-        uploadUrl: `/api/shards/${id}/upload`,
+        uploadUrl: `/api/v1/shards/${id}/upload`,
       };
     },
 

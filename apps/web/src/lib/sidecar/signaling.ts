@@ -1,7 +1,7 @@
 /**
  * Sidecar Beacon — client-side WebSocket signaling wrapper.
  *
- * Talks to the in-memory relay at `WS /api/sidecar/signal/:roomId`. The relay
+ * Talks to the in-memory relay at `WS /api/v1/sidecar/signal/:roomId`. The relay
  * is opaque: it never sees plaintext, only the AEAD-sealed frames produced by
  * the PAKE-derived tunnel. This module enforces:
  *
@@ -101,7 +101,7 @@ function buildSignalingUrl(roomId: string, baseUrl?: string): string {
   }
 
   // Normalise http(s) → ws(s).
-  const url = new URL('/api/sidecar/signal/' + roomId, origin);
+  const url = new URL('/api/v1/sidecar/signal/' + roomId, origin);
   if (url.protocol === 'http:') url.protocol = 'ws:';
   else if (url.protocol === 'https:') url.protocol = 'wss:';
   return url.toString();

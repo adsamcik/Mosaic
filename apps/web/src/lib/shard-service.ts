@@ -40,12 +40,12 @@ export class ShardDownloadError extends Error {
 /** Build the shard-fetch URL for the authenticated endpoint. Exposed so the
  *  Background Fetch launcher can pre-warm the same URLs the SW will receive. */
 export function buildAuthShardUrl(shardId: string): string {
-  return `/api/shards/${encodeURIComponent(shardId)}`;
+  return `/api/v1/shards/${encodeURIComponent(shardId)}`;
 }
 
 /** Build the share-link shard-fetch URL. */
 export function buildShareLinkShardUrl(linkId: string, shardId: string): string {
-  return `/api/s/${linkId}/shards/${shardId}`;
+  return `/api/v1/s/${linkId}/shards/${shardId}`;
 }
 
 export async function downloadShard(
@@ -69,7 +69,7 @@ export async function downloadShard(
     }
 
     // For progress tracking, use fetch directly with ReadableStream
-    const response = await fetch(`/api/shards/${shardId}`, {
+    const response = await fetch(`/api/v1/shards/${shardId}`, {
       credentials: 'same-origin',
     });
 
@@ -215,7 +215,7 @@ export async function downloadShardViaShareLink(
     }
 
     const response = await fetch(
-      `/api/s/${linkId}/shards/${shardId}`,
+      `/api/v1/s/${linkId}/shards/${shardId}`,
       requestInit,
     );
 

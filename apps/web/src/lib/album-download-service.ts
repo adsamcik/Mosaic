@@ -31,7 +31,7 @@ export interface AlbumDownloadProgress {
 /**
  * Strategy for fetching + decrypting the original bytes of a single photo.
  *
- * Defaults to the authenticated user flow (epoch-key + `/api/shards/{id}`).
+ * Defaults to the authenticated user flow (epoch-key + `/api/v1/shards/{id}`).
  * Share link viewers inject an alternate implementation that uses the public
  * share endpoint and tier-specific keys.
  */
@@ -47,7 +47,7 @@ export interface AlbumDownloadOptions {
    * Optional override for fetching + decrypting the original bytes of a
    * photo. When omitted, the authenticated user flow is used. Provide a
    * custom resolver for share-link viewers, who do not have access to
-   * `getOrFetchEpochKey` or the authenticated `/api/shards/{id}` endpoint.
+   * `getOrFetchEpochKey` or the authenticated `/api/v1/shards/{id}` endpoint.
    */
   resolveOriginal?: AlbumDownloadResolver;
 }

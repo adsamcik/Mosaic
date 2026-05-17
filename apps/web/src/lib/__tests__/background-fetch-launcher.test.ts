@@ -66,7 +66,7 @@ describe('maybeStartBackgroundFetch', () => {
     expect(r.kind).toBe('launched');
     expect(start).toHaveBeenCalledTimes(1);
     const [urls, options] = start.mock.calls[0]!;
-    expect(urls).toEqual(['/api/shards/s1', '/api/shards/s2']);
+    expect(urls).toEqual(['/api/v1/shards/s1', '/api/v1/shards/s2']);
     expect(options).toMatchObject({ id: 'job-7', title: 'Mosaic download', downloadTotal: 100 });
   });
 

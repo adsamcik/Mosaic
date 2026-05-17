@@ -56,7 +56,7 @@ export interface UseVisitorAlbumDownloadResult {
  *
  * Mirrors {@link useAlbumDownload} but always constructs a `share-link`
  * `SourceStrategy` so the coordinator pipeline fetches shards through
- * `/api/s/{linkId}/shards/{shardId}` and resolves per-epoch keys from the
+ * `/api/v1/s/{linkId}/shards/{shardId}` and resolves per-epoch keys from the
  * caller-supplied tier-3 key lookup.
  *
  * Out-of-scope follow-ups (NOT implemented here):

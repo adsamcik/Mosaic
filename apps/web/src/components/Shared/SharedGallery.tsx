@@ -126,7 +126,7 @@ export function SharedGallery({
         const photoResponses: ShareLinkPhotoResponse[] = [];
         for (let skip: number | null = 0; skip !== null; ) {
           const response: Response = await fetch(
-            `/api/s/${linkId}/photos?skip=${skip}&take=${pageSize}`,
+            `/api/v1/s/${linkId}/photos?skip=${skip}&take=${pageSize}`,
             fetchInit,
           );
           if (!response.ok) {

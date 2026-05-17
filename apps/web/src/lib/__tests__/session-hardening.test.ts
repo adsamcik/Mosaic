@@ -445,7 +445,7 @@ describe('M9: wrapped-key upload via centralised API client', () => {
       wrappedKey,
     );
 
-    // No raw fetch to /api/users/me/wrapped-key — the centralised method
+    // No raw fetch to /api/v1/users/me/wrapped-key — the centralised method
     // is responsible for the network call.
     const fetchCalls = (global.fetch as Mock).mock.calls.map(
       (call) => call[0] as string,
@@ -770,7 +770,7 @@ describe('L4: active upload idle-timeout suspension', () => {
 
       await vi.advanceTimersByTimeAsync(1);
 
-      expect(global.fetch).toHaveBeenCalledWith('/api/auth/logout', {
+      expect(global.fetch).toHaveBeenCalledWith('/api/v1/auth/logout', {
         method: 'POST',
         credentials: 'same-origin',
       });

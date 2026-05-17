@@ -23,7 +23,7 @@ export interface ShareLinkSourceStrategyOptions {
 /**
  * Share-link visitor source strategy.
  *
- * Fetches encrypted shards via `/api/s/{linkId}/shards/{shardId}` (with an
+ * Fetches encrypted shards via `/api/v1/s/{linkId}/shards/{shardId}` (with an
  * optional grant token) and resolves the per-epoch decryption key from a
  * caller-supplied tier-3 handle lookup.
  */

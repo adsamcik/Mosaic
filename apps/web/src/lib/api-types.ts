@@ -2,7 +2,7 @@
  * Mosaic API Types
  *
  * TypeScript types matching the OpenAPI specification.
- * Generated from docs/api/openapi.yaml
+ * Generated from docs/api/v1/openapi.yaml
  */
 
 // =============================================================================

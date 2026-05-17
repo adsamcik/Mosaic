@@ -139,7 +139,7 @@ describe('openSidecarSignalingChannel', () => {
   it('builds a wss:// URL from an https origin', () => {
     const ch = makeChannel();
     const ws = FakeWebSocket.instances[0]!;
-    expect(ws.url).toBe(`wss://example.test/api/sidecar/signal/${ROOM}`);
+    expect(ws.url).toBe(`wss://example.test/api/v1/sidecar/signal/${ROOM}`);
     ch.close();
   });
 

@@ -65,7 +65,7 @@ describe('local-auth dev-mode guard (L7)', () => {
       const result = await devLogin('alice');
       expect(fetchSpy).toHaveBeenCalledTimes(1);
       const call = fetchSpy.mock.calls[0];
-      expect(call?.[0]).toBe('/api/dev-auth/login');
+      expect(call?.[0]).toBe('/api/v1/dev-auth/login');
       expect(call?.[1]?.method).toBe('POST');
       expect(result.username).toBe('alice');
     });
@@ -98,7 +98,7 @@ describe('local-auth dev-mode guard (L7)', () => {
       ).resolves.toBeUndefined();
       expect(fetchSpy).toHaveBeenCalledTimes(1);
       const call = fetchSpy.mock.calls[0];
-      expect(call?.[0]).toBe('/api/dev-auth/update-keys');
+      expect(call?.[0]).toBe('/api/v1/dev-auth/update-keys');
       expect(call?.[1]?.method).toBe('POST');
     });
   });

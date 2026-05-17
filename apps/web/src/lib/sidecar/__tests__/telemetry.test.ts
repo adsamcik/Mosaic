@@ -247,7 +247,7 @@ describe('default fetch sink', () => {
     await new Promise((r) => setTimeout(r, 0));
     await new Promise((r) => setTimeout(r, 0));
     expect(posted).not.toBeNull();
-    expect(posted!.url).toContain('/api/sidecar/telemetry/v1');
+    expect(posted!.url).toContain('/api/v1/sidecar/telemetry/v1');
     const parsed = JSON.parse(posted!.body) as { events: SidecarTelemetryEvent[] };
     expect(parsed.events).toEqual([{ event: 'pair-initiated' }]);
   });

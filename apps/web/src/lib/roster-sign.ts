@@ -37,7 +37,7 @@ export interface SignAndPublishRosterResult {
 /**
  * Builds the canonical roster transcript, signs it with the per-epoch
  * Ed25519 manifest signing key, and POSTs to
- * `/api/albums/{id}/members/roster`. The new `rosterVersion` is
+ * `/api/v1/albums/{id}/members/roster`. The new `rosterVersion` is
  * `(current memberRosterVersion ?? 0) + 1` so it strictly increases.
  *
  * @throws Error if the current epoch key is not cached (caller should

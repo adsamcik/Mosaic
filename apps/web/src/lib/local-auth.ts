@@ -24,7 +24,7 @@ export { normalizePasswordForKdf } from './local-auth-normalization';
 // Types
 // =============================================================================
 
-/** Response from /api/auth/init */
+/** Response from /api/v1/auth/init */
 export interface AuthInitResponse {
   challengeId: string;
   challenge: string; // base64
@@ -36,7 +36,7 @@ export interface AuthInitResponse {
   kdfAlgVersion: number;
 }
 
-/** Response from /api/auth/verify */
+/** Response from /api/v1/auth/verify */
 export interface AuthVerifyResponse {
   success: boolean;
   userId: string;
@@ -50,7 +50,7 @@ export interface AuthVerifyResponse {
   kdfAlgVersion: number;
 }
 
-/** Response from /api/auth/register */
+/** Response from /api/v1/auth/register */
 export interface AuthRegisterResponse {
   id: string;
   username: string;
@@ -452,7 +452,7 @@ async function registerNewUser(
 
 /**
  * Check if the backend is in LocalAuth mode.
- * Does this by checking /api/auth/config endpoint.
+ * Does this by checking /api/v1/auth/config endpoint.
  */
 export async function isLocalAuthMode(): Promise<boolean> {
   const status = await checkServerStatus();
@@ -469,7 +469,7 @@ export interface ServerStatus {
 
 /**
  * Check server connectivity and authentication mode.
- * Uses /api/auth/config endpoint which returns both auth mode flags.
+ * Uses /api/v1/auth/config endpoint which returns both auth mode flags.
  */
 export async function checkServerStatus(): Promise<ServerStatus> {
   try {
@@ -541,7 +541,7 @@ export async function checkServerStatus(): Promise<ServerStatus> {
 // Development Authentication (Dev Mode Only)
 // =============================================================================
 
-/** Response from /api/dev-auth/login */
+/** Response from /api/v1/dev-auth/login */
 export interface DevLoginResponse {
   userId: string;
   username: string;

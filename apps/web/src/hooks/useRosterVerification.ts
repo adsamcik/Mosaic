@@ -4,7 +4,7 @@
  *
  * Loads the album's signed-roster fields (`memberRosterSignature`,
  * `memberRosterSignerEpochId`, `memberRosterVersion`) from
- * `GET /api/albums/{id}` and verifies them against the live members
+ * `GET /api/v1/albums/{id}` and verifies them against the live members
  * list using `verifyRosterSignature`. The returned tagged result lets
  * the UI render an "unverified roster" pill (or hide role badges
  * entirely) so a compromised server cannot fabricate admin/editor

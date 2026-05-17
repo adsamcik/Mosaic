@@ -190,7 +190,7 @@ describe('manifest finalization cutover', () => {
       response: { manifestId: JOB_ID },
     });
     expect(fetchImpl).toHaveBeenCalledWith(
-      `/api/manifests/${JOB_ID}/finalize`,
+      `/api/v1/manifests/${JOB_ID}/finalize`,
       expect.objectContaining({
         method: 'POST',
         credentials: 'same-origin',

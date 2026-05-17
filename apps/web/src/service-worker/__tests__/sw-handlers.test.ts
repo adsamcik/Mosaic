@@ -67,21 +67,21 @@ describe('handleBackgroundFetchSuccess', () => {
     const { storage, puts } = makeCache();
     const { clients, messages } = makeClients();
     const registration = makeRegistration([
-      { url: 'https://x/api/shards/a', status: 200 },
-      { url: 'https://x/api/shards/b', status: 200 },
+      { url: 'https://x/api/v1/shards/a', status: 200 },
+      { url: 'https://x/api/v1/shards/b', status: 200 },
     ]);
 
     await handleBackgroundFetchSuccess({ registration, caches: storage, clients });
 
     expect(puts.map((p) => p.url).sort()).toEqual([
-      'https://x/api/shards/a',
-      'https://x/api/shards/b',
+      'https://x/api/v1/shards/a',
+      'https://x/api/v1/shards/b',
     ]);
     expect(messages).toHaveLength(1);
     expect(messages[0]).toEqual({
       type: 'mosaic.bgfetch.success',
       jobId: 'job-1',
-      urls: ['https://x/api/shards/a', 'https://x/api/shards/b'],
+      urls: ['https://x/api/v1/shards/a', 'https://x/api/v1/shards/b'],
     });
   });
 
@@ -89,15 +89,15 @@ describe('handleBackgroundFetchSuccess', () => {
     const { storage, puts } = makeCache();
     const { clients, messages } = makeClients();
     const registration = makeRegistration([
-      { url: 'https://x/api/shards/a', status: 200 },
-      { url: 'https://x/api/shards/b', status: 404 },
+      { url: 'https://x/api/v1/shards/a', status: 200 },
+      { url: 'https://x/api/v1/shards/b', status: 404 },
     ]);
 
     await handleBackgroundFetchSuccess({ registration, caches: storage, clients });
 
-    expect(puts.map((p) => p.url)).toEqual(['https://x/api/shards/a']);
+    expect(puts.map((p) => p.url)).toEqual(['https://x/api/v1/shards/a']);
     expect(messages).toHaveLength(1);
-    expect((messages[0] as { urls: string[] }).urls).toEqual(['https://x/api/shards/a']);
+    expect((messages[0] as { urls: string[] }).urls).toEqual(['https://x/api/v1/shards/a']);
   });
 
   it('survives a failing cache.put for a single record', async () => {
@@ -112,14 +112,14 @@ describe('handleBackgroundFetchSuccess', () => {
     };
     const { clients, messages } = makeClients();
     const registration = makeRegistration([
-      { url: 'https://x/api/shards/a', status: 200 },
-      { url: 'https://x/api/shards/b', status: 200 },
+      { url: 'https://x/api/v1/shards/a', status: 200 },
+      { url: 'https://x/api/v1/shards/b', status: 200 },
     ]);
 
     await handleBackgroundFetchSuccess({ registration, caches: failingStorage, clients });
 
     expect(messages).toHaveLength(1);
-    expect((messages[0] as { urls: string[] }).urls).toEqual(['https://x/api/shards/a']);
+    expect((messages[0] as { urls: string[] }).urls).toEqual(['https://x/api/v1/shards/a']);
   });
 });
 

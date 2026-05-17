@@ -116,7 +116,7 @@ export async function tusUpload(
           reject(new TusUploadError('No upload URL returned', 'upload.errors.noUrl'));
           return;
         }
-        // URL format: /api/files/{shardId}
+        // URL format: /api/v1/files/{shardId}
         const shardId = url.substring(url.lastIndexOf('/') + 1);
         log.info(
           `TUS upload success: albumId=${albumId}, shardIndex=${shardIndex}, shardId=${shardId}`,

@@ -277,7 +277,7 @@ export type AlbumContentDocument = z.infer<typeof AlbumContentDocumentSchema>;
 // =============================================================================
 
 /**
- * Response from GET /api/albums/:id/content
+ * Response from GET /api/v1/albums/:id/content
  */
 export interface AlbumContentResponse {
   /** Encrypted content document */
@@ -293,7 +293,7 @@ export interface AlbumContentResponse {
 }
 
 /**
- * Request for PUT /api/albums/:id/content
+ * Request for PUT /api/v1/albums/:id/content
  */
 export interface UpdateAlbumContentRequest {
   /** Encrypted content document */
