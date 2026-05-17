@@ -22,7 +22,9 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mosaic.android.main.crypto.ShardEncryptionScheduler
+import org.mosaic.android.main.crypto.ShardEnvelopeStore
 import org.mosaic.android.main.db.AlbumContentHashRecord
+import org.mosaic.android.main.db.AlbumEpochKeyRecord
 import org.mosaic.android.main.db.AlbumSyncSnapshotRow
 import org.mosaic.android.main.db.RustSnapshotVersions
 import org.mosaic.android.main.db.UploadJobSnapshotRow
@@ -37,9 +39,11 @@ import org.robolectric.annotation.Config
 class AlbumPurgerTest {
   private val context = ApplicationProvider.getApplicationContext<Context>()
   private val db = UploadQueueDatabase.createInMemoryForTests(context)
+  private val envelopeRoot = java.io.File(context.filesDir, "encrypted-shards")
 
   @Before
   fun setUpWorkManager() {
+    envelopeRoot.deleteRecursively()
     WorkManagerTestInitHelper.initializeTestWorkManager(
       context,
       Configuration.Builder()
@@ -54,6 +58,7 @@ class AlbumPurgerTest {
     WorkManager.getInstance(context).cancelAllWork().result.get()
     WorkManager.getInstance(context).pruneWork().result.get()
     db.close()
+    envelopeRoot.deleteRecursively()
   }
 
   @Test
@@ -68,18 +73,66 @@ class AlbumPurgerTest {
     db.albumSyncSnapshotDao().upsert(albumSyncSnapshot(otherAlbum))
     db.albumContentHashDao().upsert(contentHash(targetAlbum, "a".repeat(64)))
     db.albumContentHashDao().upsert(contentHash(otherAlbum, "b".repeat(64)))
+    // v1.0.1 s34: wrapped epoch seeds + on-disk envelopes for both albums.
+    db.albumEpochKeyDao().upsert(albumEpochKey(targetAlbum, epochId = 1))
+    db.albumEpochKeyDao().upsert(albumEpochKey(targetAlbum, epochId = 2))
+    db.albumEpochKeyDao().upsert(albumEpochKey(otherAlbum, epochId = 1))
+    val envelopeStore = ShardEnvelopeStore(context)
+    writeEnvelope(envelopeStore, targetAlbum, "target-shard-0", shardIndex = 0)
+    writeEnvelope(envelopeStore, targetAlbum, "target-shard-1", shardIndex = 1)
+    writeEnvelope(envelopeStore, otherAlbum, "other-shard-0", shardIndex = 0)
 
-    val result = AlbumPurger(db).purgeRemoteAlbumDeletion(AlbumId(targetAlbum))
+    val result = AlbumPurger(db, shardEnvelopeStore = envelopeStore)
+      .purgeRemoteAlbumDeletion(AlbumId(targetAlbum))
 
-    assertEquals(PurgeResult(uploadJobs = 1, uploadJobSnapshots = 1, syncSnapshots = 1, contentHashes = 1), result)
+    assertEquals(
+      PurgeResult(
+        uploadJobs = 1,
+        uploadJobSnapshots = 1,
+        syncSnapshots = 1,
+        contentHashes = 1,
+        epochKeys = 2,
+        envelopeFiles = 2,
+      ),
+      result,
+    )
     assertEquals(null, db.uploadQueueDao().get("job-target"))
     assertEquals(null, db.uploadJobSnapshotDao().get("job-target"))
     assertEquals(null, db.albumSyncSnapshotDao().get(targetAlbum))
     assertEquals(null, db.albumContentHashDao().lookup(targetAlbum, "a".repeat(64)))
+    assertEquals(null, db.albumEpochKeyDao().get(targetAlbum, epochId = 1))
+    assertEquals(null, db.albumEpochKeyDao().get(targetAlbum, epochId = 2))
     assertEquals("job-other", db.uploadQueueDao().get("job-other")?.jobId)
     assertEquals("job-other", db.uploadJobSnapshotDao().get("job-other")?.jobId)
     assertEquals(otherAlbum, db.albumSyncSnapshotDao().get(otherAlbum)?.albumId)
     assertEquals("photo-b", db.albumContentHashDao().lookup(otherAlbum, "b".repeat(64))?.photoId)
+    assertEquals(otherAlbum, db.albumEpochKeyDao().get(otherAlbum, epochId = 1)?.albumId)
+    assertTrue("other album's envelope dir survives", java.io.File(envelopeRoot, otherAlbum).exists())
+  }
+
+  @Test
+  fun reportsZeroWhenEnvelopeDirAndEpochKeysAreEmpty() = runBlocking {
+    val targetAlbum = "018f9f8d-99df-7b42-8f0d-333333333333"
+    db.uploadQueueDao().insert(uploadQueueRecord("job-empty", targetAlbum))
+
+    val result = AlbumPurger(db, shardEnvelopeStore = ShardEnvelopeStore(context))
+      .purgeRemoteAlbumDeletion(AlbumId(targetAlbum))
+
+    assertEquals(0, result.epochKeys)
+    assertEquals(0, result.envelopeFiles)
+    assertEquals(1, result.uploadJobs)
+  }
+
+  @Test
+  fun purgeWithoutEnvelopeStoreLeavesEnvelopeFilesZero() = runBlocking {
+    val targetAlbum = "018f9f8d-99df-7b42-8f0d-444444444444"
+    db.uploadQueueDao().insert(uploadQueueRecord("job-nostore", targetAlbum))
+    db.albumEpochKeyDao().upsert(albumEpochKey(targetAlbum, epochId = 7))
+
+    val result = AlbumPurger(db).purgeRemoteAlbumDeletion(AlbumId(targetAlbum))
+
+    assertEquals(1, result.epochKeys)
+    assertEquals(0, result.envelopeFiles)
   }
 
   @Test
@@ -162,6 +215,28 @@ class AlbumPurgerTest {
     photoId = if (hash.startsWith("a")) "photo-a" else "photo-b",
     dateAdded = 1_700_000_000_000L,
   )
+
+  private fun albumEpochKey(albumId: String, epochId: Int): AlbumEpochKeyRecord = AlbumEpochKeyRecord(
+    albumId = albumId,
+    epochId = epochId,
+    wrappedEpochSeed = ByteArray(48) { it.toByte() },
+    updatedAtMs = 1_700_000_000_000L,
+  )
+
+  private fun writeEnvelope(store: ShardEnvelopeStore, albumId: String, stagingName: String, shardIndex: Int) {
+    val stagingDir = java.io.File(context.filesDir, "purger-test-staging").also { it.mkdirs() }
+    val stagingFile = java.io.File(stagingDir, "$stagingName.bin")
+    if (!stagingFile.exists()) stagingFile.writeText(stagingName)
+    val input = org.mosaic.android.main.crypto.ShardEnvelopeInput(
+      stagingUri = android.net.Uri.fromFile(stagingFile).toString(),
+      albumId = albumId,
+      epochId = 1,
+      tier = 3,
+      shardIndex = shardIndex,
+      plaintextSha256Hex = "0".repeat(64),
+    )
+    store.persistEnvelope(input, envelope = byteArrayOf(1, 2, 3))
+  }
 
   class NoOpWorker(context: Context, params: WorkerParameters) : ListenableWorker(context, params) {
     override fun startWork() = com.google.common.util.concurrent.SettableFuture.create<Result>()
