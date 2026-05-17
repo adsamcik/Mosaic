@@ -14,6 +14,14 @@ namespace Mosaic.Backend.Controllers;
 [Route("api/manifests")]
 public class ManifestsController : ControllerBase
 {
+    /// <summary>
+    /// Hard cap on tiered shards per finalize request. 1024 = 256 photos worth of
+    /// shards at 4 tiers, far above any realistic single-finalize payload while
+    /// preventing 1M-element DoS payloads from exhausting validation memory.
+    /// (v1.0.1 s19.)
+    /// </summary>
+    private const int MAX_TIERED_SHARDS_COUNT = 1024;
+
     private readonly MosaicDbContext _db;
     private readonly IQuotaSettingsService _quotaService;
     private readonly ICurrentUserService _currentUserService;
@@ -352,6 +360,13 @@ public class ManifestsController : ControllerBase
         {
             return Problem(
                 detail: "tieredShards is required for manifest finalization",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (request.TieredShards.Count > MAX_TIERED_SHARDS_COUNT)
+        {
+            return Problem(
+                detail: $"tieredShards count must not exceed {MAX_TIERED_SHARDS_COUNT}",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 

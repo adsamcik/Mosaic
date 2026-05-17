@@ -317,6 +317,48 @@ public class ManifestsControllerTests
     }
 
     [Fact]
+    public async Task Create_ReturnsBadRequest_WhenTieredShardsCountExceedsCap()
+    {
+        // Regression for v1.0.1 s19: ValidateFinalizeRequest must reject
+        // payloads with more than MAX_TIERED_SHARDS_COUNT (1024) tiered shards
+        // so an attacker cannot ship a 1M-element array to exhaust validation
+        // memory or DB round-trips.
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var quotaService = TestConfiguration.CreateQuotaService(db, config);
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        await builder.CreateEpochKeyAsync(album, owner);
+
+        // 1025 = MAX_TIERED_SHARDS_COUNT + 1. Indices are contiguous per tier
+        // so the cap check fires before any other validation would.
+        var oversizedShards = Enumerable
+            .Range(0, 1025)
+            .Select(i => new TieredShardInfo(Guid.NewGuid().ToString(), (int)ShardTier.Original, ShardIndex: i))
+            .ToList();
+
+        var request = new CreateManifestRequest(
+            AlbumId: album.Id,
+            EncryptedMeta: new byte[] { 0x01, 0x02, 0x03 },
+            Signature: Convert.ToBase64String(new byte[64]),
+            SignerPubkey: Convert.ToBase64String(new byte[32]),
+            ShardIds: [],
+            TieredShards: oversizedShards);
+
+        var controller = CreateController(db, config, quotaService, OwnerAuthSub);
+
+        // Act
+        var createResult = await controller.Create(request);
+
+        // Assert
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(createResult);
+        Assert.Contains("1024", ProblemDetailsAssertions.GetDetail(badRequest));
+        Assert.Empty(await db.Manifests.ToListAsync());
+    }
+
+    [Fact]
     public async Task Get_ReturnsManifest_WhenUserHasAccess()
     {
         // Arrange
