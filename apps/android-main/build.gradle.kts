@@ -237,7 +237,7 @@ dependencies {
   implementation(libs.androidx.activity)
   implementation(libs.androidx.appcompat)
   implementation(libs.androidx.core)
-  implementation("androidx.lifecycle:lifecycle-service:2.8.7")
+  implementation("androidx.lifecycle:lifecycle-service:2.9.0")
   implementation("androidx.room:room-runtime:2.6.1")
   implementation("androidx.room:room-ktx:2.6.1")
   ksp("androidx.room:room-compiler:2.6.1")
@@ -246,9 +246,9 @@ dependencies {
   // maintained Android OkHttp-first artifact; keep OkHttp pinned for the A5a
   // spike and avoid adding a URLConnection-based Tus dependency.
   implementation("com.squareup.okhttp3:okhttp:5.1.0")
-  implementation("androidx.exifinterface:exifinterface:1.3.7")
-  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
-  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+  implementation("androidx.exifinterface:exifinterface:1.4.1")
+  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
   // WorkManager powers the auto-import foreground (`dataSync`) worker. See
   // `apps/android-main/src/main/kotlin/org/mosaic/android/main/work/`.
   implementation(libs.androidx.work.runtime)

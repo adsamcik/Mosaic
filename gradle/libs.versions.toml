@@ -13,7 +13,7 @@ androidx-core = "1.16.0"
 
 # JNA's Android `aar` is required by the generated `uniffi.mosaic_uniffi` bindings
 # (which import `com.sun.jna.*`).
-jna = "5.14.0"
+jna = "5.17.0"
 
 # WorkManager powers the Band 6 auto-import foreground worker
 # (`apps/android-main/src/main/kotlin/org/mosaic/android/main/work/`). The
