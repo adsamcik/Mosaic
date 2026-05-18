@@ -216,30 +216,72 @@ public sealed class UserErasureService : IUserErasureService
                 .Where(c => c.Username == user.AuthSub)
                 .ExecuteDeleteAsync(cancellationToken);
 
-            // Delete shards we collected above. ManifestShard rows that
-            // reference them will already be gone (or will be gone after
-            // the owned-album cascade), but we drop the user row LAST so
-            // we don't trip the Shard.Uploader SetNull rule mid-flight.
+            // Delete shards we collected above — but ONLY those that
+            // become orphans once the manifests in OUR owned albums are
+            // gone. The previous implementation deleted ManifestShard
+            // rows by ShardId globally, which silently severed shared-
+            // shard links in unrelated users' albums (security-review-
+            // 2026-05-18-01). The correct algorithm is:
             //
-            // For shards still referenced by manifests in albums we don't
-            // own (e.g. our uploads into a co-owned album), the
-            // ManifestShard rows are still live. Removing those manifest
-            // links first lets us drop the shard without violating the
-            // ManifestShard → Shard.Restrict FK.
+            //   1. Scope the manifest-link delete to manifests in the
+            //      albums we are about to cascade-delete. (The album
+            //      cascade would handle this anyway; doing it explicitly
+            //      means we can immediately observe orphan status.)
+            //   2. A shard is "orphaned" iff zero ManifestShard rows
+            //      reference it AFTER step 1. Only then is it safe to
+            //      drop the Shard row and zero its blob.
+            //   3. Shards still referenced by manifests in albums we do
+            //      NOT own are left intact — their Uploader FK falls
+            //      back to NULL via the configured SetNull rule when we
+            //      drop the user row.
+            int shardLinksRemoved = 0;
+            var ownedManifestIds = ownedAlbumIds.Count == 0
+                ? new List<Guid>()
+                : await _db.Manifests.IgnoreQueryFilters()
+                    .Where(m => ownedAlbumIds.Contains(m.AlbumId))
+                    .Select(m => m.Id)
+                    .ToListAsync(cancellationToken);
+
+            if (ownedManifestIds.Count > 0)
+            {
+                shardLinksRemoved = await _db.ManifestShards
+                    .Where(ms => ownedManifestIds.Contains(ms.ManifestId))
+                    .ExecuteDeleteAsync(cancellationToken);
+            }
+
+            List<Guid> orphanedShardIds;
             if (allShardIds.Count > 0)
             {
-                await _db.ManifestShards
-                    .Where(ms => allShardIds.Contains(ms.ShardId))
-                    .ExecuteDeleteAsync(cancellationToken);
+                orphanedShardIds = await _db.Shards
+                    .Where(s => allShardIds.Contains(s.Id)
+                                && !_db.ManifestShards.Any(ms => ms.ShardId == s.Id))
+                    .Select(s => s.Id)
+                    .ToListAsync(cancellationToken);
 
-                shardsDeleted = await _db.Shards
-                    .Where(s => allShardIds.Contains(s.Id))
-                    .ExecuteDeleteAsync(cancellationToken);
+                shardsDeleted = orphanedShardIds.Count > 0
+                    ? await _db.Shards
+                        .Where(s => orphanedShardIds.Contains(s.Id))
+                        .ExecuteDeleteAsync(cancellationToken)
+                    : 0;
             }
             else
             {
+                orphanedShardIds = new List<Guid>();
                 shardsDeleted = 0;
             }
+
+            // Narrow the storage-key set to truly orphaned shards before
+            // the post-commit blob delete. Blobs for shards that are
+            // still referenced by other users' manifests MUST NOT be
+            // zeroed — those photos would silently become un-decryptable.
+            _ = shardLinksRemoved; // logged via shardsDeleted accounting
+            var orphanedIdSet = orphanedShardIds.ToHashSet();
+            storageKeys = uploadedShards.Concat(albumShards)
+                .Where(s => orphanedIdSet.Contains(s.Id))
+                .Select(s => s.StorageKey)
+                .Where(k => !string.IsNullOrEmpty(k))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
 
             // Drop the user row. Everything in the cascade list above
             // (owned albums, memberships, sessions, etc.) goes with it.

@@ -188,6 +188,102 @@ public sealed class UserErasureIntegrationTests
 
     // ─── Controller-level guard tests ───────────────────────────────────
 
+    /// <summary>
+    /// Regression for security-review-2026-05-18-01.
+    /// Earlier code deleted ManifestShard rows by ShardId only, so when a
+    /// shard was referenced by more than one manifest (e.g. dedup, or a
+    /// co-owned album) erasing one user severed the unrelated manifest's
+    /// reference too. The corrected algorithm must:
+    ///   1. Drop the manifest-shard links for manifests in albums the
+    ///      erased user owns.
+    ///   2. Drop only shards that become orphaned (zero remaining links).
+    /// Shards still referenced by manifests outside the erased user's
+    /// owned albums MUST survive — both the Shard row AND its blob.
+    /// </summary>
+    [DockerRequiredFact]
+    [Trait("Category", "Integration")]
+    public async Task DeleteMe_DoesNotCorruptOtherUsersAlbums_WhenSharedShardExists()
+    {
+        await using var db = await _fixture.CreateFreshDbContextAsync();
+        var data = new TestDataBuilder(db);
+        var storage = new MockStorageService();
+
+        // User A owns Album X (will be erased).
+        var userA = await data.CreateUserAsync(OwnerAuthSub);
+        var albumX = await data.CreateAlbumAsync(userA);
+
+        // User B owns Album Z. Album Z references the SAME shard as
+        // Album X — modelling cross-user dedup or a co-owned/forked
+        // album path.
+        var userB = await data.CreateUserAsync(CoOwnerAuthSub);
+        var albumZ = await data.CreateAlbumAsync(userB);
+
+        // The shared shard was uploaded by user B (so it is NOT in
+        // userA's uploadedShards set). userA's manifest in Album X
+        // references it via a ManifestShard link.
+        var sharedShard = await data.CreateShardAsync(userB, ShardStatus.ACTIVE);
+        storage.AddFile(sharedShard.StorageKey);
+
+        var manifestX = await data.CreateManifestAsync(albumX, new() { sharedShard });
+        var manifestZ = await data.CreateManifestAsync(albumZ, new() { sharedShard });
+
+        var sut = CreateService(db, storage);
+        var result = await sut.EraseAsync(userA.Id);
+
+        // Album X is gone; user A is gone.
+        Assert.Empty(await db.Users.Where(u => u.Id == userA.Id).ToListAsync());
+        Assert.Empty(await db.Albums.Where(a => a.Id == albumX.Id).ToListAsync());
+
+        // User B and Album Z are untouched.
+        Assert.NotNull(await db.Users.FirstOrDefaultAsync(u => u.Id == userB.Id));
+        Assert.NotNull(await db.Albums.FirstOrDefaultAsync(a => a.Id == albumZ.Id));
+
+        // The shared shard MUST still exist — it is still referenced by
+        // manifestZ in Album Z. The shard row, its blob, and the
+        // ManifestShard link in Z all survive.
+        Assert.NotNull(await db.Shards.FirstOrDefaultAsync(s => s.Id == sharedShard.Id));
+        Assert.DoesNotContain(sharedShard.StorageKey, storage.DeletedKeys);
+        Assert.NotNull(await db.ManifestShards
+            .FirstOrDefaultAsync(ms => ms.ManifestId == manifestZ.Id && ms.ShardId == sharedShard.Id));
+
+        // No false-positive shard delete reported.
+        Assert.Equal(0, result.ShardsDeleted);
+        Assert.Equal(0, result.BlobsDeleted);
+    }
+
+    /// <summary>
+    /// Companion to <see cref="DeleteMe_DoesNotCorruptOtherUsersAlbums_WhenSharedShardExists"/>:
+    /// when an erased user has TWO of their OWN albums (X and Y) that
+    /// both reference the same shard, the shard becomes a true orphan
+    /// after erasure and MUST be reaped (row + blob).
+    /// </summary>
+    [DockerRequiredFact]
+    [Trait("Category", "Integration")]
+    public async Task EraseAsync_ReapsShard_WhenOnlyReferencedByOwnedAlbums()
+    {
+        await using var db = await _fixture.CreateFreshDbContextAsync();
+        var data = new TestDataBuilder(db);
+        var storage = new MockStorageService();
+
+        var owner = await data.CreateUserAsync(OwnerAuthSub);
+        var albumX = await data.CreateAlbumAsync(owner);
+        var albumY = await data.CreateAlbumAsync(owner);
+        var shard = await data.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        await data.CreateManifestAsync(albumX, new() { shard });
+        await data.CreateManifestAsync(albumY, new() { shard });
+        storage.AddFile(shard.StorageKey);
+
+        var sut = CreateService(db, storage);
+        var result = await sut.EraseAsync(owner.Id);
+
+        Assert.Equal(1, result.ShardsDeleted);
+        Assert.Equal(1, result.BlobsDeleted);
+        Assert.Empty(await db.Shards.Where(s => s.Id == shard.Id).ToListAsync());
+        Assert.Contains(shard.StorageKey, storage.DeletedKeys);
+    }
+
+    // ─── Controller-level guard tests ───────────────────────────────────
+
     [DockerRequiredFact]
     [Trait("Category", "Integration")]
     public async Task DeleteMe_RequiresConfirmationText_RejectsWithoutMatch()
