@@ -24,3 +24,50 @@ The fixture format is defined in [golden-vector.schema.json](golden-vector.schem
 4. Temporary TypeScript reference runner until cross-client interoperability passes.
 
 The example fixture in `examples/golden-vector-format-example.json` validates the shape of the fixture format and is not a cryptographic correctness vector.
+
+## Regenerating and verifying the corpus
+
+The 22 `tests/vectors/*.json` fixtures are **canonical reference vectors authored
+by hand** against the TypeScript / libsodium reference implementation. They are
+**not** auto-generated from a script — there is no general regeneration path
+that recomputes their expected outputs, because the JSON files themselves
+*define* the cross-client byte-level contract.
+
+A small subset of the corpus is, however, programmatically derived:
+
+| Artefact | Generator |
+|----------|-----------|
+| `crates/mosaic-crypto/tests/sharing_vector.rs.inc` | `scripts/dump-bundle-vector.mjs` (run via `libs/crypto/`) |
+
+To verify the committed corpus is byte-identical with the canonical references,
+run the deterministic regenerator script. It regenerates the auto-generated
+artefacts, runs the Rust cross-client parity tests (`mosaic-vectors`,
+`mosaic-uniffi`, `mosaic-parity-tests`), and asserts no drift via
+`git diff --exit-code`:
+
+```bash
+# Linux / macOS
+./scripts/regenerate-test-vectors.sh
+
+# Windows
+.\scripts\regenerate-test-vectors.ps1
+
+# Or directly
+node scripts/regenerate-test-vectors.mjs
+```
+
+CI invokes this script with `--check` to enforce bit-identity on every push.
+
+### Authoring a new fixture
+
+Adding a new `tests/vectors/<name>.json` corpus entry is a manual workflow:
+
+1. Pick deterministic inputs (fixed seeds, fixed plaintexts, fixed nonces).
+2. Compute the expected outputs against the canonical reference
+   (libsodium / TS or the protocol's designated `rust_canonical` source).
+3. Author the JSON fixture and add a consumer in `crates/mosaic-vectors`,
+   `crates/mosaic-uniffi/tests/cross_client_vectors.rs`, the web cross-client
+   tests, and the Android `CrossClientVectorTest` driver.
+4. Run `./scripts/regenerate-test-vectors.sh` to confirm every client
+   reproduces the captured bytes.
+
