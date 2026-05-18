@@ -25,6 +25,20 @@ jobs:
             libs/crypto/package-lock.json
             apps/web/package-lock.json
       
+      - name: npm audit (high-severity gate across npm workspaces)
+        # v1.0.1 s15: fail the build if any npm workspace has a high-severity
+        # CVE in its locked dependency tree. Runs BEFORE install/test so a
+        # vulnerable dependency cannot reach the test step. Covers all four
+        # npm workspaces in the repo: libs/crypto, apps/web,
+        # tests/integration, tests/e2e.
+        run: |
+          set -e
+          for dir in libs/crypto apps/web tests/integration tests/e2e; do
+            echo "::group::npm audit $dir"
+            (cd "$dir" && npm audit --audit-level=high)
+            echo "::endgroup::"
+          done
+
       - name: Install crypto library dependencies
         working-directory: libs/crypto
         run: npm ci
