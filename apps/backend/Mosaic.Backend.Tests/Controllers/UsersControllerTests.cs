@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Models.Users;
 using Mosaic.Backend.Tests.Helpers;
@@ -383,5 +384,146 @@ public class UsersControllerTests
 
         // Assert
         ProblemDetailsAssertions.AssertNotFound(result);
+    }
+
+    // ---------- v1.0.1 s23 — AuthSub topology leak on ProxyAuth deployments ----------
+
+    private static IConfiguration CreateProxyAuthConfig()
+    {
+        var data = new Dictionary<string, string?>
+        {
+            ["Quota:DefaultMaxBytes"] = "10737418240",
+            ["Quota:DefaultMaxAlbums"] = "100",
+            ["Quota:DefaultMaxPhotosPerAlbum"] = "10000",
+            ["Quota:DefaultMaxBytesPerAlbum"] = "5368709120",
+            ["Storage:Path"] = Path.GetTempPath(),
+            ["Auth:ProxyAuthEnabled"] = "true",
+            ["Auth:LocalAuthEnabled"] = "false",
+        };
+        return new ConfigurationBuilder().AddInMemoryCollection(data).Build();
+    }
+
+    private static IConfiguration CreateLocalAuthConfig()
+    {
+        var data = new Dictionary<string, string?>
+        {
+            ["Quota:DefaultMaxBytes"] = "10737418240",
+            ["Quota:DefaultMaxAlbums"] = "100",
+            ["Quota:DefaultMaxPhotosPerAlbum"] = "10000",
+            ["Quota:DefaultMaxBytesPerAlbum"] = "5368709120",
+            ["Storage:Path"] = Path.GetTempPath(),
+            ["Auth:ProxyAuthEnabled"] = "false",
+            ["Auth:LocalAuthEnabled"] = "true",
+        };
+        return new ConfigurationBuilder().AddInMemoryCollection(data).Build();
+    }
+
+    private static bool ResponseHasProperty(object? value, string propertyName)
+    {
+        Assert.NotNull(value);
+        return value!.GetType().GetProperty(propertyName) is not null;
+    }
+
+    [Fact]
+    public async Task GetMe_ProxyAuthMode_OmitsAuthSubFromResponse()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = CreateProxyAuthConfig();
+        var dataBuilder = new TestDataBuilder(db);
+        await dataBuilder.CreateUserAsync(TestAuthSub, "existing-pubkey");
+
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var result = await controller.GetMe();
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.False(
+            ResponseHasProperty(okResult.Value, "AuthSub"),
+            "AuthSub MUST be omitted from /me response when Auth:ProxyAuthEnabled=true — it is the upstream Remote-User header value and leaks deployment topology.");
+        Assert.True(ResponseHasProperty(okResult.Value, "Id"));
+        Assert.True(ResponseHasProperty(okResult.Value, "IdentityPubkey"));
+    }
+
+    [Fact]
+    public async Task GetMe_LocalAuthMode_IncludesAuthSubInResponse()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = CreateLocalAuthConfig();
+        var dataBuilder = new TestDataBuilder(db);
+        await dataBuilder.CreateUserAsync(TestAuthSub, "existing-pubkey");
+
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var result = await controller.GetMe();
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.True(
+            ResponseHasProperty(okResult.Value, "AuthSub"),
+            "AuthSub SHOULD be included in /me response under LocalAuth — it is the username the user typed at the login form, not a topology leak.");
+    }
+
+    [Fact]
+    public async Task UpdateMe_ProxyAuthMode_OmitsAuthSubFromResponse()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = CreateProxyAuthConfig();
+        var dataBuilder = new TestDataBuilder(db);
+        await dataBuilder.CreateUserAsync(TestAuthSub);
+
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var request = new UpdateUserRequest(IdentityPubkey: "new-pubkey-456");
+
+        var result = await controller.UpdateMe(request);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.False(
+            ResponseHasProperty(okResult.Value, "AuthSub"),
+            "AuthSub MUST be omitted from PUT /me response when Auth:ProxyAuthEnabled=true.");
+        Assert.True(ResponseHasProperty(okResult.Value, "IdentityPubkey"));
+    }
+
+    [Fact]
+    public async Task UpdateMe_LocalAuthMode_IncludesAuthSubInResponse()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = CreateLocalAuthConfig();
+        var dataBuilder = new TestDataBuilder(db);
+        await dataBuilder.CreateUserAsync(TestAuthSub);
+
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var request = new UpdateUserRequest(IdentityPubkey: "new-pubkey-789");
+
+        var result = await controller.UpdateMe(request);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.True(
+            ResponseHasProperty(okResult.Value, "AuthSub"),
+            "AuthSub SHOULD be included in PUT /me response under LocalAuth.");
     }
 }

@@ -55,13 +55,52 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Get current user profile
+    /// Get current user profile.
+    ///
+    /// <para>
+    /// On ProxyAuth deployments the <c>AuthSub</c> field is the literal
+    /// value of the upstream <c>Remote-User</c> header — returning it to
+    /// the client leaks the deployment topology (which header the reverse
+    /// proxy injects, what identity provider the operator is fronting,
+    /// internal usernames). The response therefore OMITS <c>AuthSub</c>
+    /// entirely when <c>Auth:ProxyAuthEnabled=true</c>. LocalAuth-mode
+    /// callers still receive it because in that mode it is the username
+    /// the user typed at the login form — they already know it. (v1.0.1
+    /// s23.)
+    /// </para>
     /// </summary>
     [HttpGet("me")]
     public async Task<IActionResult> GetMe()
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
         var quota = await _db.UserQuotas.FindAsync(user.Id);
+        var encryptedSalt = user.EncryptedSalt != null ? Convert.ToBase64String(user.EncryptedSalt) : null;
+        var saltNonce = user.SaltNonce != null ? Convert.ToBase64String(user.SaltNonce) : null;
+        var accountSalt = user.AccountSalt != null ? Convert.ToBase64String(user.AccountSalt) : null;
+        var wrappedAccountKey = user.WrappedAccountKey != null ? Convert.ToBase64String(user.WrappedAccountKey) : null;
+        var quotaResponse = quota != null
+            ? new { quota.MaxStorageBytes, quota.UsedStorageBytes }
+            : null;
+
+        if (IsProxyAuthMode())
+        {
+            return Ok(new
+            {
+                user.Id,
+                user.IdentityPubkey,
+                user.CreatedAt,
+                user.IsAdmin,
+                EncryptedSalt = encryptedSalt,
+                SaltNonce = saltNonce,
+                AccountSalt = accountSalt,
+                WrappedAccountKey = wrappedAccountKey,
+                user.KdfMemoryKib,
+                user.KdfIterations,
+                user.KdfParallelism,
+                user.KdfAlgVersion,
+                Quota = quotaResponse
+            });
+        }
 
         return Ok(new
         {
@@ -70,19 +109,15 @@ public class UsersController : ControllerBase
             user.IdentityPubkey,
             user.CreatedAt,
             user.IsAdmin,
-            EncryptedSalt = user.EncryptedSalt != null ? Convert.ToBase64String(user.EncryptedSalt) : null,
-            SaltNonce = user.SaltNonce != null ? Convert.ToBase64String(user.SaltNonce) : null,
-            AccountSalt = user.AccountSalt != null ? Convert.ToBase64String(user.AccountSalt) : null,
-            WrappedAccountKey = user.WrappedAccountKey != null ? Convert.ToBase64String(user.WrappedAccountKey) : null,
+            EncryptedSalt = encryptedSalt,
+            SaltNonce = saltNonce,
+            AccountSalt = accountSalt,
+            WrappedAccountKey = wrappedAccountKey,
             user.KdfMemoryKib,
             user.KdfIterations,
             user.KdfParallelism,
             user.KdfAlgVersion,
-            Quota = quota != null ? new
-            {
-                quota.MaxStorageBytes,
-                quota.UsedStorageBytes
-            } : null
+            Quota = quotaResponse
         });
     }
 
@@ -151,14 +186,30 @@ public class UsersController : ControllerBase
 
         await _db.SaveChangesAsync();
 
+        var encryptedSalt = user.EncryptedSalt != null ? Convert.ToBase64String(user.EncryptedSalt) : null;
+        var saltNonce = user.SaltNonce != null ? Convert.ToBase64String(user.SaltNonce) : null;
+
+        // Omit AuthSub on ProxyAuth deployments — see GetMe for rationale. (v1.0.1 s23.)
+        if (IsProxyAuthMode())
+        {
+            return Ok(new
+            {
+                user.Id,
+                user.IdentityPubkey,
+                user.CreatedAt,
+                EncryptedSalt = encryptedSalt,
+                SaltNonce = saltNonce
+            });
+        }
+
         return Ok(new
         {
             user.Id,
             user.AuthSub,
             user.IdentityPubkey,
             user.CreatedAt,
-            EncryptedSalt = user.EncryptedSalt != null ? Convert.ToBase64String(user.EncryptedSalt) : null,
-            SaltNonce = user.SaltNonce != null ? Convert.ToBase64String(user.SaltNonce) : null
+            EncryptedSalt = encryptedSalt,
+            SaltNonce = saltNonce
         });
     }
 
@@ -434,6 +485,37 @@ public class UsersController : ControllerBase
             return legacyMode.Equals("LocalAuth", StringComparison.OrdinalIgnoreCase);
         }
         return false;
+    }
+
+    /// <summary>
+    /// True when the deployment is configured for ProxyAuth — i.e. the
+    /// caller's <c>AuthSub</c> originates from an upstream reverse-proxy
+    /// header rather than from a username the user typed at the login
+    /// form. Used to suppress topology-leaking fields from /me responses.
+    /// Mirrors the precedence in <see cref="IsLocalAuthMode"/>: explicit
+    /// <c>Auth:ProxyAuthEnabled</c> wins; otherwise fall back to the
+    /// legacy <c>Auth:Mode</c> string; otherwise default to ProxyAuth
+    /// (the safe choice — assume topology must not be leaked when the
+    /// operator hasn't said otherwise).
+    /// </summary>
+    private bool IsProxyAuthMode()
+    {
+        var legacyMode = _config["Auth:Mode"];
+        if (_config.GetValue<bool?>("Auth:ProxyAuthEnabled") != null)
+        {
+            return _config.GetValue("Auth:ProxyAuthEnabled", false);
+        }
+        if (_config.GetValue<bool?>("Auth:LocalAuthEnabled") != null)
+        {
+            // Explicit LocalAuth toggle present but no ProxyAuth toggle —
+            // treat the absence of LocalAuth as ProxyAuth.
+            return !_config.GetValue("Auth:LocalAuthEnabled", false);
+        }
+        if (!string.IsNullOrEmpty(legacyMode))
+        {
+            return legacyMode.Equals("ProxyAuth", StringComparison.OrdinalIgnoreCase);
+        }
+        return true;
     }
 
     /// <summary>
