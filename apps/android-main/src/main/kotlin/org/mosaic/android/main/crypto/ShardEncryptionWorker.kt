@@ -55,7 +55,7 @@ class ShardEncryptionWorker internal constructor(
     if (epochId < 0 || tier !in MIN_TIER..MAX_TIER || shardIndex < 0) {
       return Result.failure()
     }
-    if (!ALBUM_CONTENT_HASH_HEX_REGEX.matches(plaintextSha256Hex)) {
+    if (!org.mosaic.android.main.upload.ContentHashHex.isValid(plaintextSha256Hex)) {
       return Result.failure(workDataOf("error" to "malformed_album_content_hash"))
     }
 
@@ -157,6 +157,5 @@ class ShardEncryptionWorker internal constructor(
 
     private const val MIN_TIER: Int = 1
     private const val MAX_TIER: Int = 3
-    private val ALBUM_CONTENT_HASH_HEX_REGEX = Regex("^[0-9a-f]{64}$")
   }
 }
