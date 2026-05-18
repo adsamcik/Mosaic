@@ -568,7 +568,11 @@ public class UsersController : ControllerBase
                 targetId: userId.ToString(),
                 details: new
                 {
-                    username = authSub,
+                    // username intentionally omitted (security-review-2026-05-18-02):
+                    // retaining plaintext AuthSub on a "user.erased" row
+                    // preserves the erased user's identity in perpetuity,
+                    // violating GDPR Article 17. Opaque actorUserId and
+                    // targetId UUIDs are sufficient for forensic linkage.
                     ownedAlbums = result.OwnedAlbumsDeleted,
                     memberships = result.MembershipsDeleted,
                     sessions = result.SessionsDeleted,

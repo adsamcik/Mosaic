@@ -317,6 +317,40 @@ public sealed class UserErasureIntegrationTests
         Assert.Empty(await db.Users.Where(u => u.Id == user.Id).ToListAsync());
     }
 
+    [DockerRequiredFact]
+    [Trait("Category", "Integration")]
+    public async Task DeleteMe_AuditLogOmitsPlaintextUsername()
+    {
+        await using var db = await _fixture.CreateFreshDbContextAsync();
+        var data = new TestDataBuilder(db);
+        var user = await data.CreateUserAsync(OwnerAuthSub);
+
+        var auditLog = new AuditLogService(
+            db,
+            TimeProvider.System,
+            NullLogger<AuditLogService>.Instance);
+
+        var controller = CreateController(db, auditLog);
+        var result = await controller.DeleteMe(new DeleteMeRequest(OwnerAuthSub));
+        Assert.IsType<NoContentResult>(result);
+
+        // The success "user.erased" audit row MUST NOT carry the
+        // plaintext AuthSub anywhere in its serialized details.
+        // (security-review-2026-05-18-02)
+        await using var verify = await _fixture.GetContextAsync();
+        var rows = await verify.AuditLogEntries.AsNoTracking()
+            .Where(a => a.EventType == AuditEventTypes.UserSelfErased
+                     && a.Outcome == AuditOutcomes.Success)
+            .ToListAsync();
+
+        Assert.NotEmpty(rows);
+        foreach (var row in rows)
+        {
+            Assert.DoesNotContain(OwnerAuthSub, row.DetailsJson ?? string.Empty,
+                StringComparison.Ordinal);
+        }
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────
 
     private static UserErasureService CreateService(MosaicDbContext db, MockStorageService storage)
@@ -330,7 +364,7 @@ public sealed class UserErasureIntegrationTests
         return new UserErasureService(db, storage, config, NullLogger<UserErasureService>.Instance);
     }
 
-    private UsersController CreateController(MosaicDbContext db)
+    private UsersController CreateController(MosaicDbContext db, IAuditLogService? auditLog = null)
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -347,7 +381,9 @@ public sealed class UserErasureIntegrationTests
             new MockCurrentUserService(db),
             NullLogger<UsersController>.Instance,
             new TestWebHostEnvironment(),
-            erasure)
+            erasure,
+            rustHost: null,
+            auditLog: auditLog)
         {
             ControllerContext = new ControllerContext
             {
