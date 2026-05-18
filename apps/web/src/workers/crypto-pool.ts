@@ -263,12 +263,42 @@ function isMobileNavigator(nav: Navigator): boolean {
   return /Mobi/u.test(nav.userAgent || '');
 }
 
+/**
+ * Narrowly detect that the underlying Worker has died (so the pool should
+ * respawn it). v1.0.x sweep 37 narrowed this from a fuzzy substring match
+ * on "worker" (which mis-classified any DownloadError mentioning the word
+ * "worker" as a dead-worker event and triggered spurious respawns).
+ *
+ * A worker-death signal is exactly one of:
+ *   1. A `DataCloneError` — Comlink failed to serialize across the port,
+ *      which in practice means the port has been torn down.
+ *   2. A message containing `MessagePort closed` — Comlink surfaces this
+ *      exact phrase when the channel is gone.
+ *   3. An error carrying an explicit `terminated === true` flag — used by
+ *      the pool itself when it has proactively terminated a slot.
+ *
+ * `DownloadError` instances (even ones whose message includes the word
+ * "worker") MUST NOT match. Decrypt / Integrity / IllegalState failures
+ * are app-level errors and respawning the worker would mask the real bug.
+ */
 function isWorkerDiedError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
   }
-  const text = `${error.name} ${error.message}`.toLowerCase();
-  return text.includes('terminated') || text.includes('disconnected') || text.includes('died') || text.includes('worker');
+  if (error instanceof DownloadError) {
+    return false;
+  }
+  if (error.name === 'DataCloneError') {
+    return true;
+  }
+  if (error.message.includes('MessagePort closed')) {
+    return true;
+  }
+  const flagged = (error as { readonly terminated?: unknown }).terminated;
+  if (flagged === true) {
+    return true;
+  }
+  return false;
 }
 
 export const __cryptoPoolTestUtils = {
@@ -277,5 +307,8 @@ export const __cryptoPoolTestUtils = {
   },
   resetWorkerFactory(): void {
     workerFactory = (url, options) => new Worker(url, options);
+  },
+  isWorkerDiedError(error: unknown): boolean {
+    return isWorkerDiedError(error);
   },
 };

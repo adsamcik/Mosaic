@@ -55,7 +55,13 @@ function makeApi(index: number, counts: number[], rejectOnce = false): FakeApi {
       counts[index] = (counts[index] ?? 0) + 1;
       if (shouldReject) {
         shouldReject = false;
-        throw new Error('worker terminated');
+        // v1.0.x sweep 37: the pool's worker-died predicate now requires
+        // an explicit signal (DataCloneError, "MessagePort closed", or a
+        // `terminated === true` flag) rather than a fuzzy substring match
+        // on "worker". Simulate transport teardown with the explicit flag.
+        throw Object.assign(new Error('crypto worker slot torn down'), {
+          terminated: true,
+        });
       }
     },
     async decryptShardWithTierKey(shardBytes: Uint8Array): Promise<Uint8Array> {
@@ -169,7 +175,9 @@ describe('crypto pool', () => {
     await pool.shutdown();
     const reject = rejectInFlight as ((error: Error) => void) | null;
     if (!reject) throw new Error('expected in-flight rejection hook');
-    reject(new Error('worker terminated'));
+    reject(Object.assign(new Error('crypto worker slot torn down'), {
+      terminated: true,
+    }));
     await expect(inFlight).rejects.toMatchObject({ code: 'IllegalState' });
     expect(workerRecords).toHaveLength(1);
     expect(workerRecords[0]?.terminated).toBe(true);
