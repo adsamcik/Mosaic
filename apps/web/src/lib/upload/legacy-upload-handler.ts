@@ -1,5 +1,5 @@
 import type { getCryptoClient } from '../crypto-client';
-import { computeContentHash, DuplicateUploadError } from '../content-hash';
+import { computeContentHashStreaming, DuplicateUploadError } from '../content-hash';
 import type { UploadTask, UploadHandlerContext } from './types';
 import { CHUNK_SIZE } from './types';
 import { encryptUploadShardWithEpochHandle } from './encrypt-upload-shard';
@@ -17,8 +17,13 @@ export async function processLegacyUpload(
   // MUST be the source-of-truth user file bytes (BEFORE any transformation).
   // Adding any per-tier transform between the source bytes and this call is
   // a v1 protocol break.
-  const originalBytes = new Uint8Array(await task.file.arrayBuffer());
-  const contentHash = await computeContentHash(originalBytes);
+  //
+  // v1.0.x s47-y1: stream the hash slice-by-slice so multi-GB files
+  // don't allocate one giant ArrayBuffer.
+  // v1.0.x s47-y2: per-chunk slices in the upload loop already re-read
+  // from the File handle, so we never need to retain the full plaintext
+  // beyond the streaming hasher.
+  const contentHash = await computeContentHashStreaming(task.file);
   task.contentHash = contentHash;
   await ctx.updatePersistedTask(task.id, { contentHash });
   const duplicate = await ctx.contentHashDedup?.lookup(task.albumId, contentHash);
