@@ -49,10 +49,10 @@ class MemoryLeakTest {
   }
 
   @Test
-  fun repeatedVideoFrameExtractionRecyclesDecodedAndRotatedBitmaps() {
+  fun repeatedVideoFrameExtractionRecyclesDecodedAndRotatedBitmaps() = runTest {
     val frameRefs = mutableListOf<WeakReference<Bitmap>>()
     val decoder = object : VideoFrameDecoder {
-      override fun decode(sourceUri: Uri): DecodedVideoFrame {
+      override suspend fun decode(sourceUri: Uri): DecodedVideoFrame {
         val bitmap = Bitmap.createBitmap(24, 12, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.CYAN) }
         frameRefs += WeakReference(bitmap)
         return DecodedVideoFrame(bitmap = bitmap, orientationDegrees = 90)

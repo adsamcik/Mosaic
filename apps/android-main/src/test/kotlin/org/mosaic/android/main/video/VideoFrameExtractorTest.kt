@@ -5,8 +5,8 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,10 +23,10 @@ class VideoFrameExtractorTest {
   private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
 
   @Test
-  fun extractAppliesContainerOrientationBeforeEncodingTiers() {
+  fun extractAppliesContainerOrientationBeforeEncodingTiers() = runTest {
     val frame = Bitmap.createBitmap(10, 20, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.GREEN) }
     val decoder = object : VideoFrameDecoder {
-      override fun decode(sourceUri: Uri): DecodedVideoFrame = DecodedVideoFrame(frame, orientationDegrees = 90)
+      override suspend fun decode(sourceUri: Uri): DecodedVideoFrame = DecodedVideoFrame(frame, orientationDegrees = 90)
     }
     val extractor = VideoFrameExtractor(
       context = context,
@@ -44,7 +44,7 @@ class VideoFrameExtractorTest {
   }
 
   @Test
-  fun mediaMetadataRetrieverFrameDecoderHappyPathUsesTimeoutWrapper() {
+  fun mediaMetadataRetrieverFrameDecoderHappyPathUsesTimeoutWrapper() = runTest {
     val retriever = StubFrameRetriever(
       frame = Bitmap.createBitmap(12, 24, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.CYAN) },
       orientation = "90",
@@ -64,7 +64,7 @@ class VideoFrameExtractorTest {
   }
 
   @Test
-  fun timeoutOnHungVideo() {
+  fun timeoutOnHungVideo() = runTest {
     val retriever = StubFrameRetriever(
       frame = Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888),
       orientation = "0",
@@ -76,9 +76,13 @@ class VideoFrameExtractorTest {
       retrieverFactory = { retriever },
     )
 
-    assertThrows(VideoFrameExtractionTimeoutException::class.java) {
+    var thrown: Throwable? = null
+    try {
       decoder.decode(Uri.parse("file:///hung.mp4"))
+    } catch (error: VideoFrameExtractionTimeoutException) {
+      thrown = error
     }
+    assertTrue("expected VideoFrameExtractionTimeoutException", thrown is VideoFrameExtractionTimeoutException)
     assertTrue(retriever.releaseCalled)
     retriever.frame.recycle()
   }

@@ -6,7 +6,6 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeout
 import org.mosaic.android.main.media.BitmapTierEncoder
@@ -17,7 +16,7 @@ class VideoFrameExtractor(
   private val encoder: BitmapTierEncoder = BitmapTierEncoder(),
   private val frameDecoder: VideoFrameDecoder = MediaMetadataRetrieverFrameDecoder(context),
 ) {
-  fun extract(sourceUri: Uri): VideoFrameExtractionResult {
+  suspend fun extract(sourceUri: Uri): VideoFrameExtractionResult {
     val frame = frameDecoder.decode(sourceUri)
     val rotated = encoder.rotate(frame.bitmap, frame.orientationDegrees)
     return try {
@@ -33,7 +32,7 @@ class VideoFrameExtractor(
 }
 
 interface VideoFrameDecoder {
-  fun decode(sourceUri: Uri): DecodedVideoFrame
+  suspend fun decode(sourceUri: Uri): DecodedVideoFrame
 }
 
 class MediaMetadataRetrieverFrameDecoder internal constructor(
@@ -47,13 +46,11 @@ class MediaMetadataRetrieverFrameDecoder internal constructor(
     retrieverFactory = { AndroidFrameRetriever(MediaMetadataRetriever()) },
   )
 
-  override fun decode(sourceUri: Uri): DecodedVideoFrame {
+  override suspend fun decode(sourceUri: Uri): DecodedVideoFrame {
     return try {
-      runBlocking {
-        withTimeout(timeoutMillis) {
-          runInterruptible(Dispatchers.IO) {
-            decodeBlocking(sourceUri)
-          }
+      withTimeout(timeoutMillis) {
+        runInterruptible(Dispatchers.IO) {
+          decodeBlocking(sourceUri)
         }
       }
     } catch (error: TimeoutCancellationException) {
