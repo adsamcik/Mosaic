@@ -204,7 +204,7 @@ public class AuthConfigurationResolverTests
     [InlineData("/api/v1/auth/verify", "/api/v1/auth/verify", true)]
     [InlineData("/api/v1/auth/verify/", "/api/v1/auth/verify", true)]
     [InlineData("/api/v1/auth/verify-extra", "/api/v1/auth/verify", false)]
-    [InlineData("/API/AUTH/VERIFY", "/api/v1/auth/verify", true)]
+    [InlineData("/API/V1/AUTH/VERIFY", "/api/v1/auth/verify", true)]
     [InlineData("/api/v1/settings", "/api/v1/s", false)]
     [InlineData("/api/v1/secrets", "/api/v1/s", false)]
     [InlineData("/api/v1/s//keys", "/api/v1/s", true)]

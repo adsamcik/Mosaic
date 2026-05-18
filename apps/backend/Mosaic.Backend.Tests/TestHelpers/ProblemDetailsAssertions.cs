@@ -14,7 +14,7 @@ public static class ProblemDetailsAssertions
     /// </summary>
     public static ObjectResult AssertBadRequest(IActionResult result)
     {
-        var objectResult = Assert.IsType<ObjectResult>(result);
+        var objectResult = Assert.IsAssignableFrom<ObjectResult>(result);
         Assert.Equal(400, objectResult.StatusCode);
         return objectResult;
     }
@@ -24,7 +24,7 @@ public static class ProblemDetailsAssertions
     /// </summary>
     public static ObjectResult AssertNotFound(IActionResult result)
     {
-        var objectResult = Assert.IsType<ObjectResult>(result);
+        var objectResult = Assert.IsAssignableFrom<ObjectResult>(result);
         Assert.Equal(404, objectResult.StatusCode);
         return objectResult;
     }
@@ -34,7 +34,7 @@ public static class ProblemDetailsAssertions
     /// </summary>
     public static ObjectResult AssertConflict(IActionResult result)
     {
-        var objectResult = Assert.IsType<ObjectResult>(result);
+        var objectResult = Assert.IsAssignableFrom<ObjectResult>(result);
         Assert.Equal(409, objectResult.StatusCode);
         return objectResult;
     }
@@ -44,7 +44,7 @@ public static class ProblemDetailsAssertions
     /// </summary>
     public static ObjectResult AssertUnauthorized(IActionResult result)
     {
-        var objectResult = Assert.IsType<ObjectResult>(result);
+        var objectResult = Assert.IsAssignableFrom<ObjectResult>(result);
         Assert.Equal(401, objectResult.StatusCode);
         return objectResult;
     }
@@ -54,7 +54,7 @@ public static class ProblemDetailsAssertions
     /// </summary>
     public static ObjectResult AssertForbidden(IActionResult result)
     {
-        var objectResult = Assert.IsType<ObjectResult>(result);
+        var objectResult = Assert.IsAssignableFrom<ObjectResult>(result);
         Assert.Equal(403, objectResult.StatusCode);
         return objectResult;
     }

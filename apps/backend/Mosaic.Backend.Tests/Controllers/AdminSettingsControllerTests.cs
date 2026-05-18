@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Models.Admin;
@@ -46,7 +49,20 @@ public class AdminSettingsControllerTests
         var controller = new AdminSettingsController(db, quotaService, NullLogger<AdminSettingsController>.Instance);
         var httpContext = new DefaultHttpContext();
         httpContext.Items["AdminUser"] = adminUser;
+
+        // ControllerBase.TryValidateModel requires an IObjectModelValidator. The
+        // production pipeline wires up MVC's DefaultObjectValidator which understands
+        // model metadata (including DataAnnotations on record positional parameters).
+        // We mirror that here by spinning up the MVC services container so unit tests
+        // that invoke the controller directly get the same validation contract.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMvcCore().AddDataAnnotations();
+        var provider = services.BuildServiceProvider();
+        httpContext.RequestServices = provider;
+
         controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+        controller.ObjectValidator = provider.GetRequiredService<IObjectModelValidator>();
         return controller;
     }
 
