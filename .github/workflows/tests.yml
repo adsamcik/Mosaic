@@ -36,7 +36,10 @@ jobs:
       - name: Install admin dependencies
         working-directory: apps/web
         run: npm ci
-      
+
+      - name: Check i18n translation parity (en vs cs)
+        run: node scripts/check-i18n-parity.mjs
+
       - name: Run admin tests
         working-directory: apps/web
         run: npm run test:run
