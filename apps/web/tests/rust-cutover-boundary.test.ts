@@ -317,6 +317,7 @@ describe('web Rust crypto cutover boundaries', () => {
         'workers/crypto.worker-pool-member.ts',
         'workers/crypto.worker.ts',
         'workers/crypto/handle-registry.ts',
+        'workers/rust-crypto/cbor-encoders.ts',
       ]);
   });
 
