@@ -56,12 +56,39 @@ internal static class AuthConfigurationResolver
                 "Set a single auth mode or explicitly opt in with Auth:AllowDualMode=true.");
         }
 
-        if (!environment.IsDevelopment() &&
-            string.IsNullOrWhiteSpace(configuration["Auth:ServerSecret"]))
+        var serverSecret = configuration["Auth:ServerSecret"];
+        if (!environment.IsDevelopment() && string.IsNullOrWhiteSpace(serverSecret))
         {
             throw new InvalidOperationException(
                 "Auth:ServerSecret is required outside Development. Set the configuration value " +
                 "(e.g., via Auth__ServerSecret env var) to a stable secret of at least 32 random bytes.");
+        }
+
+        // When ServerSecret is present (any environment), it MUST be Base64-decodable
+        // because AuthController.GenerateFakeSalt calls Convert.FromBase64String on it.
+        // Failing fast at startup prevents a FormatException on the first /api/v1/auth/init
+        // request for an unknown user.
+        if (!string.IsNullOrWhiteSpace(serverSecret))
+        {
+            byte[] decoded;
+            try
+            {
+                decoded = Convert.FromBase64String(serverSecret);
+            }
+            catch (FormatException ex)
+            {
+                throw new InvalidOperationException(
+                    "Auth:ServerSecret must be a valid Base64-encoded value (e.g., the output of " +
+                    "`openssl rand -base64 32`). The configured value could not be Base64-decoded.",
+                    ex);
+            }
+
+            if (decoded.Length < 32)
+            {
+                throw new InvalidOperationException(
+                    "Auth:ServerSecret must decode to at least 32 bytes of random data. " +
+                    $"The configured value decoded to {decoded.Length} bytes.");
+            }
         }
     }
 

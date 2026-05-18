@@ -101,6 +101,65 @@ public class AuthConfigurationResolverTests
         Assert.Contains("Auth:AllowDualMode", exception.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("not-base64-!@#$%^&*()_+abcdefgh")]
+    [InlineData("====invalid====padding====chars=")]
+    public void ValidateForStartup_Throws_WhenServerSecretIsNotBase64(string invalidSecret)
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Auth:LocalAuthEnabled"] = "false",
+            ["Auth:ProxyAuthEnabled"] = "true",
+            ["Auth:ServerSecret"] = invalidSecret
+        });
+
+        var environment = CreateEnvironment(Environments.Production);
+        var authConfiguration = AuthConfigurationResolver.Resolve(configuration);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => AuthConfigurationResolver.ValidateForStartup(configuration, environment, authConfiguration));
+
+        Assert.Contains("Base64", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ValidateForStartup_Throws_WhenServerSecretDecodesShorterThan32Bytes()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Auth:LocalAuthEnabled"] = "false",
+            ["Auth:ProxyAuthEnabled"] = "true",
+            ["Auth:ServerSecret"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16))
+        });
+
+        var environment = CreateEnvironment(Environments.Production);
+        var authConfiguration = AuthConfigurationResolver.Resolve(configuration);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => AuthConfigurationResolver.ValidateForStartup(configuration, environment, authConfiguration));
+
+        Assert.Contains("32 bytes", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ValidateForStartup_Throws_WhenDevelopmentServerSecretIsNotBase64()
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Auth:LocalAuthEnabled"] = "true",
+            ["Auth:ProxyAuthEnabled"] = "false",
+            ["Auth:ServerSecret"] = "this-is-not-base64-but-32-chars!"
+        });
+
+        var environment = CreateEnvironment(Environments.Development);
+        var authConfiguration = AuthConfigurationResolver.Resolve(configuration);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => AuthConfigurationResolver.ValidateForStartup(configuration, environment, authConfiguration));
+
+        Assert.Contains("Base64", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void ValidateForStartup_AllowsDualModeWhenExplicitlyEnabled()
     {
