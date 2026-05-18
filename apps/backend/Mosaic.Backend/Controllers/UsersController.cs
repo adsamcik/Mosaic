@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Crypto;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Models;
 using Mosaic.Backend.Models.Users;
+using Mosaic.Backend.Models.ShareLinks;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;
 
@@ -247,6 +249,128 @@ public class UsersController : ControllerBase
                 statusCode: StatusCodes.Status400BadRequest);
         }
     }
+
+    /// <summary>
+    /// Enumerate every share link the caller has issued across all owned albums
+    /// (v1.0.x s40). Lets a user audit their outstanding grants without walking
+    /// every album one-by-one.
+    /// </summary>
+    /// <param name="role">Optional filter: <c>"read"</c> (tier 1 or 2) or <c>"write"</c> (tier 3).</param>
+    /// <param name="active">Optional filter: <c>true</c> excludes revoked/expired/maxed-out links; <c>false</c> includes only those.</param>
+    /// <param name="page">1-indexed page number (default 1).</param>
+    /// <param name="pageSize">Page size (default 25, capped at 100).</param>
+    [HttpGet("me/share-links")]
+    [ProducesResponseType<PagedResult<ShareLinkSummary>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ListMyShareLinks(
+        [FromQuery] string? role = null,
+        [FromQuery] bool? active = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 25)
+    {
+        if (page < 1)
+        {
+            return Problem(
+                detail: "page must be >= 1",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (pageSize < 1)
+        {
+            return Problem(
+                detail: "pageSize must be >= 1",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        // Hard cap to prevent pathological enumeration cost.
+        if (pageSize > 100)
+        {
+            pageSize = 100;
+        }
+
+        int[]? tierFilter = null;
+        if (!string.IsNullOrWhiteSpace(role))
+        {
+            if (role.Equals("read", StringComparison.OrdinalIgnoreCase))
+            {
+                tierFilter = [1, 2];
+            }
+            else if (role.Equals("write", StringComparison.OrdinalIgnoreCase))
+            {
+                tierFilter = [3];
+            }
+            else
+            {
+                return Problem(
+                    detail: "role must be 'read' or 'write'",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+        }
+
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
+        var now = DateTimeOffset.UtcNow;
+
+        // Base query: share links on albums the caller owns.
+        var query = _db.ShareLinks
+            .AsNoTracking()
+            .Where(sl => sl.Album.OwnerId == user.Id);
+
+        if (tierFilter is not null)
+        {
+            query = query.Where(sl => tierFilter.Contains(sl.AccessTier));
+        }
+
+        if (active == true)
+        {
+            // "active" = not revoked, not past ExpiresAt, not at MaxUses.
+            query = query.Where(sl =>
+                !sl.IsRevoked
+                && (sl.ExpiresAt == null || sl.ExpiresAt > now)
+                && (sl.MaxUses == null || sl.UseCount < sl.MaxUses));
+        }
+        else if (active == false)
+        {
+            query = query.Where(sl =>
+                sl.IsRevoked
+                || (sl.ExpiresAt != null && sl.ExpiresAt <= now)
+                || (sl.MaxUses != null && sl.UseCount >= sl.MaxUses));
+        }
+
+        var totalCount = await query.CountAsync();
+        var skip = (page - 1) * pageSize;
+
+        var rows = await query
+            .OrderByDescending(sl => sl.CreatedAt)
+            .Skip(skip)
+            .Take(pageSize)
+            .Select(sl => new
+            {
+                sl.Id,
+                sl.AlbumId,
+                AlbumName = sl.Album.EncryptedName,
+                sl.AccessTier,
+                sl.ExpiresAt,
+                sl.CreatedAt,
+                sl.UseCount,
+                sl.IsRevoked,
+            })
+            .ToListAsync();
+
+        var items = rows
+            .Select(r => new ShareLinkSummary(
+                Id: r.Id,
+                AlbumId: r.AlbumId,
+                AlbumName: r.AlbumName,
+                Role: r.AccessTier == 3 ? "write" : "read",
+                AccessTier: r.AccessTier,
+                ExpiresAt: r.ExpiresAt,
+                CreatedAt: r.CreatedAt,
+                AccessCount: r.UseCount,
+                IsRevoked: r.IsRevoked))
+            .ToList();
+
+        return Ok(PagedResult.Create<ShareLinkSummary>(items, skip, pageSize, totalCount));
+    }
+
 
     /// <summary>
     /// Get a user's public info (for key exchange)

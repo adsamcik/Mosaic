@@ -3,6 +3,41 @@ using Mosaic.Backend.Models.Photos;
 namespace Mosaic.Backend.Models.ShareLinks;
 
 /// <summary>
+/// Per-user share-link enumeration row (v1.0.x s40). Returned by
+/// <c>GET /api/v1/users/me/share-links</c> so a user can audit every share grant
+/// they have created without walking every album one-by-one.
+/// </summary>
+/// <param name="Id">Share link primary key (UUIDv7).</param>
+/// <param name="AlbumId">The album the share link grants access to.</param>
+/// <param name="AlbumName">
+/// The album's encrypted name as a base64-encoded opaque blob. The server cannot
+/// decrypt it; the client decrypts client-side using the appropriate epoch read
+/// key. <c>null</c> when the album has no name set.
+/// </param>
+/// <param name="Role">
+/// Friendly access role string derived from <c>AccessTier</c>:
+/// <c>"read"</c> for tier 1 (thumb) or tier 2 (preview), <c>"write"</c> for
+/// tier 3 (full). Note: share links never grant mutation rights — "write" here
+/// refers to full-fidelity originals access, mirroring the album-role naming
+/// convention used elsewhere in the API.
+/// </param>
+/// <param name="AccessTier">Raw tier (1=thumb, 2=preview, 3=full) for clients that need it.</param>
+/// <param name="ExpiresAt">Absolute expiration; <c>null</c> means never.</param>
+/// <param name="CreatedAt">When the share link was issued.</param>
+/// <param name="AccessCount">How many times the link has been redeemed.</param>
+/// <param name="IsRevoked">Whether the owner explicitly revoked the link.</param>
+public sealed record ShareLinkSummary(
+    Guid Id,
+    Guid AlbumId,
+    string? AlbumName,
+    string Role,
+    int AccessTier,
+    DateTimeOffset? ExpiresAt,
+    DateTimeOffset CreatedAt,
+    int AccessCount,
+    bool IsRevoked);
+
+/// <summary>
 /// Response for share link creation and listing
 /// </summary>
 public class ShareLinkResponse
