@@ -46,6 +46,9 @@ public static class AuditEventTypes
 
     // User account lifecycle (v1.0.1 s15 — right-to-erasure)
     public const string UserSelfErased = "user.erased";
+
+    // User data portability (v1.0.x s38 — GDPR Article 20)
+    public const string UserDataExported = "user.data.exported";
 }
 
 /// <summary>
