@@ -24,7 +24,7 @@ The sidecar is a single base64-encoded byte string on the JSON wire. It is the e
 |-------|------|----------|-------|
 | `encryptedMetaSidecar` | `string` (base64) \| `null` | No | `null` (or omitted) when the manifest has no sidecar (legacy or empty-TLV case). |
 
-Persisted as `Manifest.EncryptedMetaSidecar` (`byte[]?`) in `apps/backend/Mosaic.Backend/Data/Entities/Manifest.cs:16`. Max persisted length is **1 MiB** (`[MaxLength(1048576)]` on `ManifestRequests.cs:17`).
+Persisted as `Manifest.EncryptedMetaSidecar` (`byte[]?`) in `apps/backend/Mosaic.Backend/Data/Entities/Manifest.cs:16`. Max persisted length is **65,616 bytes** (`[MaxLength(ManifestSizeLimits.EncryptedMetaSidecarMaxBytes)]` on `ManifestRequests.cs`), computed as the 65,536-byte plaintext cap plus the 64-byte SGzk v3 header plus the 16-byte Poly1305 tag. Requests exceeding this bound are rejected by the model binder with HTTP 400 (security-review-2026-05-18-04).
 
 ### Inner envelope (SGzk v3)
 

@@ -3,6 +3,39 @@ using System.Text.Json.Serialization;
 
 namespace Mosaic.Backend.Models.Manifests;
 
+/// <summary>
+/// Wire-protocol size limits enforced by the manifest model bindings.
+/// These mirror the canonical caps in <c>SPEC-EncryptedMetaSidecar.md</c>
+/// (and the Rust core's <c>MAX_SIDECAR_TOTAL_BYTES</c>) so the server
+/// rejects malformed inputs at the model-binding layer with HTTP 400.
+/// </summary>
+public static class ManifestSizeLimits
+{
+    /// <summary>
+    /// Maximum encoded plaintext sidecar bytes (TLV body inside the AEAD
+    /// envelope). Locked to <c>65_536</c> by ADR-017 / SPEC-EncryptedMetaSidecar.
+    /// </summary>
+    public const int SidecarPlaintextMaxBytes = 65_536;
+
+    /// <summary>
+    /// SGzk v3 envelope header bytes: magic(4) | version(1) | epoch(4) |
+    /// shard(4) | nonce(24) | tier(1) | reserved(26) = 64 bytes.
+    /// </summary>
+    public const int EnvelopeHeaderBytes = 64;
+
+    /// <summary>
+    /// Poly1305 authentication tag bytes appended by XChaCha20-Poly1305.
+    /// </summary>
+    public const int Poly1305TagBytes = 16;
+
+    /// <summary>
+    /// Maximum sealed sidecar byte length transmitted over the wire and
+    /// persisted in <c>Manifest.EncryptedMetaSidecar</c>.
+    /// </summary>
+    public const int EncryptedMetaSidecarMaxBytes =
+        SidecarPlaintextMaxBytes + EnvelopeHeaderBytes + Poly1305TagBytes;
+}
+
 public record CreateManifestRequest(
     /// <summary>
     /// Manifest wire-format version. ADR-022 freezes v1 at protocolVersion=1.
@@ -14,7 +47,18 @@ public record CreateManifestRequest(
     /// </summary>
     [MaxLength(16)] string AssetType,
     [MaxLength(1048576)] byte[] EncryptedMeta, // 1 MB max for encrypted metadata
-    [MaxLength(1048576)] byte[]? EncryptedMetaSidecar,
+    /// <summary>
+    /// Encrypted metadata sidecar (SGzk envelope v3). Per
+    /// <c>SPEC-EncryptedMetaSidecar.md</c> the inner plaintext TLV
+    /// payload is capped at <c>MAX_SIDECAR_TOTAL_BYTES = 65_536</c>.
+    /// The sealed envelope adds a 64-byte header (magic+version+epoch+
+    /// shard+nonce+tier+reserved) and a 16-byte Poly1305 tag, so the
+    /// server-side ceiling is <c>65_536 + 64 + 16 = 65_616 bytes</c>.
+    /// Earlier code accepted 1 MiB, which allowed malicious clients to
+    /// store oversized sidecars that honest clients would reject
+    /// (security-review-2026-05-18-04).
+    /// </summary>
+    [property: MaxLength(ManifestSizeLimits.EncryptedMetaSidecarMaxBytes)] byte[]? EncryptedMetaSidecar,
     [MaxLength(256)] string Signature,
     [MaxLength(128)] string SignerPubkey,
     [MaxLength(1000)] List<string> ShardIds,
