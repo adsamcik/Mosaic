@@ -40,6 +40,7 @@ import {
 import { DeleteAccountConfirmationDialog } from './DeleteAccountConfirmationDialog';
 import { ActiveSessions } from './ActiveSessions';
 import { ChangePasswordForm } from './ChangePasswordForm';
+import { DataExport } from './DataExport';
 
 // =============================================================================
 // Types
@@ -619,6 +620,9 @@ export function SettingsPage() {
 
         {/* Change Password Section (sweep38) */}
         <ChangePasswordForm />
+
+        {/* Data Portability Section (v1.0.x s38 — GDPR Article 20) */}
+        <DataExport />
 
         {/* About Section */}
         <section className="settings-section" data-testid="about-section">

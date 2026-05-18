@@ -745,6 +745,14 @@
       "errorGeneric": "Smazání účtu se nezdařilo. Zkuste to znovu nebo kontaktujte administrátora.",
       "errorConfirmationMismatch": "Potvrzovací text musí přesně odpovídat vašemu uživatelskému jménu.",
       "errorFreshAuth": "Opětovná autentizace selhala. Odhlaste se, znovu přihlaste a zkuste to znovu."
+    },
+    "export": {
+      "title": "Data",
+      "heading": "Stáhnout export",
+      "description": "Stáhněte si zip archiv všech alb, fotek, sdílecích odkazů a zabalených klíčů z vašeho účtu. Fotky zůstávají zašifrované — k jejich dešifrování použijte své heslo offline. Strukturu archivu najdete v docs/EXPORT_FORMAT.md.",
+      "downloadButton": "Stáhnout export",
+      "loadingMessage": "Připravuje se export…",
+      "largeLibraryWarning": "U velkých knihoven to může trvat několik minut. Stahování se streamuje přímo na disk."
     }
   },
   "admin": {

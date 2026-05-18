@@ -734,6 +734,14 @@
       "errorGeneric": "Failed to delete account. Please try again or contact your administrator.",
       "errorConfirmationMismatch": "Confirmation text must match your username exactly.",
       "errorFreshAuth": "Re-authentication failed. Please log out and log back in, then try again."
+    },
+    "export": {
+      "title": "Data",
+      "heading": "Download Export",
+      "description": "Download a zip archive of every album, photo, share link and wrapped key on your account. Photos remain encrypted — use your password offline to decrypt. See docs/EXPORT_FORMAT.md for the archive layout.",
+      "downloadButton": "Download Export",
+      "loadingMessage": "Preparing export…",
+      "largeLibraryWarning": "This may take several minutes for large libraries. The download streams directly to disk."
     }
   },
   "admin": {
