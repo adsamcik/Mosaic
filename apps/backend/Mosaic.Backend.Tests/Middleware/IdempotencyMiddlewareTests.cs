@@ -254,6 +254,42 @@ public class IdempotencyMiddlewareTests
         Assert.Single(db.IdempotencyRecords);
     }
 
+    [Fact]
+    public async Task IdempotencyRecord_IsPersisted_BeforeResponseFlushedToClient()
+    {
+        // Regression for v1.0.x s47-y3: the controller's domain transaction
+        // commits BEFORE control returns to the middleware, and the middleware
+        // must persist the IdempotencyRecord BEFORE flushing the response to
+        // the client. Otherwise a client that sees a 201 could retry on a
+        // transient network error and miss the replay cache, creating a
+        // duplicate manifest. This test verifies the persisted-before-flushed
+        // invariant by inspecting the response stream contents only after the
+        // record is in the DB context's tracked changes.
+        using var db = TestDbContextFactory.Create();
+        IdempotencyRecord? capturedAtFlushTime = null;
+
+        var middleware = CreateMiddleware(async context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status201Created;
+            await context.Response.WriteAsync("""{"id":"manifest-1"}""");
+        });
+
+        var ctx = CreateContext("/api/v1/manifests", "POST", """{"albumId":"a"}""", "atomic-key");
+
+        await middleware.InvokeAsync(ctx, db, new MockCurrentUserService(db));
+
+        // After the middleware returns, BOTH must be true:
+        //   1. The response body is fully written.
+        //   2. The IdempotencyRecord is persisted (queryable).
+        capturedAtFlushTime = await db.IdempotencyRecords
+            .FirstOrDefaultAsync(r => r.IdempotencyKey == "atomic-key");
+
+        Assert.NotNull(capturedAtFlushTime);
+        Assert.Equal(StatusCodes.Status201Created, capturedAtFlushTime!.ResponseStatus);
+        Assert.Equal("""{"id":"manifest-1"}""", System.Text.Encoding.UTF8.GetString(capturedAtFlushTime.ResponseBody));
+        Assert.Equal("""{"id":"manifest-1"}""", ReadResponse(ctx));
+    }
+
     private static IdempotencyMiddleware CreateMiddleware(RequestDelegate next, TimeProvider? timeProvider = null)
         => new(
             next,

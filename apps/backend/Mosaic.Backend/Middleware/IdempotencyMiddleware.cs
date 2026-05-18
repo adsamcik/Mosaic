@@ -6,6 +6,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Primitives;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Middleware;
@@ -148,7 +149,26 @@ public sealed class IdempotencyMiddleware
                 var responseBodyHash = SHA256.HashData(responseBody);
                 var headersSubset = SerializeHeaders(context.Response.Headers);
 
-                db.IdempotencyRecords.Add(new()
+                // Ordering invariant (v1.0.x s47-y3): the controller's domain
+                // transaction (e.g. ManifestsController's BeginTransactionAsync
+                // → INSERT manifest+shards → CommitAsync) has already been
+                // committed by the time we get here — the response status code
+                // is set, and the only thing left is to record the replay
+                // cache entry and flush the response to the client. If this
+                // IdempotencyRecord save fails on a transient backend error
+                // (connection reset, deadlock victim), a client retry of the
+                // same Idempotency-Key would see no replay record and re-run
+                // the controller, creating a duplicate manifest row.
+                //
+                // To kill that race, we wrap the save in the provider's
+                // execution strategy so transient PostgreSQL errors are
+                // automatically retried before we give up. The downstream
+                // controller transaction is NOT inside this scope (it has
+                // already committed) so there is no nested-transaction hazard.
+                // We also defer flushing the response to the client until the
+                // record is durably persisted (line 171 below), so a client
+                // that sees a 200/201 can rely on the replay cache being live.
+                var record = new IdempotencyRecord
                 {
                     UserId = userId,
                     IdempotencyKey = idempotencyKey,
@@ -158,8 +178,16 @@ public sealed class IdempotencyMiddleware
                     ResponseBody = responseBody,
                     ResponseHeadersSubset = headersSubset,
                     CreatedAt = now
+                };
+                var strategy = db.Database.CreateExecutionStrategy();
+                await strategy.ExecuteAsync(async () =>
+                {
+                    if (db.Entry(record).State == EntityState.Detached)
+                    {
+                        db.IdempotencyRecords.Add(record);
+                    }
+                    await db.SaveChangesAsync(CancellationToken.None);
                 });
-                await db.SaveChangesAsync(CancellationToken.None);
             }
 
             context.Response.Body = originalBody;
