@@ -27,9 +27,14 @@ const mockStorageEstimate = {
 };
 
 // Mock services
-vi.mock('../src/lib/api', () => ({
-  getApi: vi.fn(() => mockApi),
-}));
+vi.mock('../src/lib/api', async () => {
+  const actual =
+    await vi.importActual<typeof import('../src/lib/api')>('../src/lib/api');
+  return {
+    ...actual,
+    getApi: vi.fn(() => mockApi),
+  };
+});
 
 vi.mock('../src/lib/session', () => ({
   session: {
