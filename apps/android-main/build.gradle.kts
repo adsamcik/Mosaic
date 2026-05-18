@@ -238,9 +238,9 @@ dependencies {
   implementation(libs.androidx.appcompat)
   implementation(libs.androidx.core)
   implementation("androidx.lifecycle:lifecycle-service:2.9.0")
-  implementation("androidx.room:room-runtime:2.6.1")
-  implementation("androidx.room:room-ktx:2.6.1")
-  ksp("androidx.room:room-compiler:2.6.1")
+  implementation("androidx.room:room-runtime:2.8.4")
+  implementation("androidx.room:room-ktx:2.8.4")
+  ksp("androidx.room:room-compiler:2.8.4")
   // Tus upload foundation uses direct OkHttp PATCH/HEAD/POST protocol calls.
   // Maven Central has io.tus.java.client:tus-java-client:0.5.1, but no clear
   // maintained Android OkHttp-first artifact; keep OkHttp pinned for the A5a
@@ -264,7 +264,7 @@ dependencies {
   // (com/sun/jna/<os>/jnidispatch.<ext>) not found in resource path`.
   testImplementation("net.java.dev.jna:jna:${libs.versions.jna.get()}")
   testImplementation(libs.junit4)
-  testImplementation("androidx.room:room-testing:2.6.1")
+  testImplementation("androidx.room:room-testing:2.8.4")
   testImplementation("androidx.test:core-ktx:1.6.1")
   testImplementation(libs.androidx.work.testing)
   testImplementation("org.robolectric:robolectric:4.13")
