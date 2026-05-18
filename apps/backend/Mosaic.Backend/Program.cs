@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.OpenApi;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -63,6 +64,24 @@ builder.Services.AddHostedService<GarbageCollectionService>();
 builder.Services.AddHostedService<IdempotencyRecordCleanupHostedService>();
 builder.Services.AddExceptionHandler<DatabaseExceptionHandler>();
 builder.Services.AddProblemDetails();
+
+// v1.0.1 s29: localization for ProblemDetails titles/details and
+// ValidationProblemDetails error messages. The ProblemDetailsLocalizationFilter
+// translates English strings (used as resource keys) to the request's culture.
+builder.Services.AddLocalization(opts => opts.ResourcesPath = "Resources");
+builder.Services.Configure<Microsoft.AspNetCore.Builder.RequestLocalizationOptions>(opts =>
+{
+    var supported = new[]
+    {
+        new System.Globalization.CultureInfo("en"),
+        new System.Globalization.CultureInfo("cs"),
+    };
+    opts.DefaultRequestCulture =
+        new Microsoft.AspNetCore.Localization.RequestCulture("en");
+    opts.SupportedCultures = supported;
+    opts.SupportedUICultures = supported;
+});
+builder.Services.AddScoped<Mosaic.Backend.Localization.ProblemDetailsLocalizationFilter>();
 
 // Sidecar Beacon: in-memory WebSocket signaling relay (no DB persistence, no auth).
 builder.Services.Configure<SidecarSignalingOptions>(
@@ -327,6 +346,40 @@ if (app.Environment.IsDevelopment())
     });
 }
 
+// v1.0.1 s23 — OpenAPI schema export CLI for the CI drift gate.
+//
+// Invocation:
+//   dotnet run --project apps/backend/Mosaic.Backend -- --export-openapi <path>
+//
+// Generates the OpenAPI document via the framework-registered
+// OpenAPI document provider and exits before Kestrel binds a socket or
+// migrations run. The CI workflow re-exports on each PR and
+// `git diff --exit-code`s against docs/openapi.json so undeclared API
+// drift fails the build instead of silently shipping. The schema is
+// intentionally NOT exposed at /openapi/v1.json in Production — operators
+// consume the committed file from the repo.
+{
+    var exportIdx = Array.IndexOf(args, "--export-openapi");
+    if (exportIdx >= 0 && exportIdx < args.Length - 1)
+    {
+        var exportPath = args[exportIdx + 1];
+        var provider = app.Services.GetRequiredKeyedService<Microsoft.AspNetCore.OpenApi.IOpenApiDocumentProvider>("v1");
+        var document = await provider.GetOpenApiDocumentAsync();
+        var dir = Path.GetDirectoryName(Path.GetFullPath(exportPath));
+        if (!string.IsNullOrEmpty(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+        await using (var fs = File.Create(exportPath))
+        await using (var writer = new StreamWriter(fs))
+        {
+            document.SerializeAsV3(new Microsoft.OpenApi.OpenApiJsonWriter(writer));
+        }
+        Console.WriteLine($"OpenAPI document exported to {exportPath}");
+        return;
+    }
+}
+
 // Tus endpoint for uploads
 var storagePath = builder.Configuration["Storage:Path"] ?? "./data/blobs";
 Directory.CreateDirectory(storagePath);
@@ -425,22 +478,4 @@ if (runMigrations)
 app.Run();
 
 public partial class Program;
-erviceProvider.GetRequiredService<MosaicDbContext>();
 
-    // SQLite uses EnsureCreated (simpler for dev), PostgreSQL uses migrations
-    // Note: SQLite pragmas (WAL mode, busy timeout) are configured via SqlitePragmaInterceptor
-    if (useSqlite)
-    {
-        await db.Database.EnsureCreatedAsync();
-        app.Logger.LogInformation("SQLite database initialized (pragmas configured via interceptor)");
-    }
-    else
-    {
-        await db.Database.MigrateAsync();
-        app.Logger.LogInformation("PostgreSQL migrations applied");
-    }
-}
-
-app.Run();
-
-public partial class Program;

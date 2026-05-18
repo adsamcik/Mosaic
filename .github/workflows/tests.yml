@@ -233,6 +233,25 @@ jobs:
         working-directory: apps/backend/Mosaic.Backend
         run: dotnet build --configuration Release
 
+      - name: OpenAPI drift gate
+        # v1.0.1 s23: regenerate docs/openapi.json from the running OpenAPI
+        # document provider and fail if it differs from the committed copy.
+        # Forces every API surface change to be reflected in the repo so
+        # clients (and the SDK consumers) cannot silently drift from the
+        # backend. If this step fails locally: run
+        # `pwsh scripts/export-openapi.ps1` (or `bash scripts/export-openapi.sh`)
+        # and commit the updated docs/openapi.json.
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          ConnectionStrings__Default: "Data Source=:memory:"
+        run: |
+          dotnet run --project apps/backend/Mosaic.Backend -- --export-openapi "$(pwd)/docs/openapi.json"
+          if ! git diff --exit-code -- docs/openapi.json; then
+            echo "::error::docs/openapi.json is out of date. Run scripts/export-openapi.sh and commit the result."
+            git diff --stat docs/openapi.json
+            exit 1
+          fi
+
       - name: Setup Rust
         run: |
           rustup toolchain install 1.93.1 --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown,aarch64-linux-android,x86_64-linux-android
