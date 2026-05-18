@@ -42,7 +42,16 @@ export type UploadStatus =
   | 'duplicate'
   | 'error'
   | 'paused_auth_required'
-  | 'permanently_failed';
+  | 'permanently_failed'
+  /**
+   * v1.0.x s49-y1: persisted task whose original `File` handle was
+   * lost (page reload / hard close / crash mid-upload). The user must
+   * re-attach the same file via drag-drop to resume; until then the
+   * task sits in this terminal-ish state. Distinct from
+   * `permanently_failed` because the bytes were never rejected — the
+   * runtime just can't address them anymore.
+   */
+  | 'needs_reattach';
 export type UploadAction =
   | 'pending'
   | 'converting'

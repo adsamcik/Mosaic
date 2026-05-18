@@ -116,6 +116,29 @@ export class UploadQueue {
     await this.persistence.init();
     const dedupDb = this.persistence.getContentHashDedupDb();
     this.contentHashDedup = dedupDb ? new ContentHashDedup(dedupDb) : new ContentHashDedup();
+
+    // v1.0.x s49-y1: any persisted task in an in-flight status that we
+    // observe at init *cannot* be the same in-memory queue we left with
+    // (the page just reloaded). The browser dropped the original `File`
+    // handle, so we can't resume by ourselves. Mark these tasks as
+    // `needs_reattach` and broadcast a window event so the UI can
+    // surface a "drop these files again to resume" affordance.
+    const orphans = await this.detectAndFlagOrphans();
+    if (orphans.length > 0 && typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('mosaic:upload-needs-reattach', {
+          detail: {
+            tasks: orphans.map((t) => ({
+              id: t.id,
+              albumId: t.albumId,
+              fileName: t.fileName,
+              fileSize: t.fileSize,
+            })),
+          },
+        }),
+      );
+    }
+
     const drainResult = await legacyUploadQueueDrainer.drain({
       requeue: async (record, source) => {
         const file = source instanceof File
@@ -139,6 +162,39 @@ export class UploadQueue {
     if (drainResult.migrated.length > 0) {
       void this.processQueue();
     }
+  }
+
+  /**
+   * v1.0.x s49-y1: identify persisted tasks that were active when the
+   * page died and re-tag them as `needs_reattach`. Idempotent: tasks
+   * already in `needs_reattach` are returned as-is. Returns the full
+   * list of orphans so callers can render UI prompts.
+   */
+  private async detectAndFlagOrphans(): Promise<PersistedTask[]> {
+    const all = await this.persistence.getAllTasks();
+    const orphanStatuses = new Set(['uploading', 'queued']);
+    const orphans: PersistedTask[] = [];
+    for (const task of all) {
+      if (task.status === 'needs_reattach') {
+        orphans.push(task);
+        continue;
+      }
+      if (!orphanStatuses.has(task.status)) continue;
+      await this.persistence.updateTask(task.id, { status: 'needs_reattach' });
+      orphans.push({ ...task, status: 'needs_reattach' });
+    }
+    return orphans;
+  }
+
+  /**
+   * Public accessor for the persisted tasks that need user re-attach
+   * (v1.0.x s49-y1). Returns task metadata only — the actual File bytes
+   * are not recoverable without user input. Safe to call any time after
+   * {@link init} has resolved.
+   */
+  async getOrphanedTasks(): Promise<PersistedTask[]> {
+    const all = await this.persistence.getAllTasks();
+    return all.filter((t) => t.status === 'needs_reattach');
   }
 
   /**

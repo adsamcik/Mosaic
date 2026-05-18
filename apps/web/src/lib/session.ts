@@ -1547,11 +1547,6 @@ class SessionManager {
     if (typeof window === 'undefined') return;
     window.addEventListener('pageshow', this.boundPageShowListener);
   }
-
-  private detachPageShowListener(): void {
-    if (typeof window === 'undefined') return;
-    window.removeEventListener('pageshow', this.boundPageShowListener);
-  }
 }
 
 /** Global session manager instance */
