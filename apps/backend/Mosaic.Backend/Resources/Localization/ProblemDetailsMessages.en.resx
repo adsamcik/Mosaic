@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="Local authentication disabled" xml:space="preserve"><value>Local authentication disabled</value></data>
+  <data name="Too many requests" xml:space="preserve"><value>Too many requests</value></data>
+  <data name="Too many requests. Please wait." xml:space="preserve"><value>Too many requests. Please wait.</value></data>
+  <data name="Too many requests. Please try again later." xml:space="preserve"><value>Too many requests. Please try again later.</value></data>
+  <data name="Too many attempts. Please wait." xml:space="preserve"><value>Too many attempts. Please wait.</value></data>
+  <data name="Too many registration attempts. Please try again later." xml:space="preserve"><value>Too many registration attempts. Please try again later.</value></data>
+  <data name="Too many sidecar rooms from this address" xml:space="preserve"><value>Too many sidecar rooms from this address</value></data>
+  <data name="User not found" xml:space="preserve"><value>User not found</value></data>
+  <data name="User quota not found" xml:space="preserve"><value>User quota not found</value></data>
+  <data name="User is already an admin" xml:space="preserve"><value>User is already an admin</value></data>
+  <data name="User is not an admin" xml:space="preserve"><value>User is not an admin</value></data>
+  <data name="User is already a member" xml:space="preserve"><value>User is already a member</value></data>
+  <data name="Cannot demote the last admin" xml:space="preserve"><value>Cannot demote the last admin</value></data>
+  <data name="Cannot remove album owner" xml:space="preserve"><value>Cannot remove album owner</value></data>
+  <data name="Album not found" xml:space="preserve"><value>Album not found</value></data>
+  <data name="Album limits not found" xml:space="preserve"><value>Album limits not found</value></data>
+  <data name="ALBUM_SIZE_EXCEEDED: Album size limit exceeded" xml:space="preserve"><value>ALBUM_SIZE_EXCEEDED: Album size limit exceeded</value></data>
+  <data name="Admin privileges required" xml:space="preserve"><value>Admin privileges required</value></data>
+  <data name="Authentication required" xml:space="preserve"><value>Authentication required</value></data>
+  <data name="Not authenticated" xml:space="preserve"><value>Not authenticated</value></data>
+  <data name="Not authorized to manage this share link" xml:space="preserve"><value>Not authorized to manage this share link</value></data>
+  <data name="Not authorized to revoke this share link" xml:space="preserve"><value>Not authorized to revoke this share link</value></data>
+  <data name="Not found" xml:space="preserve"><value>Not found</value></data>
+  <data name="Conflict" xml:space="preserve"><value>Conflict</value></data>
+  <data name="Fresh authentication required" xml:space="preserve"><value>Fresh authentication required</value></data>
+  <data name="Account erasure service unavailable" xml:space="preserve"><value>Account erasure service unavailable</value></data>
+  <data name="Failed to erase account" xml:space="preserve"><value>Failed to erase account</value></data>
+  <data name="Confirmation text is required" xml:space="preserve"><value>Confirmation text is required</value></data>
+  <data name="Confirmation text does not match username" xml:space="preserve"><value>Confirmation text does not match username</value></data>
+  <data name="Username already exists" xml:space="preserve"><value>Username already exists</value></data>
+  <data name="Username is required" xml:space="preserve"><value>Username is required</value></data>
+  <data name="Invalid username format" xml:space="preserve"><value>Invalid username format</value></data>
+  <data name="Invalid credentials" xml:space="preserve"><value>Invalid credentials</value></data>
+  <data name="Invalid session" xml:space="preserve"><value>Invalid session</value></data>
+  <data name="Session not found" xml:space="preserve"><value>Session not found</value></data>
+  <data name="Invalid challenge" xml:space="preserve"><value>Invalid challenge</value></data>
+  <data name="Invalid or expired challenge" xml:space="preserve"><value>Invalid or expired challenge</value></data>
+  <data name="Invalid KDF profile" xml:space="preserve"><value>Invalid KDF profile</value></data>
+  <data name="Identity pubkey already set" xml:space="preserve"><value>Identity pubkey already set</value></data>
+  <data name="Both encryptedSalt and saltNonce must be provided together" xml:space="preserve"><value>Both encryptedSalt and saltNonce must be provided together</value></data>
+  <data name="Invalid salt nonce length, expected 12 bytes" xml:space="preserve"><value>Invalid salt nonce length, expected 12 bytes</value></data>
+  <data name="Invalid encrypted salt length" xml:space="preserve"><value>Invalid encrypted salt length</value></data>
+  <data name="Invalid wrapped key length" xml:space="preserve"><value>Invalid wrapped key length</value></data>
+  <data name="Invalid base64 encoding" xml:space="preserve"><value>Invalid base64 encoding</value></data>
+  <data name="Invalid base64 encoding for salt or nonce" xml:space="preserve"><value>Invalid base64 encoding for salt or nonce</value></data>
+  <data name="Invalid base64 encoding for wrapped key" xml:space="preserve"><value>Invalid base64 encoding for wrapped key</value></data>
+  <data name="Invalid base64 encoding in epoch key data" xml:space="preserve"><value>Invalid base64 encoding in epoch key data</value></data>
+  <data name="Invalid link ID format" xml:space="preserve"><value>Invalid link ID format</value></data>
+  <data name="Invalid linkId format" xml:space="preserve"><value>Invalid linkId format</value></data>
+  <data name="linkId must be 16 bytes" xml:space="preserve"><value>linkId must be 16 bytes</value></data>
+  <data name="Link not found" xml:space="preserve"><value>Link not found</value></data>
+  <data name="Share link not found" xml:space="preserve"><value>Share link not found</value></data>
+  <data name="A link with this ID already exists" xml:space="preserve"><value>A link with this ID already exists</value></data>
+  <data name="Cannot add keys to a revoked link" xml:space="preserve"><value>Cannot add keys to a revoked link</value></data>
+  <data name="Cannot update a revoked link" xml:space="preserve"><value>Cannot update a revoked link</value></data>
+  <data name="Valid access grant required for limited-use links. Call GET /api/v1/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header." xml:space="preserve"><value>Valid access grant required for limited-use links. Call GET /api/v1/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header.</value></data>
+  <data name="Recipient not found" xml:space="preserve"><value>Recipient not found</value></data>
+  <data name="Recipient must be an active album member" xml:space="preserve"><value>Recipient must be an active album member</value></data>
+  <data name="Epoch key already exists for this album/recipient/epoch" xml:space="preserve"><value>Epoch key already exists for this album/recipient/epoch</value></data>
+  <data name="Manifest signed by an unknown epoch key for this album" xml:space="preserve"><value>Manifest signed by an unknown epoch key for this album</value></data>
+  <data name="Shard not found" xml:space="preserve"><value>Shard not found</value></data>
+  <data name="Shard not available" xml:space="preserve"><value>Shard not available</value></data>
+  <data name="Some shards not found" xml:space="preserve"><value>Some shards not found</value></data>
+  <data name="Some shards already linked to a manifest" xml:space="preserve"><value>Some shards already linked to a manifest</value></data>
+  <data name="Missing required fields" xml:space="preserve"><value>Missing required fields</value></data>
+  <data name="duplicate userId in roster members" xml:space="preserve"><value>duplicate userId in roster members</value></data>
+  <data name="AccountSalt must be 16 bytes" xml:space="preserve"><value>AccountSalt must be 16 bytes</value></data>
+  <data name="UserSalt must be 16 bytes" xml:space="preserve"><value>UserSalt must be 16 bytes</value></data>
+  <data name="accessTier must be 1, 2, or 3" xml:space="preserve"><value>accessTier must be 1, 2, or 3</value></data>
+  <data name="assetType must be Image, Video, or LiveImage" xml:space="preserve"><value>assetType must be Image, Video, or LiveImage</value></data>
+  <data name="At least one epoch key is required" xml:space="preserve"><value>At least one epoch key is required</value></data>
+  <data name="At least one wrapped key is required" xml:space="preserve"><value>At least one wrapped key is required</value></data>
+  <data name="Each epoch key must have a 24-byte nonce" xml:space="preserve"><value>Each epoch key must have a 24-byte nonce</value></data>
+  <data name="Each epoch key must have an encryptedKey" xml:space="preserve"><value>Each epoch key must have an encryptedKey</value></data>
+  <data name="Each epoch key tier must be 1, 2, or 3" xml:space="preserve"><value>Each epoch key tier must be 1, 2, or 3</value></data>
+  <data name="Each epoch key tier must be less than or equal to accessTier" xml:space="preserve"><value>Each epoch key tier must be less than or equal to accessTier</value></data>
+  <data name="Each wrapped key must have a 24-byte nonce" xml:space="preserve"><value>Each wrapped key must have a 24-byte nonce</value></data>
+  <data name="Each wrapped key must have an encryptedKey" xml:space="preserve"><value>Each wrapped key must have an encryptedKey</value></data>
+  <data name="Each wrapped key tier must be 1, 2, or 3" xml:space="preserve"><value>Each wrapped key tier must be 1, 2, or 3</value></data>
+  <data name="Each wrapped key tier must be less than or equal to accessTier" xml:space="preserve"><value>Each wrapped key tier must be less than or equal to accessTier</value></data>
+  <data name="encryptedKeyBundle is required" xml:space="preserve"><value>encryptedKeyBundle is required</value></data>
+  <data name="encryptedMeta must be valid base64 and at least 16 bytes" xml:space="preserve"><value>encryptedMeta must be valid base64 and at least 16 bytes</value></data>
+  <data name="encryptedName is required" xml:space="preserve"><value>encryptedName is required</value></data>
+  <data name="epochKeys is required" xml:space="preserve"><value>epochKeys is required</value></data>
+  <data name="epochKeys must not include the member being removed" xml:space="preserve"><value>epochKeys must not include the member being removed</value></data>
+  <data name="expirationWarningDays must be non-negative" xml:space="preserve"><value>expirationWarningDays must be non-negative</value></data>
+  <data name="expiresAt must be in the future" xml:space="preserve"><value>expiresAt must be in the future</value></data>
+  <data name="initialEpochKey is required" xml:space="preserve"><value>initialEpochKey is required</value></data>
+  <data name="maxUses must be positive" xml:space="preserve"><value>maxUses must be positive</value></data>
+  <data name="ownerSignature is required" xml:space="preserve"><value>ownerSignature is required</value></data>
+  <data name="protocolVersion must be 1" xml:space="preserve"><value>protocolVersion must be 1</value></data>
+  <data name="Role must be &apos;viewer&apos; or &apos;editor&apos;" xml:space="preserve"><value>Role must be &apos;viewer&apos; or &apos;editor&apos;</value></data>
+  <data name="sharerPubkey is required" xml:space="preserve"><value>sharerPubkey is required</value></data>
+  <data name="signature must be a 64-byte Ed25519 signature" xml:space="preserve"><value>signature must be a 64-byte Ed25519 signature</value></data>
+  <data name="signature must be valid base64 and non-empty" xml:space="preserve"><value>signature must be valid base64 and non-empty</value></data>
+  <data name="signerPubkey does not match any active epoch sign key for this album" xml:space="preserve"><value>signerPubkey does not match any active epoch sign key for this album</value></data>
+  <data name="signerPubkey must be valid base64 and exactly 32 bytes" xml:space="preserve"><value>signerPubkey must be valid base64 and exactly 32 bytes</value></data>
+  <data name="signPubkey is required" xml:space="preserve"><value>signPubkey is required</value></data>
+  <data name="This endpoint is only available when local authentication is enabled. Contact your administrator." xml:space="preserve"><value>This endpoint is only available when local authentication is enabled. Contact your administrator.</value></data>
+  <data name="tieredShards contentLength does not match stored shard length" xml:space="preserve"><value>tieredShards contentLength does not match stored shard length</value></data>
+  <data name="tieredShards contentLength must be positive" xml:space="preserve"><value>tieredShards contentLength must be positive</value></data>
+  <data name="tieredShards envelopeVersion must be 3" xml:space="preserve"><value>tieredShards envelopeVersion must be 3</value></data>
+  <data name="tieredShards is required for manifest finalization" xml:space="preserve"><value>tieredShards is required for manifest finalization</value></data>
+  <data name="tieredShards sha256 does not match stored shard hash" xml:space="preserve"><value>tieredShards sha256 does not match stored shard hash</value></data>
+  <data name="tieredShards sha256 must be lowercase hex SHA-256" xml:space="preserve"><value>tieredShards sha256 must be lowercase hex SHA-256</value></data>
+  <data name="tieredShards shardIndex must be contiguous per tier" xml:space="preserve"><value>tieredShards shardIndex must be contiguous per tier</value></data>
+  <data name="tieredShards shardIndex must be non-negative" xml:space="preserve"><value>tieredShards shardIndex must be non-negative</value></data>
+  <data name="tieredShards shardIndex must be unique per tier" xml:space="preserve"><value>tieredShards shardIndex must be unique per tier</value></data>
+  <data name="tieredShards tier must be 1, 2, or 3" xml:space="preserve"><value>tieredShards tier must be 1, 2, or 3</value></data>
+  <data name="tombstoneSignature and signerEpochId must be supplied together or both omitted" xml:space="preserve"><value>tombstoneSignature and signerEpochId must be supplied together or both omitted</value></data>
+  <data name="tombstoneSignature must be a 64-byte Ed25519 signature" xml:space="preserve"><value>tombstoneSignature must be a 64-byte Ed25519 signature</value></data>
+  <data name="tombstoneSignature must be valid base64 and non-empty" xml:space="preserve"><value>tombstoneSignature must be valid base64 and non-empty</value></data>
+  <data name="wrappedKeys is required" xml:space="preserve"><value>wrappedKeys is required</value></data>
+  <data name="Tier must be between 1 and 3" xml:space="preserve"><value>Tier must be between 1 and 3</value></data>
+  <data name="Nonce must be exactly 24 bytes" xml:space="preserve"><value>Nonce must be exactly 24 bytes</value></data>
+  <data name="EncryptedKey must not be empty" xml:space="preserve"><value>EncryptedKey must not be empty</value></data>
+  <data name="LinkId must be exactly 16 bytes" xml:space="preserve"><value>LinkId must be exactly 16 bytes</value></data>
+  <data name="Too many wrapped keys" xml:space="preserve"><value>Too many wrapped keys</value></data>
+  <data name="Too many epoch keys" xml:space="preserve"><value>Too many epoch keys</value></data>
+</root>

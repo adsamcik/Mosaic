@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="Local authentication disabled" xml:space="preserve"><value>Lokální přihlašování je zakázáno</value></data>
+  <data name="Too many requests" xml:space="preserve"><value>Příliš mnoho požadavků</value></data>
+  <data name="Too many requests. Please wait." xml:space="preserve"><value>Příliš mnoho požadavků. Počkejte prosím.</value></data>
+  <data name="Too many requests. Please try again later." xml:space="preserve"><value>Příliš mnoho požadavků. Zkuste to znovu později.</value></data>
+  <data name="Too many attempts. Please wait." xml:space="preserve"><value>Příliš mnoho pokusů. Počkejte prosím.</value></data>
+  <data name="Too many registration attempts. Please try again later." xml:space="preserve"><value>Příliš mnoho pokusů o registraci. Zkuste to znovu později.</value></data>
+  <data name="Too many sidecar rooms from this address" xml:space="preserve"><value>Příliš mnoho sidecar místností z této adresy</value></data>
+  <data name="User not found" xml:space="preserve"><value>Uživatel nenalezen</value></data>
+  <data name="User quota not found" xml:space="preserve"><value>Kvóta uživatele nenalezena</value></data>
+  <data name="User is already an admin" xml:space="preserve"><value>Uživatel je již administrátor</value></data>
+  <data name="User is not an admin" xml:space="preserve"><value>Uživatel není administrátor</value></data>
+  <data name="User is already a member" xml:space="preserve"><value>Uživatel již je členem</value></data>
+  <data name="Cannot demote the last admin" xml:space="preserve"><value>Posledního administrátora nelze degradovat</value></data>
+  <data name="Cannot remove album owner" xml:space="preserve"><value>Vlastníka alba nelze odebrat</value></data>
+  <data name="Album not found" xml:space="preserve"><value>Album nenalezeno</value></data>
+  <data name="Album limits not found" xml:space="preserve"><value>Limity alba nenalezeny</value></data>
+  <data name="ALBUM_SIZE_EXCEEDED: Album size limit exceeded" xml:space="preserve"><value>ALBUM_SIZE_EXCEEDED: Limit velikosti alba překročen</value></data>
+  <data name="Admin privileges required" xml:space="preserve"><value>Jsou vyžadována administrátorská oprávnění</value></data>
+  <data name="Authentication required" xml:space="preserve"><value>Vyžadováno přihlášení</value></data>
+  <data name="Not authenticated" xml:space="preserve"><value>Nepřihlášený uživatel</value></data>
+  <data name="Not authorized to manage this share link" xml:space="preserve"><value>Nemáte oprávnění spravovat tento sdílecí odkaz</value></data>
+  <data name="Not authorized to revoke this share link" xml:space="preserve"><value>Nemáte oprávnění zrušit tento sdílecí odkaz</value></data>
+  <data name="Not found" xml:space="preserve"><value>Nenalezeno</value></data>
+  <data name="Conflict" xml:space="preserve"><value>Konflikt</value></data>
+  <data name="Fresh authentication required" xml:space="preserve"><value>Vyžadováno nedávné přihlášení</value></data>
+  <data name="Account erasure service unavailable" xml:space="preserve"><value>Služba mazání účtu není dostupná</value></data>
+  <data name="Failed to erase account" xml:space="preserve"><value>Smazání účtu se nezdařilo</value></data>
+  <data name="Confirmation text is required" xml:space="preserve"><value>Vyžaduje se potvrzovací text</value></data>
+  <data name="Confirmation text does not match username" xml:space="preserve"><value>Potvrzovací text neodpovídá uživatelskému jménu</value></data>
+  <data name="Username already exists" xml:space="preserve"><value>Uživatelské jméno již existuje</value></data>
+  <data name="Username is required" xml:space="preserve"><value>Uživatelské jméno je povinné</value></data>
+  <data name="Invalid username format" xml:space="preserve"><value>Neplatný formát uživatelského jména</value></data>
+  <data name="Invalid credentials" xml:space="preserve"><value>Neplatné přihlašovací údaje</value></data>
+  <data name="Invalid session" xml:space="preserve"><value>Neplatná relace</value></data>
+  <data name="Session not found" xml:space="preserve"><value>Relace nenalezena</value></data>
+  <data name="Invalid challenge" xml:space="preserve"><value>Neplatná výzva</value></data>
+  <data name="Invalid or expired challenge" xml:space="preserve"><value>Neplatná nebo vypršelá výzva</value></data>
+  <data name="Invalid KDF profile" xml:space="preserve"><value>Neplatný profil KDF</value></data>
+  <data name="Identity pubkey already set" xml:space="preserve"><value>Veřejný klíč identity je již nastaven</value></data>
+  <data name="Both encryptedSalt and saltNonce must be provided together" xml:space="preserve"><value>Pole encryptedSalt a saltNonce musí být zadána společně</value></data>
+  <data name="Invalid salt nonce length, expected 12 bytes" xml:space="preserve"><value>Neplatná délka nonce solí, očekáváno 12 bajtů</value></data>
+  <data name="Invalid encrypted salt length" xml:space="preserve"><value>Neplatná délka šifrované soli</value></data>
+  <data name="Invalid wrapped key length" xml:space="preserve"><value>Neplatná délka zabaleného klíče</value></data>
+  <data name="Invalid base64 encoding" xml:space="preserve"><value>Neplatné kódování base64</value></data>
+  <data name="Invalid base64 encoding for salt or nonce" xml:space="preserve"><value>Neplatné kódování base64 pro sůl nebo nonce</value></data>
+  <data name="Invalid base64 encoding for wrapped key" xml:space="preserve"><value>Neplatné kódování base64 pro zabalený klíč</value></data>
+  <data name="Invalid base64 encoding in epoch key data" xml:space="preserve"><value>Neplatné kódování base64 v datech epoch klíče</value></data>
+  <data name="Invalid link ID format" xml:space="preserve"><value>Neplatný formát ID odkazu</value></data>
+  <data name="Invalid linkId format" xml:space="preserve"><value>Neplatný formát linkId</value></data>
+  <data name="linkId must be 16 bytes" xml:space="preserve"><value>linkId musí mít 16 bajtů</value></data>
+  <data name="Link not found" xml:space="preserve"><value>Odkaz nenalezen</value></data>
+  <data name="Share link not found" xml:space="preserve"><value>Sdílecí odkaz nenalezen</value></data>
+  <data name="A link with this ID already exists" xml:space="preserve"><value>Odkaz s tímto ID již existuje</value></data>
+  <data name="Cannot add keys to a revoked link" xml:space="preserve"><value>Ke zrušenému odkazu nelze přidávat klíče</value></data>
+  <data name="Cannot update a revoked link" xml:space="preserve"><value>Zrušený odkaz nelze upravit</value></data>
+  <data name="Valid access grant required for limited-use links. Call GET /api/v1/s/{linkId} first to obtain a grant token, then pass it via the X-Share-Grant header." xml:space="preserve"><value>Pro odkazy s omezeným použitím je vyžadováno platné přístupové oprávnění. Nejprve zavolejte GET /api/v1/s/{linkId} pro získání grant tokenu a poté jej předejte v hlavičce X-Share-Grant.</value></data>
+  <data name="Recipient not found" xml:space="preserve"><value>Příjemce nenalezen</value></data>
+  <data name="Recipient must be an active album member" xml:space="preserve"><value>Příjemce musí být aktivním členem alba</value></data>
+  <data name="Epoch key already exists for this album/recipient/epoch" xml:space="preserve"><value>Klíč epochy pro toto album/příjemce/epochu již existuje</value></data>
+  <data name="Manifest signed by an unknown epoch key for this album" xml:space="preserve"><value>Manifest byl podepsán neznámým klíčem epochy pro toto album</value></data>
+  <data name="Shard not found" xml:space="preserve"><value>Shard nenalezen</value></data>
+  <data name="Shard not available" xml:space="preserve"><value>Shard není dostupný</value></data>
+  <data name="Some shards not found" xml:space="preserve"><value>Některé shardy nebyly nalezeny</value></data>
+  <data name="Some shards already linked to a manifest" xml:space="preserve"><value>Některé shardy jsou již připojeny k manifestu</value></data>
+  <data name="Missing required fields" xml:space="preserve"><value>Chybí povinná pole</value></data>
+  <data name="duplicate userId in roster members" xml:space="preserve"><value>duplicitní userId v členech rosteru</value></data>
+  <data name="AccountSalt must be 16 bytes" xml:space="preserve"><value>AccountSalt musí mít 16 bajtů</value></data>
+  <data name="UserSalt must be 16 bytes" xml:space="preserve"><value>UserSalt musí mít 16 bajtů</value></data>
+  <data name="accessTier must be 1, 2, or 3" xml:space="preserve"><value>accessTier musí být 1, 2 nebo 3</value></data>
+  <data name="assetType must be Image, Video, or LiveImage" xml:space="preserve"><value>assetType musí být Image, Video nebo LiveImage</value></data>
+  <data name="At least one epoch key is required" xml:space="preserve"><value>Je vyžadován alespoň jeden klíč epochy</value></data>
+  <data name="At least one wrapped key is required" xml:space="preserve"><value>Je vyžadován alespoň jeden zabalený klíč</value></data>
+  <data name="Each epoch key must have a 24-byte nonce" xml:space="preserve"><value>Každý klíč epochy musí mít 24bajtový nonce</value></data>
+  <data name="Each epoch key must have an encryptedKey" xml:space="preserve"><value>Každý klíč epochy musí mít encryptedKey</value></data>
+  <data name="Each epoch key tier must be 1, 2, or 3" xml:space="preserve"><value>Tier každého klíče epochy musí být 1, 2 nebo 3</value></data>
+  <data name="Each epoch key tier must be less than or equal to accessTier" xml:space="preserve"><value>Tier každého klíče epochy musí být menší nebo roven accessTier</value></data>
+  <data name="Each wrapped key must have a 24-byte nonce" xml:space="preserve"><value>Každý zabalený klíč musí mít 24bajtový nonce</value></data>
+  <data name="Each wrapped key must have an encryptedKey" xml:space="preserve"><value>Každý zabalený klíč musí mít encryptedKey</value></data>
+  <data name="Each wrapped key tier must be 1, 2, or 3" xml:space="preserve"><value>Tier každého zabaleného klíče musí být 1, 2 nebo 3</value></data>
+  <data name="Each wrapped key tier must be less than or equal to accessTier" xml:space="preserve"><value>Tier každého zabaleného klíče musí být menší nebo roven accessTier</value></data>
+  <data name="encryptedKeyBundle is required" xml:space="preserve"><value>encryptedKeyBundle je povinný</value></data>
+  <data name="encryptedMeta must be valid base64 and at least 16 bytes" xml:space="preserve"><value>encryptedMeta musí být platný base64 a mít alespoň 16 bajtů</value></data>
+  <data name="encryptedName is required" xml:space="preserve"><value>encryptedName je povinný</value></data>
+  <data name="epochKeys is required" xml:space="preserve"><value>epochKeys je povinné</value></data>
+  <data name="epochKeys must not include the member being removed" xml:space="preserve"><value>epochKeys nesmí obsahovat odebíraného člena</value></data>
+  <data name="expirationWarningDays must be non-negative" xml:space="preserve"><value>expirationWarningDays nesmí být záporné</value></data>
+  <data name="expiresAt must be in the future" xml:space="preserve"><value>expiresAt musí být v budoucnosti</value></data>
+  <data name="initialEpochKey is required" xml:space="preserve"><value>initialEpochKey je povinný</value></data>
+  <data name="maxUses must be positive" xml:space="preserve"><value>maxUses musí být kladné</value></data>
+  <data name="ownerSignature is required" xml:space="preserve"><value>ownerSignature je povinný</value></data>
+  <data name="protocolVersion must be 1" xml:space="preserve"><value>protocolVersion musí být 1</value></data>
+  <data name="Role must be &apos;viewer&apos; or &apos;editor&apos;" xml:space="preserve"><value>Role musí být &apos;viewer&apos; nebo &apos;editor&apos;</value></data>
+  <data name="sharerPubkey is required" xml:space="preserve"><value>sharerPubkey je povinný</value></data>
+  <data name="signature must be a 64-byte Ed25519 signature" xml:space="preserve"><value>podpis musí být 64bajtový Ed25519 podpis</value></data>
+  <data name="signature must be valid base64 and non-empty" xml:space="preserve"><value>podpis musí být platný base64 a neprázdný</value></data>
+  <data name="signerPubkey does not match any active epoch sign key for this album" xml:space="preserve"><value>signerPubkey neodpovídá žádnému aktivnímu podpisovému klíči epochy pro toto album</value></data>
+  <data name="signerPubkey must be valid base64 and exactly 32 bytes" xml:space="preserve"><value>signerPubkey musí být platný base64 a přesně 32 bajtů</value></data>
+  <data name="signPubkey is required" xml:space="preserve"><value>signPubkey je povinný</value></data>
+  <data name="This endpoint is only available when local authentication is enabled. Contact your administrator." xml:space="preserve"><value>Tento endpoint je k dispozici pouze pokud je povolena lokální autentizace. Kontaktujte administrátora.</value></data>
+  <data name="tieredShards contentLength does not match stored shard length" xml:space="preserve"><value>tieredShards contentLength neodpovídá uložené délce shardu</value></data>
+  <data name="tieredShards contentLength must be positive" xml:space="preserve"><value>tieredShards contentLength musí být kladné</value></data>
+  <data name="tieredShards envelopeVersion must be 3" xml:space="preserve"><value>tieredShards envelopeVersion musí být 3</value></data>
+  <data name="tieredShards is required for manifest finalization" xml:space="preserve"><value>tieredShards je vyžadováno pro finalizaci manifestu</value></data>
+  <data name="tieredShards sha256 does not match stored shard hash" xml:space="preserve"><value>tieredShards sha256 neodpovídá uloženému hashi shardu</value></data>
+  <data name="tieredShards sha256 must be lowercase hex SHA-256" xml:space="preserve"><value>tieredShards sha256 musí být malá hex SHA-256</value></data>
+  <data name="tieredShards shardIndex must be contiguous per tier" xml:space="preserve"><value>tieredShards shardIndex musí být souvislý pro každý tier</value></data>
+  <data name="tieredShards shardIndex must be non-negative" xml:space="preserve"><value>tieredShards shardIndex nesmí být záporný</value></data>
+  <data name="tieredShards shardIndex must be unique per tier" xml:space="preserve"><value>tieredShards shardIndex musí být jedinečný pro každý tier</value></data>
+  <data name="tieredShards tier must be 1, 2, or 3" xml:space="preserve"><value>tieredShards tier musí být 1, 2 nebo 3</value></data>
+  <data name="tombstoneSignature and signerEpochId must be supplied together or both omitted" xml:space="preserve"><value>tombstoneSignature a signerEpochId musí být zadány společně nebo obě vynechány</value></data>
+  <data name="tombstoneSignature must be a 64-byte Ed25519 signature" xml:space="preserve"><value>tombstoneSignature musí být 64bajtový Ed25519 podpis</value></data>
+  <data name="tombstoneSignature must be valid base64 and non-empty" xml:space="preserve"><value>tombstoneSignature musí být platný base64 a neprázdný</value></data>
+  <data name="wrappedKeys is required" xml:space="preserve"><value>wrappedKeys je povinné</value></data>
+  <data name="Tier must be between 1 and 3" xml:space="preserve"><value>Tier musí být mezi 1 a 3</value></data>
+  <data name="Nonce must be exactly 24 bytes" xml:space="preserve"><value>Nonce musí mít přesně 24 bajtů</value></data>
+  <data name="EncryptedKey must not be empty" xml:space="preserve"><value>EncryptedKey nesmí být prázdný</value></data>
+  <data name="LinkId must be exactly 16 bytes" xml:space="preserve"><value>LinkId musí mít přesně 16 bajtů</value></data>
+  <data name="Too many wrapped keys" xml:space="preserve"><value>Příliš mnoho zabalených klíčů</value></data>
+  <data name="Too many epoch keys" xml:space="preserve"><value>Příliš mnoho klíčů epochy</value></data>
+</root>
