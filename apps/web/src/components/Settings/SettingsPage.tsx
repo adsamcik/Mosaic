@@ -710,7 +710,7 @@ export function SettingsPage() {
       {/* Delete Account Confirmation Dialog (v1.0.1 s15 — GDPR Art.17) */}
       {showDeleteAccountConfirm && user && (
         <DeleteAccountConfirmationDialog
-          username={user.authSub}
+          username={user.authSub ?? user.id}
           onClose={() => setShowDeleteAccountConfirm(false)}
         />
       )}

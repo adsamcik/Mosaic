@@ -508,7 +508,7 @@ class SessionManager {
       // Get user salt - server should have it if user logged in before
       let userSalt: Uint8Array;
       let shouldUploadUserSalt = false;
-      const username = this._currentUser.authSub;
+      const username = this._currentUser.authSub ?? this._currentUser.id;
       const kdfParams = resolveKdfProfile(this._currentUser);
       const workerKdfParams = toWorkerKdfParams(kdfParams);
 
@@ -644,7 +644,7 @@ class SessionManager {
       // 3. If no: use local salt or generate new, encrypt and upload to server
       let userSalt: Uint8Array;
       let shouldUploadUserSalt = false;
-      const username = this._currentUser.authSub;
+      const username = this._currentUser.authSub ?? this._currentUser.id;
       const kdfParams = resolveKdfProfile(this._currentUser);
       const workerKdfParams = toWorkerKdfParams(kdfParams);
 

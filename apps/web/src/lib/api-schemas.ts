@@ -105,7 +105,10 @@ export type HealthResponse = z.infer<typeof HealthResponseSchema>;
 
 export const UserSchema = z.object({
   id: UuidSchema,
-  authSub: z.string(),
+  // Omitted by /me in ProxyAuth-only mode to avoid leaking the upstream
+  // reverse-proxy identifier (see UsersController.GetMe). Treat as optional
+  // on the client and fall back to `id` for KDF context when absent.
+  authSub: z.string().optional(),
   identityPubkey: Base64Schema.nullish(),
   createdAt: IsoDateTimeSchema,
   isAdmin: z.boolean().optional(),
