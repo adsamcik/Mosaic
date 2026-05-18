@@ -72,7 +72,13 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<RoomManager>());
 builder.Services.AddSingleton<SidecarRateLimiter>();
 
 // Controllers with camelCase JSON to match JavaScript conventions
-builder.Services.AddControllers()
+builder.Services.AddControllers(options =>
+    {
+        // v1.0.1 s29: rewrite ProblemDetails.Title/Detail and
+        // ValidationProblemDetails.Errors values via IStringLocalizer when an
+        // Accept-Language header maps to a supported culture (currently en, cs).
+        options.Filters.AddService<Mosaic.Backend.Localization.ProblemDetailsLocalizationFilter>();
+    })
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
@@ -246,6 +252,10 @@ if (authConfiguration.UsesLegacyMode)
 // 6. RequestTimingMiddleware - log request timing
 // 7. Auth middleware - authenticate user
 app.UseForwardedHeaders();
+// v1.0.1 s29: select request culture from Accept-Language so that
+// ProblemDetailsLocalizationFilter can translate error titles/details.
+app.UseRequestLocalization(app.Services
+    .GetRequiredService<IOptions<Microsoft.AspNetCore.Builder.RequestLocalizationOptions>>().Value);
 app.UseRateLimiter();
 app.UseWebSockets();
 app.UseExceptionHandler();
@@ -284,6 +294,13 @@ app.UseAdminAuth();
 // Idempotency-Key replay cache for authenticated state-changing requests.
 // Tus PATCH chunks intentionally bypass replay caching; Tus POST upload init is cached.
 app.UseMiddleware<IdempotencyMiddleware>();
+
+// RFC 8594 Deprecation/Sunset header emission (v1.0.1 s23). Reads
+// [DeprecatedRoute] metadata from the matched endpoint; no routes are
+// deprecated today but future deprecations are mechanical — just decorate the
+// action with [DeprecatedRoute(SunsetDate = "...", DeprecationDate = "...",
+// Link = "...")] and the headers flow automatically.
+app.UseMiddleware<DeprecationHeadersMiddleware>();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -377,6 +394,25 @@ if (runMigrations)
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<MosaicDbContext>();
+
+    // SQLite uses EnsureCreated (simpler for dev), PostgreSQL uses migrations
+    // Note: SQLite pragmas (WAL mode, busy timeout) are configured via SqlitePragmaInterceptor
+    if (useSqlite)
+    {
+        await db.Database.EnsureCreatedAsync();
+        app.Logger.LogInformation("SQLite database initialized (pragmas configured via interceptor)");
+    }
+    else
+    {
+        await db.Database.MigrateAsync();
+        app.Logger.LogInformation("PostgreSQL migrations applied");
+    }
+}
+
+app.Run();
+
+public partial class Program;
+erviceProvider.GetRequiredService<MosaicDbContext>();
 
     // SQLite uses EnsureCreated (simpler for dev), PostgreSQL uses migrations
     // Note: SQLite pragmas (WAL mode, busy timeout) are configured via SqlitePragmaInterceptor
