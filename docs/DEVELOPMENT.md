@@ -608,6 +608,40 @@ cd apps/backend/Mosaic.Backend.Tests && dotnet test  # Backend tests
 .\scripts\run-e2e-tests.ps1
 ```
 
+#### Local E2E Performance Notes
+
+The Playwright suite is calibrated against CI hardware (4-core GitHub-hosted
+runners with a clean Docker network and 3 Playwright workers). On a developer
+workstation the same suite typically runs with **8 parallel workers** alongside
+Docker Desktop, the Vite dev server, the .NET backend, and a browser — which
+pushes the heavy `@slow` / `@crypto` specs (W-A6 lifecycle, `video-upload`,
+multi-user `sync-workflow`, share-link flows; ~20 tests in total) past the
+default 90 s per-test timeout.
+
+To keep local development unblocked without weakening the CI baseline,
+`tests/e2e/playwright.config.ts` applies an environment-aware timeout:
+
+| Environment       | Per-test `timeout` | Workers      | Source of truth |
+|-------------------|--------------------|--------------|-----------------|
+| CI (`CI=1` set)   | 90 s               | 3            | Locked baseline |
+| Local (`CI` unset)| 180 s              | 8 (default)  | Dev convenience |
+
+If a local run is still flaky (e.g. the machine is under heavy load), prefer
+**reducing parallelism over raising the timeout further**:
+
+```powershell
+# Run the full suite with fewer parallel workers
+cd tests/e2e
+npx playwright test --workers=2 --reporter=list
+
+# Reproduce a CI failure on local hardware (forces 90s timeout + CI worker count)
+$env:CI = "1"; npx playwright test --reporter=list; Remove-Item Env:CI
+```
+
+> Genuine performance regressions still surface in CI (90 s cap, 3 workers). The
+> local timeout bump only absorbs the dev-hardware contention delta — it never
+> hides slow tests from the CI baseline.
+
 ### Coverage
 
 ```bash

@@ -155,8 +155,26 @@ export default defineConfig({
     ignoreHTTPSErrors: true,
   },
 
-  // Global test timeout (generous for crypto operations)
-  timeout: 90000,
+  // Global test timeout (generous for crypto operations).
+  //
+  // v0.2.x test-infra (e2e-local-timeout-flakiness):
+  // CI runs on calibrated 4-core GitHub runners with a clean Docker network and
+  // 3 Playwright workers (see `workers` above). Local dev machines run the full
+  // suite with 8 workers alongside Docker Desktop, Vite, the .NET backend, and
+  // browser DevTools — frequently pushing per-test wall time past 90s for the
+  // heavy @slow / @crypto specs (W-A6 lifecycle, video-upload, sync-workflow
+  // multi-user, share-links).
+  //
+  // Rather than tag individual tests with `test.slow()` (which would scatter
+  // local-only knowledge across 20+ specs), we bump the *global* per-test
+  // timeout to 180s on local runs only. CI remains at 90s so genuine
+  // performance regressions still surface in the CI baseline.
+  //
+  // To force CI-mode timeouts locally (e.g. to reproduce a CI failure on dev
+  // hardware), set `CI=1` before running. To reduce local parallelism, pass
+  // `--workers=2` on the playwright CLI. See docs/DEVELOPMENT.md →
+  // "Local E2E Performance Notes" for the full delta.
+  timeout: process.env.CI ? 90000 : 180000,
 
   // Expect timeout for assertions
   expect: {
