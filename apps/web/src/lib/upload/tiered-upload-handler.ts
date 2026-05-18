@@ -6,7 +6,7 @@ import {
   shouldStripExifFromOriginals,
 } from '../settings-service';
 import { getCryptoClient } from '../crypto-client';
-import { computeContentHash, DuplicateUploadError } from '../content-hash';
+import { computeContentHashStreaming, DuplicateUploadError } from '../content-hash';
 import { generateThumbnail, generateTieredImages } from '../thumbnail-generator';
 import { taskIdentity } from '../upload-errors';
 import { encryptUploadShardWithEpochHandle } from './encrypt-upload-shard';
@@ -80,8 +80,10 @@ export async function processTieredUpload(
     // MUST be the source-of-truth user file bytes (BEFORE any transformation).
     // Adding any per-tier transform between the source bytes and this call is
     // a v1 protocol break.
-    const originalBytes = new Uint8Array(await task.file.arrayBuffer());
-    const contentHash = await computeContentHash(originalBytes);
+    //
+    // v1.0.x s47-y1: stream the hash so we don't materialize the whole
+    // image into a single ArrayBuffer just to compute the dedup key.
+    const contentHash = await computeContentHashStreaming(task.file);
     task.contentHash = contentHash;
     await ctx.updatePersistedTask(task.id, { contentHash });
     const duplicate = await ctx.contentHashDedup?.lookup(task.albumId, contentHash);

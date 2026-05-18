@@ -67,7 +67,10 @@ describe('apiRequest timeout handling', () => {
     );
 
     const promise = getApi().syncAlbum('album-1', 0);
-    const expectation = expect(promise).rejects.toMatchObject({ name: 'TimeoutError' });
+    const expectation = expect(promise).rejects.toMatchObject({
+      name: 'RequestTimeoutError',
+      timeoutMs: 30_000,
+    });
     await vi.advanceTimersByTimeAsync(30_001);
 
     await expectation;

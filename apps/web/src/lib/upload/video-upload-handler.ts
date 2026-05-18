@@ -1,6 +1,6 @@
 import { createLogger } from '../logger';
 import { getCryptoClient } from '../crypto-client';
-import { computeContentHash, DuplicateUploadError } from '../content-hash';
+import { computeContentHashStreaming, DuplicateUploadError } from '../content-hash';
 import { extractVideoFrame } from '../video-frame-extractor';
 import { taskIdentity } from '../upload-errors';
 import { encryptUploadShardWithEpochHandle } from './encrypt-upload-shard';
@@ -36,8 +36,12 @@ export async function processVideoUpload(
   // MUST be the source-of-truth user file bytes (BEFORE any transformation).
   // Adding any per-tier transform between the source bytes and this call is
   // a v1 protocol break.
-  const originalBytes = new Uint8Array(await task.file.arrayBuffer());
-  const contentHash = await computeContentHash(originalBytes);
+  //
+  // v1.0.x s47-y1: large videos (>500MB) used to OOM here when the
+  // entire file was materialized into one ArrayBuffer just to compute
+  // the dedup hash. Stream chunk-by-chunk via the Rust WASM streaming
+  // hasher instead — bit-identical SHA-256 result.
+  const contentHash = await computeContentHashStreaming(task.file);
   task.contentHash = contentHash;
   await ctx.updatePersistedTask(task.id, { contentHash });
   const duplicate = await ctx.contentHashDedup?.lookup(task.albumId, contentHash);
