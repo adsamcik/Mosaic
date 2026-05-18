@@ -99,6 +99,31 @@ public class AuthControllerTests
     }
 
     [Fact]
+    public async Task AuthInit_WhenLocalAuthDisabled_ReturnsProblemDetailsNotFound()
+    {
+        // Arrange: explicit ProxyAuth (LocalAuth disabled)
+        using var db = TestDbContextFactory.Create();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Auth:LocalAuthEnabled"] = "false",
+                ["Auth:ProxyAuthEnabled"] = "true"
+            })
+            .Build();
+        var controller = CreateController(db, config);
+
+        // Act
+        var result = await controller.InitAuth(new AuthInitRequest("alice"));
+
+        // Assert: RFC7807 ProblemDetails 404, not a plain {error:"Not found"} body
+        var notFound = ProblemDetailsAssertions.AssertNotFound(result);
+        var problem = Assert.IsType<ProblemDetails>(notFound.Value);
+        Assert.Equal(404, problem.Status);
+        Assert.Equal("Local authentication disabled", problem.Title);
+        Assert.Contains("local authentication is enabled", problem.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task InitAuth_RejectsBadUsername()
     {
         // Arrange

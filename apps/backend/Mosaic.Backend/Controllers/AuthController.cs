@@ -114,10 +114,14 @@ public partial class AuthController : ControllerBase
     [HttpPost("init")]
     public async Task<IActionResult> InitAuth([FromBody] AuthInitRequest request)
     {
-        // Return 404 when not in LocalAuth mode
+        // Return ProblemDetails 404 when not in LocalAuth mode (RFC7807, consistent with other controllers)
         if (!_isLocalAuthMode)
         {
-            return NotFound();
+            return Problem(
+                title: "Local authentication disabled",
+                detail: "This endpoint is only available when local authentication is enabled. Contact your administrator.",
+                statusCode: StatusCodes.Status404NotFound,
+                type: "https://tools.ietf.org/html/rfc7231#section-6.5.4");
         }
 
         if (string.IsNullOrWhiteSpace(request.Username))
