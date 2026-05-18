@@ -46,6 +46,13 @@ export class UploadQueue {
   private activeTasks = new Set<UploadTask>();
   private authPausedTasks = new Map<string, UploadTask>();
   private authPaused = false;
+  /**
+   * v1.0.x s49-y3: latched to true while `navigator.onLine === false`.
+   * The queue keeps in-memory state but stops scheduling new tasks until
+   * the browser fires an `online` event, at which point in-flight Tus
+   * uploads will resume naturally via the widened retry budget.
+   */
+  private offlinePaused = false;
   private processing = false;
   private maxConcurrent = 2;
   private activeCount = 0;
@@ -260,9 +267,13 @@ export class UploadQueue {
       log.info('processQueue: auth required, queue is paused');
       return;
     }
+    if (this.offlinePaused) {
+      log.info('processQueue: offline, queue is paused');
+      return;
+    }
     this.processing = true;
 
-    while (!this.authPaused && this.queue.length > 0 && this.activeCount < this.maxConcurrent) {
+    while (!this.authPaused && !this.offlinePaused && this.queue.length > 0 && this.activeCount < this.maxConcurrent) {
       const task = this.queue.shift();
       if (!task) break;
 
@@ -484,6 +495,34 @@ export class UploadQueue {
     }
 
     void this.processQueue();
+  }
+
+  /**
+   * v1.0.x s49-y3: latch the queue to "offline" so new task scheduling
+   * stops. Already-active Tus uploads keep running; the widened retry
+   * budget covers short reconnect windows. Called from a window
+   * `offline` listener wired by UploadContext.
+   */
+  pauseForOffline(): void {
+    if (this.offlinePaused) return;
+    this.offlinePaused = true;
+    log.info('Upload queue paused for offline');
+  }
+
+  /**
+   * v1.0.x s49-y3: unlatch the offline flag and re-drain the queue.
+   * Called from a window `online` listener wired by UploadContext.
+   */
+  resumeAfterOnline(): void {
+    if (!this.offlinePaused) return;
+    this.offlinePaused = false;
+    log.info('Upload queue resumed after online');
+    void this.processQueue();
+  }
+
+  /** Test helper: report whether the queue is currently offline-paused. */
+  get isOfflinePaused(): boolean {
+    return this.offlinePaused;
   }
 
   private async pauseTaskForAuthRequired(

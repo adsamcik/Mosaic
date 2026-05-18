@@ -387,6 +387,25 @@ export function UploadProvider({ children }: UploadProviderProps) {
     });
   }, [dismissSessionExpiredToast]);
 
+  // v1.0.x s49-y3: pause/resume the upload queue on browser online/offline.
+  // We deliberately only latch a flag — in-flight Tus uploads keep
+  // retrying via the widened retry budget — so reconnects are seamless
+  // without losing already-encrypted chunks.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      uploadQueue.pauseForOffline();
+    }
+    const handleOffline = (): void => uploadQueue.pauseForOffline();
+    const handleOnline = (): void => uploadQueue.resumeAfterOnline();
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
+
   // Warn user before leaving page during upload
   useEffect(() => {
     if (!isUploading) return;
