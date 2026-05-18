@@ -42,7 +42,8 @@ public class AuthControllerTests
         Data.MosaicDbContext db,
         IConfiguration? config = null,
         string? remoteIp = "127.0.0.1",
-        bool isDevelopment = false)
+        bool isDevelopment = false,
+        TimeProvider? timeProvider = null)
     {
         config ??= CreateConfig();
         var logger = Substitute.For<ILogger<AuthController>>();
@@ -53,7 +54,7 @@ public class AuthControllerTests
         var httpContext = new DefaultHttpContext();
         httpContext.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(remoteIp ?? "127.0.0.1");
 
-        return new AuthController(db, config, logger, env, cache, RustHost.Value)
+        return new AuthController(db, config, logger, env, cache, RustHost.Value, auditLog: null, timeProvider: timeProvider ?? TimeProvider.System)
         {
             ControllerContext = new ControllerContext
             {

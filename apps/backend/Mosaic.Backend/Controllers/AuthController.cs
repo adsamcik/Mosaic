@@ -51,6 +51,7 @@ public partial class AuthController : ControllerBase
     private readonly IWebHostEnvironment _env;
     private readonly IMemoryCache _cache;
     private readonly IAuditLogService? _auditLog;
+    private readonly TimeProvider _timeProvider;
     private readonly bool _isProxyAuthMode;
 
     public AuthController(
@@ -60,7 +61,8 @@ public partial class AuthController : ControllerBase
         IWebHostEnvironment env,
         IMemoryCache cache,
         RustCoreHost rustHost,
-        IAuditLogService? auditLog = null)
+        IAuditLogService? auditLog = null,
+        TimeProvider? timeProvider = null)
     {
         _db = db;
         _config = config;
@@ -69,6 +71,7 @@ public partial class AuthController : ControllerBase
         _env = env;
         _cache = cache;
         _auditLog = auditLog;
+        _timeProvider = timeProvider ?? TimeProvider.System;
 
         // Check if LocalAuth mode is enabled (support both new and legacy config)
         var legacyMode = config["Auth:Mode"];
@@ -137,7 +140,7 @@ public partial class AuthController : ControllerBase
         // Skip rate limiting in Development and Testing environments for easier testing
         if (!_env.IsDevelopment() && !_env.IsEnvironment("Testing"))
         {
-            var oneMinuteAgo = DateTime.UtcNow.AddMinutes(-1);
+            var oneMinuteAgo = _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1);
             var recentChallenges = await _db.AuthChallenges
                 .Where(c => c.IpAddress == ipAddress && c.CreatedAt > oneMinuteAgo)
                 .CountAsync();
@@ -185,7 +188,7 @@ public partial class AuthController : ControllerBase
             Id = Guid.CreateVersion7(),
             Username = request.Username,
             Challenge = challenge,
-            ExpiresAt = DateTime.UtcNow.Add(ChallengeExpiry),
+            ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.Add(ChallengeExpiry),
             IpAddress = ipAddress
         };
         _db.AuthChallenges.Add(authChallenge);
@@ -199,7 +202,7 @@ public partial class AuthController : ControllerBase
             ChallengeId = authChallenge.Id,
             Challenge = Convert.ToBase64String(challenge),
             UserSalt = Convert.ToBase64String(userSalt),
-            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            Timestamp = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
             KdfMemoryKib = kdfMemoryKib,
             KdfIterations = kdfIterations,
             KdfParallelism = kdfParallelism,
@@ -242,7 +245,7 @@ public partial class AuthController : ControllerBase
         // Skip rate limiting in Development and Testing environments for easier testing
         if (!_env.IsDevelopment() && !_env.IsEnvironment("Testing"))
         {
-            var oneMinuteAgo = DateTime.UtcNow.AddMinutes(-1);
+            var oneMinuteAgo = _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1);
             var recentChallenges = await _db.AuthChallenges
                 .Where(c => c.IpAddress == ipAddress && c.IsUsed && c.CreatedAt > oneMinuteAgo)
                 .CountAsync();
@@ -276,7 +279,7 @@ public partial class AuthController : ControllerBase
                 statusCode: StatusCodes.Status401Unauthorized);
         }
 
-        var now = DateTime.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         var challengeClaimed = await TryClaimAuthChallengeAsync(request.ChallengeId, now);
         if (!challengeClaimed)
         {
@@ -366,7 +369,7 @@ public partial class AuthController : ControllerBase
             Id = Guid.CreateVersion7(),
             UserId = user.Id,
             TokenHash = tokenHash,
-            ExpiresAt = DateTime.UtcNow.Add(SessionAbsoluteExpiry),
+            ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.Add(SessionAbsoluteExpiry),
             UserAgent = Request.Headers.UserAgent.ToString(),
             IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
             DeviceName = ParseDeviceName(Request.Headers.UserAgent.ToString())
@@ -599,7 +602,7 @@ public partial class AuthController : ControllerBase
         var session = await _db.Sessions.FirstOrDefaultAsync(s => s.TokenHash == tokenHash);
         if (session != null)
         {
-            session.RevokedAt = DateTime.UtcNow;
+            session.RevokedAt = _timeProvider.GetUtcNow().UtcDateTime;
             await _db.SaveChangesAsync();
 
             // D1 audit: record logout. ActorUserId is the session's
@@ -651,7 +654,7 @@ public partial class AuthController : ControllerBase
         // Load session data without IsCurrent flag (can't do constant-time comparison in SQL)
         var sessionsData = await _db.Sessions
             .AsNoTracking()
-            .Where(s => s.UserId == userId && s.RevokedAt == null && s.ExpiresAt > DateTime.UtcNow)
+            .Where(s => s.UserId == userId && s.RevokedAt == null && s.ExpiresAt > _timeProvider.GetUtcNow().UtcDateTime)
             .OrderByDescending(s => s.LastSeenAt)
             .Select(s => new
             {
@@ -703,7 +706,7 @@ public partial class AuthController : ControllerBase
             return NotFound();
         }
 
-        session.RevokedAt = DateTime.UtcNow;
+        session.RevokedAt = _timeProvider.GetUtcNow().UtcDateTime;
         await _db.SaveChangesAsync();
 
         return Ok(new { message = "Session revoked" });
@@ -734,7 +737,7 @@ public partial class AuthController : ControllerBase
 
         foreach (var session in sessionsToRevoke)
         {
-            session.RevokedAt = DateTime.UtcNow;
+            session.RevokedAt = _timeProvider.GetUtcNow().UtcDateTime;
         }
         await _db.SaveChangesAsync();
 
@@ -812,7 +815,7 @@ public partial class AuthController : ControllerBase
             .FirstOrDefaultAsync(s =>
                 s.TokenHash == tokenHash &&
                 s.RevokedAt == null &&
-                s.ExpiresAt > DateTime.UtcNow);
+                s.ExpiresAt > _timeProvider.GetUtcNow().UtcDateTime);
 
         if (session == null)
         {
@@ -820,13 +823,13 @@ public partial class AuthController : ControllerBase
         }
 
         // Check sliding expiration (7 days since last use)
-        if (session.LastSeenAt < DateTime.UtcNow.Add(-SessionSlidingExpiry))
+        if (session.LastSeenAt < _timeProvider.GetUtcNow().UtcDateTime.Add(-SessionSlidingExpiry))
         {
             return null;
         }
 
         // Update last seen
-        session.LastSeenAt = DateTime.UtcNow;
+        session.LastSeenAt = _timeProvider.GetUtcNow().UtcDateTime;
         await _db.SaveChangesAsync();
 
         return session.UserId;
@@ -918,7 +921,7 @@ public partial class AuthController : ControllerBase
     private async Task CleanupExpiredChallengesAsync()
     {
         // Delete challenges older than 5 minutes
-        var cutoff = DateTime.UtcNow.AddMinutes(-5);
+        var cutoff = _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-5);
 
         try
         {
