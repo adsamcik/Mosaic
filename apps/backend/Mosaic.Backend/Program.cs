@@ -83,6 +83,13 @@ builder.Services.AddControllers(options =>
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        // Strict deserialization: unknown JSON properties become 400s rather than
+        // being silently dropped. Matches the SidecarTelemetryEndpoint policy so
+        // the whole API has one consistent contract-drift detection story
+        // (v1.0.1 s23). Catches client/server schema drift early — especially
+        // important post-API-versioning.
+        options.JsonSerializerOptions.UnmappedMemberHandling =
+            System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow;
     });
 
 // Configure model validation to log errors (helpful for debugging)
