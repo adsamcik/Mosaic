@@ -60,7 +60,6 @@ class MosaicApplicationStartupTest {
       rustCoreWarmUp = {}
       migrateEnvelopeLayout = {}
       installAutoImportRuntime = {}
-      registerUploadNotificationChannel = {}
       enqueueAutoImportIfPolicyAllows = {}
       super.onCreate()
     }

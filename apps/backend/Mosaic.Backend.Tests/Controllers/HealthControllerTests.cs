@@ -56,4 +56,38 @@ public class HealthControllerTests
 
         Assert.IsAssignableFrom<ObjectResult>(result);
     }
+
+    [Fact]
+    public async Task Ready_Returns503_WhenDatabaseDown()
+    {
+        // Force a "database down" state by disposing the context. Any
+        // SELECT 1 attempt then throws (ObjectDisposedException). The
+        // readiness probe must catch that and return 503 — a non-200
+        // status tells orchestrators to stop routing traffic to this
+        // pod while the dependency is broken, without restarting the
+        // (otherwise healthy) process.
+        using var db = TestDbContextFactory.Create();
+        db.Dispose();
+        var controller = new HealthController(db);
+
+        var result = await controller.Ready();
+
+        var obj = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(503, obj.StatusCode);
+    }
+
+    [Fact]
+    public void Live_AlwaysReturns200()
+    {
+        // Liveness is the kubelet "is the process responsive?" signal.
+        // It must return 200 unconditionally — even with a brand-new
+        // context, a disposed context, or any DB state.
+        using var db = TestDbContextFactory.Create();
+        var controller = new HealthController(db);
+
+        var result = controller.Live();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(200, ok.StatusCode);
+    }
 }
