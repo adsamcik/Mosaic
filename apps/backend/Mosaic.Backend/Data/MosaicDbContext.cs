@@ -39,6 +39,7 @@ public class MosaicDbContext : DbContext
             e.Property(u => u.KdfIterations).HasDefaultValue(3);
             e.Property(u => u.KdfParallelism).HasDefaultValue(1);
             e.Property(u => u.KdfAlgVersion).HasDefaultValue((byte)0x13);
+            e.Property(u => u.SaltVersion).HasDefaultValue(1);
             e.Property(u => u.RowVersion).IsConcurrencyToken();
         });
 
