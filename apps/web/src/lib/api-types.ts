@@ -136,8 +136,22 @@ export interface Album {
   memberRosterVersion?: number | null;
 }
 
+/**
+ * Subset of {@link CreateEpochKeyRequest} accepted by `POST /api/v1/albums`'s
+ * `initialEpochKey` field. The recipient is always the calling user (the owner)
+ * and the epoch id is always the initial epoch on the server, so those fields
+ * are omitted — the backend rejects unknown members on strict
+ * `UnmappedMemberHandling.Disallow` JSON deserialization.
+ */
+export interface InitialEpochKeyRequest {
+  encryptedKeyBundle: string;
+  ownerSignature: string;
+  sharerPubkey: string;
+  signPubkey: string;
+}
+
 export interface CreateAlbumRequest {
-  initialEpochKey: CreateEpochKeyRequest;
+  initialEpochKey: InitialEpochKeyRequest;
   /** Base64-encoded encrypted album name (optional) */
   encryptedName?: string;
   /** Base64-encoded encrypted album description (optional) */

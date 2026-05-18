@@ -334,14 +334,14 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       return result.slice(skip, skip + take);
     },
 
-    async createAlbum(request: CreateAlbumRequest): Promise<Album> {
+    async createAlbum(_request: CreateAlbumRequest): Promise<Album> {
       await delay();
       const id = `album-${generateUuid()}`;
       const album: Album = {
         id,
         ownerId: store.currentUser.id,
         currentVersion: 1,
-        currentEpochId: request.initialEpochKey.epochId,
+        currentEpochId: 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };

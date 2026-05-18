@@ -440,8 +440,6 @@ export function useAlbums() {
         // Create album with initial epoch key and encrypted name
         const newAlbum: ApiAlbum = await api.createAlbum({
           initialEpochKey: {
-            recipientId: currentUser.id,
-            epochId,
             encryptedKeyBundle: toBase64(bundle.wireBytes),
             ownerSignature: toBase64(bundle.signature),
             sharerPubkey: toBase64(identityPubkey),
