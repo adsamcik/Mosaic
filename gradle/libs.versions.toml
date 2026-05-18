@@ -7,9 +7,9 @@ agp = "8.10.1"
 kotlin = "2.1.21"
 
 # AndroidX runtime (intentionally minimal — no Compose in the v1 slice).
-androidx-activity = "1.9.3"
-androidx-appcompat = "1.7.0"
-androidx-core = "1.13.1"
+androidx-activity = "1.10.1"
+androidx-appcompat = "1.7.1"
+androidx-core = "1.16.0"
 
 # JNA's Android `aar` is required by the generated `uniffi.mosaic_uniffi` bindings
 # (which import `com.sun.jna.*`).
@@ -19,7 +19,7 @@ jna = "5.14.0"
 # (`apps/android-main/src/main/kotlin/org/mosaic/android/main/work/`). The
 # version line is shared by both the runtime and the testing artifact so the
 # two cannot drift apart on dependency resolution.
-androidx-work = "2.9.1"
+androidx-work = "2.10.1"
 
 # Test dependencies for the Gradle module's `test` (JVM) and `androidTest` (instrumented) source sets.
 junit4 = "4.13.2"
