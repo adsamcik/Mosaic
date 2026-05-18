@@ -123,4 +123,6 @@
   <data name="LinkId must be exactly 16 bytes" xml:space="preserve"><value>LinkId must be exactly 16 bytes</value></data>
   <data name="Too many wrapped keys" xml:space="preserve"><value>Too many wrapped keys</value></data>
   <data name="Too many epoch keys" xml:space="preserve"><value>Too many epoch keys</value></data>
+  <data name="Upload session expired" xml:space="preserve"><value>Upload session expired</value></data>
+  <data name="The upload session for this file has expired or was garbage-collected. Start a new upload." xml:space="preserve"><value>The upload session for this file has expired or was garbage-collected. Start a new upload.</value></data>
 </root>

@@ -123,4 +123,6 @@
   <data name="LinkId must be exactly 16 bytes" xml:space="preserve"><value>LinkId musí mít přesně 16 bajtů</value></data>
   <data name="Too many wrapped keys" xml:space="preserve"><value>Příliš mnoho zabalených klíčů</value></data>
   <data name="Too many epoch keys" xml:space="preserve"><value>Příliš mnoho klíčů epochy</value></data>
+  <data name="Upload session expired" xml:space="preserve"><value>Relace nahrávání vypršela</value></data>
+  <data name="The upload session for this file has expired or was garbage-collected. Start a new upload." xml:space="preserve"><value>Relace nahrávání tohoto souboru vypršela nebo byla uvolněna. Zahajte nové nahrávání.</value></data>
 </root>

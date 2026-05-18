@@ -387,6 +387,12 @@ if (app.Environment.IsDevelopment())
     }
 }
 
+// v1.0.x s44-y5: rewrite tusdotnet's bare-404 (file expired/garbage-collected)
+// into a localized ProblemDetails so resume clients know to restart instead of
+// retrying the resume blindly. Must run AFTER MapTus, but as middleware it sits
+// BEFORE it in registration order and wraps the response stream.
+app.UseMiddleware<TusExpiredFileMiddleware>();
+
 // Tus endpoint for uploads
 var storagePath = builder.Configuration["Storage:Path"] ?? "./data/blobs";
 Directory.CreateDirectory(storagePath);
