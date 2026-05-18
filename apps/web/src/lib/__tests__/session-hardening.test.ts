@@ -780,3 +780,90 @@ describe('L4: active upload idle-timeout suspension', () => {
     }
   });
 });
+
+// ===========================================================================
+// L5: BFCache pageshow handler (v1.0.x s49-y2)
+// ---------------------------------------------------------------------------
+// When the browser restores a page from the back-forward cache, JS state is
+// preserved but real wall-clock time has passed. The previous idle timer
+// fires immediately on next event-loop tick, kicking the user off as soon
+// as they navigate back. The SessionManager must reset the idle timer on
+// `pageshow` events with `persisted=true` so the user gets a fresh idle
+// window after a BFCache restore. Non-persisted pageshow events (a normal
+// load/refresh) must NOT reset, because that would defeat the timeout for
+// any user who reloads the tab.
+// ===========================================================================
+
+describe('L5: BFCache pageshow handler (v1.0.x s49-y2)', () => {
+  const idleTimeoutMs = 30 * 60 * 1000;
+
+  async function loginWithFakeTimers() {
+    vi.useFakeTimers();
+    const { session, getApi, getCryptoClient, getDbClient } =
+      await getSessionModule();
+
+    const cryptoMock = makeCryptoClientMock();
+    const dbMock = makeDbClientMock();
+    const apiMock = {
+      getCurrentUser: vi.fn().mockResolvedValue({
+        ...baseUser,
+        wrappedAccountKey: 'AA==',
+      }),
+      updateCurrentUser: vi.fn(),
+      updateCurrentUserWrappedKey: vi.fn().mockResolvedValue(undefined),
+    };
+
+    (getApi as Mock).mockReturnValue(apiMock);
+    (getCryptoClient as Mock).mockResolvedValue(cryptoMock);
+    (getDbClient as Mock).mockResolvedValue(dbMock);
+    localStorage.setItem('mosaic:userSalt', 'AAAAAAAAAAAAAAAAAAAAAA==');
+
+    await session.login('p1');
+    vi.clearAllMocks();
+    return session;
+  }
+
+  function pageShow(persisted: boolean): void {
+    const evt = new Event('pageshow') as Event & { persisted: boolean };
+    Object.defineProperty(evt, 'persisted', { value: persisted });
+    window.dispatchEvent(evt);
+  }
+
+  it('resets the idle timer when a BFCache restore fires pageshow with persisted=true', async () => {
+    const session = await loginWithFakeTimers();
+
+    try {
+      // Burn most of the idle window — would log out in 1ms more.
+      await vi.advanceTimersByTimeAsync(idleTimeoutMs - 1);
+      expect(session.isLoggedIn).toBe(true);
+
+      // Simulate the user navigating back to a BFCache'd tab.
+      pageShow(true);
+
+      // Without the handler the next ms would trigger logout. With the
+      // handler, we should still have nearly a full idle window left.
+      await vi.advanceTimersByTimeAsync(idleTimeoutMs - 1);
+      expect(session.isLoggedIn).toBe(true);
+      expect(global.fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not reset the idle timer on a non-persisted pageshow', async () => {
+    const session = await loginWithFakeTimers();
+
+    try {
+      await vi.advanceTimersByTimeAsync(idleTimeoutMs - 1);
+      expect(session.isLoggedIn).toBe(true);
+
+      // Normal reload / first-load pageshow — must NOT extend idle.
+      pageShow(false);
+
+      await vi.advanceTimersByTimeAsync(2);
+      expect(session.isLoggedIn).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

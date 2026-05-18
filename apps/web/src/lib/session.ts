@@ -458,6 +458,7 @@ class SessionManager {
   private listeners = new Set<SessionListener>();
   private boundResetIdleTimer: () => void;
   private boundUploadActiveListener: (event: Event) => void;
+  private boundPageShowListener: (event: PageTransitionEvent) => void;
   private settingsUnsubscribe: (() => void) | null = null;
   private uploadInProgress = false;
   private sessionExpiredHandled = false;
@@ -492,8 +493,10 @@ class SessionManager {
   constructor() {
     this.boundResetIdleTimer = this.resetIdleTimer.bind(this);
     this.boundUploadActiveListener = this.handleUploadActiveEvent.bind(this);
+    this.boundPageShowListener = this.handlePageShow.bind(this);
     this.initBroadcastChannel();
     this.initSessionExpiryListener();
+    this.attachPageShowListener();
   }
 
   /**
@@ -1518,6 +1521,36 @@ class SessionManager {
 
   private detachUploadActiveListener(): void {
     window.removeEventListener(UPLOAD_ACTIVE_EVENT, this.boundUploadActiveListener);
+  }
+
+  /**
+   * v1.0.x s49-y2: handle restoration from the back-forward (BFCache).
+   *
+   * When the browser restores a page from BFCache, JS state is preserved
+   * but the idle timer (which is a real `setTimeout`) may have expired
+   * during the time the page was cached, immediately tripping logout on
+   * navigation back. We listen for `pageshow` events with `persisted=true`
+   * and, if the user is still logged in, refresh the idle timer so they
+   * get a full idle window after returning. Non-persisted pageshow events
+   * (i.e. normal navigation/refresh) are ignored — those go through the
+   * usual init paths.
+   */
+  private handlePageShow(event: PageTransitionEvent): void {
+    if (!event.persisted) return;
+    log.info('Page restored from BFCache; resetting idle timer');
+    if (this._isLoggedIn) {
+      this.resetIdleTimer();
+    }
+  }
+
+  private attachPageShowListener(): void {
+    if (typeof window === 'undefined') return;
+    window.addEventListener('pageshow', this.boundPageShowListener);
+  }
+
+  private detachPageShowListener(): void {
+    if (typeof window === 'undefined') return;
+    window.removeEventListener('pageshow', this.boundPageShowListener);
   }
 }
 
