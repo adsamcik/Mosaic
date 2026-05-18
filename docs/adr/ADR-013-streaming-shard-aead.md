@@ -183,6 +183,47 @@ R-C4 **does not** ship:
 - Q-final-4 budgets may still cap end-to-end originals below 4 GiB for non-crypto pipeline reasons; the Android crypto dispatch gate itself routes >256 KiB shards through v0x04.
 - Future cross-surface activation decisions do not change protocol bytes.
 
+## Threat Model
+
+This ADR locks the byte-format of an envelope that wraps tier-3 originals — the most sensitive payloads in the system. The threat model captures what the v0x04 streaming framing is defending against, what it deliberately is not.
+
+### Adversary capabilities
+
+- **Server-side compromise (primary).** A hostile or compromised Mosaic backend can read, reorder, drop, duplicate, splice, or mutate any byte of any uploaded shard envelope. It can hold envelope bytes indefinitely, replay them across accounts, and observe length/timing.
+- **Network MITM.** Any on-path attacker between client and server sees ciphertext and can mutate/reorder bytes; TLS pinning (ADR-019 / ADR-012) raises the bar but is not assumed to fully exclude an active MITM for this ADR's threat analysis.
+- **Cross-shard / cross-stream attacker.** An attacker holding many encrypted shards from one or more albums tries to derive a usable plaintext relationship between two shards, two streams of the same shard, or two frames of one stream.
+- **Old-reader downgrade.** A v1 client (which only understands `envelopeVersion = 3`) is presented with a v0x04 stream by a malicious server attempting to coerce it into mis-decoding.
+- **Out-of-scope.** Full client-device compromise (root access, memory scraping post-decrypt, OS-level keylogger); these are explicitly out of scope per ADR-002 §"trust boundary".
+
+### Asset under threat
+
+- **Plaintext confidentiality** of tier-3 originals (full-resolution photos/videos). Loss equals total breach of zero-knowledge.
+- **Plaintext integrity** of decrypted bytes — an attacker MUST NOT be able to substitute arbitrary plaintext for any frame, truncate a stream silently, reorder frames, or splice frames from one stream into another.
+- **Cross-stream / cross-shard independence** — compromising one stream's `epoch_tier_key` derivative MUST NOT compromise other streams sharing the same epoch_tier_key.
+- **Length integrity** — the receiver MUST observe exactly the byte length the encryptor committed to; silent truncation is forbidden.
+
+### Mitigations
+
+- **XChaCha20-Poly1305** AEAD per frame: 256-bit key, 192-bit nonce, 128-bit Poly1305 tag. Same primitive as v0x03 — known-good against all in-scope adversaries.
+- **Per-frame key derivation** via `HKDF-SHA256(ikm = epoch_tier_key, salt = stream_salt, info = "mosaic:stream-frame-key:v1" || frame_index_le)`. Two frames share a key only when both `stream_salt` and `frame_index` match — cross-stream and cross-frame replay derive different keys, defeating splicing across streams.
+- **CSPRNG `stream_salt`** (16 bytes per stream) provides per-stream uniqueness root. Birthday-bound collision probability ≤ 2⁻⁶⁴ across the full ≤50-user deployment's stream count — well below practical reach.
+- **Deterministic nonce** = `stream_salt_16 || frame_index_4_le || 0x04000000`. Cannot collide within a stream (frame_index unique) or across streams (stream_salt unique). Serialized nonce is also verified against the deterministic reconstruction so a copied/reordered frame fails before AEAD.
+- **Finalized-header AAD on the final frame** binds `frame_count` and `final_frame_size` into the last frame's AEAD tag. Truncation, header mutation, or `frame_count` lying fails `AuthenticationFailed`. This is the footer-equivalent commitment — no separate footer tag needed.
+- **Reserved bytes zero-check.** All 34 reserved header bytes MUST be zero on decrypt; non-zero rejects with `InvalidEnvelope`. Closes future-version-bit smuggling.
+- **Magic + version byte.** `SGzk` + `0x04` distinguishes the layout from v0x03 unambiguously. v1 readers (`envelopeVersion = 3` only) reject `envelopeVersion = 4` with `InvalidEnvelope` (per ADR-022 §"Rules" #13), preventing old-reader downgrade.
+- **Monotonicity + uniqueness checks at decrypt time.** Decryptor rejects: non-contiguous frame indices, duplicate frames, cross-stream replay (`stream_salt` mismatch), non-final plaintext frames not equal to 64 KiB, missing final frame, extra frames past declared count. All produce stable crypto error codes without leaking plaintext or key material.
+- **Panic firewall.** Every streaming entry point `catch_unwind`s and zeroizes any plaintext-bearing temporary on panic. A Rust panic cannot propagate decrypted bytes into a JS error string or logcat line. Stream handles use `ZeroizeOnDrop` so abnormal stream termination also wipes residue.
+- **Protocol-freeze lock test.** `late_v1_protocol_freeze_lock.rs` pins the framing, KDF context, AAD labels, and reserved-byte semantics — any source-side drift fails CI before reaching production.
+- **No raw key over FFI.** `epoch_tier_key_32` is materialized only inside the secret registry; no UniFFI/WASM surface exposes it (preserves ADR-006 invariant). The streaming codepath cannot leak keys to the JS/Kotlin layer even if those layers are compromised.
+
+### Residual risks
+
+- **Length / chunk-count side channel.** The unencrypted header reveals `tier`, `frame_count`, and `final_frame_size`; an observer learns the plaintext length to byte precision and the streaming-vs-single-shot routing decision (which leaks "this shard ≥ 256 KiB"). This is accepted leakage for v1 — see `docs/SECURITY.md` §"Length leakage" and ADR-002.
+- **Server-driven retry timing.** A hostile server can selectively delay or replay specific frames within one upload to learn upload-pipeline timing. v1 does not pad frame upload timing; the cost is metadata-only and bounded by ADR-002's leakage budget.
+- **Single-shot envelope (v0x03) coexistence.** v0x03 remains valid for shards ≤ 256 KiB on Android and for all web shards in v1. The threat model for v0x03 is documented in `crates/mosaic-crypto/SECURITY.md`; v0x04 inherits it for the AEAD primitive and adds the stream-binding mitigations above.
+- **v1.x activation surface.** Once v0x04 is activated on web/WASM, the per-frame key derivation surface widens to all clients. Pre-activation, the WASM/UniFFI export of `streaming_*` is test-only — limits the attack surface against still-evolving callers.
+- **4 GiB Android cap is non-cryptographic.** Q-final-4 budgets may cap originals below the cryptographic ceiling (`frame_count: u32::MAX`, plaintext per frame: 64 KiB → theoretical 256 TiB stream). Cap rationale documented in ADR-014; not a crypto residual.
+
 ## Reversibility
 
-The framing decisions (magic, version, KDF context, AAD layout) are **irreversible** after this ADR ships into `crates/`: any deviation breaks future v1.x clients that round-trip vectors generated against this spec. The decision to **not wire production callers** in this programme is fully reversible — flipping the feature flag in v1.x activates the protocol that ADR-013 already locks. This is the maximum reversibility achievable for an irreversible byte-format commitment: lock the bytes early, defer the activation.
+The framing decisions (magic, version, KDF context, AAD layout) are **irreversible** after this ADR ships into `crates/`:any deviation breaks future v1.x clients that round-trip vectors generated against this spec. The decision to **not wire production callers** in this programme is fully reversible — flipping the feature flag in v1.x activates the protocol that ADR-013 already locks. This is the maximum reversibility achievable for an irreversible byte-format commitment: lock the bytes early, defer the activation.

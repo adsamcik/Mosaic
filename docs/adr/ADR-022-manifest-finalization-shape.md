@@ -184,6 +184,53 @@ If sync recovery returns `Album_Deleted` (HTTP 410 Gone) for the album mid-flow:
 - A future ADR drops legacy `shardIds` from the read path after the 2-release-window deprecation completes.
 - New SPEC `docs/specs/SPEC-ManifestFinalizationShape.md` documents the wire shape; existing `SPEC-RustManifestSigning.md` documents the transcript byte computation.
 
+## Threat Model
+
+The manifest finalization endpoint is the single binding point between encrypted shards, an album's epoch, and the integrity guarantees that protect a photo's identity. Locking its shape requires an explicit threat model: this section captures what the frozen wire format is defending against and what it deliberately does not.
+
+### Adversary capabilities
+
+- **Server-side compromise (primary).** A hostile or compromised Mosaic backend can read every byte of every manifest POST/GET, store manifests indefinitely, replay or splice manifests across accounts, fabricate manifest IDs, mutate `tieredShards` server-side, and drop or substitute `encryptedMeta` / `encryptedMetaSidecar` between write and read.
+- **Cross-client retry attacker.** An attacker observing a client's network can replay a `POST /api/v1/manifests` with the same `Idempotency-Key` after manipulating headers, attempt to cause idempotency-key collisions across albums, or race two clients with the same key + different bodies to confuse server-side dedup.
+- **Stale-client / shard-set-mismatch attacker.** A second client (or attacker holding a stolen device snapshot) attempts to commit a different `tieredShards` set for the same logical `asset_id` to coerce a confused-deputy state in the reducer.
+- **Network MITM.** On-path attacker mutates the manifest body, signature bytes, idempotency key, or `If-Match` value. TLS pinning (ADR-019 / ADR-012) raises the bar but is not assumed sufficient to exclude mutation for this threat analysis.
+- **Old-reader downgrade.** A v1 client receives a manifest crafted with `envelopeVersion = 4` (v1.x streaming) to coerce mis-decoding of tier-3 bytes.
+- **Out-of-scope.** Full client-device compromise (rooted phone, memory dump after L2 unwrap); these fall under ADR-002's trust-boundary exclusions.
+
+### Asset under threat
+
+- **Manifest integrity.** The `signature` over `canonical_manifest_transcript_bytes` MUST commit to album-id, asset-type, epoch, protocol version, both encrypted-meta blobs, and the full ordered `tieredShards` list. Any byte mutation by the server invalidates the signature on read.
+- **Encrypted-metadata confidentiality.** `encryptedMeta` and `encryptedMetaSidecar` carry photo metadata (filename, timestamps, geolocation, sidecar tags) encrypted under the epoch tier key. The server must never see plaintext; the ADR binds these as opaque `byte[]`.
+- **Shard-set binding.** `tieredShards[].shardId`, `sha256`, `contentLength`, and `envelopeVersion` MUST be authenticated bytes so a server cannot swap a shard reference for an attacker-supplied one without breaking the signature.
+- **Asset-identity integrity.** `asset_id` (BLAKE2b-derived from `encryptedMeta`) and `shard_set_hash` (over canonical tier-sorted entries) MUST uniquely identify a (logical photo, shard set) pair so manifest-unknown recovery cannot be tricked into accepting a different shard set.
+- **Idempotent commit safety.** Replaying a manifest POST MUST be a no-op for honest retries; replaying with a different body MUST be rejected without server-side ambiguity.
+
+### Mitigations
+
+- **Ed25519 signature over canonical transcript bytes.** `canonical_manifest_transcript_bytes(album_id, asset_type, epoch_id, protocol_version, encrypted_meta, encrypted_meta_sidecar, tiered_shards_canonical)` covers every byte that names the photo's identity and shard set. `tiered_shards_canonical` sorts by `(tier, shardIndex)` and serializes via canonical CBOR (per ADR-023) — server cannot reorder, omit, or insert entries without invalidating the signature.
+- **`signerPubkey` carried with manifest.** Verifier binds signature against the embedded pubkey; the pubkey is itself cross-checked against the epoch's authorized signer set on read, so server cannot substitute a different signer.
+- **Two version fields with disjoint roles.** `protocolVersion` (frozen `1`) binds wire-format semantics into the signed transcript so a future v2 manifest cannot be presented to v1 readers as a v1 manifest. `metadataVersion` is server-controlled, monotonic, and subject to `If-Match` optimistic concurrency — a server cannot silently roll back a metadata edit, and concurrent clients see a 409 instead of a lost update.
+- **`tieredShards[].sha256` over the *full envelope bytes*.** Same scope as backend `X-Content-SHA256` (Tus upload header) and `verify_shard_integrity` on download. Server cannot swap a shard's stored bytes without changing its hash; client detects on download and refuses to decrypt.
+- **`envelopeVersion` per shard, rejected when unknown.** v1 readers accept `3` only; `4` is reserved (per ADR-013). An attacker cannot present a v1.x streaming shard to a v1 client and coerce mis-parsing — `InvalidEnvelope` reject is the outcome.
+- **Idempotency-Key contract** (`mosaic-finalize-<upload-job-uuidv7>`) with 30-day TTL and durable server-side storage. Identical key + identical canonical-CBOR body returns the cached response; identical key + different body returns `409 IDEMPOTENCY_CONFLICT`. Cache eviction within TTL is a fail-closed `409 IDEMPOTENCY_KEY_EXPIRED` — no silent treatment of replay as fresh upload. Upload-job UUIDv7 has sufficient entropy to make cross-client collisions cryptographically negligible.
+- **Persistent idempotency cache.** Per §"Rules" #11, the idempotency cache MUST survive backend restart (durable storage). Closes the "kill-backend-mid-retry" denial-of-correctness avenue.
+- **Manifest-unknown recovery decision table.** `RecoverManifestThroughSync` distinguishes "asset_id match + shard_set_hash match → success", "asset_id match + shard_set_hash differ → `ManifestSetConflict` non-retryable", and "no match → retry with same Idempotency-Key". The stale-client / shard-set-mismatch attacker cannot land a different shard set without producing a `ManifestSetConflict` on the legitimate client.
+- **Server stores `assetType` opaquely**, only validates enum membership. Per-asset-type tier validation (ADR-024) is client-side, so a server cannot use `assetType` as a tier-confusion oracle.
+- **Server treats `shardId` as opaque storage key.** Server-generated `shardId` was rejected (per ADR design): client UUIDv7 generation ensures server cannot point a shard reference at attacker-controlled storage.
+- **`encryptedMeta` and `encryptedMetaSidecar` are AAD-bound to manifest_id** at the envelope level (`SGzk` v3 with AAD = manifest-id-bound header per ADR-013). Server cannot splice an `encryptedMeta` from manifest A into manifest B without decrypt failure.
+- **Sidecar tag registry (ADR-017)** governs TLV bytes inside `encryptedMetaSidecar`; backend never inspects, only stores.
+- **Lock test on the wire shape.** Field names, JSON layout, signature scope, and canonical CBOR ordering are all locked by tests under `crates/mosaic-domain/tests/` and the late-v1 freeze lock; CI fails before drift reaches production.
+
+### Residual risks
+
+- **Length / metadata-shape side channel.** The unencrypted JSON envelope reveals: number of tiers, number of shards per tier, per-shard `contentLength`, `envelopeVersion`, and asset-type enum (`Image | Video | LiveImage`). For a video, the server learns the chunk count of the original. This is accepted leakage in v1's threat model — see `docs/SECURITY.md` §"Length leakage" and ADR-002's enumerated leakage budget. Mitigation deferred to v1.x at earliest.
+- **Server timing observation.** The server observes manifest POST timing relative to shard uploads; it can correlate "this client uploaded N shards then committed manifest M" even though it cannot read M's content. Out of v1 mitigation scope.
+- **Orphan shards on album-deleted mid-upload.** Per §"ADR-011 (timed expiration) interaction", partially-uploaded shards become orphans server-side after an album-delete race. Backend GC after `orphan_shard_ttl` (default 24h) mitigates the storage cost; cryptographically, orphans are opaque ciphertext under a now-revoked epoch and pose no plaintext-disclosure risk.
+- **Idempotency-key TTL is policy, not a cryptographic bound.** 30 days is calibrated to `MAX_RETRY_COUNT_LIMIT × max_backoff_with_persistence_recovery_buffer`. A client offline beyond 30 days legitimately fails `IDEMPOTENCY_KEY_EXPIRED` and must retry from a fresh source — accepted UX cost.
+- **Server can refuse to commit (denial of service).** Server can return 5xx for every POST, blocking the user's upload. Outside this ADR's cryptographic threat model; standard availability concern.
+- **Legacy `shardIds` read-side surface.** Per Rule #2, legacy reads accept a flat `shardIds` for ≥ 2 release windows after G6. The synthesized `tieredShards` for legacy reads relies on backend-stored tier metadata; if that metadata was wrong at upload time, the synthesized view is wrong. Mitigation: legacy `shardIds` reads do not enter the signature scope, so signature still authenticates the original write-time shape; legacy clients render best-effort. Future ADR drops legacy reads entirely.
+- **`metadataVersion` is server-asserted.** Optimistic concurrency relies on the server honestly incrementing and reporting `metadataVersion`. A malicious server could lie. Mitigated by `If-Match` discipline + client-side anomaly detection (version going backward triggers a sync re-confirmation), but not cryptographically prevented. Documented as residual.
+
 ## Cross-references
 
 - **ADR-013** governs `envelopeVersion` values: `3` (this ADR's only accepted value in v1) and `4` (reserved, locked by ADR-013, v1.x activation).
