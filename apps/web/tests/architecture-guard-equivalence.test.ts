@@ -130,6 +130,37 @@ function psPatternNames(source: string): string[] {
   return uniqueSorted([...source.matchAll(/Name\s*=\s*'([^']+)'/g)].map((entry) => entry[1]));
 }
 
+function psAllowedDepsPairs(variableName: string): (source: string) => string[] {
+  return (source: string): string[] => {
+    const match = new RegExp(`\\$${variableName}\\s*=\\s*@\\{(?<body>[\\s\\S]*?)\\n\\s*\\}`).exec(source);
+    if (!match?.groups?.body) return [];
+    const pairs: string[] = [];
+    const entryRe = /['"]([^'"]+)['"]\s*=\s*@\((?<deps>[^)]*)\)/g;
+    for (const entry of match.groups.body.matchAll(entryRe)) {
+      const key = entry[1];
+      const deps = uniqueSorted(quotedValues(entry.groups?.deps ?? ''));
+      pairs.push(`${key}=>${deps.join(',')}`);
+    }
+    return uniqueSorted(pairs);
+  };
+}
+
+function pythonAllowedDepsPairs(variableName: string): (source: string) => string[] {
+  return (source: string): string[] => {
+    const match = new RegExp(`${variableName}\\s*=\\s*\\{(?<body>[\\s\\S]*?)\\n\\}`).exec(source);
+    if (!match?.groups?.body) return [];
+    const pairs: string[] = [];
+    const entryRe = /['"]([^'"]+)['"]\s*:\s*(?:\{(?<setBody>[^}]*)\}|\[(?<listBody>[^\]]*)\])/g;
+    for (const entry of match.groups.body.matchAll(entryRe)) {
+      const key = entry[1];
+      const body = entry.groups?.setBody ?? entry.groups?.listBody ?? '';
+      const deps = uniqueSorted(quotedValues(body));
+      pairs.push(`${key}=>${deps.join(',')}`);
+    }
+    return uniqueSorted(pairs);
+  };
+}
+
 function psHighRiskTargets(source: string): string[] {
   const match = /\$HighRiskTargets\s*=\s*@\((?<body>[\s\S]*?)\n\)/.exec(source);
   if (!match?.groups?.body) return [];
@@ -218,6 +249,15 @@ const guardPairs: GuardPair[] = [
       { label: 'console methods', ps: psArray('ConsoleMethods'), sh: bashArray('CONSOLE_METHODS') },
       { label: 'allowed patterns', ps: psArray('AllowedPatterns'), sh: bashArray('ALLOWED_PATTERNS') },
       { label: 'high-risk target entries', ps: psHighRiskTargets, sh: bashArray('HIGH_RISK_TARGETS') },
+    ],
+  },
+  {
+    name: 'rust-boundaries',
+    ps1: 'tests/architecture/rust-boundaries.ps1',
+    sh: 'tests/architecture/rust-boundaries.sh',
+    checks: [
+      { label: 'expected workspace packages', ps: psArray('expected'), sh: pythonSequence('expected') },
+      { label: 'allowed inter-crate dependencies', ps: psAllowedDepsPairs('allowed'), sh: pythonAllowedDepsPairs('allowed') },
     ],
   },
   {
