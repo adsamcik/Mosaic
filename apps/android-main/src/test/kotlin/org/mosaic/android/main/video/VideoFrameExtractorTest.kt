@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -44,7 +45,7 @@ class VideoFrameExtractorTest {
   }
 
   @Test
-  fun mediaMetadataRetrieverFrameDecoderHappyPathUsesTimeoutWrapper() = runTest {
+  fun mediaMetadataRetrieverFrameDecoderHappyPathUsesTimeoutWrapper() = runBlocking {
     val retriever = StubFrameRetriever(
       frame = Bitmap.createBitmap(12, 24, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.CYAN) },
       orientation = "90",
