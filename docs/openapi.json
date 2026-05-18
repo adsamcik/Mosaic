@@ -1226,6 +1226,55 @@
         }
       }
     },
+    "/api/v1/auth/password-rotation": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRotationRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRotationRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordRotationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordRotationResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordRotationResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordRotationResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/dev-auth/login": {
       "post": {
         "tags": [
@@ -1448,6 +1497,18 @@
           },
           "required": true
         },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/export": {
+      "get": {
+        "tags": [
+          "Export"
+        ],
         "responses": {
           "200": {
             "description": "OK"
@@ -3033,6 +3094,69 @@
         }
       }
     },
+    "/api/v1/users/me/share-links": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "name": "role",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "active",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "format": "int32",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResultOfShareLinkSummary"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResultOfShareLinkSummary"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResultOfShareLinkSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/users/{userId}": {
       "get": {
         "tags": [
@@ -3446,6 +3570,7 @@
             "format": "byte"
           },
           "encryptedMetaSidecar": {
+            "maxLength": 65616,
             "type": "string",
             "format": "byte",
             "nullable": true
@@ -3919,6 +4044,81 @@
           }
         }
       },
+      "PagedResultOfShareLinkSummary": {
+        "required": [
+          "items",
+          "nextSkip"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShareLinkSummary"
+            }
+          },
+          "nextSkip": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int32",
+            "nullable": true
+          }
+        }
+      },
+      "PasswordRotationRequest": {
+        "required": [
+          "challengeId",
+          "currentSignature",
+          "timestamp",
+          "newUserSalt",
+          "newAuthPubkey",
+          "newWrappedAccountKey"
+        ],
+        "type": "object",
+        "properties": {
+          "challengeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currentSignature": {
+            "maxLength": 256,
+            "type": "string"
+          },
+          "timestamp": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int64",
+            "nullable": true
+          },
+          "newUserSalt": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "newAuthPubkey": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "newWrappedAccountKey": {
+            "maxLength": 2048,
+            "type": "string"
+          }
+        }
+      },
+      "PasswordRotationResponse": {
+        "required": [
+          "saltVersion",
+          "revokedSessionCount"
+        ],
+        "type": "object",
+        "properties": {
+          "saltVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int32"
+          },
+          "revokedSessionCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int32"
+          }
+        }
+      },
       "PhotoExpirationUpdateResponse": {
         "required": [
           "id",
@@ -4235,6 +4435,57 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "ShareLinkSummary": {
+        "required": [
+          "id",
+          "albumId",
+          "albumName",
+          "role",
+          "accessTier",
+          "expiresAt",
+          "createdAt",
+          "accessCount",
+          "isRevoked"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "albumId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "albumName": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string"
+          },
+          "accessTier": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int32"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "accessCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int32"
+          },
+          "isRevoked": {
+            "type": "boolean"
           }
         }
       },
@@ -4617,6 +4868,9 @@
     },
     {
       "name": "EpochKeys"
+    },
+    {
+      "name": "Export"
     },
     {
       "name": "Health"
