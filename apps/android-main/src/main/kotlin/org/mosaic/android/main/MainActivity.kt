@@ -8,6 +8,8 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import org.mosaic.android.foundation.AccountKeyHandle
 import org.mosaic.android.foundation.AccountUnlockCode
 import org.mosaic.android.foundation.AccountUnlockRequest
@@ -17,6 +19,7 @@ import org.mosaic.android.foundation.unlockAccountWipingAll
 import org.mosaic.android.main.bridge.AndroidRustAccountApi
 import org.mosaic.android.main.bridge.AndroidRustDiagnosticsApi
 import org.mosaic.android.main.bridge.normalizePasswordForKdf
+import org.mosaic.android.main.permissions.PostNotificationsPermission
 
 /**
  * Smoke-test launcher activity that proves the Rust↔Kotlin FFI is wired:
@@ -30,9 +33,35 @@ import org.mosaic.android.main.bridge.normalizePasswordForKdf
  */
 class MainActivity : ComponentActivity() {
 
+  /**
+   * Activity Result launcher for the runtime POST_NOTIFICATIONS request added
+   * in Android 13 (API 33). The grant result is intentionally not persisted
+   * or logged: a denied grant simply means the user does not see the
+   * auto-import / shard-upload progress notifications, and the workers keep
+   * running. No user-identifying material is collected by this callback.
+   */
+  private val postNotificationsLauncher: ActivityResultLauncher<String> =
+    registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
+      // Intentionally no-op: see KDoc above. We do not retry on denial and we
+      // do not log the boolean grant result (avoids `Red Data` style traces).
+    }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    requestPostNotificationsIfNeeded()
     setContentView(buildContent())
+  }
+
+  /**
+   * Issues the runtime POST_NOTIFICATIONS request on Android 13+ if the
+   * permission is not already granted. On lower API levels the permission is
+   * granted at install time and this is a no-op. See
+   * [PostNotificationsPermission] for the unit-tested decision logic.
+   */
+  private fun requestPostNotificationsIfNeeded() {
+    if (PostNotificationsPermission.shouldRequest(this)) {
+      postNotificationsLauncher.launch(PostNotificationsPermission.NAME)
+    }
   }
 
   private fun buildContent(): ViewGroup {
