@@ -32,7 +32,22 @@ public class GarbageCollectionService : BackgroundService
         _timeProvider = timeProvider ?? TimeProvider.System;
         _metrics = metrics;
         var configured = options?.Value.GcInterval ?? TimeSpan.FromHours(1);
-        _interval = configured > TimeSpan.Zero ? configured : TimeSpan.FromHours(1);
+        // Defence-in-depth alongside GcOptionsValidator
+        // (security-review-2026-05-18-03): if validation is bypassed
+        // (e.g. unit-test construction without IOptionsMonitor), clamp
+        // to the documented minimum rather than spinning the loop.
+        if (configured < GcOptions.MinimumGcInterval)
+        {
+            _logger.LogWarning(
+                "Gc__GcInterval {Configured} is below minimum {Minimum}; clamping to minimum",
+                configured,
+                GcOptions.MinimumGcInterval);
+            _interval = GcOptions.MinimumGcInterval;
+        }
+        else
+        {
+            _interval = configured;
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

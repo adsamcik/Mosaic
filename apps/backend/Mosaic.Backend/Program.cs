@@ -60,7 +60,10 @@ builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IUserErasureService, UserErasureService>();
 builder.Services.AddSingleton<RustCoreHost>();
 builder.Services.AddMemoryCache(options => options.SizeLimit = 10_000);
-builder.Services.Configure<GcOptions>(builder.Configuration.GetSection("Gc"));
+builder.Services.AddOptions<GcOptions>()
+    .Bind(builder.Configuration.GetSection("Gc"))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<GcOptions>, GcOptionsValidator>();
 builder.Services.AddHostedService<GarbageCollectionService>();
 builder.Services.AddHostedService<IdempotencyRecordCleanupHostedService>();
 builder.Services.Configure<SessionCleanupOptions>(
