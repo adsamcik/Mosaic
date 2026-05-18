@@ -19,7 +19,7 @@ jna = "5.14.0"
 # (`apps/android-main/src/main/kotlin/org/mosaic/android/main/work/`). The
 # version line is shared by both the runtime and the testing artifact so the
 # two cannot drift apart on dependency resolution.
-androidx-work = "2.10.1"
+androidx-work = "2.11.2"
 
 # Test dependencies for the Gradle module's `test` (JVM) and `androidTest` (instrumented) source sets.
 junit4 = "4.13.2"
