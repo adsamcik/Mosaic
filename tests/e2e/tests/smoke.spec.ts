@@ -38,6 +38,21 @@ const test = base.extend<
     const context = await browser.newContext();
     const page = await context.newPage();
 
+    // Surface browser console + page errors in CI logs so a failed SMOKE-1
+    // doesn't just say 'app-shell not found' — we get the real cause.
+    page.on('console', (msg) => {
+      const type = msg.type();
+      if (type === 'error' || type === 'warning') {
+        console.log(`[browser:${type}] ${msg.text()}`);
+      }
+    });
+    page.on('pageerror', (err) => {
+      console.log(`[browser:pageerror] ${err.message}`);
+    });
+    page.on('requestfailed', (req) => {
+      console.log(`[browser:requestfailed] ${req.method()} ${req.url()} - ${req.failure()?.errorText ?? 'unknown'}`);
+    });
+
     // Inject Remote-User header for ProxyAuth mode. The backend ignores it when
     // ProxyAuth is disabled, so this is safe to apply unconditionally and lets
     // a single smoke suite cover both LocalAuth and ProxyAuth CI matrices.

@@ -53,7 +53,8 @@ export interface HealthResponse {
 
 export interface User {
   id: string;
-  authSub: string;
+  /** Omitted by /me in ProxyAuth-only mode (topology-leak prevention). */
+  authSub?: string;
   identityPubkey?: string;
   createdAt: string;
   /** Whether the user is an admin */
