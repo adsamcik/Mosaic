@@ -245,7 +245,7 @@ dependencies {
   // Maven Central has io.tus.java.client:tus-java-client:0.5.1, but no clear
   // maintained Android OkHttp-first artifact; keep OkHttp pinned for the A5a
   // spike and avoid adding a URLConnection-based Tus dependency.
-  implementation("com.squareup.okhttp3:okhttp:4.12.0")
+  implementation("com.squareup.okhttp3:okhttp:5.1.0")
   implementation("androidx.exifinterface:exifinterface:1.3.7")
   implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
@@ -268,9 +268,9 @@ dependencies {
   testImplementation("androidx.test:core-ktx:1.6.1")
   testImplementation(libs.androidx.work.testing)
   testImplementation("org.robolectric:robolectric:4.13")
-  testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
-  testImplementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-  testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
+  testImplementation("com.squareup.okhttp3:mockwebserver:5.1.0")
+  testImplementation("com.squareup.okhttp3:logging-interceptor:5.1.0")
+  testImplementation("com.squareup.okhttp3:okhttp-tls:5.1.0")
 
   androidTestImplementation(libs.androidx.test.junit)
   androidTestImplementation(libs.androidx.test.espresso)
@@ -279,7 +279,7 @@ dependencies {
   androidTestImplementation(libs.androidx.test.rules)
   androidTestImplementation(libs.androidx.work.testing)
   androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
-  androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+  androidTestImplementation("com.squareup.okhttp3:mockwebserver:5.1.0")
 }
 
 // ---------------------------------------------------------------------------------------
