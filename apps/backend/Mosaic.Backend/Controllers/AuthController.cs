@@ -495,6 +495,7 @@ public partial class AuthController : ControllerBase
             var attempts = _cache.GetOrCreate(cacheKey, entry =>
             {
                 entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1);
+                entry.Size = 1;
                 return 0;
             });
 
@@ -508,7 +509,11 @@ public partial class AuthController : ControllerBase
                     detail: "Too many registration attempts. Please try again later.");
             }
 
-            _cache.Set(cacheKey, attempts + 1, TimeSpan.FromHours(1));
+            _cache.Set(cacheKey, attempts + 1, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1),
+                Size = 1,
+            });
         }
 
         // Check if user already exists

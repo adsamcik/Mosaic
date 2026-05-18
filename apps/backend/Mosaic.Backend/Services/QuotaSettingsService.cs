@@ -68,6 +68,12 @@ public class QuotaSettingsService : IQuotaSettingsService
     private const string CacheKey = "QuotaDefaults";
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
 
+    private static MemoryCacheEntryOptions CacheEntryOptions => new()
+    {
+        AbsoluteExpirationRelativeToNow = CacheDuration,
+        Size = 1,
+    };
+
     // Config fallback defaults
     private const long DefaultMaxStorageBytes = 10_737_418_240; // 10 GB
     private const int DefaultMaxAlbums = 100;
@@ -114,7 +120,7 @@ public class QuotaSettingsService : IQuotaSettingsService
             defaults = GetConfigDefaults();
         }
 
-        _cache.Set(CacheKey, defaults, CacheDuration);
+        _cache.Set(CacheKey, defaults, CacheEntryOptions);
         return defaults;
     }
 
@@ -141,7 +147,7 @@ public class QuotaSettingsService : IQuotaSettingsService
         }
 
         await _db.SaveChangesAsync();
-        _cache.Set(CacheKey, defaults, CacheDuration);
+        _cache.Set(CacheKey, defaults, CacheEntryOptions);
 
         _logger.LogInformation(
             "Quota defaults updated by {UserId}: MaxStorage={MaxStorage}, MaxAlbums={MaxAlbums}, MaxPhotos={MaxPhotos}, MaxAlbumSize={MaxAlbumSize}",
