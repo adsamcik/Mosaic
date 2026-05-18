@@ -11,8 +11,8 @@ import java.util.Locale
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.android)
-  id("org.jetbrains.kotlin.plugin.serialization") version "2.1.21"
-  id("com.google.devtools.ksp") version "2.1.21-2.0.2"
+  alias(libs.plugins.kotlin.serialization)
+  alias(libs.plugins.ksp)
 }
 
 // ---------------------------------------------------------------------------------------
@@ -237,18 +237,18 @@ dependencies {
   implementation(libs.androidx.activity)
   implementation(libs.androidx.appcompat)
   implementation(libs.androidx.core)
-  implementation("androidx.lifecycle:lifecycle-service:2.9.0")
-  implementation("androidx.room:room-runtime:2.6.1")
-  implementation("androidx.room:room-ktx:2.6.1")
-  ksp("androidx.room:room-compiler:2.6.1")
+  implementation(libs.androidx.lifecycle.service)
+  implementation(libs.androidx.room.runtime)
+  implementation(libs.androidx.room.ktx)
+  ksp(libs.androidx.room.compiler)
   // Tus upload foundation uses direct OkHttp PATCH/HEAD/POST protocol calls.
   // Maven Central has io.tus.java.client:tus-java-client:0.5.1, but no clear
   // maintained Android OkHttp-first artifact; keep OkHttp pinned for the A5a
   // spike and avoid adding a URLConnection-based Tus dependency.
-  implementation("com.squareup.okhttp3:okhttp:5.1.0")
-  implementation("androidx.exifinterface:exifinterface:1.4.1")
-  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+  implementation(libs.okhttp)
+  implementation(libs.androidx.exifinterface)
+  implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.kotlinx.serialization.json)
   // WorkManager powers the auto-import foreground (`dataSync`) worker. See
   // `apps/android-main/src/main/kotlin/org/mosaic/android/main/work/`.
   implementation(libs.androidx.work.runtime)
@@ -264,13 +264,13 @@ dependencies {
   // (com/sun/jna/<os>/jnidispatch.<ext>) not found in resource path`.
   testImplementation("net.java.dev.jna:jna:${libs.versions.jna.get()}")
   testImplementation(libs.junit4)
-  testImplementation("androidx.room:room-testing:2.6.1")
-  testImplementation("androidx.test:core-ktx:1.6.1")
+  testImplementation(libs.androidx.room.testing)
+  testImplementation(libs.androidx.test.core)
   testImplementation(libs.androidx.work.testing)
-  testImplementation("org.robolectric:robolectric:4.13")
-  testImplementation("com.squareup.okhttp3:mockwebserver:5.1.0")
-  testImplementation("com.squareup.okhttp3:logging-interceptor:5.1.0")
-  testImplementation("com.squareup.okhttp3:okhttp-tls:5.1.0")
+  testImplementation(libs.robolectric)
+  testImplementation(libs.okhttp.mockwebserver)
+  testImplementation(libs.okhttp.logging.interceptor)
+  testImplementation(libs.okhttp.tls)
 
   androidTestImplementation(libs.androidx.test.junit)
   androidTestImplementation(libs.androidx.test.espresso)
@@ -278,8 +278,8 @@ dependencies {
   androidTestImplementation(libs.androidx.test.runner)
   androidTestImplementation(libs.androidx.test.rules)
   androidTestImplementation(libs.androidx.work.testing)
-  androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
-  androidTestImplementation("com.squareup.okhttp3:mockwebserver:5.1.0")
+  androidTestImplementation(libs.androidx.test.uiautomator)
+  androidTestImplementation(libs.okhttp.mockwebserver)
 }
 
 // ---------------------------------------------------------------------------------------
