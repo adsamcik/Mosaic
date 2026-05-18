@@ -32,6 +32,7 @@ class MosaicApplicationTest {
     MosaicApplication.rustCoreWarmUp = {}
     MosaicApplication.migrateEnvelopeLayout = {}
     MosaicApplication.installAutoImportRuntime = {}
+    MosaicApplication.registerUploadNotificationChannel = {}
     MosaicApplication.enqueueAutoImportIfPolicyAllows = {}
     ShellStubRecordMigration.sharedPreferencesOpener = { _, name ->
       when (name) {
@@ -63,6 +64,7 @@ class MosaicApplicationTest {
     MosaicApplication.rustCoreWarmUp = {}
     MosaicApplication.migrateEnvelopeLayout = {}
     MosaicApplication.installAutoImportRuntime = {}
+    MosaicApplication.registerUploadNotificationChannel = {}
     MosaicApplication.enqueueAutoImportIfPolicyAllows = {}
     MosaicApplication.enqueuePrivacyAuditDaily = { invoked = true }
     ShellStubRecordMigration.sharedPreferencesOpener = { _, _ -> ThrowingApplySharedPreferences() }

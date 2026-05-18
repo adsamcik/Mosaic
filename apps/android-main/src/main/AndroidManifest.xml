@@ -19,19 +19,15 @@
     - FOREGROUND_SERVICE_DATA_SYNC narrows that promotion to the `dataSync`
       service type that ADR-007 mandates for upload work; Android 14+ rejects
       promotions whose service type was not declared at install time.
-    - POST_NOTIFICATIONS is declared because the user-visible notifications
-      posted by AutoImportWorker and the expedited shard workers
-      (ShardEncryptionWorker, ShardUploadWorker — see v1.0.1 s24) are a hard
-      requirement on Android 13+. MainActivity issues the runtime grant
-      request on first launch via ActivityResultContracts.RequestPermission.
+    - POST_NOTIFICATIONS is declared because the user-visible notification
+      driving the foreground promotion is a hard requirement on Android 13+.
+    - UploadForegroundService is declared as a non-exported `dataSync`
+      foreground service for user-cancellable shard upload notifications.
     - The merged WorkManager `SystemForegroundService` is patched with
       android:foregroundServiceType="dataSync" so the runtime `setForeground`
       call from `AutoImportWorker` matches the manifest declaration. The merge
       `tools:node="merge"` re-uses WorkManager's <service> entry instead of
-      duplicating it. This is now the ONLY `dataSync` foreground service in
-      the merged manifest; the previously-declared UploadForegroundService
-      was deleted in v1.0.1 s24 because the expedited shard workers
-      (setExpedited + getForegroundInfo) replaced its only responsibility.
+      duplicating it.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
           xmlns:tools="http://schemas.android.com/tools">
@@ -67,6 +63,11 @@
         android:name="androidx.work.impl.foreground.SystemForegroundService"
         android:foregroundServiceType="dataSync"
         tools:node="merge" />
+
+    <service
+        android:name=".service.UploadForegroundService"
+        android:exported="false"
+        android:foregroundServiceType="dataSync" />
 
   </application>
 

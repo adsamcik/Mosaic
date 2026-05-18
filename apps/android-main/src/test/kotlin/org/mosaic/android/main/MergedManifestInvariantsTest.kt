@@ -216,15 +216,33 @@ class MergedManifestInvariantsTest {
     )
   }
 
+  @Test
+  fun uploadForegroundServiceDeclaresDataSyncType() {
+    val uploadService = requireService(
+      UPLOAD_FOREGROUND_SERVICE,
+      "UploadForegroundService must be declared in the merged manifest so long-running " +
+        "uploads can run with a persistent user-cancellable notification.",
+    )
+    assertEquals(
+      "UploadForegroundService must not be exported",
+      "false",
+      uploadService.getAttributeNS(ANDROID_NAMESPACE, "exported"),
+    )
+    val type = uploadService.getAttributeNS(ANDROID_NAMESPACE, "foregroundServiceType")
+    assertEquals(
+      "UploadForegroundService requires foregroundServiceType=dataSync; got '$type'",
+      "dataSync",
+      type,
+    )
+  }
+
   // -- Lane D2 (SPEC-CrossPlatformHardening Android shell checklist) extensions --
 
   /**
    * Stronger version of the per-service foreground type tests: assert the
    * merged manifest declares exactly the reviewed `dataSync` services. Any
    * additional dataSync service would expand the foreground-privilege blast
-   * radius beyond the WorkManager `SystemForegroundService` that the
-   * AutoImportWorker and the expedited shard workers (ShardEncryptionWorker,
-   * ShardUploadWorker) promote into.
+   * radius beyond AutoImportWorker and UploadForegroundService.
    */
   @Test
   fun dataSyncForegroundServicesAreReviewedSet() {
@@ -236,7 +254,7 @@ class MergedManifestInvariantsTest {
     assertEquals(
       "merged manifest must declare exactly the reviewed foregroundServiceType=dataSync services " +
         "(found: $names)",
-      setOf(SYSTEM_FOREGROUND_SERVICE),
+      setOf(SYSTEM_FOREGROUND_SERVICE, UPLOAD_FOREGROUND_SERVICE),
       names.toSet(),
     )
   }
@@ -401,5 +419,6 @@ class MergedManifestInvariantsTest {
   companion object {
     private const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
     private const val SYSTEM_FOREGROUND_SERVICE = "androidx.work.impl.foreground.SystemForegroundService"
+    private const val UPLOAD_FOREGROUND_SERVICE = "org.mosaic.android.main.service.UploadForegroundService"
   }
 }

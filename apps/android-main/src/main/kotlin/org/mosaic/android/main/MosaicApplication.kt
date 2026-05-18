@@ -6,6 +6,7 @@ import org.mosaic.android.main.bridge.AndroidRustCoreLibraryLoader
 import org.mosaic.android.main.crypto.EnvelopeLayoutMigrator
 import org.mosaic.android.main.db.UploadQueueDatabase
 import org.mosaic.android.main.privacy.PrivacyAuditPeriodicWorker
+import org.mosaic.android.main.service.UploadForegroundService
 import org.mosaic.android.main.work.AutoImportRuntime
 import org.mosaic.android.main.work.AutoImportWorkScheduler
 import org.mosaic.android.main.work.ShellStubRecordMigration
@@ -33,6 +34,7 @@ open class MosaicApplication : Application() {
     runCatching { migrateEnvelopeLayout(this) }
       .onFailure { Logger.get().warning(TAG, "Envelope layout migration scheduling failed", it) }
     installAutoImportRuntime(this)
+    registerUploadNotificationChannel(this)
     enqueueAutoImportIfPolicyAllows(this)
     enqueuePrivacyAuditDaily(this)
   }
@@ -51,6 +53,9 @@ open class MosaicApplication : Application() {
     }
     internal var installAutoImportRuntime: (MosaicApplication) -> Unit = { application ->
       AutoImportRuntime.installRuntimeProvider(AutoImportRuntime.systemRuntimeProvider(application))
+    }
+    internal var registerUploadNotificationChannel: (MosaicApplication) -> Unit = { application ->
+      UploadForegroundService.ensureNotificationChannel(application)
     }
     internal var enqueueAutoImportIfPolicyAllows: (MosaicApplication) -> Unit = { application ->
       AutoImportWorkScheduler.enqueueIfPolicyAllows(application)
@@ -72,6 +77,9 @@ open class MosaicApplication : Application() {
       }
       installAutoImportRuntime = { application ->
         AutoImportRuntime.installRuntimeProvider(AutoImportRuntime.systemRuntimeProvider(application))
+      }
+      registerUploadNotificationChannel = { application ->
+        UploadForegroundService.ensureNotificationChannel(application)
       }
       enqueueAutoImportIfPolicyAllows = { application ->
         AutoImportWorkScheduler.enqueueIfPolicyAllows(application)
