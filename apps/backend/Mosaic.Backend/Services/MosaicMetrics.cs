@@ -36,11 +36,13 @@ public sealed class MosaicMetrics : IDisposable
     private readonly Counter<long> _uploadsCounter;
     private readonly Counter<long> _authFailuresCounter;
     private readonly Counter<long> _orphanBlobDeleteFailuresCounter;
+    private readonly Counter<long> _sessionsCleanedCounter;
     private readonly Histogram<double> _gcDurationHistogram;
 
     private long _uploadsTotal;
     private long _authFailuresTotal;
     private long _orphanBlobDeleteFailures;
+    private long _sessionsCleanedTotal;
     private long _gcCount;
     private double _gcDurationSumSeconds;
 
@@ -62,6 +64,11 @@ public sealed class MosaicMetrics : IDisposable
             name: "mosaic_orphan_blob_delete_failures_total",
             unit: null,
             description: "Total storage-delete failures encountered while purging orphan/trashed blobs in GC.");
+
+        _sessionsCleanedCounter = _meter.CreateCounter<long>(
+            name: "mosaic_sessions_cleaned_total",
+            unit: null,
+            description: "Total session rows purged by the periodic retention sweep (revoked > 30d OR expired > 7d).");
 
         _gcDurationHistogram = _meter.CreateHistogram<double>(
             name: "mosaic_gc_duration_seconds",
@@ -103,6 +110,22 @@ public sealed class MosaicMetrics : IDisposable
     }
 
     /// <summary>
+    /// Record a batch of session rows purged by
+    /// <see cref="SessionCleanupHostedService"/>. Called once per sweep iteration
+    /// when at least one row was deleted (v1.0.x s40).
+    /// </summary>
+    public void RecordSessionsCleaned(int count)
+    {
+        if (count <= 0)
+        {
+            return;
+        }
+
+        Interlocked.Add(ref _sessionsCleanedTotal, count);
+        _sessionsCleanedCounter.Add(count);
+    }
+
+    /// <summary>
     /// Record the duration of one completed GC pass.
     /// </summary>
     public void RecordGcDuration(TimeSpan duration)
@@ -129,6 +152,7 @@ public sealed class MosaicMetrics : IDisposable
     public long UploadsTotalValue => Interlocked.Read(ref _uploadsTotal);
     public long AuthFailuresTotalValue => Interlocked.Read(ref _authFailuresTotal);
     public long OrphanBlobDeleteFailuresValue => Interlocked.Read(ref _orphanBlobDeleteFailures);
+    public long SessionsCleanedTotalValue => Interlocked.Read(ref _sessionsCleanedTotal);
     public long GcCountValue => Interlocked.Read(ref _gcCount);
     public double GcDurationSumSecondsValue => Volatile.Read(ref _gcDurationSumSeconds);
 
@@ -155,6 +179,10 @@ public sealed class MosaicMetrics : IDisposable
         sb.AppendLine("# HELP mosaic_orphan_blob_delete_failures_total Storage-delete failures during orphan/trashed blob GC.");
         sb.AppendLine("# TYPE mosaic_orphan_blob_delete_failures_total counter");
         sb.Append("mosaic_orphan_blob_delete_failures_total ").Append(OrphanBlobDeleteFailuresValue.ToString(ci)).Append('\n');
+
+        sb.AppendLine("# HELP mosaic_sessions_cleaned_total Session rows purged by the periodic retention sweep.");
+        sb.AppendLine("# TYPE mosaic_sessions_cleaned_total counter");
+        sb.Append("mosaic_sessions_cleaned_total ").Append(SessionsCleanedTotalValue.ToString(ci)).Append('\n');
 
         sb.AppendLine("# HELP mosaic_gc_duration_seconds Duration of a garbage-collection pass.");
         sb.AppendLine("# TYPE mosaic_gc_duration_seconds summary");

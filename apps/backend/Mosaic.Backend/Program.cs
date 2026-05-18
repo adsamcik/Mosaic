@@ -62,6 +62,9 @@ builder.Services.AddSingleton<RustCoreHost>();
 builder.Services.AddMemoryCache();
 builder.Services.AddHostedService<GarbageCollectionService>();
 builder.Services.AddHostedService<IdempotencyRecordCleanupHostedService>();
+builder.Services.Configure<SessionCleanupOptions>(
+    builder.Configuration.GetSection("Session:Cleanup"));
+builder.Services.AddHostedService<SessionCleanupHostedService>();
 builder.Services.AddExceptionHandler<DatabaseExceptionHandler>();
 builder.Services.AddProblemDetails();
 
