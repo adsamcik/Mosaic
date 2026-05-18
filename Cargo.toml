@@ -12,7 +12,11 @@ members = [
 ]
 
 [workspace.package]
-version = "0.0.0"
+# v1.0.x s49-y1: sentinel "0.0.0-dev" version aligned with libs/crypto,
+# apps/web, and apps/backend (MosaicBuildVersion). The real release
+# version is supplied at build time; this in-tree value must never be
+# bumped to a real semver until the project formally cuts a release.
+version = "0.0.0-dev"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
