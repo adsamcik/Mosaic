@@ -52,6 +52,7 @@ public partial class AuthController : ControllerBase
     private readonly IMemoryCache _cache;
     private readonly IAuditLogService? _auditLog;
     private readonly TimeProvider _timeProvider;
+    private readonly MosaicMetrics? _metrics;
     private readonly bool _isProxyAuthMode;
 
     public AuthController(
@@ -62,7 +63,8 @@ public partial class AuthController : ControllerBase
         IMemoryCache cache,
         RustCoreHost rustHost,
         IAuditLogService? auditLog = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        MosaicMetrics? metrics = null)
     {
         _db = db;
         _config = config;
@@ -72,6 +74,7 @@ public partial class AuthController : ControllerBase
         _cache = cache;
         _auditLog = auditLog;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _metrics = metrics;
 
         // Check if LocalAuth mode is enabled (support both new and legacy config)
         var legacyMode = config["Auth:Mode"];
@@ -332,6 +335,7 @@ public partial class AuthController : ControllerBase
 
             if (!isValid)
             {
+                _metrics?.RecordAuthFailure();
                 _logger.AuthChallengeFailed(request.Username, "invalid signature");
                 if (_auditLog is not null)
                 {

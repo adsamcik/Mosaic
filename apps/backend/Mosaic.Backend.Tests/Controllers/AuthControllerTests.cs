@@ -18,6 +18,7 @@ using NSubstitute;
 using NSec.Cryptography;
 using Xunit;
 using Mosaic.Backend.Tests.TestHelpers;
+using Mosaic.Backend.Services;
 
 
 namespace Mosaic.Backend.Tests.Controllers;
@@ -43,7 +44,8 @@ public class AuthControllerTests
         IConfiguration? config = null,
         string? remoteIp = "127.0.0.1",
         bool isDevelopment = false,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        MosaicMetrics? metrics = null)
     {
         config ??= CreateConfig();
         var logger = Substitute.For<ILogger<AuthController>>();
@@ -54,7 +56,7 @@ public class AuthControllerTests
         var httpContext = new DefaultHttpContext();
         httpContext.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(remoteIp ?? "127.0.0.1");
 
-        return new AuthController(db, config, logger, env, cache, RustHost.Value, auditLog: null, timeProvider: timeProvider ?? TimeProvider.System)
+        return new AuthController(db, config, logger, env, cache, RustHost.Value, auditLog: null, timeProvider: timeProvider ?? TimeProvider.System, metrics: metrics)
         {
             ControllerContext = new ControllerContext
             {
@@ -902,5 +904,90 @@ public class AuthControllerTests
         // Other session should be revoked
         var other = db.Sessions.First(s => s.Id == otherSession.Id);
         Assert.NotNull(other.RevokedAt);
+    }
+
+    // ---------- v1.0.1 s25 — RecordAuthFailure metric wiring ----------
+
+    [Fact]
+    public async Task VerifyAuth_InvalidSignature_IncrementsAuthFailureMetric()
+    {
+        using var db = TestDbContextFactory.Create();
+        var (publicKey, _) = GenerateEd25519Keypair();
+        var (_, wrongSecretKey) = GenerateEd25519Keypair();
+
+        var user = new User
+        {
+            Id = Guid.CreateVersion7(),
+            AuthSub = "alice",
+            IdentityPubkey = "identity-pubkey",
+            AuthPubkey = Convert.ToBase64String(publicKey),
+            UserSalt = RandomNumberGenerator.GetBytes(16),
+            AccountSalt = RandomNumberGenerator.GetBytes(16)
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        using var metrics = new MosaicMetrics();
+        var before = metrics.AuthFailuresTotalValue;
+
+        var controller = CreateController(db, metrics: metrics);
+
+        var initResult = await controller.InitAuth(new AuthInitRequest("alice"));
+        var initResponse = Assert.IsType<AuthInitResponse>(
+            Assert.IsType<OkObjectResult>(initResult).Value);
+
+        var challenge = Convert.FromBase64String(initResponse.Challenge);
+        var wrongSignature = SignChallenge(challenge, "alice", wrongSecretKey);
+
+        // Act
+        var result = await controller.VerifyAuth(new AuthVerifyRequest(
+            "alice",
+            initResponse.ChallengeId,
+            wrongSignature
+        ));
+
+        // Assert — rejected AND counter incremented exactly once
+        ProblemDetailsAssertions.AssertUnauthorized(result);
+        Assert.Equal(before + 1, metrics.AuthFailuresTotalValue);
+    }
+
+    [Fact]
+    public async Task VerifyAuth_ValidSignature_DoesNotIncrementAuthFailureMetric()
+    {
+        using var db = TestDbContextFactory.Create();
+        var (publicKey, secretKey) = GenerateEd25519Keypair();
+
+        var user = new User
+        {
+            Id = Guid.CreateVersion7(),
+            AuthSub = "alice",
+            IdentityPubkey = "identity-pubkey",
+            AuthPubkey = Convert.ToBase64String(publicKey),
+            UserSalt = RandomNumberGenerator.GetBytes(16),
+            AccountSalt = RandomNumberGenerator.GetBytes(16)
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        using var metrics = new MosaicMetrics();
+        var before = metrics.AuthFailuresTotalValue;
+
+        var controller = CreateController(db, metrics: metrics);
+
+        var initResult = await controller.InitAuth(new AuthInitRequest("alice"));
+        var initResponse = Assert.IsType<AuthInitResponse>(
+            Assert.IsType<OkObjectResult>(initResult).Value);
+
+        var challenge = Convert.FromBase64String(initResponse.Challenge);
+        var signature = SignChallenge(challenge, "alice", secretKey);
+
+        var result = await controller.VerifyAuth(new AuthVerifyRequest(
+            "alice",
+            initResponse.ChallengeId,
+            signature
+        ));
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(before, metrics.AuthFailuresTotalValue);
     }
 }
