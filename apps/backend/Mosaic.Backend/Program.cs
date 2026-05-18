@@ -60,6 +60,7 @@ builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IUserErasureService, UserErasureService>();
 builder.Services.AddSingleton<RustCoreHost>();
 builder.Services.AddMemoryCache();
+builder.Services.Configure<GcOptions>(builder.Configuration.GetSection("Gc"));
 builder.Services.AddHostedService<GarbageCollectionService>();
 builder.Services.AddHostedService<IdempotencyRecordCleanupHostedService>();
 builder.Services.Configure<SessionCleanupOptions>(

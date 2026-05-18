@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Extensions;
@@ -17,17 +18,21 @@ public class GarbageCollectionService : BackgroundService
     private readonly ILogger<GarbageCollectionService> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly MosaicMetrics? _metrics;
+    private readonly TimeSpan _interval;
 
     public GarbageCollectionService(
         IServiceProvider services,
         ILogger<GarbageCollectionService> logger,
         TimeProvider? timeProvider = null,
-        MosaicMetrics? metrics = null)
+        MosaicMetrics? metrics = null,
+        IOptions<GcOptions>? options = null)
     {
         _services = services;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _metrics = metrics;
+        var configured = options?.Value.GcInterval ?? TimeSpan.FromHours(1);
+        _interval = configured > TimeSpan.Zero ? configured : TimeSpan.FromHours(1);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -74,7 +79,7 @@ public class GarbageCollectionService : BackgroundService
                 _metrics?.RecordGcDuration(_timeProvider.GetElapsedTime(passStartedAt));
             }
 
-            await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
+            await Task.Delay(_interval, stoppingToken);
         }
     }
 
