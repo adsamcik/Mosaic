@@ -112,8 +112,22 @@ encryption and passing it through WorkData:
 | `crates/mosaic-uniffi/src/lib.rs:2451-2459` | Exposes `sha256_of_bytes` and `sha256_hex_of_bytes` to native clients. |
 | `crates/mosaic-uniffi/src/lib.rs:2476-2480` | Exposes `compute_plaintext_content_hash(bytes)` as SHA-256 lowercase hex. |
 
-Because the worker no longer hashes staging input, Android's dedup key no
-longer depends on the stager remaining copy-only.
+Because the worker no longer hashes staging input, Android's dedup key
+is intended to be independent of the stager remaining copy-only;
+verify via the cross-impl test suite in
+[`crates/mosaic-parity-tests/tests/cross_platform_parity.rs`](../../crates/mosaic-parity-tests/tests/cross_platform_parity.rs)
+(see in particular `compute_plaintext_content_hash_matches_sha256_across_wasm_and_uniffi`
+at lines 608-618 and
+`content_hash_dedup_fixture_hashes_source_file_bytes_across_wasm_and_uniffi`
+at lines 622-648, which are the contracts that *lock* this
+independence). The wording was softened in v1.0.x s47-y4: the prior
+"is fully independent" phrasing overstated the guarantee, because the
+independence is a property maintained by the parity tests, not a
+property that the code structure alone enforces. If a future stager
+change (e.g. a tier-specific transformation in
+`AppPrivateStagingManager` or a re-entry of hashing into
+`ShardEncryptionWorker`) is introduced, the parity tests above MUST
+be rerun and must remain green before that change can land.
 
 ## Cross-platform parity assertion
 
