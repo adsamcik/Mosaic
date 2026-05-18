@@ -266,6 +266,11 @@ public static class TusEventHandlers
             db.TusUploadReservations.Remove(reservation);
             await db.SaveChangesAsync(context.CancellationToken);
             await tx.CommitAsync(context.CancellationToken);
+
+            // v1.0.1 s25: record successful upload completion. Resolved
+            // optionally so unit tests that don't register the metrics
+            // singleton continue to work.
+            scope.ServiceProvider.GetService<MosaicMetrics>()?.RecordUpload();
         }
         catch
         {

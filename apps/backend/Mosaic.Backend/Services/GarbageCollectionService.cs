@@ -16,15 +16,18 @@ public class GarbageCollectionService : BackgroundService
     private readonly IServiceProvider _services;
     private readonly ILogger<GarbageCollectionService> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly MosaicMetrics? _metrics;
 
     public GarbageCollectionService(
         IServiceProvider services,
         ILogger<GarbageCollectionService> logger,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        MosaicMetrics? metrics = null)
     {
         _services = services;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _metrics = metrics;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -34,6 +37,7 @@ public class GarbageCollectionService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            var passStartedAt = _timeProvider.GetTimestamp();
             try
             {
                 _logger.GarbageCollectionStarted();
@@ -61,6 +65,13 @@ public class GarbageCollectionService : BackgroundService
             catch (Exception ex)
             {
                 _logger.GarbageCollectionFailed(ex);
+            }
+            finally
+            {
+                // Record duration regardless of pass outcome — a pass that
+                // failed mid-way is still observable latency and we want it
+                // to show up in mosaic_gc_duration_seconds_count.
+                _metrics?.RecordGcDuration(_timeProvider.GetElapsedTime(passStartedAt));
             }
 
             await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
@@ -129,6 +140,7 @@ public class GarbageCollectionService : BackgroundService
                 catch (Exception ex)
                 {
                     _logger.StorageError(ex, $"delete shard {shard.Id}");
+                    _metrics?.RecordOrphanBlobDeleteFailure();
                     return (shard, success: false);
                 }
                 finally

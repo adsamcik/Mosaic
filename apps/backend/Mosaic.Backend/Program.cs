@@ -49,6 +49,7 @@ builder.Services.AddScoped<IQuotaSettingsService, QuotaSettingsService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IEpochKeyRotationService, EpochKeyRotationService>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<MosaicMetrics>();
 builder.Services.AddOptions<IdempotencyOptions>()
     .Bind(builder.Configuration.GetSection("Idempotency"))
     .ValidateOnStart();
@@ -335,6 +336,38 @@ app.MapTus("/api/v1/files", async httpContext => new tusdotnet.Models.DefaultTus
 app.MapSidecarSignaling();
 app.MapSidecarTelemetry();
 app.MapControllers();
+
+// Localhost-only Prometheus-text metrics endpoint (v1.0.1 s25).
+// Operational surface, intentionally NOT under /api/v1/* — never exposed
+// externally. The loopback guard belt-and-suspenders rejects any request
+// whose connection origin isn't 127.0.0.1 / ::1; reverse proxies must
+// terminate before forwarding here. Forwarded-headers are NOT consulted
+// (RemoteIpAddress reflects the real socket peer after UseForwardedHeaders
+// rewrites it, so a spoofed X-Forwarded-For from an untrusted source
+// cannot bypass the check — KnownProxies is the gate).
+app.MapGet("/metrics", (HttpContext ctx, MosaicMetrics metrics) =>
+{
+    var remoteIp = ctx.Connection.RemoteIpAddress;
+    // Permit:
+    //   * null (in-process call — TestServer / WebApplicationFactory)
+    //   * any loopback address (127.0.0.0/8, ::1)
+    //   * the IPv4/IPv6 "unspecified" sentinel (0.0.0.0, ::) which some
+    //     in-process hosts and Kestrel-on-AnyIP synthesize for local
+    //     connections before forwarded-headers fixes it.
+    // Externally-routable requests are rejected with 403 — there is no
+    // auth in front of /metrics, so the IP gate is the only access
+    // control. Real Kestrel populates RemoteIpAddress with the real
+    // socket peer, so a public-internet caller cannot reach this branch.
+    if (remoteIp is not null
+        && !System.Net.IPAddress.IsLoopback(remoteIp)
+        && !remoteIp.Equals(System.Net.IPAddress.Any)
+        && !remoteIp.Equals(System.Net.IPAddress.IPv6Any))
+    {
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
+    return Results.Text(metrics.RenderPrometheusText(), "text/plain; version=0.0.4; charset=utf-8");
+});
 
 // Apply migrations on startup (dev mode or RUN_MIGRATIONS=true)
 var runMigrations = app.Environment.IsDevelopment() ||
