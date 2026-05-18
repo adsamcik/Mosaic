@@ -295,6 +295,12 @@ app.UseAdminAuth();
 // Tus PATCH chunks intentionally bypass replay caching; Tus POST upload init is cached.
 app.UseMiddleware<IdempotencyMiddleware>();
 
+// Tus 2.0 client rejection (v1.0.1 s23). Returns 412 + Tus-Version: 1.0.0 for
+// requests to /api/v1/files carrying Tus-Resumable: 2.0.0 (or any non-1.0.0
+// version) per the Tus 1.0 spec. Runs before MapTus so the rejection is
+// authoritative.
+app.UseMiddleware<TusVersionMiddleware>();
+
 // RFC 8594 Deprecation/Sunset header emission (v1.0.1 s23). Reads
 // [DeprecatedRoute] metadata from the matched endpoint; no routes are
 // deprecated today but future deprecations are mechanical — just decorate the
