@@ -102,24 +102,13 @@ export const test = base.extend<{
    * workers run in separate processes. This ensures each parallel worker gets
    * a unique pool user, preventing session conflicts.
    * 
-   * NOTE: Pool users are only supported on chromium project. Mobile-chrome has
-   * Argon2 key derivation differences that prevent decrypting keys created by
-   * chromium. Tests using poolUser will be skipped on mobile-chrome.
+   * NOTE: As of v1.0.x s43 pool users work across both chromium and
+   * mobile-chrome projects. The earlier "Argon2 key derivation differs
+   * between viewports" symptom was a KDF persistence bug fixed in
+   * fix-sweep43; cross-device login is now deterministic and is
+   * regression-locked by tests/e2e/tests/cross-device-mobile.spec.ts.
    */
   poolUser: async ({ browser }, use, workerInfo) => {
-    // Skip pool users on mobile-chrome - Argon2 WASM produces different key derivation
-    // results on mobile viewport, causing "Invalid username or password" errors.
-    // See investigation: Pool users are registered via chromium in global-setup,
-    // but mobile-chrome's Argon2 derives different keys, so decryption fails.
-    const projectName = workerInfo.project.name;
-    if (projectName === 'mobile-chrome') {
-      throw new Error(
-        `Pool users are not supported on ${projectName}. ` +
-        'Use testUser fixture instead, or skip this test on mobile-chrome. ' +
-        'Root cause: Argon2 key derivation differs between browser types.'
-      );
-    }
-    
     const user = getPoolUserByWorkerIndex(workerInfo.workerIndex);
     console.log(`[Fixture] Worker ${workerInfo.workerIndex} using pool user: ${user.username}`);
     

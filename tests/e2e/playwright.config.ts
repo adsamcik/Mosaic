@@ -211,21 +211,18 @@ export default defineConfig({
     // },
 
     // Mobile viewport tests
-    // Note: Tests using poolUser fixture are excluded because pool users are
-    // registered via chromium in global-setup, and mobile-chrome's Argon2 WASM
-    // produces different key derivation, causing "Invalid username or password" errors.
+    // v1.0.x s43: previously this project excluded all poolUser-fixture
+    // tests because mobile-chrome's Argon2 WASM appeared to derive
+    // different keys than chromium, causing "Invalid username or
+    // password" errors when reusing pool users registered via chromium
+    // in global-setup. That symptom was a KDF persistence bug fixed in
+    // fix-sweep43 (key material was being re-derived from a viewport-
+    // dependent input). Cross-device login now works deterministically,
+    // so the testIgnore block has been removed. See
+    // tests/e2e/tests/cross-device-mobile.spec.ts for the positive
+    // cross-device coverage that locks the fix.
     {
       name: 'mobile-chrome',
-      testIgnore: [
-        // These tests use poolUser fixture which doesn't work on mobile-chrome
-        // due to Argon2 WASM key derivation differences
-        '**/critical-auth.spec.ts',
-        '**/critical-photo-upload.spec.ts',
-        '**/critical-album.spec.ts',
-        '**/critical-error-handling.spec.ts',
-        '**/identity-persistence-session.spec.ts',
-        '**/identity-persistence-stress.spec.ts',
-      ],
       use: {
         ...devices['Pixel 5'],
         launchOptions: {
