@@ -66,6 +66,22 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
     },
   ],
   [
+    'lib/session-kdf.ts',
+    {
+      rationale:
+        'session.ts sub-module — KDF profile / account-salt resolution helpers',
+      allowedSymbols: ['parseServerArgon2Params', 'Argon2Params'],
+    },
+  ],
+  [
+    'lib/session-salt.ts',
+    {
+      rationale:
+        'session.ts sub-module — v1/v2 user-salt envelope encryption (bootstraps the Rust account handle)',
+      allowedSymbols: ['Argon2Params'],
+    },
+  ],
+  [
     'lib/local-auth.ts',
     {
       rationale:
@@ -123,6 +139,10 @@ const tsCryptoCompatibility = new Map<string, CryptoCompatibilityEntry>([
 
 const directSodiumPrimitiveAllowlist = new Map<string, string>([
   ['workers/crypto.worker.ts', 'central TypeScript crypto compatibility facade'],
+  [
+    'workers/crypto/handle-registry.ts',
+    'crypto.worker.ts sub-module — uses sodium.randombytes_buf + base64url for handle ID minting',
+  ],
 ]);
 
 /**
@@ -278,6 +298,7 @@ describe('web Rust crypto cutover boundaries', () => {
         'lib/local-auth.ts',
         'lib/opfs-staging.ts',
       'lib/scope-key.ts',
+      'lib/session-salt.ts',
       'lib/session.ts',
       'lib/sidecar/signaling.ts',
       'lib/upload/encrypt-upload-shard.ts',
@@ -295,6 +316,7 @@ describe('web Rust crypto cutover boundaries', () => {
         'workers/coordinator.worker.ts',
         'workers/crypto.worker-pool-member.ts',
         'workers/crypto.worker.ts',
+        'workers/crypto/handle-registry.ts',
       ]);
   });
 
