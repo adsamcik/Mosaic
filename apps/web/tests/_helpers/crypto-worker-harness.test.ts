@@ -10,8 +10,11 @@
  *    concurrent shard-encrypt fan-out without deadlocking. Those are
  *    `itIfWorker` blocks — they auto-skip in happy-dom because happy-dom
  *    v20 does not ship `globalThis.Worker`.
- * 4. Document — via `it.skip(..., 'gated by Slice 1')` — the methods that
- *    will become exercisable once Slice 1 mints the handle-based contract.
+ *
+ * Note: the future Slice-1-gated contract assertions that used to live in
+ * this file as `it.skip` placeholders were removed in v1.0.x sweep 41 to
+ * avoid orphan skipped tests. The Slice 1 contract that those placeholders
+ * would have covered is documented in `crypto-worker-harness.ts`.
  */
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -119,37 +122,7 @@ describe('crypto-worker-harness: live worker (Worker-capable env only)', () => {
     // The assertion is that nothing fails the entropy/structure check.
   });
 });
-
-// ---------------------------------------------------------------------------
-// Slice-1-gated tests — documented placeholders.
-// ---------------------------------------------------------------------------
-
-describe('crypto-worker-harness: Slice 1 contract (skipped placeholders)', () => {
-  it.skip('returns opaque handle IDs from openEpochKeyBundle (gated by Slice 1)', () => {
-    // After Slice 1 lands, openEpochKeyBundle returns an `OpaqueHandleId`
-    // string instead of `{ epochSeed, signPublicKey, signSecretKey }`.
-    // The harness will assert no Uint8Array nested under that return value.
-  });
-
-  it.skip('returns opaque handle IDs from generateEpochKey (gated by Slice 1)', () => {
-    // Same as above; current return is a raw secret tuple. Slice 1 gates this.
-  });
-
-  it.skip('exposes getDbEncryptionHandle in place of getSessionKey (gated by Slice 1)', () => {
-    // Slice 1 replaces getSessionKey() → getDbEncryptionHandle() returning a
-    // string handle. The lifecycle harness will then assert handle.close()
-    // cascades correctly.
-  });
-
-  it.skip('exportKeys returns a handle-serialized blob, not raw bytes (gated by Slice 1)', () => {
-    // Slice 1 replaces ExportedKeys's six base64 fields with a single
-    // opaque blob whose contents are encrypted under the wrapping key only
-    // the worker knows.
-  });
-
-  it.skip('every operation against a closed handle returns the same stable error code (gated by Slice 1)', () => {
-    // Once Slice 1 has the error enum, this test asserts:
-    //   await closedHandle.encryptShard(...) → throws { code: 'CLOSED_HANDLE' }
-    // For now only the textual hints in CLOSED_HANDLE_ERROR_HINTS are stable.
-  });
-});
+// Slice-1-gated assertions were removed in v1.0.x sweep 41. The contract
+// they would have locked is documented in `crypto-worker-harness.ts`
+// under "Slice 1 contract (future)". They will be written as real tests
+// alongside the Slice 1 implementation, not left here as orphan skips.

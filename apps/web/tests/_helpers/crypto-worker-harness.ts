@@ -26,6 +26,27 @@
  * Even when a worker is booted in-process during tests, the harness only ever
  * touches it through Comlink — no peeking inside private fields, no reaching
  * for module-level globals. That is the contract Slice 1 will lock in.
+ *
+ * Slice 1 contract (future)
+ * -------------------------
+ * The following invariants will be locked by real tests when Slice 1 lands
+ * (they were previously held as `it.skip` placeholders in this harness's
+ * test file; removed in v1.0.x sweep 41 to keep the suite skip-clean):
+ *
+ *   1. `openEpochKeyBundle` returns an opaque `EpochHandleId` string —
+ *      not a `{ epochSeed, signPublicKey, signSecretKey }` tuple — and the
+ *      returned value contains no nested `Uint8Array` anywhere.
+ *   2. `generateEpochKey` returns an opaque handle id with the same
+ *      no-raw-bytes invariant.
+ *   3. `getDbEncryptionHandle` replaces `getSessionKey`; the lifecycle
+ *      harness will assert `handle.close()` cascades to dependent handles.
+ *   4. `exportKeys` returns a single opaque ciphertext blob (encrypted
+ *      under a wrapping key only the worker knows), not six base64 fields.
+ *   5. Every operation against a closed handle throws a structured error
+ *      with `{ code: 'CLOSED_HANDLE' }`; today only the textual hints in
+ *      `CLOSED_HANDLE_ERROR_HINTS` are stable.
+ *
+ * These assertions land with the Slice 1 implementation, not before.
  */
 
 import * as Comlink from 'comlink';

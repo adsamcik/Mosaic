@@ -153,11 +153,16 @@ test.describe('Clear Data Functionality', () => {
     await expect(confirmDialog).toBeHidden();
   });
 
-  test.skip('P2-SETTINGS-10: confirming clear data removes local storage', async ({ page }) => {
-    // This test is skipped because it destroys the local database
-    // and would require re-setup for subsequent tests.
-    // It should be run in isolation if needed.
-  });
+  // v1.0.x sweep 41: removed orphan `test.skip('P2-SETTINGS-10:
+  // confirming clear data removes local storage', ...)` which was
+  // perma-skipped because confirming the action destroys the local OPFS
+  // database and there was no isolated re-setup fixture for the rest of
+  // the suite. The destructive purge path (OPFS wipe, epoch-key store
+  // clear, PhotoStore reset) is still covered by unit tests around
+  // `local-purge.ts`, `clearAllEpochKeys`, and `usePhotoStore`. If a
+  // future contributor adds an isolated Playwright fixture (fresh
+  // storage state per test) it should reinstate the end-to-end
+  // assertion.
 });
 
 test.describe('Settings Persistence', () => {
