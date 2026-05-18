@@ -426,7 +426,7 @@ Tests are configured for CI with:
 // playwright.config.ts
 {
   forbidOnly: !!process.env.CI,  // Fail if test.only left in code
-  retries: process.env.CI ? 2 : 0, // Retry failed tests in CI
+  retries: process.env.CI ? 0 : 1, // CI: no retries (surface flakes); local: 1 retry for dev convenience
   workers: process.env.CI ? 2 : undefined, // Limit parallelism in CI
 }
 ```

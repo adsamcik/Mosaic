@@ -98,7 +98,11 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
 
   // Retry failed tests
-  retries: process.env.CI ? 2 : 1,
+  // v1.0.x s41: CI retries are zero so flaky tests surface as failures.
+  // Known-flaky tests must opt in with `test.describe.configure({ retries: 1 })`
+  // at the suite level rather than masking flakes globally. Local dev keeps
+  // retries=1 for convenience while debugging.
+  retries: process.env.CI ? 0 : 1,
 
   // Worker configuration for parallelism
   // We have 8 pool users, so we can scale up to 8 workers
