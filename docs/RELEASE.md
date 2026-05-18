@@ -194,6 +194,94 @@ Android requires the **same signing key** for every release of a given app insta
 
 > ⚠️ **Never commit the keystore or its passwords to the repository.** The `.copilotignore` and `.gitignore` exclude `*.keystore` and `*.jks` at the repo root; verify locally with `git check-ignore` before staging.
 
+## Backup Consistency Constraint (Operators)
+
+> **v1.0.x s44-y3:** Self-hosting operators MUST treat the Postgres
+> database and the `data/blobs/` filesystem region as a **single
+> point-in-time snapshot pair**. Backing them up at different times
+> produces a logically inconsistent restore.
+
+### Why the database and the blobs are coupled
+
+Mosaic stores two halves of every photo:
+
+- **Postgres** holds the signed manifest entries: shard IDs, tier
+  pointers, ordering, and ownership. The backend treats manifests as
+  authoritative — if a manifest entry exists, the backend believes the
+  corresponding shard exists.
+- **`data/blobs/`** holds the encrypted shard payloads (the opaque
+  `byte[]` blobs the backend never decrypts). The filesystem is the
+  authoritative store of shard bytes.
+
+A consistent restore requires that **every manifest row in Postgres
+references a shard that exists on disk, and vice versa for any shard
+the live system is expected to serve.** Garbage collection assumes this
+invariant when it sweeps unreferenced blobs.
+
+### The skew failure mode
+
+If the two backup streams are captured at different points in time, the
+restored system enters one of two broken states:
+
+| Order at restore | Symptom | Severity |
+|------------------|---------|----------|
+| **DB newer than blobs** (Postgres captured after `data/blobs/`) | Manifest rows reference shard IDs whose files are missing on disk. Photo loads 404; clients see "shard not found" decryption failures. | High — user-visible data loss appearance even though plaintext was never on the server. |
+| **Blobs newer than DB** (`data/blobs/` captured after Postgres) | Disk holds shard files that no manifest row references. Storage is inflated but the system is otherwise correct. | Low — a normal GC pass reclaims the orphans. |
+
+The dangerous direction is **DB newer than blobs**. Even though no
+plaintext is at risk (the zero-knowledge invariant is unaffected — the
+server never had plaintext to begin with), users perceive photos as
+permanently lost because the client cannot fetch shards that the
+manifest claims should exist.
+
+### How to back up safely
+
+Capture both stores at the same logical instant. Three patterns work:
+
+1. **Storage-level snapshot** (preferred): take a filesystem/volume
+   snapshot (LVM, ZFS, btrfs, EBS, etc.) on the host that contains
+   *both* the Postgres data directory and the `data/blobs/` tree, then
+   copy off the snapshot. The snapshot is atomic across both.
+2. **Brief read-only window**: quiesce writes (stop the backend, or
+   put it in read-only maintenance mode), run `pg_basebackup` /
+   `pg_dump --format=custom` and a `rsync`/`borg` of `data/blobs/`
+   back-to-back, then resume.
+3. **Streaming + checkpoint**: run `pg_basebackup` with WAL streaming
+   to the same wall-clock window as a continuous `borg create` of
+   `data/blobs/`, then prune both archives to the same checkpoint.
+
+The sample scheduler in `docs/operations/BACKUP.md` (v1.0.x s44-y4)
+implements pattern 2 by default and documents the upgrade path to
+pattern 1.
+
+### Recovery: dangling manifest entries after a skewed restore
+
+If a restore goes wrong and Postgres references shards that are not on
+disk:
+
+1. **Stop the backend** so clients do not keep hitting 404s and so GC
+   does not race the recovery.
+2. **Inventory the gap.** Cross-reference manifest shard IDs against
+   `data/blobs/` and produce the set of `missing_shard_ids` whose
+   manifest row exists but whose file does not.
+3. **Restore the blobs from the newer backup** if one exists (the
+   common case after a skew incident is that you have a *later*
+   `data/blobs/` snapshot than the DB snapshot you restored from —
+   apply it). After this step, the invariant holds.
+4. **If no newer blob backup exists**, the affected photos are
+   unrecoverable on the server side. Mark the manifest rows so the
+   client surfaces a clear error rather than retrying decryption.
+   Then **rerun GC**: GC will not delete the dangling rows by itself
+   (GC only collects unreferenced *blobs*), so the manifest cleanup is
+   an operator action. Once the manifest rows for `missing_shard_ids`
+   are removed, **rerun GC** so any half-uploaded blobs that may have
+   been left over from the original incident are reclaimed.
+5. Restart the backend and verify with a sample of recent uploads.
+
+The full recovery procedure, including a sample inventory script, is
+maintained alongside the backup templates in
+`docs/operations/BACKUP.md`.
+
 ## Release Checklist
 
 ### Before Release
