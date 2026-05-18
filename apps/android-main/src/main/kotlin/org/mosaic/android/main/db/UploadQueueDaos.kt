@@ -56,6 +56,9 @@ interface UploadQueueDao {
 
   @Query("DELETE FROM upload_queue_records WHERE album_id = :albumId")
   fun deleteForAlbum(albumId: String): Int
+
+  @Query("DELETE FROM upload_queue_records WHERE job_id = :jobId")
+  fun deleteForJobId(jobId: String): Int
 }
 
 @Dao

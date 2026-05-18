@@ -19,6 +19,7 @@ class SyncConfirmationLoop internal constructor(
   private val randomDelayMs: (Long) -> Long,
   private val sleep: suspend (Long) -> Unit,
   private val purgeGoneAlbum: suspend (AlbumId) -> Unit = {},
+  private val purgeDeletedPhoto: suspend (AlbumId, String) -> Unit = { _, _ -> },
 ) {
   constructor(
     fetcher: AlbumSyncFetcher,
@@ -41,6 +42,9 @@ class SyncConfirmationLoop internal constructor(
     },
     sleep = { delayMs -> coroutineDelay(delayMs) },
     purgeGoneAlbum = { deletedAlbumId -> albumPurger?.purgeRemoteAlbumDeletion(deletedAlbumId) },
+    purgeDeletedPhoto = { albumIdValue, photoId ->
+      albumPurger?.purgeRemotePhotoDeletion(albumIdValue, photoId)
+    },
   )
 
   init {
@@ -62,6 +66,16 @@ class SyncConfirmationLoop internal constructor(
       when (val result = fetchSyncState(albumId)) {
         is AlbumSyncResult.Success -> {
           if (result.response.currentVersion >= expectedVersion) {
+            // v1.0.x s47-B2 / s49-y2: garbage-collect dedup records for any
+            // manifests the server marked as deleted. Without this the
+            // [org.mosaic.android.main.db.AlbumContentHashRecord] is orphaned
+            // and a re-upload of the same plaintext is permanently blocked by
+            // the duplicate lookup in ShardEncryptionWorker.
+            for (manifest in result.response.manifests) {
+              if (manifest.isDeleted && manifest.id.isNotBlank()) {
+                purgeDeletedPhoto(AlbumId(manifest.albumId), manifest.id)
+              }
+            }
             return@coroutineScope SyncConfirmationResult.Confirmed(result.response)
           }
         }
