@@ -1164,6 +1164,30 @@ class SessionManager {
     if (typeof window === 'undefined') return;
     window.addEventListener('pageshow', this.boundPageShowListener);
   }
+
+  /**
+   * Tear down listeners and the broadcast channel. The module-level
+   * `session` export is a process-singleton, but this is exposed for
+   * tests that need to instantiate isolated SessionManagers AND for any
+   * future refactor that makes SessionManager lifecycle non-singleton
+   * (so the BFCache pageshow listener, upload-active listener, and
+   * BroadcastChannel don't leak across reinstantiation). Closes
+   * security-review-2026-05-18-05.
+   */
+  dispose(): void {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('pageshow', this.boundPageShowListener);
+      window.removeEventListener(UPLOAD_ACTIVE_EVENT, this.boundUploadActiveListener);
+    }
+    if (this.broadcast) {
+      this.broadcast.close();
+      this.broadcast = null;
+    }
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
 }
 
 /** Global session manager instance */
