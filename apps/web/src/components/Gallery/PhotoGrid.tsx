@@ -7,6 +7,7 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAlbumPermissions } from '../../contexts/AlbumPermissionsContext';
 import { useAnimatedItems } from '../../hooks/useAnimatedItems';
 import { useAlbumEpochKeys } from '../../hooks/useEpochKeys';
@@ -79,10 +80,13 @@ export function PhotoGrid({
 }: PhotoGridProps) {
   const { t } = useTranslation();
   const [containerWidth, setContainerWidth] = useState(0);
-  const [scrollTop, setScrollTop] = useState(0);
 
   // Store the actual container element for scroll/height access
   const containerElementRef = useRef<HTMLDivElement | null>(null);
+  // Bump on container attach so the virtualizer picks up the new
+  // scrollElement (its getScrollElement callback is sampled, not
+  // re-derived, so we need a re-render after the ref attaches).
+  const [, setContainerVersion] = useState(0);
 
   // Store ResizeObserver instance so we can clean it up
   const observerRef = useRef<ResizeObserver | null>(null);
@@ -113,6 +117,10 @@ export function PhotoGrid({
       // Set initial width
       setContainerWidth(node.clientWidth || node.getBoundingClientRect().width);
     }
+
+    // Notify the virtualizer that getScrollElement now resolves
+    // (or has been cleared).
+    setContainerVersion((v) => v + 1);
   }, []);
 
   const { epochKeys, isLoading: keysLoading } = useAlbumEpochKeys(albumId);
@@ -224,54 +232,22 @@ export function PhotoGrid({
     return items;
   }, [sortedPhotos, containerWidth, t]);
 
-  // Get total grid height
-  const totalHeight = useMemo(() => {
-    if (layoutItems.length === 0) return 0;
-    const lastItem = layoutItems[layoutItems.length - 1];
-    if (!lastItem) return 0;
-    return lastItem.top + lastItem.height + PHOTO_GAP;
-  }, [layoutItems]);
+  // Virtualize headers + rows via @tanstack/react-virtual. Variable
+  // sizes (headers vs justified rows of differing height) are fed
+  // through estimateSize, which returns the precomputed height of
+  // each LayoutItem. Overscan is in *items*, not pixels.
+  const rowVirtualizer = useVirtualizer({
+    count: layoutItems.length,
+    getScrollElement: () => containerElementRef.current,
+    estimateSize: (index) => layoutItems[index]?.height ?? HEADER_HEIGHT,
+    overscan: 5,
+    getItemKey: (index) => layoutItems[index]?.id ?? index,
+  });
 
-  // Get viewport height
-  const viewportHeight = containerElementRef.current?.clientHeight ?? 800;
-
-  // Compute visible items for virtualization
-  const visibleItems = useMemo(() => {
-    const overscan = 500; // pixels
-    const startY = Math.max(0, scrollTop - overscan);
-    const endY = scrollTop + viewportHeight + overscan;
-
-    // Binary search could be faster, but linear scan is fine for typical album sizes (<10k rows)
-    // since we only render visible ones. Optimization: find start index via binary search.
-
-    let startIndex = 0;
-    let endIndex = layoutItems.length - 1;
-
-    // Simple find
-    for (let i = 0; i < layoutItems.length; i++) {
-      if (layoutItems[i]!.top + layoutItems[i]!.height >= startY) {
-        startIndex = i;
-        break;
-      }
-    }
-
-    for (let i = startIndex; i < layoutItems.length; i++) {
-      if (layoutItems[i]!.top > endY) {
-        endIndex = i - 1;
-        break;
-      }
-      endIndex = i;
-    }
-
-    if (layoutItems.length === 0) return [];
-
-    return layoutItems.slice(startIndex, endIndex + 1);
-  }, [layoutItems, scrollTop, viewportHeight]);
-
-  // Handle scroll
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    setScrollTop(e.currentTarget.scrollTop);
-  }, []);
+  // Total grid height as reported by the virtualizer, plus bottom
+  // padding to match the previous PHOTO_GAP trailing space.
+  const totalHeight =
+    layoutItems.length === 0 ? 0 : rowVirtualizer.getTotalSize() + PHOTO_GAP;
 
   const preloadQueue = useLightboxPreload({
     isOpen: lightbox.isOpen,
@@ -434,7 +410,6 @@ export function PhotoGrid({
       <div
         ref={containerRef}
         className={`photo-grid-container ${isSelectionMode ? 'selection-mode' : ''}`} // Reusing photo-grid classes or creating new ones
-        onScroll={handleScroll}
         onKeyDown={handleGridKeyDown}
         data-testid="photo-grid"
       >
@@ -469,15 +444,18 @@ export function PhotoGrid({
             className="photo-grid-content"
             style={{ height: totalHeight, position: 'relative' }}
           >
-            {visibleItems.map((item) => {
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const item = layoutItems[virtualRow.index];
+              if (!item) return null;
+
               if (item.type === 'header') {
                 return (
                   <div
-                    key={item.id}
+                    key={virtualRow.key}
                     className="photo-grid-header"
                     style={{
                       position: 'absolute',
-                      top: item.top,
+                      top: virtualRow.start,
                       left: 0,
                       right: 0,
                       height: item.height,
@@ -497,11 +475,11 @@ export function PhotoGrid({
               // It's a row
               return (
                 <div
-                  key={item.id}
+                  key={virtualRow.key}
                   className="photo-grid-row"
                   style={{
                     position: 'absolute',
-                    top: item.top,
+                    top: virtualRow.start,
                     left: 0,
                     right: 0,
                     height: item.height,
