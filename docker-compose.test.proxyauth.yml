@@ -1,0 +1,16 @@
+# Mosaic - ProxyAuth-mode E2E test override
+#
+# Layered on top of docker-compose.test.yml to flip the backend into
+# ProxyAuth-only mode for the `e2e-tests-proxyauth` CI matrix entry. The
+# Playwright suite simulates the upstream reverse proxy by injecting
+# Remote-User headers via `page.route()`, so no real nginx container is
+# required here.
+#
+# Use:
+#   docker compose -f docker-compose.test.yml -f docker-compose.test.proxyauth.yml up -d
+services:
+  backend:
+    environment:
+      Auth__LocalAuthEnabled: "false"
+      Auth__ProxyAuthEnabled: "true"
+      Auth__AllowDualMode: "false"
