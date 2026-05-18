@@ -160,6 +160,40 @@ update.
 - CHANGELOG.md updated with release notes
 - All package versions synchronized
 
+## Required GitHub Actions Secrets (Android Release)
+
+The `android-release` job inside `.github/workflows/publish.yml` builds and signs the Android APK/AAB artifacts. It is **gated** by the `detect-android-secrets` job: when any of the five secrets below is missing, the Android job is **skipped** (Docker images still publish). When all five are present, the secrets are required again at injection time inside the job — a missing or empty value at that point fails the job loudly with `::error::Missing required GitHub Actions secret …`.
+
+Operators self-hosting Mosaic must configure these on the repository (or organization) under **Settings → Secrets and variables → Actions → New repository secret**.
+
+| Secret name | Description | How to generate | Consumed by | Failure mode if absent |
+|-------------|-------------|------------------|-------------|------------------------|
+| `MOSAIC_RELEASE_PINS` | ADR-019 SPKI certificate pins for the operator's reverse-proxy TLS chain. One `sha256/<base64>` pin per line. Injected verbatim into `apps/android-main/src/main/assets/adr019-pins.txt` at build time. | `openssl x509 -in cert.pem -pubkey -noout \| openssl pkey -pubin -outform der \| openssl dgst -sha256 -binary \| base64` — repeat per certificate in the chain you want to pin (leaf + at least one backup). | `android-release` (`detect-android-secrets` + `Inject ADR-019 release pins` step) | Job skipped (detect phase) or `::error::Missing required GitHub Actions secret MOSAIC_RELEASE_PINS` (inject phase). |
+| `MOSAIC_RELEASE_KEYSTORE_BASE64` | Base64-encoded JKS/PKCS12 keystore containing the Android release signing key. Decoded into a temporary file under `$RUNNER_TEMP` and exposed to Gradle via `MOSAIC_RELEASE_KEYSTORE`. | `base64 -w0 -i path/to/release.keystore > keystore.b64` (Linux/macOS) or `[Convert]::ToBase64String([IO.File]::ReadAllBytes('release.keystore')) \| Out-File keystore.b64 -Encoding ascii` (PowerShell). Paste the entire file contents into the secret value. | `android-release` (`Prepare Android release signing` step → Gradle signing config) | Job skipped (detect phase) or `::error::Missing required GitHub Actions secret MOSAIC_RELEASE_KEYSTORE_BASE64 for Android release signing` (inject phase). |
+| `MOSAIC_RELEASE_KEYSTORE_PASSWORD` | Password protecting the keystore file itself (the outer password supplied to `keytool` at keystore-creation time). | Whatever password was set with `keytool -genkeypair -storepass …`. Treat as long-lived — losing it locks you out of signing future releases under this key. | `android-release` (Gradle `signingConfigs.release.storePassword`) | Job skipped (detect phase) or `::error::Missing required GitHub Actions secret MOSAIC_RELEASE_KEYSTORE_PASSWORD for Android release signing` (inject phase). |
+| `MOSAIC_RELEASE_KEY_ALIAS` | Alias of the signing key entry inside the keystore (the `-alias` value used when the key was generated). | Whatever alias was set with `keytool -genkeypair -alias …`. Default Mosaic guidance is `mosaic-release`. | `android-release` (Gradle `signingConfigs.release.keyAlias`) | Job skipped (detect phase) or `::error::Missing required GitHub Actions secret MOSAIC_RELEASE_KEY_ALIAS for Android release signing` (inject phase). |
+| `MOSAIC_RELEASE_KEY_PASSWORD` | Password protecting the individual key entry (the `-keypass` value). May equal `MOSAIC_RELEASE_KEYSTORE_PASSWORD` but is configured separately so the operator can rotate key passwords without rotating the keystore password. | Whatever password was set with `keytool -genkeypair -keypass …`. | `android-release` (Gradle `signingConfigs.release.keyPassword`) | Job skipped (detect phase) or `::error::Missing required GitHub Actions secret MOSAIC_RELEASE_KEY_PASSWORD for Android release signing` (inject phase). |
+
+### Verifying secret configuration
+
+Before tagging a release, dispatch the publish workflow manually (`workflow_dispatch` on `publish.yml`) and watch the `Detect Android Release Secrets` job. The job step summary reports either:
+
+- ✅ **All 5 Android release secrets are present; android-release job will run.**
+- ⏭️ **Android Release Skipped** — followed by a list of the missing secret names.
+
+When the operator intentionally does not ship Android binaries (Docker-only deployment), it is acceptable to leave all five secrets unset; the Docker image jobs still publish and only the Android job is skipped.
+
+### Rotating the signing key
+
+Android requires the **same signing key** for every release of a given app installation — replacing the key locks existing installs out of updates unless Play App Signing is used. When rotating:
+
+1. Generate the new keystore (`keytool -genkeypair …`).
+2. Re-encode (`base64 -w0`) and update `MOSAIC_RELEASE_KEYSTORE_BASE64`.
+3. Update `MOSAIC_RELEASE_KEYSTORE_PASSWORD` / `MOSAIC_RELEASE_KEY_ALIAS` / `MOSAIC_RELEASE_KEY_PASSWORD` to match the new keystore.
+4. Communicate the rotation to existing installs (force-reinstall, or Play App Signing migration).
+
+> ⚠️ **Never commit the keystore or its passwords to the repository.** The `.copilotignore` and `.gitignore` exclude `*.keystore` and `*.jks` at the repo root; verify locally with `git check-ignore` before staging.
+
 ## Release Checklist
 
 ### Before Release
