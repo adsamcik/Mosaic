@@ -184,7 +184,7 @@ fn prop_single_bit_flip_fails() {
 }
 
 #[test]
-fn cross_impl_golden_vector_verifies_fixed_fixture() {
+fn shard_integrity_sha256_self_consistency_for_fixed_fixture() {
     assert_eq!(FIXTURE_ENVELOPE.len(), SHARD_ENVELOPE_HEADER_LEN + 48);
     assert_eq!(hex_digest_for(FIXTURE_ENVELOPE), FIXTURE_SHA256_HEX.trim());
 
