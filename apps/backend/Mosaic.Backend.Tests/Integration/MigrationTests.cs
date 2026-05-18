@@ -195,18 +195,73 @@ public sealed class MigrationTests : IClassFixture<MigrationTests.PostgresFixtur
             var shardIndex = reader.GetInt32(2);
             var envelopeVersion = reader.GetInt32(3);
 
-            // Backfill of these wrong sentinel defaults is intentionally a
-            // follow-up migration — this commit pins the observable
-            // post-upgrade state so a future backfill migration can flip
-            // these assertions and prove it actually mutated something.
-            Assert.Equal(string.Empty, sha256);
-            Assert.Equal(0L, contentLength);
+            // The ManifestProtocolFinalizationBackfill migration reconstructs
+            // sha256 / content_length from the related shard row. The seeded
+            // shard carries authoritative values, so they must propagate.
+            Assert.Equal(realSha256, sha256);
+            Assert.Equal(realSize, contentLength);
 
             // shard_index has no recoverable source — it retains its
-            // wrong default. envelope_version=3 is correct for v0.3-era
-            // rows.
+            // wrong default and the backfill migration documents this.
             Assert.Equal(0, shardIndex);
+
+            // envelope_version=3 default is correct for v0.3-era rows.
             Assert.Equal(3, envelopeVersion);
+        }
+    }
+
+    [DockerRequiredFact]
+    [Trait("Category", "Integration")]
+    public async Task Backfill_LeavesOrphanRowsWithSentinelDefaults()
+    {
+        // Orphan case: manifest_shards row whose related shard has no
+        // sha256 (NULL) cannot be backfilled. The migration must NOT
+        // crash and must leave the sentinel defaults in place — there
+        // is no authoritative source to reconstruct from.
+        var dbName = await _fixture.CreateEmptyDatabaseAsync();
+        await using var db = _fixture.CreateDbContext(dbName);
+
+        const string preMigration = "20260428210732_AddManifestExpiration";
+        var migrator = db.Database.GetInfrastructure().GetRequiredService<IMigrator>();
+        await migrator.MigrateAsync(preMigration);
+
+        var userId = Guid.NewGuid();
+        var albumId = Guid.NewGuid();
+        var manifestId = Guid.NewGuid();
+        var shardId = Guid.NewGuid();
+
+        // Seed with shard.sha256 = NULL — backfill source is missing.
+        await SeedPreFinalizationRowsAsync(db, userId, albumId, manifestId, shardId, sha256: null, sizeBytes: 0);
+
+        await migrator.MigrateAsync();
+
+        var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+        var wasClosed = conn.State != System.Data.ConnectionState.Open;
+        if (wasClosed)
+        {
+            await conn.OpenAsync();
+        }
+        try
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"SELECT sha256, content_length FROM manifest_shards
+                                WHERE manifest_id = @m AND shard_id = @s";
+            cmd.Parameters.Add(new NpgsqlParameter("m", manifestId));
+            cmd.Parameters.Add(new NpgsqlParameter("s", shardId));
+            await using var reader = await cmd.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+
+            // Orphan rows retain the sentinel defaults — backfill is a no-op
+            // here because the WHERE clause requires shards.sha256 IS NOT NULL.
+            Assert.Equal(string.Empty, reader.GetString(0));
+            Assert.Equal(0L, reader.GetInt64(1));
+        }
+        finally
+        {
+            if (wasClosed)
+            {
+                await conn.CloseAsync();
+            }
         }
     }
 
