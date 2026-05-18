@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
@@ -397,6 +398,76 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
         var body = await resp.Content.ReadAsStringAsync();
         Assert.Contains("\"rooms\"", body);
+    }
+
+    [Fact]
+    public async Task CloseEndpoint_RemovesRoom_AndDisconnectsPeers()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var roomId = NewRoomId();
+
+        using var a = await ConnectAsync(roomId, cts.Token);
+        using var b = await ConnectAsync(roomId, cts.Token);
+
+        var rooms = _factory.Services.GetRequiredService<RoomManager>();
+        Assert.Equal(1, rooms.RoomCount);
+
+        using var http = _factory.CreateClient();
+        var resp = await http.DeleteAsync($"/api/v1/sidecar/close/{roomId}", cts.Token);
+        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+
+        await ExpectClosedAsync(a, cts.Token);
+        await ExpectClosedAsync(b, cts.Token);
+        Assert.Equal(0, rooms.RoomCount);
+    }
+
+    [Fact]
+    public async Task CloseEndpoint_IsIdempotent_OnUnknownRoom()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var http = _factory.CreateClient();
+        var resp = await http.DeleteAsync($"/api/v1/sidecar/close/{NewRoomId()}", cts.Token);
+        // Idempotent: returns 204 whether or not the room existed, so callers
+        // can retry safely without leaking which room ids are live.
+        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task CloseEndpoint_RejectsMalformedRoomId()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var http = _factory.CreateClient();
+        var resp = await http.DeleteAsync("/api/v1/sidecar/close/not-a-room-id", cts.Token);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+    }
+
+    private static async Task ExpectClosedAsync(WebSocket ws, CancellationToken ct)
+    {
+        var buf = new byte[256];
+        for (var i = 0; i < 8; i++)
+        {
+            WebSocketReceiveResult res;
+            try
+            {
+                res = await ws.ReceiveAsync(new ArraySegment<byte>(buf), ct);
+            }
+            catch (WebSocketException)
+            {
+                return;
+            }
+            catch (IOException)
+            {
+                // TestHost surfaces an abrupt close as IOException(ObjectDisposedException)
+                // instead of a clean Close frame; either way the socket is dead.
+                return;
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+            if (res.MessageType == WebSocketMessageType.Close) return;
+        }
+        throw new InvalidOperationException("Expected close frame, none arrived");
     }
 
     /// <summary>

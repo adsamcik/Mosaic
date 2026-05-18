@@ -28,6 +28,7 @@ public static partial class SidecarSignalingEndpoint
     private const string BasePath = "/api/v1/sidecar";
     private const string SignalPath = BasePath + "/signal/{roomId}";
     private const string HealthPath = BasePath + "/health";
+    private const string ClosePath = BasePath + "/close/{roomId}";
 
     [GeneratedRegex(@"^[0-9a-f]{32}$", RegexOptions.Compiled)]
     private static partial Regex RoomIdPattern();
@@ -37,7 +38,31 @@ public static partial class SidecarSignalingEndpoint
         endpoints.MapGet(SignalPath, HandleSignalAsync);
         endpoints.MapGet(HealthPath, (RoomManager mgr) =>
             Results.Ok(new { rooms = mgr.RoomCount }));
+        // sidecar_material_close_v1 (v1.0.x s46-y1): explicit room close.
+        // Either peer may call this once pairing is complete (or aborted) so the
+        // server-side ephemeral relay state — sockets, frame counters, room
+        // entry — is torn down immediately instead of lingering until the TTL
+        // sweep. The relay never holds long-term key material; "close" here
+        // means evicting the in-memory room and cancelling its lifecycle CTS,
+        // which prompts both pumps to exit. Unauthenticated, like the rest of
+        // the relay: a third party that guesses a 128-bit room id can already
+        // hang up the room by joining as the third socket and being rejected,
+        // so an explicit close adds no new authority. Returns 204 whether or
+        // not the room existed, so callers can be idempotent without leaking
+        // existence.
+        endpoints.MapDelete(ClosePath, HandleCloseAsync);
         return endpoints;
+    }
+
+    private static async Task<IResult> HandleCloseAsync(string roomId, RoomManager rooms)
+    {
+        if (!RoomIdPattern().IsMatch(roomId))
+        {
+            return Results.BadRequest("Invalid room id");
+        }
+
+        await rooms.RemoveAsync(roomId);
+        return Results.NoContent();
     }
 
     private static async Task HandleSignalAsync(
