@@ -364,6 +364,84 @@ account provisioned by an admin but never claimed), step-3 cleanup is a no-op.
 - Backend: [`UserErasureIntegrationTests.cs`](../apps/backend/Mosaic.Backend.Tests/Integration/UserErasureIntegrationTests.cs) — 7 Postgres-backed tests covering the happy path, the confirmation-text guard, LocalAuth fresh-auth verification (challenge consumption, signature verification, expired-timestamp rejection), audit-log anonymisation, shard cleanup, and idempotence.
 - Frontend: [`delete-account-dialog.test.tsx`](../apps/web/tests/delete-account-dialog.test.tsx) — 5 unit tests covering the disabled-until-match guard, the ProxyAuth body shape, the LocalAuth fresh-auth signing path, the signing-failure abort, and the generic API-failure rendering.
 
+## Right to Portability (GDPR Article 20)
+
+Mosaic also satisfies the right to data portability under GDPR Article 20.
+Any logged-in user can download a zip archive of their entire data footprint
+from **Settings → Data → Download Export** without operator intervention.
+
+### Endpoint
+
+`GET /api/v1/export`
+
+Returns `application/zip` with `Content-Disposition: attachment;
+filename="mosaic-export-<user-id>-<timestamp>.zip"`. The archive is
+streamed directly to the response body via `ZipArchive` in
+`ZipArchiveMode.Create` mode with response buffering disabled — neither
+the server nor the client materialises the full archive in memory.
+
+### What the export contains
+
+| Top-level entry | Contents |
+| --------------- | -------- |
+| `metadata.json` | User id, export timestamp, format version (`1.0`) |
+| `account-key-wrapped.bin` | The wrapped L2 account key (already returned by `GET /me`); only the holder of the password-derived L1 can unwrap it |
+| `identity-seed-wrapped.bin` | The wrapped Ed25519 identity seed, when set |
+| `salt.bin`, `account-salt.bin` | KDF salts so the user can replay Argon2id + HKDF offline |
+| `kdf-params.json` | `SaltVersion`, Argon2 cost parameters, algorithm version |
+| `albums/<album-id>/album.json` | Album row metadata (encrypted name / description fields included verbatim) |
+| `albums/<album-id>/members.json` | Roster with roles, invite source, join / revoke timestamps |
+| `albums/<album-id>/share-links.json` | Share-link rows (link id, access tier, owner-encrypted secret, expiry, revocation) |
+| `albums/<album-id>/epoch-keys.json` | Per-recipient wrapped epoch key bundles, owner signatures, signing pubkeys |
+| `albums/<album-id>/manifests/<id>.json` | Manifest row + per-shard chunk / tier / sha256 / content-length |
+| `albums/<album-id>/manifests/<id>.encrypted-meta.bin` | Encrypted manifest metadata blob |
+| `albums/<album-id>/manifests/<id>.encrypted-meta-sidecar.bin` | Encrypted sidecar (where present) |
+| `albums/<album-id>/shards/<shard-id>.bin` | The raw XChaCha20-Poly1305 ciphertext shard blob, streamed from storage |
+
+Albums where the caller is merely a member (not the owner) are deliberately
+excluded — exporting them would leak another user's content. Members can
+ask each owner for an export of those albums separately.
+
+### Zero-knowledge invariants
+
+The archive contains **only ciphertext + wrapped keys + already-public
+metadata**. The server never decrypts anything during export. Specifically:
+
+- Shard blobs are streamed byte-for-byte from storage without inspection.
+- The wrapped account key is the same bytes the server already returns
+  from `GET /api/v1/users/me` — including it in the export does not
+  weaken any existing posture.
+- KDF salts are non-secret per the threat model: they are plaintext at
+  rest in the database.
+- Per-shard blobs are stored with `CompressionLevel.NoCompression` —
+  ciphertext is already high-entropy, and deflate-on-ciphertext is both a
+  CPU waste and a well-known size-inflation anti-pattern.
+
+The user decrypts the archive offline by replaying their normal key
+derivation (Argon2id over `salt.bin` → HKDF over `account-salt.bin` →
+unwrap `account-key-wrapped.bin`). See [`EXPORT_FORMAT.md`](EXPORT_FORMAT.md)
+for the detailed archive layout and decryption guide.
+
+### Audit log
+
+Every successful export writes a `user.data.exported` row to the audit log
+with the album / manifest / shard / byte counts and the format version.
+The row retains the same retention posture as every other audit entry
+(retained until the user's account is erased, then anonymised in place
+under the same Article 17 cascade).
+
+### Missing-blob handling
+
+If a shard row references a blob that has been garbage-collected, the
+export writes an empty `<shard-id>.bin.missing` marker rather than aborting
+the whole archive. A single corrupted reference would otherwise deny the
+user their entire export.
+
+### Tests
+
+- Backend: [`DataExportIntegrationTests.cs`](../apps/backend/Mosaic.Backend.Tests/Integration/DataExportIntegrationTests.cs) — 5 Postgres-backed tests covering valid zip-archive parsing, owned-vs-member album scoping, account-key + salt inclusion, the empty-account minimal archive, and cancellation-token propagation.
+- Frontend: [`DataExport.test.tsx`](../apps/web/src/components/Settings/__tests__/DataExport.test.tsx) — 3 unit tests covering render, anchor download target, and the in-flight disabled state.
+
 ## Share Link Security
 
 Share links enable album owners to grant anonymous access to album content without requiring recipients to have accounts. The cryptographic model ensures zero-knowledge properties are maintained.

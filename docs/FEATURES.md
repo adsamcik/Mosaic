@@ -174,6 +174,32 @@ npx playwright test auth-modes.spec.ts --project=chromium
 
 ---
 
+### Right-to-Portability (GDPR Article 20)
+
+**Purpose:** Allow any logged-in user to download a zip archive of their entire data footprint (every owned album, every shard, all wrapped keys + salts) for offline decryption — satisfying the right to data portability without operator intervention.
+
+**Implementation:**
+| Layer    | Location                                                                                                       |
+| -------- | -------------------------------------------------------------------------------------------------------------- |
+| Backend  | [Controllers/ExportController.cs](../apps/backend/Mosaic.Backend/Controllers/ExportController.cs) `GET /api/v1/export` |
+| Frontend | [Settings/DataExport.tsx](../apps/web/src/components/Settings/DataExport.tsx)                                  |
+| Docs     | [EXPORT_FORMAT.md](EXPORT_FORMAT.md) — authoritative archive layout + offline-decryption guide                 |
+
+**Features:**
+- Streaming-zip response written directly to `Response.Body` with `ZipArchive` in `Create` mode and per-shard `Stream.CopyToAsync` — neither the server nor the client materialises the full archive (or any single shard) in memory.
+- Archive contains only ciphertext + wrapped keys + already-public metadata. Server never decrypts anything during export. Zero-knowledge posture identical to the rest of the API.
+- Albums where the caller is merely a member are excluded — exporting them would leak another user's content.
+- Shard entries use `CompressionLevel.NoCompression` (ciphertext is high-entropy; deflate would waste CPU and inflate size).
+- Missing-blob entries produce a `<shard-id>.bin.missing` marker rather than aborting the whole archive.
+- Audit log row (`user.data.exported`) written after the archive is fully streamed, with album/manifest/shard/byte counts.
+- Frontend uses an anchor + `download` attribute (not `fetch`) so the browser's native download manager owns the lifecycle and streams to disk.
+
+**Tests:**
+- Backend: [DataExportIntegrationTests.cs](../apps/backend/Mosaic.Backend.Tests/Integration/DataExportIntegrationTests.cs) — 5 Postgres-backed tests covering valid zip parsing, owned-vs-member album scoping, account-key + salt inclusion, empty-account minimal archive, and cancellation-token propagation
+- Frontend: [DataExport.test.tsx](../apps/web/src/components/Settings/__tests__/DataExport.test.tsx) — 3 unit tests covering render, anchor download target, and in-flight disabled state
+
+---
+
 ## Albums & Organization
 
 ### Album Creation & Management
@@ -1144,6 +1170,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
+| 2026-05-22 | Right-to-Portability (GDPR Art.20) (v1.0.x s38) | Added | Self-service data export via `GET /api/v1/export` streaming zip; backend writes ciphertext-only archive directly to `Response.Body` (no in-memory buffering, `NoCompression` for shard blobs); archive contains owned albums + manifests + shards + wrapped account/identity keys + salts + KDF params; member-only albums excluded; missing blobs marked with `.missing` sentinels; audit event `user.data.exported` written post-stream; frontend uses anchor-based download to preserve native streaming-to-disk; offline-decryption procedure documented in `docs/EXPORT_FORMAT.md` |
 | 2026-05-21 | Android stack upgrade for v1.0.1 (v1.0.1 s30) | Modified | Coordinated upstream bump across the Android module to close ~1 year of drift. AGP 8.7.3 → 8.10.1 (Gradle wrapper 8.10.2 → 8.11.1; K2 compiler integration). Kotlin 2.0.21 → 2.1.21 (K2 default GA). KSP 2.0.21-1.0.28 → 2.1.21-2.0.2. AndroidX activity 1.9.3 → 1.10.1, appcompat 1.7.0 → 1.7.1, core 1.13.1 → 1.16.0, lifecycle-service 2.8.7 → 2.9.0, exifinterface 1.3.7 → 1.4.1. WorkManager 2.9.1 → 2.10.1 (`setExpedited(RUN_AS_NON_EXPEDITED_WORK_REQUEST)` API surface unchanged; ShardEncryptionScheduler / ShardUploadScheduler / AutoImportWorkScheduler all still expedite). OkHttp 4.12.0 → 5.1.0 GA (no call-site changes — production already uses the `toHttpUrl()` / `toRequestBody()` / `toMediaType()` Kotlin extension API). JNA 5.14.0 → 5.17.0 (UniFFI `uniffi.mosaic_uniffi.*` bindings continue to load via `Native.register`). kotlinx-coroutines 1.9.0 → 1.10.2; kotlinx-serialization-json 1.7.3 → 1.8.1. Netty/Guava resolutionStrategy CVE pin and R8/JNA proguard `-dontwarn` rules preserved. Room 2.6.1 and Robolectric 4.13 intentionally **held back**: Room 2.7 changed suspend-DAO coroutine dispatch in a way that deadlocks against Robolectric's paused looper in `runBlocking` test bodies. Migration requires per-test refactor to `Dispatchers.Unconfined` / `INSTANT_TASK_EXECUTOR` and is tracked as v101-s30 follow-up. 293 unit tests pass; all 5 architecture guards green. |
 | 2026-05-20 | Right-to-Erasure (GDPR Art.17) (v1.0.1 s15) | Added | Self-service account deletion via `DELETE /api/v1/users/me`; type-username confirmation + LocalAuth fresh-auth signature; 3-phase server erasure (collect → tx cascade + orphan shards → post-commit blob/Tus cleanup); audit log entries retained but anonymised (`actor_user_id=NULL`, `actor_was_erased=TRUE`) under legitimate-interest basis; client purges all local state (OPFS, IDB, cache, storage, crypto worker key cache) on 204 |
 | 2026-05-17 | Android expedited shard workers (v1.0.1 s24) | Fixed | `ShardEncryptionScheduler` and `ShardUploadScheduler` now call `setExpedited(RUN_AS_NON_EXPEDITED_WORK_REQUEST)` so multi-shard uploads bypass Doze maintenance-window delays (previously up to several hours on Android 12+). Both workers implement `getForegroundInfo()` posting an `IMPORTANCE_LOW` notification on a new shared `mosaic.shard-upload` channel (i18n: en + cs). Delayed retries (`initialDelayMs > 0`) remain non-expedited because `WorkRequest.Builder` rejects the combination. Notification content stays generic — never includes album names, photo identifiers, or any user-identifying material |
