@@ -11,10 +11,10 @@ publish.workspace = true
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-mosaic-client = { path = "../mosaic-client", version = "0.0.0" }
-mosaic-crypto = { path = "../mosaic-crypto", version = "0.0.0" }
-mosaic-domain = { path = "../mosaic-domain", version = "0.0.0" }
-mosaic-media = { path = "../mosaic-media", version = "0.0.0" }
+mosaic-client = { path = "../mosaic-client", version = "0.0.0-dev" }
+mosaic-crypto = { path = "../mosaic-crypto", version = "0.0.0-dev" }
+mosaic-domain = { path = "../mosaic-domain", version = "0.0.0-dev" }
+mosaic-media = { path = "../mosaic-media", version = "0.0.0-dev" }
 self_cell = "=1.2.2"
 uniffi = { version = "=0.31.1", default-features = false, features = ["scaffolding-ffi-buffer-fns"] }
 ciborium = "=0.2.2"
@@ -34,8 +34,8 @@ weak-kdf = ["mosaic-crypto/weak-kdf", "mosaic-client/weak-kdf"]
 # cross-crate snapshot test in `tests/error_code_table.rs`. The feature is
 # non-default and only activated during test builds, so production builds
 # of `mosaic-client` remain free of `strum`.
-mosaic-client = { path = "../mosaic-client", version = "0.0.0", features = ["__variant-introspection"] }
-mosaic-vectors = { path = "../mosaic-vectors", version = "0.0.0" }
+mosaic-client = { path = "../mosaic-client", version = "0.0.0-dev", features = ["__variant-introspection"] }
+mosaic-vectors = { path = "../mosaic-vectors", version = "0.0.0-dev" }
 blake3 = "=1.8.2"
 strum = { version = "=0.28.0", default-features = false }
 

@@ -8,8 +8,8 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-mosaic-crypto = { path = "../mosaic-crypto", version = "0.0.0" }
-mosaic-domain = { path = "../mosaic-domain", version = "0.0.0" }
+mosaic-crypto = { path = "../mosaic-crypto", version = "0.0.0-dev" }
+mosaic-domain = { path = "../mosaic-domain", version = "0.0.0-dev" }
 zeroize = "=1.8.2"
 ciborium = "=0.2.2"
 blake2 = { version = "=0.10.6", default-features = false }

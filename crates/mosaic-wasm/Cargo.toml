@@ -11,10 +11,10 @@ publish.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-mosaic-client = { path = "../mosaic-client", version = "0.0.0" }
-mosaic-crypto = { path = "../mosaic-crypto", version = "0.0.0" }
-mosaic-domain = { path = "../mosaic-domain", version = "0.0.0" }
-mosaic-media = { path = "../mosaic-media", version = "0.0.0" }
+mosaic-client = { path = "../mosaic-client", version = "0.0.0-dev" }
+mosaic-crypto = { path = "../mosaic-crypto", version = "0.0.0-dev" }
+mosaic-domain = { path = "../mosaic-domain", version = "0.0.0-dev" }
+mosaic-media = { path = "../mosaic-media", version = "0.0.0-dev" }
 self_cell = "=1.2.2"
 wasm-bindgen = "=0.2.118"
 zeroize = "=1.8.2"
@@ -30,8 +30,8 @@ cross-client-vectors = ["mosaic-crypto/__test-introspection"]
 weak-kdf = ["mosaic-crypto/weak-kdf", "mosaic-client/weak-kdf"]
 
 [dev-dependencies]
-mosaic-client = { path = "../mosaic-client", version = "0.0.0", features = ["__variant-introspection"] }
-mosaic-vectors = { path = "../mosaic-vectors", version = "0.0.0" }
+mosaic-client = { path = "../mosaic-client", version = "0.0.0-dev", features = ["__variant-introspection"] }
+mosaic-vectors = { path = "../mosaic-vectors", version = "0.0.0-dev" }
 strum = { version = "=0.28.0", default-features = false }
 wasm-bindgen-test = "=0.3.68"
 
