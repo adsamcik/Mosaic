@@ -7,6 +7,53 @@ const SHA256_HEX_BYTES = 32;
 const LOWERCASE_SHA256_HEX = /^[0-9a-f]{64}$/;
 const SHA256_HEX = /^[0-9a-fA-F]{64}$/;
 
+/**
+ * Default Tus retry budget (~1.5 minutes total across 8 attempts).
+ *
+ * Previously `[0, 1000, 3000, 5000]` (4 attempts, ~9s total) — too tight
+ * for transient mobile/cellular outages or backend cold-starts. The
+ * widened schedule keeps reconnects fast for momentary blips and gives
+ * up to a minute of breathing room for real outages before declaring
+ * the upload failed.
+ *
+ * Operators can override via the `VITE_TUS_RETRY_BUDGET` env var:
+ *   VITE_TUS_RETRY_BUDGET=0,500,2000,10000
+ * (comma-separated ms values; non-negative integers only).
+ */
+const DEFAULT_TUS_RETRY_BUDGET = [0, 500, 1500, 3000, 5000, 10_000, 30_000, 60_000];
+
+function parseRetryBudgetFromEnv(raw: string | undefined): number[] | null {
+  if (raw === undefined || raw === null) return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  const parts = trimmed.split(',').map((p) => p.trim());
+  const parsed: number[] = [];
+  for (const part of parts) {
+    if (part.length === 0) continue;
+    const n = Number(part);
+    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+      log.warn(`Invalid VITE_TUS_RETRY_BUDGET value "${part}" — falling back to defaults`);
+      return null;
+    }
+    parsed.push(n);
+  }
+  return parsed.length > 0 ? parsed : null;
+}
+
+function readEnvRetryBudget(): string | undefined {
+  try {
+    // import.meta.env may be undefined in some test/SSR contexts.
+    const env = (import.meta as { env?: Record<string, string | undefined> }).env;
+    return env?.VITE_TUS_RETRY_BUDGET;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Resolved retry budget for this page-load (parsed once). */
+export const TUS_RETRY_DELAYS: number[] =
+  parseRetryBudgetFromEnv(readEnvRetryBudget()) ?? DEFAULT_TUS_RETRY_BUDGET;
+
 export class UploadAuthRequiredError extends Error {
   readonly status = 401;
   readonly messageKey = 'upload.errors.authRequired';
@@ -78,7 +125,7 @@ export async function tusUpload(
 
     const upload = new tus.Upload(new Blob([buffer]), {
       endpoint: TUS_ENDPOINT,
-      retryDelays: [0, 1000, 3000, 5000],
+      retryDelays: TUS_RETRY_DELAYS,
       chunkSize: data.length, // Single chunk since shards are max 6MB
       metadata: {
         albumId,
