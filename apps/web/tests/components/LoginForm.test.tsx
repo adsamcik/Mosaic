@@ -29,11 +29,23 @@ const mocks = vi.hoisted(() => ({
   localLogin: vi.fn(),
   localRegister: vi.fn(),
   login: vi.fn(),
+  apiRequest: vi.fn(),
 }));
 
 vi.mock('../../src/lib/local-auth', () => ({
   checkServerStatus: mocks.checkServerStatus,
 }));
+
+vi.mock('../../src/lib/api', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../src/lib/api')>(
+      '../../src/lib/api',
+    );
+  return {
+    ...actual,
+    apiRequest: mocks.apiRequest,
+  };
+});
 
 vi.mock('../../src/lib/session', () => ({
   session: {
@@ -107,6 +119,9 @@ describe('LoginForm', () => {
       statusCode: 200,
     });
     mocks.clearCorruptedSession.mockResolvedValue(undefined);
+    // Default: backend reports registration is open. Individual tests can
+    // override this per-call to simulate admin-only mode.
+    mocks.apiRequest.mockResolvedValue({ registrationOpen: true });
 
     originalConfirm = window.confirm;
 
@@ -255,6 +270,67 @@ describe('LoginForm', () => {
       expect(confirm).not.toBeNull();
       expect(confirm!.getAttribute('autocomplete')).toBe('new-password');
 
+      cleanup();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Sweep 38 (v1.0.x): "Create Account" toggle gating
+  //
+  // When the backend's /auth/config reports `registrationOpen=false`, the
+  // bootstrap user already exists and registration is admin-only. The toggle
+  // must be hidden so visitors don't submit a register request that 401s.
+  // When the field is absent or true, the toggle stays visible (backward-
+  // compatible with backends that haven't shipped the flag yet).
+  // -------------------------------------------------------------------------
+  describe('sweep38: Create Account gating', () => {
+    it('hides the register toggle when registrationOpen=false', async () => {
+      mocks.apiRequest.mockResolvedValue({ registrationOpen: false });
+
+      const { container, cleanup } = await renderLogin();
+
+      // Wait an extra microtask flush for the /auth/config fetch to settle.
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const toggle = container.querySelector(
+        '[data-testid="register-toggle-button"]',
+      );
+      expect(toggle).toBeNull();
+      cleanup();
+    });
+
+    it('shows the register toggle when registrationOpen=true', async () => {
+      mocks.apiRequest.mockResolvedValue({ registrationOpen: true });
+
+      const { container, cleanup } = await renderLogin();
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const toggle = container.querySelector(
+        '[data-testid="register-toggle-button"]',
+      );
+      expect(toggle).not.toBeNull();
+      cleanup();
+    });
+
+    it('shows the register toggle when the field is absent (backward-compatible)', async () => {
+      mocks.apiRequest.mockResolvedValue({});
+
+      const { container, cleanup } = await renderLogin();
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const toggle = container.querySelector(
+        '[data-testid="register-toggle-button"]',
+      );
+      expect(toggle).not.toBeNull();
       cleanup();
     });
   });

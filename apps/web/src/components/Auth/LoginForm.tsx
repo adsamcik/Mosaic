@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { apiRequest, ApiError } from '../../lib/api';
 import type { User } from '../../lib/api-types';
 import { checkServerStatus } from '../../lib/local-auth';
 import { session } from '../../lib/session';
@@ -33,6 +34,14 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [checkingAuthMode, setCheckingAuthMode] = useState(true);
   const [isServerUnreachable, setIsServerUnreachable] = useState(false);
+  // Sweep 38 (v1.0.x): when the server reports registration is admin-only
+  // (registrationOpen=false), hide the "Create Account" toggle so visitors
+  // don't try to register and receive a confusing 401. We treat the flag
+  // optimistically: until the backend response confirms `registrationOpen=false`
+  // we keep the button visible (i.e., undefined => open). Backend reporting
+  // of this flag is owned by the R3A backend auth agent; this client-side
+  // fetch is defensive and degrades gracefully when the field is absent.
+  const [registrationOpen, setRegistrationOpen] = useState(true);
 
   // Whether we're restoring an existing session (page reload case)
   const isSessionRestore = !!pendingSessionUser;
@@ -48,6 +57,26 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
       const status = await checkServerStatus();
       setIsLocalAuth(status.isLocalAuth);
       setIsProxyAuth(status.isProxyAuth);
+
+      // Sweep 38 (v1.0.x): probe /auth/config for the registrationOpen flag.
+      // The endpoint is the same one `checkServerStatus` already hits, but
+      // `checkServerStatus` deliberately only exposes auth-mode flags. We
+      // fetch the raw payload here to read `registrationOpen` without
+      // modifying the shared lib type. Any failure (404, network) falls back
+      // to "open" so existing deployments without the field keep working.
+      if (status.isOnline && status.isLocalAuth) {
+        try {
+          const config = await apiRequest<{ registrationOpen?: boolean }>(
+            '/auth/config',
+          );
+          setRegistrationOpen(config.registrationOpen !== false);
+        } catch (err) {
+          if (!(err instanceof ApiError)) {
+            // Network failures shouldn't hide the button — defer to status.
+          }
+          setRegistrationOpen(true);
+        }
+      }
 
       if (!status.isOnline) {
         setError(t('auth.error.serverUnreachable'));
@@ -413,12 +442,14 @@ export function LoginForm({ pendingSessionUser }: LoginFormProps) {
           </button>
         </form>
 
-        {isLocalAuth && !isSessionRestore && !isServerUnreachable && (
+        {isLocalAuth && !isSessionRestore && !isServerUnreachable &&
+          (registrationOpen || isRegisterMode) && (
           <button
             type="button"
             onClick={toggleMode}
             className="mode-toggle-button"
             disabled={loading}
+            data-testid="register-toggle-button"
           >
             {isRegisterMode
               ? t('auth.haveAccountSignIn')
