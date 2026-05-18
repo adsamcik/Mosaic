@@ -89,6 +89,17 @@ public class User
     public byte KdfAlgVersion { get; set; } = 0x13;
 
     /// <summary>
+    /// Monotonically-increasing version stamp of the password-derived key
+    /// material on this account (<see cref="UserSalt"/>, <see cref="AuthPubkey"/>,
+    /// <see cref="WrappedAccountKey"/>). Bumped by <c>POST /api/v1/auth/password-rotation</c>
+    /// (v1.0.x s38). Defaults to 1 for legacy accounts so a never-rotated user
+    /// is distinguishable from "rotated zero times". Clients use this to
+    /// detect when their cached unwrapped keys are stale.
+    /// </summary>
+    [Required]
+    public int SaltVersion { get; set; } = 1;
+
+    /// <summary>
     /// Concurrency token for optimistic locking. Automatically incremented on update.
     /// </summary>
     public uint RowVersion { get; set; }

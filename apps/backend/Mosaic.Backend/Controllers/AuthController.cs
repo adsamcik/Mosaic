@@ -754,6 +754,241 @@ public partial class AuthController : ControllerBase
 
     // ===== Helper Methods =====
 
+    /// <summary>
+    /// Rotate the caller's password-derived key material (v1.0.x s38).
+    ///
+    /// <para>
+    /// Requires LocalAuth mode and an active session. The caller must supply
+    /// a fresh challenge id + signature over the current AuthPubkey, then the
+    /// new <c>UserSalt</c>, <c>AuthPubkey</c>, and wrapped L2 account key.
+    /// The server replaces all three atomically, bumps <c>SaltVersion</c>,
+    /// and revokes every other active session so a stolen cookie cannot
+    /// outlive the password change.
+    /// </para>
+    ///
+    /// <para>
+    /// Returns the new <c>SaltVersion</c> and the count of sessions revoked.
+    /// </para>
+    /// </summary>
+    [HttpPost("password-rotation")]
+    [ProducesResponseType<PasswordRotationResponse>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> RotatePassword([FromBody] PasswordRotationRequest request)
+    {
+        if (!_isLocalAuthMode)
+        {
+            return Problem(
+                title: "Local authentication disabled",
+                detail: "This endpoint is only available when local authentication is enabled.",
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        var userId = await GetCurrentUserIdAsync();
+        if (userId is null)
+        {
+            return Unauthorized();
+        }
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId.Value);
+        if (user is null || string.IsNullOrEmpty(user.AuthPubkey))
+        {
+            // No local-auth material to rotate — treat as not-applicable.
+            return Problem(
+                detail: "User does not have local authentication enabled",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        // Decode all incoming key material up-front so a bad encoding fails
+        // BEFORE we mutate any state.
+        byte[] newUserSalt;
+        byte[] newWrappedAccountKey;
+        byte[] currentSignature;
+        byte[] currentPubkey;
+        byte[] newAuthPubkey;
+        try
+        {
+            newUserSalt = Convert.FromBase64String(request.NewUserSalt);
+            newWrappedAccountKey = Convert.FromBase64String(request.NewWrappedAccountKey);
+            currentSignature = Convert.FromBase64String(request.CurrentSignature);
+            currentPubkey = Convert.FromBase64String(user.AuthPubkey);
+            newAuthPubkey = Convert.FromBase64String(request.NewAuthPubkey);
+        }
+        catch (FormatException)
+        {
+            return Problem(
+                detail: "Invalid base64 encoding in request",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (newUserSalt.Length != 16)
+        {
+            return Problem(
+                detail: "newUserSalt must decode to exactly 16 bytes",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (newAuthPubkey.Length != 32)
+        {
+            return Problem(
+                detail: "newAuthPubkey must decode to exactly 32 bytes",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        // Wrapped L2 envelope: 24-byte nonce + ≥32-byte ciphertext + 16-byte tag.
+        if (newWrappedAccountKey.Length < 48)
+        {
+            return Problem(
+                detail: "newWrappedAccountKey is too short",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (currentSignature.Length != 64 || currentPubkey.Length != 32)
+        {
+            return Problem(
+                detail: "Malformed signature material",
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        // Look up + claim the challenge atomically.
+        var challenge = await _db.AuthChallenges
+            .FirstOrDefaultAsync(c => c.Id == request.ChallengeId);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        if (challenge is null || challenge.ExpiresAt <= now || challenge.IsUsed)
+        {
+            return Problem(
+                detail: "Invalid or expired challenge",
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        if (!string.Equals(challenge.Username, user.AuthSub, StringComparison.Ordinal))
+        {
+            return Problem(
+                detail: "Challenge does not match caller",
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        var claimed = await TryClaimAuthChallengeAsync(request.ChallengeId, now);
+        if (!claimed)
+        {
+            return Problem(
+                detail: "Challenge already used",
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        // Verify the signature against the CURRENT AuthPubkey — proves the
+        // caller still knows the current password.
+        bool signatureValid;
+        try
+        {
+            var transcript = AuthChallengeTranscriptBuilder.BuildTranscript(
+                user.AuthSub, challenge.Challenge, request.Timestamp);
+            signatureValid = _rustHost.VerifyAuthChallenge(transcript, currentSignature, currentPubkey);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Password-rotation signature verification crashed for user {UserId}", user.Id);
+            if (_auditLog is not null)
+            {
+                await _auditLog.WriteAsync(
+                    AuditEventTypes.AuthLoginFailed,
+                    AuditOutcomes.Error,
+                    HttpContext,
+                    actorUserId: user.Id,
+                    details: new { reason = "rotation-verify-crash" });
+            }
+            return Problem(
+                detail: "Signature verification failed",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        if (!signatureValid)
+        {
+            _metrics?.RecordAuthFailure();
+            if (_auditLog is not null)
+            {
+                await _auditLog.WriteAsync(
+                    AuditEventTypes.AuthLoginFailed,
+                    AuditOutcomes.Denied,
+                    HttpContext,
+                    actorUserId: user.Id,
+                    details: new { reason = "rotation-invalid-signature" });
+            }
+            return Problem(
+                detail: "Invalid signature",
+                statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        // Atomic swap: bump key material + SaltVersion + revoke other sessions.
+        var currentTokenHash = GetCurrentTokenHash();
+        int revokedCount;
+
+        var supportsTx = _db.Database.IsRelational();
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? tx = null;
+        if (supportsTx)
+        {
+            tx = await _db.Database.BeginTransactionAsync();
+        }
+
+        try
+        {
+            user.UserSalt = newUserSalt;
+            user.AuthPubkey = request.NewAuthPubkey;
+            user.WrappedAccountKey = newWrappedAccountKey;
+            user.SaltVersion = user.SaltVersion + 1;
+
+            var sessionsToRevoke = await _db.Sessions
+                .Where(s => s.UserId == user.Id
+                    && s.RevokedAt == null
+                    && (currentTokenHash == null || s.TokenHash != currentTokenHash))
+                .ToListAsync();
+
+            foreach (var s in sessionsToRevoke)
+            {
+                s.RevokedAt = now;
+            }
+            revokedCount = sessionsToRevoke.Count;
+
+            await _db.SaveChangesAsync();
+            if (tx is not null)
+            {
+                await tx.CommitAsync();
+            }
+        }
+        catch
+        {
+            if (tx is not null)
+            {
+                await tx.RollbackAsync();
+            }
+            throw;
+        }
+        finally
+        {
+            if (tx is not null)
+            {
+                await tx.DisposeAsync();
+            }
+        }
+
+        if (_auditLog is not null)
+        {
+            await _auditLog.WriteAsync(
+                AuditEventTypes.AuthLoginSucceeded,
+                AuditOutcomes.Success,
+                HttpContext,
+                actorUserId: user.Id,
+                details: new
+                {
+                    action = "password-rotation",
+                    saltVersion = user.SaltVersion,
+                    revokedSessions = revokedCount,
+                });
+        }
+
+        return Ok(new PasswordRotationResponse(user.SaltVersion, revokedCount));
+    }
+
+    // ===== Helper Methods (continued) =====
+
     private static bool IsValidKdfProfile(long memoryKib, int iterations, int parallelism, byte algVersion)
     {
         return memoryKib >= MinimumKdfMemoryKib &&
