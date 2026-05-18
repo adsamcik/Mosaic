@@ -190,6 +190,41 @@ async function readResponseBody(response: Response): Promise<string | undefined>
   }
 }
 
+/**
+ * Thrown when an `apiRequest` exceeds its client-side timeout (default
+ * 30s, configurable via `RequestOptions.timeoutMs`). Used by the UI to
+ * distinguish a hung server from a real error response.
+ *
+ * Wraps the native `TimeoutError` that `AbortSignal.timeout` produces so
+ * callers can do `error instanceof RequestTimeoutError`.
+ */
+export class RequestTimeoutError extends Error {
+  readonly timeoutMs: number;
+  readonly path: string;
+  readonly cause?: unknown;
+
+  constructor(timeoutMs: number, path: string, cause?: unknown) {
+    super(`Request to ${path} timed out after ${timeoutMs}ms`);
+    this.name = 'RequestTimeoutError';
+    this.timeoutMs = timeoutMs;
+    this.path = path;
+    if (cause !== undefined) {
+      this.cause = cause;
+    }
+  }
+}
+
+function isAbortTimeoutError(error: unknown): boolean {
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
+    return error.name === 'TimeoutError';
+  }
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: unknown }).name === 'TimeoutError'
+  );
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -436,13 +471,26 @@ export async function apiRequest<T>(
     return init;
   };
 
-  let response = await fetch(`${baseUrl}${path}`, createRequestInit());
-  if (method === 'GET' && response.status === 429) {
-    const retryAfterMs = parseRetryAfterMs(response.headers?.get('retry-after') ?? null);
-    if (retryAfterMs !== undefined) {
-      await sleep(retryAfterMs, signal);
-      response = await fetch(`${baseUrl}${path}`, createRequestInit());
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, createRequestInit());
+    if (method === 'GET' && response.status === 429) {
+      const retryAfterMs = parseRetryAfterMs(response.headers?.get('retry-after') ?? null);
+      if (retryAfterMs !== undefined) {
+        await sleep(retryAfterMs, signal);
+        response = await fetch(`${baseUrl}${path}`, createRequestInit());
+      }
     }
+  } catch (error) {
+    // The composed signal aborts with a `TimeoutError` DOMException when
+    // the configured timeout elapses; surface as RequestTimeoutError so
+    // the UI can distinguish hung-server from other network failures.
+    // External AbortSignals (caller-supplied) abort with their own
+    // reason and are passed through unchanged.
+    if (timeoutMs > 0 && isAbortTimeoutError(error) && signal?.aborted !== true) {
+      throw new RequestTimeoutError(timeoutMs, path, error);
+    }
+    throw error;
   }
 
   if (!response.ok) {
