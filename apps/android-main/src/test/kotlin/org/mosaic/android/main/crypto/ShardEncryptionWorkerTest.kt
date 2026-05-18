@@ -13,7 +13,8 @@ import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
 import java.util.ArrayDeque
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -41,7 +42,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun happyPathEncryptsSmallShardAndReturnsEnvelopeUriAndSha256() = runBlocking {
+  fun happyPathEncryptsSmallShardAndReturnsEnvelopeUriAndSha256() = runTest(UnconfinedTestDispatcher()) {
     val staging = stageBytes("small-shard".toByteArray())
     val crypto = RecordingCryptoEngine()
     val resolver = RecordingEpochHandleResolver(84L)
@@ -64,7 +65,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun duplicateContentReturnsFailureBeforeEncryption() = runBlocking {
+  fun duplicateContentReturnsFailureBeforeEncryption() = runTest(UnconfinedTestDispatcher()) {
     val plaintext = "duplicate-shard".toByteArray()
     val staging = stageBytes(plaintext)
     val crypto = RecordingCryptoEngine()
@@ -91,7 +92,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun duplicateLookupAllowsSelfMatchOnRetry() = runBlocking {
+  fun duplicateLookupAllowsSelfMatchOnRetry() = runTest(UnconfinedTestDispatcher()) {
     val plaintext = "self-match-retry".toByteArray()
     val staging = stageBytes(plaintext)
     val crypto = RecordingCryptoEngine()
@@ -130,7 +131,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun multiTierUploadFromSameStagingUriSucceeds() = runBlocking {
+  fun multiTierUploadFromSameStagingUriSucceeds() = runTest(UnconfinedTestDispatcher()) {
     val plaintext = "multi-tier-source".toByteArray()
     val staging = stageBytes(plaintext)
     val crypto = RecordingCryptoEngine()
@@ -165,7 +166,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun workerReadsAlbumContentHashFromInputDataInsteadOfRecomputingFromStager() = runBlocking {
+  fun workerReadsAlbumContentHashFromInputDataInsteadOfRecomputingFromStager() = runTest(UnconfinedTestDispatcher()) {
     val sourceOfTruthBytes = "source-of-truth-user-photo".toByteArray()
     val tierEncodedBytes = "tier-specific-encoded-jpeg".toByteArray()
     val staging = stageBytes(tierEncodedBytes)
@@ -189,7 +190,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun workerFailsLoudlyOnMissingAlbumContentHash() = runBlocking {
+  fun workerFailsLoudlyOnMissingAlbumContentHash() = runTest(UnconfinedTestDispatcher()) {
     val staging = stageBytes("missing-hash".toByteArray())
     val worker = workerFor(staging, albumContentHashHex = null)
 
@@ -201,7 +202,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun workerFailsLoudlyOnMalformedAlbumContentHash() = runBlocking {
+  fun workerFailsLoudlyOnMalformedAlbumContentHash() = runTest(UnconfinedTestDispatcher()) {
     val staging = stageBytes("malformed-hash".toByteArray())
     val worker = workerFor(staging, albumContentHashHex = "not-a-hash")
 
@@ -213,7 +214,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun recordsContentHashAfterSuccessfulEncryptionWhenAlbumAndPhotoAreProvided() = runBlocking {
+  fun recordsContentHashAfterSuccessfulEncryptionWhenAlbumAndPhotoAreProvided() = runTest(UnconfinedTestDispatcher()) {
     val plaintext = "record-me".toByteArray()
     val staging = stageBytes(plaintext)
     val dedup = RecordingContentHashDedup()
@@ -231,7 +232,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun largeShardUsesStreamingPath() = runBlocking {
+  fun largeShardUsesStreamingPath() = runTest(UnconfinedTestDispatcher()) {
     val plaintext = ByteArray(ShardEncryptionWorker.STREAMING_THRESHOLD_BYTES + 1) { (it % 251).toByte() }
     val staging = stageBytes(plaintext)
     val crypto = RecordingCryptoEngine()
@@ -249,7 +250,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun workerSurvivesProcessDeathByReopeningEpochHandle() = runBlocking {
+  fun workerSurvivesProcessDeathByReopeningEpochHandle() = runTest(UnconfinedTestDispatcher()) {
     val staging = stageBytes("replayed-after-process-death".toByteArray())
     val resolver = RecordingEpochHandleResolver(4242L)
     val crypto = RecordingCryptoEngine()
@@ -270,7 +271,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun workerFailsClearlyWhenEpochHandleResolverReturnsNull() = runBlocking {
+  fun workerFailsClearlyWhenEpochHandleResolverReturnsNull() = runTest(UnconfinedTestDispatcher()) {
     val staging = stageBytes("invalid".toByteArray())
     val crypto = RecordingCryptoEngine()
     val worker = workerFor(staging, crypto = crypto, epochHandleResolver = UnavailableEpochHandleResolver)
@@ -284,7 +285,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun cryptoExceptionRetriesBeforeMaxRetries() = runBlocking {
+  fun cryptoExceptionRetriesBeforeMaxRetries() = runTest(UnconfinedTestDispatcher()) {
     val staging = stageBytes("retry".toByteArray())
     val worker = workerFor(staging, runAttemptCount = ShardEncryptionWorker.MAX_RETRIES - 1, crypto = ThrowingCryptoEngine)
 
@@ -294,7 +295,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun cryptoExceptionFailsAtMaxRetries() = runBlocking {
+  fun cryptoExceptionFailsAtMaxRetries() = runTest(UnconfinedTestDispatcher()) {
     val staging = stageBytes("fail".toByteArray())
     val worker = workerFor(staging, runAttemptCount = ShardEncryptionWorker.MAX_RETRIES, crypto = ThrowingCryptoEngine)
 
@@ -304,7 +305,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun sameInputsReturnByteIdenticalEnvelopeAcrossRuns() = runBlocking {
+  fun sameInputsReturnByteIdenticalEnvelopeAcrossRuns() = runTest(UnconfinedTestDispatcher()) {
     val staging = stageBytes("idempotent".toByteArray())
     val crypto = RecordingCryptoEngine()
     val resolver = RecordingEpochHandleResolver(101L, 202L)
@@ -381,7 +382,7 @@ class ShardEncryptionWorkerTest {
   }
 
   @Test
-  fun getForegroundInfoReturnsSharedShardUploadChannelAndEncryptionId() = runBlocking {
+  fun getForegroundInfoReturnsSharedShardUploadChannelAndEncryptionId() = runTest(UnconfinedTestDispatcher()) {
     val staging = stageBytes("foreground".toByteArray())
     val worker = workerFor(staging)
 

@@ -23,6 +23,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.mosaic.android.main.staging.AppPrivateStagingManager
 import org.mosaic.android.main.staging.StagedFile
 import org.mosaic.android.main.tus.ShardManifestEntry
@@ -292,12 +294,12 @@ class ShardUploadWorkerTest {
   }
 
   @Test
-  fun getForegroundInfoReturnsSharedShardUploadChannelAndUploadId() {
+  fun getForegroundInfoReturnsSharedShardUploadChannelAndUploadId() = runTest(UnconfinedTestDispatcher()) {
     val envelope = envelopeFile("foreground-body")
     val sha256 = sha256Hex(envelope.readBytes())
     val worker = workerFor(envelope, sha256, shardId = "shard-fg", tusEndpoint = "https://uploads.example.test/files")
 
-    val info = kotlinx.coroutines.runBlocking { worker.getForegroundInfo() }
+    val info = worker.getForegroundInfo()
 
     assertNotNull("getForegroundInfo() must return non-null so setExpedited can promote", info)
     assertEquals(ShardWorkerForegroundInfo.UPLOAD_NOTIFICATION_ID, info.notificationId)
@@ -343,6 +345,7 @@ class ShardUploadWorkerTest {
       .build()
   }
 
+  // runBlocking retained: non-@Test helper called from non-suspend test methods
   private fun ListenableWorker.doWorkBlocking(): ListenableWorker.Result =
     kotlinx.coroutines.runBlocking { (this@doWorkBlocking as ShardUploadWorker).doWork() }
 

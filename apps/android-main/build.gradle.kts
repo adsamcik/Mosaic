@@ -264,6 +264,7 @@ dependencies {
   // (com/sun/jna/<os>/jnidispatch.<ext>) not found in resource path`.
   testImplementation("net.java.dev.jna:jna:${libs.versions.jna.get()}")
   testImplementation(libs.junit4)
+  testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.androidx.room.testing)
   testImplementation(libs.androidx.test.core)
   testImplementation(libs.androidx.work.testing)

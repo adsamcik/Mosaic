@@ -9,7 +9,8 @@ import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -44,7 +45,7 @@ class PhotoPickerStagingAdapterTest {
   }
 
   @Test
-  fun stagePickedItemsStagesThreeUrisWithOriginalMimeTypes() = runBlocking {
+  fun stagePickedItemsStagesThreeUrisWithOriginalMimeTypes() = runTest(UnconfinedTestDispatcher()) {
     val uris = listOf(uri("one"), uri("two"), uri("three"))
     MimeProvider.mimeTypes[uris[0].toString()] = "image/jpeg"
     MimeProvider.mimeTypes[uris[1].toString()] = "image/png"
@@ -60,7 +61,7 @@ class PhotoPickerStagingAdapterTest {
   }
 
   @Test
-  fun stagePickedItemsDefaultsUnknownMimeTypeToOctetStream() = runBlocking {
+  fun stagePickedItemsDefaultsUnknownMimeTypeToOctetStream() = runTest(UnconfinedTestDispatcher()) {
     val adapter = adapter()
 
     val result = adapter.stagePickedItems(listOf(uri("unknown")))
@@ -69,7 +70,7 @@ class PhotoPickerStagingAdapterTest {
   }
 
   @Test
-  fun stagePickedItemsPropagatesFailureAndRollsBackPreviouslyStagedItems() = runBlocking {
+  fun stagePickedItemsPropagatesFailureAndRollsBackPreviouslyStagedItems() = runTest(UnconfinedTestDispatcher()) {
     val uris = listOf(uri("one"), uri("fail"), uri("three"))
     val adapter = adapter(failOn = uris[1])
 
@@ -82,7 +83,7 @@ class PhotoPickerStagingAdapterTest {
   }
 
   @Test
-  fun stagePickedItemsStagesSameUriTwiceAsDistinctFiles() = runBlocking {
+  fun stagePickedItemsStagesSameUriTwiceAsDistinctFiles() = runTest(UnconfinedTestDispatcher()) {
     val repeated = uri("same")
     MimeProvider.mimeTypes[repeated.toString()] = "image/webp"
     val adapter = adapter()
@@ -95,7 +96,7 @@ class PhotoPickerStagingAdapterTest {
   }
 
   @Test
-  fun computesHashWithoutFullBuffer() = runBlocking {
+  fun computesHashWithoutFullBuffer() = runTest(UnconfinedTestDispatcher()) {
     val byteCount = 50L * 1024L * 1024L
     val expectedHash = sha256Hex(DeterministicInputStream(byteCount))
     val adapter = PhotoPickerStagingAdapter(

@@ -14,7 +14,8 @@ import androidx.work.WorkerParameters
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -62,7 +63,7 @@ class AlbumPurgerTest {
   }
 
   @Test
-  fun purgesAlbumOnGone() = runBlocking {
+  fun purgesAlbumOnGone() = runTest(UnconfinedTestDispatcher()) {
     val targetAlbum = "018f9f8d-99df-7b42-8f0d-111111111111"
     val otherAlbum = "018f9f8d-99df-7b42-8f0d-222222222222"
     db.uploadQueueDao().insert(uploadQueueRecord("job-target", targetAlbum))
@@ -111,7 +112,7 @@ class AlbumPurgerTest {
   }
 
   @Test
-  fun reportsZeroWhenEnvelopeDirAndEpochKeysAreEmpty() = runBlocking {
+  fun reportsZeroWhenEnvelopeDirAndEpochKeysAreEmpty() = runTest(UnconfinedTestDispatcher()) {
     val targetAlbum = "018f9f8d-99df-7b42-8f0d-333333333333"
     db.uploadQueueDao().insert(uploadQueueRecord("job-empty", targetAlbum))
 
@@ -124,7 +125,7 @@ class AlbumPurgerTest {
   }
 
   @Test
-  fun purgeWithoutEnvelopeStoreLeavesEnvelopeFilesZero() = runBlocking {
+  fun purgeWithoutEnvelopeStoreLeavesEnvelopeFilesZero() = runTest(UnconfinedTestDispatcher()) {
     val targetAlbum = "018f9f8d-99df-7b42-8f0d-444444444444"
     db.uploadQueueDao().insert(uploadQueueRecord("job-nostore", targetAlbum))
     db.albumEpochKeyDao().upsert(albumEpochKey(targetAlbum, epochId = 7))
@@ -136,7 +137,7 @@ class AlbumPurgerTest {
   }
 
   @Test
-  fun cancelsUploadJobsForPurgedAlbum() = runBlocking {
+  fun cancelsUploadJobsForPurgedAlbum() = runTest(UnconfinedTestDispatcher()) {
     val albumA = "018f9f8d-99df-7b42-8f0d-aaaaaaaaaaaa"
     val albumB = "018f9f8d-99df-7b42-8f0d-bbbbbbbbbbbb"
     val workManager = WorkManager.getInstance(context)

@@ -6,7 +6,8 @@ import java.time.ZoneId
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -18,7 +19,7 @@ class SyncConfirmationLoopTest {
   private val albumId = AlbumId("album-1")
 
   @Test
-  fun confirmReturnsConfirmedWhenFirstPollReachesExpectedVersion() = runBlocking {
+  fun confirmReturnsConfirmedWhenFirstPollReachesExpectedVersion() = runTest(UnconfinedTestDispatcher()) {
     val loop = loopWithResponses(response(version = 7))
 
     val result = loop.confirm(albumId, expectedVersion = 7)
@@ -27,7 +28,7 @@ class SyncConfirmationLoopTest {
   }
 
   @Test
-  fun confirmReturnsConfirmedWhenSecondPollReachesExpectedVersion() = runBlocking {
+  fun confirmReturnsConfirmedWhenSecondPollReachesExpectedVersion() = runTest(UnconfinedTestDispatcher()) {
     val sleeps = mutableListOf<Long>()
     val loop = loopWithResponses(
       response(version = 6),
@@ -43,7 +44,7 @@ class SyncConfirmationLoopTest {
   }
 
   @Test
-  fun confirmReturnsConfirmedWhenThirdPollReachesExpectedVersion() = runBlocking {
+  fun confirmReturnsConfirmedWhenThirdPollReachesExpectedVersion() = runTest(UnconfinedTestDispatcher()) {
     val sleeps = mutableListOf<Long>()
     val loop = loopWithResponses(
       response(version = 5),
@@ -60,7 +61,7 @@ class SyncConfirmationLoopTest {
   }
 
   @Test
-  fun confirmUsesEqualJitterWithinUpperHalfOfCurrentBackoffRange() = runBlocking {
+  fun confirmUsesEqualJitterWithinUpperHalfOfCurrentBackoffRange() = runTest(UnconfinedTestDispatcher()) {
     val bounds = mutableListOf<Long>()
     val sleeps = mutableListOf<Long>()
     val loop = loopWithResponses(
@@ -87,7 +88,7 @@ class SyncConfirmationLoopTest {
   }
 
   @Test
-  fun confirmCancelsCooperativelyWithoutStartingAnotherFetch() = runBlocking {
+  fun confirmCancelsCooperativelyWithoutStartingAnotherFetch() = runTest(UnconfinedTestDispatcher()) {
     var fetchCount = 0
     val sleepEntered = CompletableDeferred<Unit>()
     val neverCompletes = CompletableDeferred<Unit>()
@@ -120,7 +121,7 @@ class SyncConfirmationLoopTest {
   }
 
   @Test
-  fun confirmReturnsTimeoutWhenVersionDoesNotReachExpectedBeforeTimeout() = runBlocking {
+  fun confirmReturnsTimeoutWhenVersionDoesNotReachExpectedBeforeTimeout() = runTest(UnconfinedTestDispatcher()) {
     val clock = MutableClock()
     var fetchCount = 0
     val loop = SyncConfirmationLoop(
@@ -144,7 +145,7 @@ class SyncConfirmationLoopTest {
   }
 
   @Test
-  fun confirmShortCircuitsNotFoundAndForbidden() = runBlocking {
+  fun confirmShortCircuitsNotFoundAndForbidden() = runTest(UnconfinedTestDispatcher()) {
     val notFound = loopWithResponses(AlbumSyncResult.NotFound)
       .confirm(albumId, expectedVersion = 1)
     val forbidden = loopWithResponses(AlbumSyncResult.Forbidden)
@@ -155,7 +156,7 @@ class SyncConfirmationLoopTest {
   }
 
   @Test
-  fun confirmRetriesServerErrorBeforeSuccess() = runBlocking {
+  fun confirmRetriesServerErrorBeforeSuccess() = runTest(UnconfinedTestDispatcher()) {
     var fetchCount = 0
     val loop = loopWithResponses(
       AlbumSyncResult.ServerError(503),
@@ -172,7 +173,7 @@ class SyncConfirmationLoopTest {
   }
 
   @Test
-  fun confirmPurgesAndReturnsGone() = runBlocking {
+  fun confirmPurgesAndReturnsGone() = runTest(UnconfinedTestDispatcher()) {
     val purged = mutableListOf<AlbumId>()
     val loop = SyncConfirmationLoop(
       fetchSyncState = { AlbumSyncResult.Gone(albumId) },

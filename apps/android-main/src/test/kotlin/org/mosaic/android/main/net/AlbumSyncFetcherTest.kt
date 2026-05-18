@@ -1,6 +1,7 @@
 package org.mosaic.android.main.net
 
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -21,7 +22,7 @@ class AlbumSyncFetcherTest {
   }
 
   @Test
-  fun fetchSyncStateReturnsSuccessForHttp200() = runBlocking {
+  fun fetchSyncStateReturnsSuccessForHttp200() = runTest(UnconfinedTestDispatcher()) {
     server.enqueue(MockResponse().setResponseCode(200).setBody(AlbumSyncFixtures.responseJson))
     server.start()
     val fetcher = AlbumSyncFetcher(OkHttpClient(), server.url("/"))
@@ -36,7 +37,7 @@ class AlbumSyncFetcherTest {
   }
 
   @Test
-  fun fetchSyncStateReturnsNotFoundForHttp404() = runBlocking {
+  fun fetchSyncStateReturnsNotFoundForHttp404() = runTest(UnconfinedTestDispatcher()) {
     server.enqueue(MockResponse().setResponseCode(404))
     server.start()
     val fetcher = AlbumSyncFetcher(OkHttpClient(), server.url("/"))
@@ -47,7 +48,7 @@ class AlbumSyncFetcherTest {
   }
 
   @Test
-  fun fetchSyncStateReturnsForbiddenForHttp403() = runBlocking {
+  fun fetchSyncStateReturnsForbiddenForHttp403() = runTest(UnconfinedTestDispatcher()) {
     server.enqueue(MockResponse().setResponseCode(403))
     server.start()
     val fetcher = AlbumSyncFetcher(OkHttpClient(), server.url("/"))
@@ -58,7 +59,7 @@ class AlbumSyncFetcherTest {
   }
 
   @Test
-  fun returnsGoneOn410() = runBlocking {
+  fun returnsGoneOn410() = runTest(UnconfinedTestDispatcher()) {
     server.enqueue(MockResponse().setResponseCode(410))
     server.start()
     val fetcher = AlbumSyncFetcher(OkHttpClient(), server.url("/"))
@@ -69,7 +70,7 @@ class AlbumSyncFetcherTest {
   }
 
   @Test
-  fun fetchSyncStateReturnsServerErrorFor5xx() = runBlocking {
+  fun fetchSyncStateReturnsServerErrorFor5xx() = runTest(UnconfinedTestDispatcher()) {
     server.enqueue(MockResponse().setResponseCode(502))
     server.start()
     val fetcher = AlbumSyncFetcher(OkHttpClient(), server.url("/"))

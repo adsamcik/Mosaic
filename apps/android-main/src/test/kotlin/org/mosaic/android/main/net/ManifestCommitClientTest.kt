@@ -1,6 +1,8 @@
 package org.mosaic.android.main.net
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -24,7 +26,7 @@ class ManifestCommitClientTest {
   }
 
   @Test
-  fun finalizeReturnsSuccessForHttp200AndPostsIdempotentJsonBody() = runBlocking {
+  fun finalizeReturnsSuccessForHttp200AndPostsIdempotentJsonBody() = runTest(UnconfinedTestDispatcher()) {
     server.enqueue(MockResponse().setResponseCode(200).setBody(ManifestFinalizeFixtures.responseJson))
     server.start()
     val client = ManifestCommitClient(OkHttpClient(), server.url("/"))
@@ -51,7 +53,7 @@ class ManifestCommitClientTest {
   }
 
   @Test
-  fun finalizeReturnsIdempotencyReplayForHttp409() = runBlocking {
+  fun finalizeReturnsIdempotencyReplayForHttp409() = runTest(UnconfinedTestDispatcher()) {
     server.enqueue(
       MockResponse()
         .setResponseCode(409)
@@ -68,7 +70,7 @@ class ManifestCommitClientTest {
   }
 
   @Test
-  fun finalizeReturnsAlreadyFinalizedForControllerHttp409() = runBlocking {
+  fun finalizeReturnsAlreadyFinalizedForControllerHttp409() = runTest(UnconfinedTestDispatcher()) {
     server.enqueue(
       MockResponse()
         .setResponseCode(409)
@@ -94,7 +96,7 @@ class ManifestCommitClientTest {
   }
 
   @Test
-  fun finalizeReturnsInvalidSignatureForHttp400() = runBlocking {
+  fun finalizeReturnsInvalidSignatureForHttp400() = runTest(UnconfinedTestDispatcher()) {
     server.enqueue(MockResponse().setResponseCode(400))
     server.start()
     val client = ManifestCommitClient(OkHttpClient(), server.url("/"))
@@ -105,7 +107,7 @@ class ManifestCommitClientTest {
   }
 
   @Test
-  fun finalizeReturnsTranscriptMismatchForHttp422() = runBlocking {
+  fun finalizeReturnsTranscriptMismatchForHttp422() = runTest(UnconfinedTestDispatcher()) {
     server.enqueue(MockResponse().setResponseCode(422))
     server.start()
     val client = ManifestCommitClient(OkHttpClient(), server.url("/"))
@@ -116,7 +118,7 @@ class ManifestCommitClientTest {
   }
 
   @Test
-  fun finalizeReturnsServerErrorFor5xx() = runBlocking {
+  fun finalizeReturnsServerErrorFor5xx() = runTest(UnconfinedTestDispatcher()) {
     server.enqueue(MockResponse().setResponseCode(503))
     server.start()
     val client = ManifestCommitClient(OkHttpClient(), server.url("/"))
@@ -127,8 +129,7 @@ class ManifestCommitClientTest {
   }
 
   @Test
-  fun rejectsUnknownFieldOnFinalize() {
-    runBlocking {
+  fun rejectsUnknownFieldOnFinalize() = runTest(UnconfinedTestDispatcher()) {
       server.enqueue(
         MockResponse()
           .setResponseCode(200)
@@ -138,10 +139,10 @@ class ManifestCommitClientTest {
       val client = ManifestCommitClient(OkHttpClient(), server.url("/"))
 
       org.junit.Assert.assertThrows(SerializationException::class.java) {
+        // runBlocking retained: assertThrows takes a non-suspend lambda
         runBlocking {
           client.finalize(ManifestId(ManifestFinalizeFixtures.manifestId), ManifestFinalizeFixtures.request, "strict-key")
         }
       }
-    }
   }
 }

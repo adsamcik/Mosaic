@@ -13,7 +13,8 @@ import androidx.work.testing.TestListenableWorkerBuilder
 import java.io.File
 import java.io.InputStream
 import java.lang.ref.WeakReference
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -73,7 +74,7 @@ class MemoryLeakTest {
   }
 
   @Test
-  fun repeatedShardEncryptionWorkerInvocationsDoNotAccumulateOpenStreamsOrBitmaps() = runBlocking {
+  fun repeatedShardEncryptionWorkerInvocationsDoNotAccumulateOpenStreamsOrBitmaps() = runTest(UnconfinedTestDispatcher()) {
     val crypto = CountingCryptoEngine()
 
     repeat(10) { iteration ->

@@ -7,7 +7,8 @@ import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -22,7 +23,7 @@ import org.mosaic.android.main.reducer.UploadJobOutcome
 class UploadLifecycleE2ETest : E2ETestSupport() {
 
   @Test
-  fun photoHappyPath_uploadsAllShardsFinalizesAndPersistsConfirmedSnapshot() = runBlocking {
+  fun photoHappyPath_uploadsAllShardsFinalizesAndPersistsConfirmedSnapshot() = runTest(UnconfinedTestDispatcher()) {
     val staged = stageFixture("tiny-photo.jpg")
     assertEquals("one Photo Picker item is staged", 1, staged.size)
     seedSnapshot()
@@ -42,7 +43,7 @@ class UploadLifecycleE2ETest : E2ETestSupport() {
   }
 
   @Test
-  fun processDeath_resumesFromSnapshot() = runBlocking {
+  fun processDeath_resumesFromSnapshot() = runTest(UnconfinedTestDispatcher()) {
     seedSnapshot("EncryptingShard", shards = allTierShards())
     val firstDelegate = NetworkUploadPipelineDispatcher(backend, staging, database)
     val interrupted = BlockingOnceDispatcher(firstDelegate, blockingKind = "EncryptShard")
@@ -61,7 +62,7 @@ class UploadLifecycleE2ETest : E2ETestSupport() {
   }
 
   @Test
-  fun networkFailure_retriesWithDelayAndRecovers() = runBlocking {
+  fun networkFailure_retriesWithDelayAndRecovers() = runTest(UnconfinedTestDispatcher()) {
     seedSnapshot("UploadingShard", shards = allTierShards())
     backend.failFirstPatchWithDisconnect = true
 
@@ -75,7 +76,7 @@ class UploadLifecycleE2ETest : E2ETestSupport() {
   }
 
   @Test
-  fun manifestCommitUnknown_syncRecovers() = runBlocking {
+  fun manifestCommitUnknown_syncRecovers() = runTest(UnconfinedTestDispatcher()) {
     seedSnapshot("CreatingManifest", shards = allTierShards(uploaded = true))
     backend.manifestUnknownThenAlreadyFinalized = true
 
@@ -88,7 +89,7 @@ class UploadLifecycleE2ETest : E2ETestSupport() {
   }
 
   @Test
-  fun afterUpload_stagingCleaned_privacyAuditClean() = runBlocking {
+  fun afterUpload_stagingCleaned_privacyAuditClean() = runTest(UnconfinedTestDispatcher()) {
     val staged = stageFixture("tiny-photo.png")
     assertFalse(staged.isEmpty())
     seedSnapshot()
@@ -102,7 +103,7 @@ class UploadLifecycleE2ETest : E2ETestSupport() {
   }
 
   @Test
-  fun albumDeletedMidUpload_transitionsToCanceled() = runBlocking {
+  fun albumDeletedMidUpload_transitionsToCanceled() = runTest(UnconfinedTestDispatcher()) {
     seedSnapshot("UploadingShard", shards = allTierShards())
     backend.deleteAlbumAfterFirstPatch = true
 

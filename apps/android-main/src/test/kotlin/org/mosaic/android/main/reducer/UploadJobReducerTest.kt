@@ -5,7 +5,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -37,7 +38,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun happyPath_encryptUploadCommitSync_finalizes() = runBlocking {
+  fun happyPath_encryptUploadCommitSync_finalizes() = runTest(UnconfinedTestDispatcher()) {
     seed(snapshot("AwaitingPreparedMedia"))
     val dispatcher = ScriptedDispatcher()
     val reducer = reducer(dispatcher)
@@ -50,7 +51,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun happyPath_multipleShards_loopsUntilEveryShardUploaded() = runBlocking {
+  fun happyPath_multipleShards_loopsUntilEveryShardUploaded() = runTest(UnconfinedTestDispatcher()) {
     seed(snapshot("EncryptingShard", shards = listOf(shard(0, uploaded = false), shard(1, uploaded = false))))
     val dispatcher = ScriptedDispatcher()
 
@@ -62,7 +63,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun happyPath_commitManifestAliasesAreDispatched() = runBlocking {
+  fun happyPath_commitManifestAliasesAreDispatched() = runTest(UnconfinedTestDispatcher()) {
     seed(snapshot("CreatingManifest", shards = listOf(shard(0, uploaded = true))))
     val dispatcher = ScriptedDispatcher()
 
@@ -73,7 +74,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun noCurrentEffect_returnsWaitingForExternalEventWithoutMutatingSnapshot() = runBlocking {
+  fun noCurrentEffect_returnsWaitingForExternalEventWithoutMutatingSnapshot() = runTest(UnconfinedTestDispatcher()) {
     val row = snapshot("Queued").toUploadJobSnapshotRow(100)
     seed(row.decodeUploadSnapshot())
 
@@ -84,7 +85,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun terminalFailedSnapshot_returnsFailedWithoutDispatch() = runBlocking {
+  fun terminalFailedSnapshot_returnsFailedWithoutDispatch() = runTest(UnconfinedTestDispatcher()) {
     seed(snapshot("Failed"))
     val dispatcher = ScriptedDispatcher()
 
@@ -95,7 +96,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun crashReplay_midEncryption_reusesExistingUniqueWork() = runBlocking {
+  fun crashReplay_midEncryption_reusesExistingUniqueWork() = runTest(UnconfinedTestDispatcher()) {
     seed(snapshot("EncryptingShard", shards = listOf(shard(0, uploaded = false))))
     val dispatcher = ReplayDispatcher("EncryptShard")
     val firstReducer = reducer(dispatcher)
@@ -110,7 +111,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun crashReplay_midUpload_reusesExistingUniqueWork() = runBlocking {
+  fun crashReplay_midUpload_reusesExistingUniqueWork() = runTest(UnconfinedTestDispatcher()) {
     seed(snapshot("UploadingShard", shards = listOf(shard(0, uploaded = false))))
     val dispatcher = ReplayDispatcher("UploadShard")
     val firstRun = launch { reducer(dispatcher).run(UploadJobId(JOB_ID)) }
@@ -124,7 +125,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun crashReplay_waitForSync_reusesInFlightConfirmation() = runBlocking {
+  fun crashReplay_waitForSync_reusesInFlightConfirmation() = runTest(UnconfinedTestDispatcher()) {
     seed(snapshot("AwaitingSyncConfirmation", shards = listOf(shard(0, uploaded = true))))
     val dispatcher = ReplayDispatcher("AwaitSyncConfirmation")
     val firstRun = launch { reducer(dispatcher).run(UploadJobId(JOB_ID)) }
@@ -138,7 +139,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun retryBudget_encryptShardExhausted_transitionsFailed() = runBlocking {
+  fun retryBudget_encryptShardExhausted_transitionsFailed() = runTest(UnconfinedTestDispatcher()) {
     seed(snapshot("EncryptingShard", retryCount = 3, shards = listOf(shard(0, uploaded = false))))
     val dispatcher = FailingDispatcher(retryable = true)
 
@@ -149,7 +150,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun retryBudget_uploadShardExhausted_transitionsFailed() = runBlocking {
+  fun retryBudget_uploadShardExhausted_transitionsFailed() = runTest(UnconfinedTestDispatcher()) {
     seed(snapshot("UploadingShard", retryCount = 5, shards = listOf(shard(0, uploaded = false))))
 
     val outcome = reducer(FailingDispatcher(retryable = true)).run(UploadJobId(JOB_ID))
@@ -158,7 +159,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun retryBudget_waitForSyncExhausted_transitionsFailed() = runBlocking {
+  fun retryBudget_waitForSyncExhausted_transitionsFailed() = runTest(UnconfinedTestDispatcher()) {
     seed(snapshot("AwaitingSyncConfirmation", retryCount = 1, shards = listOf(shard(0, uploaded = true))))
 
     val outcome = reducer(FailingDispatcher(retryable = true)).run(UploadJobId(JOB_ID))
@@ -167,7 +168,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun retryBudget_exhausted_preservesOriginatingErrorCode_notBudgetExhaustedSentinel() = runBlocking {
+  fun retryBudget_exhausted_preservesOriginatingErrorCode_notBudgetExhaustedSentinel() = runTest(UnconfinedTestDispatcher()) {
     // v1.0.1 s31 regression: previously the FFI event errorCode was clobbered
     // with CLIENT_CORE_RETRY_BUDGET_EXHAUSTED, so the persisted failureCode
     // showed the synthetic sentinel instead of the originating transient
@@ -225,7 +226,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun retryBudget_retryableFailureWithinBudgetSchedulesRetry() = runBlocking {
+  fun retryBudget_retryableFailureWithinBudgetSchedulesRetry() = runTest(UnconfinedTestDispatcher()) {
     seed(snapshot("UploadingShard", retryCount = 4, shards = listOf(shard(0, uploaded = false))))
 
     val outcome = reducer(FailingDispatcher(retryable = true)).run(UploadJobId(JOB_ID))
@@ -236,7 +237,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun cancellation_cancelJob_cancelsTaggedWorkAndPersistsCancelled() = runBlocking {
+  fun cancellation_cancelJob_cancelsTaggedWorkAndPersistsCancelled() = runTest(UnconfinedTestDispatcher()) {
     seed(snapshot("UploadingShard", shards = listOf(shard(0, uploaded = false))))
 
     val outcome = reducer(ScriptedDispatcher()).cancel(UploadJobId(JOB_ID))
@@ -247,7 +248,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun cancel_winsAgainstConcurrentRun() = runBlocking {
+  fun cancel_winsAgainstConcurrentRun() = runTest(UnconfinedTestDispatcher()) {
     seed(snapshot("EncryptingShard", shards = listOf(shard(0, uploaded = false))))
     val dispatcher = BlockingSuccessDispatcher()
     val runJob = launch { reducer(dispatcher).run(UploadJobId(JOB_ID)) }
@@ -262,7 +263,7 @@ class UploadJobReducerTest {
   }
 
   @Test
-  fun cancellation_missingJob_returnsNotFoundAndDoesNotCancelWorkers() = runBlocking {
+  fun cancellation_missingJob_returnsNotFoundAndDoesNotCancelWorkers() = runTest(UnconfinedTestDispatcher()) {
     val outcome = reducer(ScriptedDispatcher()).cancel(UploadJobId(JOB_ID))
 
     assertEquals(UploadJobOutcome.NotFound, outcome)

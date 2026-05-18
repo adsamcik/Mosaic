@@ -13,7 +13,8 @@ import kotlin.system.measureTimeMillis
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -45,7 +46,7 @@ class PrivacyAuditorTest {
   }
 
   @Test
-  fun cleanStateHasNoFindings() = runBlocking {
+  fun cleanStateHasNoFindings() = runTest(UnconfinedTestDispatcher()) {
     staging.cleanup(maxAgeMs = Duration.ofDays(1).toMillis())
 
     val report = auditor().runAudit()
@@ -58,7 +59,7 @@ class PrivacyAuditorTest {
   }
 
   @Test
-  fun staleStagingFileOlderThanMaxAgeIsReported() = runBlocking {
+  fun staleStagingFileOlderThanMaxAgeIsReported() = runTest(UnconfinedTestDispatcher()) {
     val staged = stageFile("stale-source.txt", "encrypted-source-bytes")
     nowMs += Duration.ofDays(2).toMillis()
     staging.cleanup(maxAgeMs = Duration.ofDays(7).toMillis())
@@ -70,7 +71,7 @@ class PrivacyAuditorTest {
   }
 
   @Test
-  fun plaintextEmailInDatabaseIsDetected() = runBlocking {
+  fun plaintextEmailInDatabaseIsDetected() = runTest(UnconfinedTestDispatcher()) {
     val unsafeDb = unsafeDatabaseWithoutPrivacyTriggers()
     try {
       unsafeDb.uploadQueueDao().insertValidated(validRecord().copy(phase = "owner=test@example.com"))
@@ -87,7 +88,7 @@ class PrivacyAuditorTest {
   }
 
   @Test
-  fun plaintextCryptoKeyInLogsIsDetected() = runBlocking {
+  fun plaintextCryptoKeyInLogsIsDetected() = runTest(UnconfinedTestDispatcher()) {
     logTail.append("debug key=${"a".repeat(64)}")
     staging.cleanup(maxAgeMs = Duration.ofDays(1).toMillis())
 
@@ -99,7 +100,7 @@ class PrivacyAuditorTest {
   }
 
   @Test
-  fun cleanupNotRunForMoreThanSevenDaysIsReported() = runBlocking {
+  fun cleanupNotRunForMoreThanSevenDaysIsReported() = runTest(UnconfinedTestDispatcher()) {
     staging.cleanup(maxAgeMs = Duration.ofDays(1).toMillis())
     nowMs += Duration.ofDays(8).toMillis()
 
@@ -110,7 +111,7 @@ class PrivacyAuditorTest {
   }
 
   @Test
-  fun auditRunsUnderFiveHundredMillisecondsOnRepresentativeDataset() = runBlocking {
+  fun auditRunsUnderFiveHundredMillisecondsOnRepresentativeDataset() = runTest(UnconfinedTestDispatcher()) {
     repeat(20) { index ->
       database.uploadQueueDao().insert(validRecord(jobId = "job-$index", albumId = "album-$index"))
       stageFile("source-$index.txt", "encrypted-source-bytes-$index")
@@ -125,7 +126,7 @@ class PrivacyAuditorTest {
   }
 
   @Test
-  fun concurrentAuditsReturnStableFindingsWithoutDoubleFlagging() = runBlocking {
+  fun concurrentAuditsReturnStableFindingsWithoutDoubleFlagging() = runTest(UnconfinedTestDispatcher()) {
     logTail.append("debug key=${"b".repeat(64)}")
     staging.cleanup(maxAgeMs = Duration.ofDays(1).toMillis())
     val auditor = auditor()
@@ -139,7 +140,7 @@ class PrivacyAuditorTest {
   }
 
   @Test
-  fun auditDuringActiveUploadDoesNotReportReferencedStagingFile() = runBlocking {
+  fun auditDuringActiveUploadDoesNotReportReferencedStagingFile() = runTest(UnconfinedTestDispatcher()) {
     val staged = stageFile("active-source.txt", "active-upload-bytes")
     database.uploadQueueDao().insert(validRecord())
     database.stagedPickerBlobDao().insert(
@@ -161,7 +162,7 @@ class PrivacyAuditorTest {
   }
 
   @Test
-  fun additionalPiiPatternsDetectGpsFilenameAndPhoneShapes() = runBlocking {
+  fun additionalPiiPatternsDetectGpsFilenameAndPhoneShapes() = runTest(UnconfinedTestDispatcher()) {
     logTail.append("EXIF lat=50.0874512 file=IMG_20240131_123456.jpg phone=+420123456789")
     staging.cleanup(maxAgeMs = Duration.ofDays(1).toMillis())
 
