@@ -38,6 +38,7 @@ import {
   type UserSettings,
 } from '../../lib/settings-service';
 import { DeleteAccountConfirmationDialog } from './DeleteAccountConfirmationDialog';
+import { ActiveSessions } from './ActiveSessions';
 
 // =============================================================================
 // Types
@@ -611,6 +612,9 @@ export function SettingsPage() {
             </div>
           </div>
         </section>
+
+        {/* Active Sessions Section (sweep38) */}
+        <ActiveSessions />
 
         {/* About Section */}
         <section className="settings-section" data-testid="about-section">
