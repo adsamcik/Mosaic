@@ -58,6 +58,10 @@ jobs:
         working-directory: apps/web
         run: npm run test:run
 
+      - name: Web test coverage gate
+        working-directory: apps/web
+        run: npm run test:coverage
+
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
