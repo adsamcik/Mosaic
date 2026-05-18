@@ -37,10 +37,18 @@ const test = base.extend<
     const username = `smoke-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const context = await browser.newContext();
     const page = await context.newPage();
-    
-    // No header injection - let loginOrRegister() handle authentication
-    // This works for both LocalAuth and ProxyAuth modes
-    
+
+    // Inject Remote-User header for ProxyAuth mode. The backend ignores it when
+    // ProxyAuth is disabled, so this is safe to apply unconditionally and lets
+    // a single smoke suite cover both LocalAuth and ProxyAuth CI matrices.
+    await page.route('**/api/v1/**', async (route) => {
+      const headers = {
+        ...route.request().headers(),
+        'Remote-User': username,
+      };
+      await route.continue({ headers });
+    });
+
     await use({ context, page, username });
     
     await context.close();
