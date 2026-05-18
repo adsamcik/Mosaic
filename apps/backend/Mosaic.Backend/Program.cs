@@ -66,6 +66,9 @@ builder.Services.AddHostedService<IdempotencyRecordCleanupHostedService>();
 builder.Services.Configure<SessionCleanupOptions>(
     builder.Configuration.GetSection("Session:Cleanup"));
 builder.Services.AddHostedService<SessionCleanupHostedService>();
+builder.Services.Configure<AuthChallengeCleanupOptions>(
+    builder.Configuration.GetSection("AuthChallenge:Cleanup"));
+builder.Services.AddHostedService<AuthChallengeCleanupHostedService>();
 builder.Services.AddExceptionHandler<DatabaseExceptionHandler>();
 builder.Services.AddProblemDetails();
 
