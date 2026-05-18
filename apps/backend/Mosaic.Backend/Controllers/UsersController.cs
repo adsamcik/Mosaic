@@ -629,15 +629,17 @@ public class UsersController : ControllerBase
     private bool IsProxyAuthMode()
     {
         var legacyMode = _config["Auth:Mode"];
-        if (_config.GetValue<bool?>("Auth:ProxyAuthEnabled") != null)
+        var proxyToggle = _config.GetValue<bool?>("Auth:ProxyAuthEnabled");
+        var localToggle = _config.GetValue<bool?>("Auth:LocalAuthEnabled");
+
+        if (proxyToggle != null || localToggle != null)
         {
-            return _config.GetValue("Auth:ProxyAuthEnabled", false);
-        }
-        if (_config.GetValue<bool?>("Auth:LocalAuthEnabled") != null)
-        {
-            // Explicit LocalAuth toggle present but no ProxyAuth toggle —
-            // treat the absence of LocalAuth as ProxyAuth.
-            return !_config.GetValue("Auth:LocalAuthEnabled", false);
+            // Dual-mode (both enabled, opted in via Auth:AllowDualMode): AuthSub on
+            // any /me response is the LocalAuth username the user typed at the form —
+            // not an upstream Remote-User header value — so it is safe to include.
+            // Only treat the deployment as ProxyAuth when ProxyAuth is enabled and
+            // LocalAuth is NOT.
+            return (proxyToggle ?? false) && !(localToggle ?? false);
         }
         if (!string.IsNullOrEmpty(legacyMode))
         {

@@ -475,6 +475,46 @@ public class UsersControllerTests
     }
 
     [Fact]
+    public async Task GetMe_DualAuthMode_IncludesAuthSubInResponse()
+    {
+        // Dual mode (both LocalAuth+ProxyAuth enabled — Auth:AllowDualMode=true)
+        // is the configuration used in docker-compose.test.yml for E2E. In this
+        // mode AuthSub is the LocalAuth username (or upstream Remote-User), so
+        // including it is consistent with LocalAuth semantics and required by
+        // the web client's UserSchema (authSub is non-optional).
+        using var db = TestDbContextFactory.Create();
+        var data = new Dictionary<string, string?>
+        {
+            ["Quota:DefaultMaxBytes"] = "10737418240",
+            ["Quota:DefaultMaxAlbums"] = "100",
+            ["Quota:DefaultMaxPhotosPerAlbum"] = "10000",
+            ["Quota:DefaultMaxBytesPerAlbum"] = "5368709120",
+            ["Storage:Path"] = Path.GetTempPath(),
+            ["Auth:ProxyAuthEnabled"] = "true",
+            ["Auth:LocalAuthEnabled"] = "true",
+            ["Auth:AllowDualMode"] = "true",
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(data).Build();
+        var dataBuilder = new TestDataBuilder(db);
+        await dataBuilder.CreateUserAsync(TestAuthSub, "existing-pubkey");
+
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var result = await controller.GetMe();
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.True(
+            ResponseHasProperty(okResult.Value, "AuthSub"),
+            "AuthSub SHOULD be included in /me when LocalAuth is enabled (even if ProxyAuth is also enabled in dual-mode test deployments).");
+    }
+
+    [Fact]
     public async Task UpdateMe_ProxyAuthMode_OmitsAuthSubFromResponse()
     {
         using var db = TestDbContextFactory.Create();
