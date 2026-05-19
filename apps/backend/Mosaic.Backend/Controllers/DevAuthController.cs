@@ -16,6 +16,7 @@ namespace Mosaic.Backend.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/v1/dev-auth")]
+[ApiExplorerSettings(IgnoreApi = true)]
 public class DevAuthController : ControllerBase
 {
     private readonly MosaicDbContext _db;

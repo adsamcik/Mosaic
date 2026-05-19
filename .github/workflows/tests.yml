@@ -375,6 +375,18 @@ jobs:
             exit 1
           fi
 
+      - name: Forbid internal paths in public OpenAPI
+        # security-review-2026-05-19-02: the public OpenAPI surface must
+        # not advertise admin / dev-auth / test-seed routes. Those are
+        # internal endpoints (admin: operator-only, dev-auth: dev-only,
+        # test-seed: integration-test-only) and exposing them in the
+        # published schema enables attack-surface mapping.
+        run: |
+          if grep -E '"/api/v1/(admin|dev-auth|test-seed)/' docs/openapi.json; then
+            echo "::error::docs/openapi.json contains internal endpoints (admin/dev-auth/test-seed). Add [ApiExplorerSettings(IgnoreApi = true)] to the offending controller and regenerate."
+            exit 1
+          fi
+
       - name: Setup Rust
         run: |
           rustup toolchain install 1.93.1 --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown,aarch64-linux-android,x86_64-linux-android

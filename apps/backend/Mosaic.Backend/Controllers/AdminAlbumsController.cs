@@ -11,6 +11,7 @@ namespace Mosaic.Backend.Controllers;
 
 [ApiController]
 [Route("api/v1/admin/albums")]
+[ApiExplorerSettings(IgnoreApi = true)]
 public class AdminAlbumsController : ControllerBase
 {
     private readonly MosaicDbContext _db;

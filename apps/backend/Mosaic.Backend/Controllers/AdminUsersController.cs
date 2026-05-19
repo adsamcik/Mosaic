@@ -12,6 +12,7 @@ namespace Mosaic.Backend.Controllers;
 
 [ApiController]
 [Route("api/v1/admin/users")]
+[ApiExplorerSettings(IgnoreApi = true)]
 public class AdminUsersController : ControllerBase
 {
     private readonly MosaicDbContext _db;

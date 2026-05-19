@@ -14,6 +14,7 @@ namespace Mosaic.Backend.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/v1/test-seed")]
+[ApiExplorerSettings(IgnoreApi = true)]
 public class TestSeedController : ControllerBase
 {
     private readonly MosaicDbContext _db;
