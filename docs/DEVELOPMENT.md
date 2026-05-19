@@ -74,7 +74,13 @@ The `dev.ps1` (Windows) / `dev.sh` (Linux/macOS) scripts manage all services as 
 .\scripts\dev.ps1 start db        # Just PostgreSQL
 .\scripts\dev.ps1 start backend   # Just backend
 .\scripts\dev.ps1 start frontend  # Just frontend
+
+# Start in Testing environment (bypasses first-user admin gate)
+.\scripts\dev.ps1 start -Testing  # PowerShell
+./scripts/dev.sh start --testing  # bash (or -t)
 ```
+
+> For E2E-style runs that require pool user registration, use `.\scripts\dev.ps1 start -Testing` (PowerShell) or `./scripts/dev.sh start --testing` (bash). This sets `ASPNETCORE_ENVIRONMENT=Testing` so the first-user admin gate in `AuthController.Register` doesn't block subsequent registrations. Without the flag, the stack runs in `Development` and only the first registration is unauthenticated.
 
 ### Checking Status
 

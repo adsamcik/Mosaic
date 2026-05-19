@@ -9,6 +9,9 @@
 
 .EXAMPLE
     .\dev.ps1 start          # Start all services (db, backend, frontend)
+    .\dev.ps1 start -Testing # Start with ASPNETCORE_ENVIRONMENT=Testing
+                             # (bypasses first-user admin gate; required for
+                             #  pool/E2E re-validation flows)
     .\dev.ps1 stop           # Stop all services
     .\dev.ps1 restart        # Restart all services
     .\dev.ps1 status         # Show status of all services
@@ -29,7 +32,14 @@ param(
     [string]$Service = "",
     
     [Parameter(Position=2, ValueFromRemainingArguments=$true)]
-    [string[]]$ExtraArgs
+    [string[]]$ExtraArgs,
+
+    # When set, the backend is started with ASPNETCORE_ENVIRONMENT=Testing
+    # instead of Development. The Testing environment bypasses the first-user
+    # admin gate in AuthController.Register, which is required for pool/E2E
+    # re-validation flows that register multiple users against a single stack.
+    # Default (no switch) preserves the previous Development behavior.
+    [switch]$Testing
 )
 
 $ErrorActionPreference = "Stop"
@@ -169,9 +179,15 @@ function Start-BackendService {
     # Build the command
     $backendPath = Join-Path $ProjectRoot "apps/backend/Mosaic.Backend"
     
+    # Select ASP.NET Core environment. Default is Development; -Testing
+    # switches to Testing so AuthController.Register skips the first-user
+    # admin gate (see apps/backend/Mosaic.Backend/Controllers/AuthController.cs).
+    $aspNetCoreEnv = if ($Testing) { 'Testing' } else { 'Development' }
+    Write-Info "Backend ASPNETCORE_ENVIRONMENT = $aspNetCoreEnv"
+
     # Create a wrapper script to run the backend
     $wrapperScript = @"
-`$env:ASPNETCORE_ENVIRONMENT = 'Development'
+`$env:ASPNETCORE_ENVIRONMENT = '$aspNetCoreEnv'
 `$env:ASPNETCORE_URLS = 'http://localhost:$BackendPort'
 `$env:ConnectionStrings__Default = '$DbConnectionString'
 `$env:Storage__Path = '$storagePath'

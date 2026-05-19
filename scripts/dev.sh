@@ -73,6 +73,20 @@ DOCKER_COMMANDS="up down db build rebuild logs status reset"
 
 cd "$PROJECT_ROOT"
 
+# Detect --testing / -t flag anywhere in arguments. When set, the backend
+# is started with ASPNETCORE_ENVIRONMENT=Testing instead of Development.
+# Testing bypasses the first-user admin gate in AuthController.Register,
+# which is required for pool/E2E re-validation flows that register multiple
+# users against a single stack. Default (no flag) preserves Development.
+MOSAIC_ENV="Development"
+for arg in "$@"; do
+    case "$arg" in
+        --testing|-t)
+            MOSAIC_ENV="Testing"
+            ;;
+    esac
+done
+
 wait_for_database() {
     step "Waiting for PostgreSQL to be ready..."
     local max_attempts=30
@@ -108,7 +122,7 @@ start_backend() {
     
     cd "$PROJECT_ROOT/apps/backend/Mosaic.Backend"
     
-    export ASPNETCORE_ENVIRONMENT="Development"
+    export ASPNETCORE_ENVIRONMENT="$MOSAIC_ENV"
     export ASPNETCORE_URLS="http://localhost:$BACKEND_PORT"
     export ConnectionStrings__Default="$DB_CONNECTION_STRING"
     export Storage__Path="$PROJECT_ROOT/data/blobs"
@@ -119,6 +133,7 @@ start_backend() {
     mkdir -p "$PROJECT_ROOT/data/blobs"
     
     info "Backend URL: http://localhost:$BACKEND_PORT"
+    info "Backend env: $MOSAIC_ENV"
     info "API Docs: http://localhost:$BACKEND_PORT/swagger"
     echo ""
     
@@ -205,6 +220,12 @@ Mosaic Development Helper
 =========================
 
 Usage: ./scripts/dev.sh <command> [options]
+
+Global options:
+  --testing, -t   Start backend with ASPNETCORE_ENVIRONMENT=Testing instead of
+                  Development. Required for pool/E2E re-validation flows so
+                  AuthController.Register does not enforce the first-user
+                  admin gate after the bootstrap registration.
 
 Commands:
   up          Start PostgreSQL and show instructions for backend/frontend
