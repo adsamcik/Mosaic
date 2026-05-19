@@ -52,11 +52,18 @@ const test = base.extend<
     page.on('requestfailed', (req) => {
       console.log(`[browser:requestfailed] ${req.method()} ${req.url()} - ${req.failure()?.errorText ?? 'unknown'}`);
     });
+    page.on('response', (res) => {
+      if (res.status() >= 400) {
+        console.log(`[browser:response] ${res.status()} ${res.request().method()} ${res.url()}`);
+      }
+    });
 
     // Inject Remote-User header for ProxyAuth mode. The backend ignores it when
     // ProxyAuth is disabled, so this is safe to apply unconditionally and lets
     // a single smoke suite cover both LocalAuth and ProxyAuth CI matrices.
-    await page.route('**/api/v1/**', async (route) => {
+    // Use context.route (not page.route) so Web Worker fetches (crypto/db/geo)
+    // are also intercepted — page.route only covers main-thread requests.
+    await context.route('**/api/v1/**', async (route) => {
       const headers = {
         ...route.request().headers(),
         'Remote-User': username,
