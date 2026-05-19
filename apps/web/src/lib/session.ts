@@ -1187,6 +1187,14 @@ class SessionManager {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
     }
+    // security-review-2026-05-19-03: match logout cleanup so disposed
+    // SessionManagers do not leak the settings subscription or the
+    // document-level activity listeners (mousemove / keydown / etc).
+    if (this.settingsUnsubscribe) {
+      this.settingsUnsubscribe();
+      this.settingsUnsubscribe = null;
+    }
+    this.detachIdleListeners();
   }
 }
 
