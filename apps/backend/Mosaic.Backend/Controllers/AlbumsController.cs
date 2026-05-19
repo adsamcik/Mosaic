@@ -313,7 +313,6 @@ public class AlbumsController : ControllerBase
     /// Update album expiration settings (owner only)
     /// </summary>
     [HttpPatch("{albumId:guid}/expiration")]
-    [ProducesResponseType<AlbumExpirationUpdateResponse>(StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateExpiration(Guid albumId, [FromBody] UpdateExpirationRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -362,11 +361,29 @@ public class AlbumsController : ControllerBase
             album.ExpiresAt,
             user.Id);
 
-        return Ok(new AlbumExpirationUpdateResponse(
+        // v1.0.x photos-09: the frontend `updateAlbumExpiration` parses
+        // the response through `AlbumSchema`, which expects a full Album
+        // record (ownerId, currentVersion, currentEpochId, createdAt,
+        // member roster fields, …). The previous response only included
+        // {id, expiresAt, expirationWarningDays, updatedAt} and was
+        // rejected with "API Error 500: Invalid response shape". Return
+        // the full album projection so the client can hydrate state.
+        return Ok(new
+        {
             album.Id,
+            album.OwnerId,
+            album.CurrentEpochId,
+            album.CurrentVersion,
+            album.CreatedAt,
+            UpdatedAt = updatedAt,
+            album.EncryptedName,
+            album.EncryptedDescription,
             album.ExpiresAt,
             album.ExpirationWarningDays,
-            updatedAt));
+            album.MemberRosterSignature,
+            album.MemberRosterSignerEpochId,
+            album.MemberRosterVersion,
+        });
     }
 
     /// <summary>

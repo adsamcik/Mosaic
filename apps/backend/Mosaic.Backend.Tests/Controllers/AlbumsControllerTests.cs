@@ -970,6 +970,54 @@ public class AlbumsControllerTests
     }
 
     [Fact]
+    public async Task UpdateExpiration_ReturnsFullAlbumShape_MatchingFrontendAlbumSchema()
+    {
+        // Regression: v1.0.x photos-09 — the frontend `updateAlbumExpiration`
+        // parses the response through the full `AlbumSchema` Zod contract.
+        // Returning only {id, expiresAt, expirationWarningDays, updatedAt}
+        // failed validation (missing ownerId, currentVersion, currentEpochId,
+        // createdAt) and surfaced as "API Error 500: Invalid response shape".
+        // The response must carry the full Album projection so the client
+        // can hydrate state without a follow-up GET.
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+
+        var controller = new AlbumsController(db, new MockQuotaSettingsService(), new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var futureDate = DateTimeOffset.UtcNow.AddDays(30);
+        var result = await controller.UpdateExpiration(album.Id, new UpdateExpirationRequest(futureDate, 7));
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(okResult.Value));
+        var root = json.RootElement;
+
+        // Every field that AlbumSchema requires must be present.
+        Assert.Equal(album.Id, root.GetProperty("Id").GetGuid());
+        Assert.Equal(album.OwnerId, root.GetProperty("OwnerId").GetGuid());
+        Assert.True(root.GetProperty("CurrentEpochId").GetInt32() >= 0);
+        Assert.True(root.GetProperty("CurrentVersion").GetInt32() >= 0);
+        Assert.NotEqual(default, root.GetProperty("CreatedAt").GetDateTime());
+        Assert.NotEqual(default, root.GetProperty("UpdatedAt").GetDateTime());
+        Assert.True(root.TryGetProperty("ExpiresAt", out _));
+        Assert.Equal(7, root.GetProperty("ExpirationWarningDays").GetInt32());
+        // Encrypted name/description and roster fields must be present (may be null).
+        Assert.True(root.TryGetProperty("EncryptedName", out _));
+        Assert.True(root.TryGetProperty("EncryptedDescription", out _));
+        Assert.True(root.TryGetProperty("MemberRosterSignature", out _));
+        Assert.True(root.TryGetProperty("MemberRosterSignerEpochId", out _));
+        Assert.True(root.TryGetProperty("MemberRosterVersion", out _));
+    }
+
+    [Fact]
     public async Task UpdateExpiration_RemovesExpiration_WhenExpiresAtNull()
     {
         // Arrange
