@@ -142,3 +142,169 @@ describe('P-W7.4 handle-based bundle sealing', () => {
     );
   });
 });
+
+/**
+ * v1.0.x `rotate-password-identity-invariant` regression coverage.
+ *
+ * The validation-1 full Playwright run flagged
+ * `verifyAndImportEpochBundle failed (rust code 222)` 17+ times across
+ * album/collaboration/identity-persistence specs. The hypothesis is that
+ * a session boundary (login on a fresh tab, BFCache restore, worker
+ * restart) breaks the bundle round-trip even when the same password +
+ * salts + persisted wrapped material are used to re-derive identity.
+ *
+ * This test simulates that boundary: it persists every long-lived
+ * artifact (wrapped account key, wrapped identity seed, the sealed
+ * bundle), closes every handle, then re-derives the recipient identity
+ * from the password and persisted wrapped material and asserts the
+ * bundle still opens. If commit ec042877 (auth-03 password rotation) or
+ * any future identity-derivation change regresses this contract, the
+ * `imported.code` will be non-zero (222 in the production failure).
+ */
+describe('rotate-password-identity-invariant — bundle round-trip across session re-derivation', () => {
+  it('opens a bundle when the recipient identity is re-derived in a fresh handle registry', () => {
+    initWasm();
+
+    const password = textEncoder.encode('correct horse battery staple');
+    const ownerUserSalt = fixedBytes(0x10, 16);
+    const ownerAccountSalt = fixedBytes(0x30, 16);
+    const recipientUserSalt = fixedBytes(0x50, 16);
+    const recipientAccountSalt = fixedBytes(0x70, 16);
+    const albumId = 'ts-bundle-cross-session-round-trip';
+    const epochId = 23;
+
+    // --- Session A: create owner + recipient, seal a bundle to recipient ---
+    // Each createAccount call zeroizes the password buffer it receives, so
+    // pass a fresh copy each time.
+    const ownerAccount = wasm.createAccount(
+      new Uint8Array(password),
+      ownerUserSalt,
+      ownerAccountSalt,
+      64 * 1024,
+      3,
+      1,
+    );
+    expect(ownerAccount.code).toBe(0);
+
+    const recipientAccountA = wasm.createAccount(
+      new Uint8Array(password),
+      recipientUserSalt,
+      recipientAccountSalt,
+      64 * 1024,
+      3,
+      1,
+    );
+    expect(recipientAccountA.code).toBe(0);
+
+    // Persist the wrapped material the recipient would store server-side.
+    const persistedWrappedAccountKey = new Uint8Array(recipientAccountA.wrappedAccountKey);
+
+    const ownerIdentity = wasm.createIdentityHandle(ownerAccount.handle);
+    expect(ownerIdentity.code).toBe(0);
+
+    const recipientIdentityA = wasm.createIdentityHandle(recipientAccountA.handle);
+    expect(recipientIdentityA.code).toBe(0);
+    // Persist the wrapped identity seed (the only way to re-derive the
+    // same Ed25519/X25519 keypair on a future session — the seed itself
+    // is random, but is bound to the L2 via AAD-authenticated wrap).
+    const persistedWrappedIdentitySeed = new Uint8Array(recipientIdentityA.wrappedSeed);
+    const persistedRecipientSigningPubkey = new Uint8Array(recipientIdentityA.signingPubkey);
+
+    const ownerEpoch = wasm.createEpochKeyHandle(ownerAccount.handle, epochId);
+    expect(ownerEpoch.code).toBe(0);
+
+    const sealed = wasm.sealBundleWithEpochHandle(
+      ownerIdentity.handle,
+      ownerEpoch.handle,
+      recipientIdentityA.signingPubkey,
+      albumId,
+    );
+    expect(sealed.code).toBe(0);
+
+    // Persist what the recipient receives over the wire.
+    const persistedSealed = new Uint8Array(sealed.sealed);
+    const persistedSignature = new Uint8Array(sealed.signature);
+    const persistedSharerPubkey = new Uint8Array(sealed.sharerPubkey);
+
+    // Sanity: same-session round-trip works (matches the existing P-W7.4 test).
+    const importedSameSession = wasm.verifyAndImportEpochBundle(
+      recipientIdentityA.handle,
+      sealed.sealed,
+      sealed.signature,
+      sealed.sharerPubkey,
+      albumId,
+      0,
+      false,
+    );
+    expect(importedSameSession.code).toBe(0);
+    expect(importedSameSession.epochId).toBe(epochId);
+
+    // --- Tear down session A ---
+    if (importedSameSession.handle !== 0n) wasm.closeEpochKeyHandle(importedSameSession.handle);
+    importedSameSession.free();
+    wasm.closeEpochKeyHandle(ownerEpoch.handle);
+    wasm.closeIdentityHandle(ownerIdentity.handle);
+    wasm.closeIdentityHandle(recipientIdentityA.handle);
+    wasm.closeAccountKeyHandle(ownerAccount.handle);
+    wasm.closeAccountKeyHandle(recipientAccountA.handle);
+    sealed.free();
+    ownerEpoch.free();
+    ownerIdentity.free();
+    recipientIdentityA.free();
+    ownerAccount.free();
+    recipientAccountA.free();
+
+    // --- Session B: same password + salts + persisted material ---
+    const recipientAccountB = wasm.unlockAccountKey(
+      new Uint8Array(password),
+      recipientUserSalt,
+      recipientAccountSalt,
+      persistedWrappedAccountKey,
+      64 * 1024,
+      3,
+      1,
+    );
+    expect(recipientAccountB.code).toBe(0);
+    expect(recipientAccountB.handle).not.toBe(0n);
+
+    const recipientIdentityB = wasm.openIdentityHandle(
+      persistedWrappedIdentitySeed,
+      recipientAccountB.handle,
+    );
+    expect(recipientIdentityB.code).toBe(0);
+    expect(recipientIdentityB.handle).not.toBe(0n);
+
+    // The re-derived identity MUST produce the same Ed25519 signing
+    // pubkey it had in session A — otherwise the wrapped-seed AAD
+    // contract is broken.
+    expect(Array.from(recipientIdentityB.signingPubkey)).toEqual(
+      Array.from(persistedRecipientSigningPubkey),
+    );
+
+    // The bundle must open under the re-derived identity. Pre-fix, the
+    // validation gate saw `code === 222` (verify_and_open_bundle
+    // InvalidSignature / InvalidEnvelope) here.
+    const importedB = wasm.verifyAndImportEpochBundle(
+      recipientIdentityB.handle,
+      persistedSealed,
+      persistedSignature,
+      persistedSharerPubkey,
+      albumId,
+      0,
+      false,
+    );
+
+    try {
+      expect(importedB.code).toBe(0);
+      expect(importedB.epochId).toBe(epochId);
+      expect(importedB.handle).not.toBe(0n);
+    } finally {
+      if (importedB.handle !== 0n) wasm.closeEpochKeyHandle(importedB.handle);
+      wasm.closeIdentityHandle(recipientIdentityB.handle);
+      wasm.closeAccountKeyHandle(recipientAccountB.handle);
+      importedB.free();
+      recipientIdentityB.free();
+      recipientAccountB.free();
+    }
+  });
+});
