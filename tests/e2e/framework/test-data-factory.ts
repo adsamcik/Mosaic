@@ -311,7 +311,23 @@ export async function getAlbumsViaAPI(
     throw new Error(`Failed to get albums: ${response.status}`);
   }
 
-  return response.json();
+  // Defensive: API may return bare array, { albums: [...] }, { items: [...] },
+  // or null/undefined. Always return an iterable array to prevent
+  // "TypeError: albums is not iterable" in pool user cleanup hooks.
+  const payload: unknown = await response.json();
+  if (Array.isArray(payload)) {
+    return payload as { id: string; name?: string }[];
+  }
+  if (payload && typeof payload === 'object') {
+    const obj = payload as { albums?: unknown; items?: unknown };
+    if (Array.isArray(obj.albums)) {
+      return obj.albums as { id: string; name?: string }[];
+    }
+    if (Array.isArray(obj.items)) {
+      return obj.items as { id: string; name?: string }[];
+    }
+  }
+  return [];
 }
 
 /**
