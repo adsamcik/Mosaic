@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
+import '../lib/worker-error-transfer';
 import sodium from 'libsodium-wrappers-sumo';
 import { createLogger } from '../lib/logger';
 import {

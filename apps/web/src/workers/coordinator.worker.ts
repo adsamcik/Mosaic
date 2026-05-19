@@ -18,6 +18,7 @@ import type { DownloadSchedule, ScheduleContext, ScheduleEvaluation } from '../l
 import { captureScheduleContext } from '../lib/schedule-context';
 import { ScheduleManager, type ScheduleManagerDeps } from './coordinator/schedule-manager';
 import * as Comlink from 'comlink';
+import '../lib/worker-error-transfer';
 import { createLogger } from '../lib/logger';
 import * as opfsStaging from '../lib/opfs-staging';
 import { createAuthenticatedSourceStrategy } from './coordinator/source-strategy-auth';

@@ -6,6 +6,7 @@
  * class.
  */
 import * as Comlink from 'comlink';
+import './worker-error-transfer';
 import type { CryptoWorkerApi, DbCryptoBridge } from '../workers/types';
 import { WorkerCryptoError } from '../workers/types';
 import { WorkerCryptoErrorCode } from '../workers/worker-crypto-error-code.generated';

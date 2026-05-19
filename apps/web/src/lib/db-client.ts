@@ -1,4 +1,5 @@
 import * as Comlink from 'comlink';
+import './worker-error-transfer';
 import type { DbWorkerApi } from '../workers/types';
 import { createLogger } from './logger';
 

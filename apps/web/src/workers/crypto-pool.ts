@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
+import '../lib/worker-error-transfer';
 import { getCryptoClient } from '../lib/crypto-client';
 import type {
   DownloadErrorReason,

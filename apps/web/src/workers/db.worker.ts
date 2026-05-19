@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
+import '../lib/worker-error-transfer';
 import { createLogger } from '../lib/logger';
 import type {
   Bounds,

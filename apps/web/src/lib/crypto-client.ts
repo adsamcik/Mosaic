@@ -1,4 +1,5 @@
 import * as Comlink from 'comlink';
+import './worker-error-transfer';
 import { createLogger } from './logger';
 import type { CryptoWorkerApi } from '../workers/types';
 

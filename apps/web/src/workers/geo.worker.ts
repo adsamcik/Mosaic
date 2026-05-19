@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
+import '../lib/worker-error-transfer';
 import Supercluster from 'supercluster';
 import type { GeoWorkerApi, GeoFeature } from './types';
 import { createLogger } from '../lib/logger';
