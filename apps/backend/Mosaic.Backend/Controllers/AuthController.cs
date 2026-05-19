@@ -939,7 +939,7 @@ public partial class AuthController : ControllerBase
         // deadlocks (40P01). Better UX than asking the client to re-derive a
         // fresh challenge + Argon2id-derived keys.
         // (security-review-2026-05-19-07)
-        const int MaxRotationAttempts = 3;
+        const int MaxRotationAttempts = 4;
         var rotationBackoffsMs = new[] { 250, 500, 1000 };
 
         for (int attempt = 0; attempt < MaxRotationAttempts; attempt++)
