@@ -61,7 +61,50 @@ public class OriginValidationMiddlewareTestSeedExemptionTests
     public async Task NonTestSeedEndpoint_StillRejected_InDevelopment()
     {
         // Sanity: dev exemption must NOT broaden to other paths.
+        // A state-changing request that *does* claim a cross-site origin
+        // must still be rejected — only header-less non-browser tooling
+        // is trusted in Dev/Testing.
         using var host = await BuildHostAsync("Development");
+        var client = host.GetTestClient();
+
+        var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/albums");
+        req.Headers.Add("Sec-Fetch-Site", "cross-site");
+
+        var resp = await client.SendAsync(req);
+
+        Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    public async Task HeaderlessStateChange_IsAllowed_InTestEnvironments(string environmentName)
+    {
+        // v1.0.x album-create-403: E2E pool fixtures (Playwright
+        // global-setup, test-data-factory) hit POST /api/v1/albums from
+        // Node's bare `fetch`, which emits neither Sec-Fetch-Site nor
+        // Origin. Before the fix this hit a blanket 403 from
+        // OriginValidationMiddleware and blocked the P1-COLLAB-1/5/6/7
+        // collaboration spec tests.
+        using var host = await BuildHostAsync(environmentName);
+        var client = host.GetTestClient();
+
+        var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/albums");
+        // Intentionally omit Sec-Fetch-Site and Origin — mirrors Node fetch().
+
+        var resp = await client.SendAsync(req);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task HeaderlessStateChange_IsRejected_InProduction()
+    {
+        // Production must preserve the strict CSRF default: a real
+        // browser ALWAYS sets at least Sec-Fetch-Site or Origin on
+        // POST/PUT/PATCH/DELETE; a request missing both is hostile or
+        // misconfigured tooling.
+        using var host = await BuildHostAsync("Production");
         var client = host.GetTestClient();
 
         var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/albums");

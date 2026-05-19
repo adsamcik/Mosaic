@@ -55,6 +55,7 @@ public sealed class OriginValidationMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<OriginValidationMiddleware> _logger;
     private readonly string[] _exemptPathPrefixes;
+    private readonly bool _allowHeaderlessRequests;
 
     private static readonly string[] BaseExemptPathPrefixes =
     {
@@ -105,6 +106,21 @@ public sealed class OriginValidationMiddleware
         {
             _exemptPathPrefixes = BaseExemptPathPrefixes;
         }
+
+        // v1.0.x album-create-403: E2E pool fixtures (Playwright global-setup,
+        // test-data-factory) hit state-changing endpoints like
+        // POST /api/v1/albums from Node's bare `fetch`, which emits neither
+        // Sec-Fetch-Site nor Origin. The CSRF protection rationale (audit
+        // threat-model C-1) targets cross-site browser navigations carrying
+        // ambient credentials — non-browser tooling cannot mount a CSRF
+        // attack because there is no ambient browser session. In
+        // Development / Testing we therefore treat completely header-less
+        // state-changing requests as trusted tooling. In Production the
+        // strict rejection is preserved (a real browser ALWAYS sets at
+        // least Sec-Fetch-Site or Origin on POST/PUT/PATCH/DELETE).
+        _allowHeaderlessRequests =
+            environment.IsDevelopment() ||
+            environment.IsEnvironment("Testing");
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -150,6 +166,17 @@ public sealed class OriginValidationMiddleware
         var origin = context.Request.Headers["Origin"].ToString();
         if (string.IsNullOrEmpty(origin))
         {
+            // Dev/Testing only: header-less requests (no Sec-Fetch-Site
+            // AND no Origin) originate from non-browser E2E tooling
+            // (Node fetch, curl, Playwright global-setup). They cannot
+            // be CSRF — there is no ambient browser session attached.
+            // See ctor for the full rationale.
+            if (_allowHeaderlessRequests)
+            {
+                await _next(context);
+                return;
+            }
+
             _logger.LogWarning(
                 "Rejected state-changing request without Sec-Fetch-Site or Origin header for path template {PathPrefix}",
                 PathPrefix(path));
