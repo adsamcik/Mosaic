@@ -925,39 +925,81 @@ public partial class AuthController : ControllerBase
         }
 
         // Atomic swap: bump key material + SaltVersion + revoke other sessions.
+        // Capture SaltVersion BEFORE the transaction so we can detect a concurrent
+        // rotation that lands between our initial user-load and our own commit
+        // (security-review-2026-05-19-05: last-writer-wins credential race).
         var currentTokenHash = GetCurrentTokenHash();
+        var originalSaltVersion = user.SaltVersion;
         int revokedCount;
+        IActionResult? earlyExit = null;
 
         var supportsTx = _db.Database.IsRelational();
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? tx = null;
         if (supportsTx)
         {
-            tx = await _db.Database.BeginTransactionAsync();
+            tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
         }
 
         try
         {
-            user.UserSalt = newUserSalt;
-            user.AuthPubkey = request.NewAuthPubkey;
-            user.WrappedAccountKey = newWrappedAccountKey;
-            user.SaltVersion = user.SaltVersion + 1;
-
-            var sessionsToRevoke = await _db.Sessions
-                .Where(s => s.UserId == user.Id
-                    && s.RevokedAt == null
-                    && (currentTokenHash == null || s.TokenHash != currentTokenHash))
-                .ToListAsync();
-
-            foreach (var s in sessionsToRevoke)
+            // Re-read the user under the (Serializable) transaction. If SaltVersion
+            // moved, another rotation already committed using state we no longer
+            // own — fail fast rather than overwrite the newer credentials.
+            await _db.Entry(user).ReloadAsync();
+            if (user.SaltVersion != originalSaltVersion)
             {
-                s.RevokedAt = now;
+                earlyExit = Problem(
+                    title: "Concurrent password rotation detected",
+                    detail: "Another password rotation completed before this one could commit. Retry with a fresh challenge.",
+                    statusCode: StatusCodes.Status409Conflict);
             }
-            revokedCount = sessionsToRevoke.Count;
-
-            await _db.SaveChangesAsync();
-            if (tx is not null)
+            else if (currentTokenHash != null)
             {
-                await tx.CommitAsync();
+                // Re-verify the caller's session is still active. A concurrent
+                // rotation may have just revoked it; if so, the caller no longer
+                // has standing to rotate credentials.
+                var stillActive = await _db.Sessions
+                    .AnyAsync(s => s.UserId == user.Id
+                        && s.TokenHash == currentTokenHash
+                        && s.RevokedAt == null);
+                if (!stillActive)
+                {
+                    earlyExit = Unauthorized();
+                }
+            }
+
+            if (earlyExit != null)
+            {
+                revokedCount = 0;
+                if (tx is not null)
+                {
+                    await tx.RollbackAsync();
+                }
+            }
+            else
+            {
+                user.UserSalt = newUserSalt;
+                user.AuthPubkey = request.NewAuthPubkey;
+                user.WrappedAccountKey = newWrappedAccountKey;
+                user.SaltVersion = user.SaltVersion + 1;
+
+                var sessionsToRevoke = await _db.Sessions
+                    .Where(s => s.UserId == user.Id
+                        && s.RevokedAt == null
+                        && (currentTokenHash == null || s.TokenHash != currentTokenHash))
+                    .ToListAsync();
+
+                foreach (var s in sessionsToRevoke)
+                {
+                    s.RevokedAt = now;
+                }
+                revokedCount = sessionsToRevoke.Count;
+
+                await _db.SaveChangesAsync();
+                if (tx is not null)
+                {
+                    await tx.CommitAsync();
+                }
             }
         }
         catch
@@ -974,6 +1016,20 @@ public partial class AuthController : ControllerBase
             {
                 await tx.DisposeAsync();
             }
+        }
+
+        if (earlyExit != null)
+        {
+            if (_auditLog is not null)
+            {
+                await _auditLog.WriteAsync(
+                    AuditEventTypes.AuthLoginFailed,
+                    AuditOutcomes.Denied,
+                    HttpContext,
+                    actorUserId: user.Id,
+                    details: new { reason = "rotation-stale-state" });
+            }
+            return earlyExit;
         }
 
         if (_auditLog is not null)

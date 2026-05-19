@@ -23,4 +23,25 @@ public static class TestDbContextFactory
         context.Database.EnsureCreated();
         return context;
     }
+
+    /// <summary>
+    /// Creates an in-memory database context with a caller-supplied database name
+    /// so multiple contexts can share state (used to simulate concurrent writes).
+    /// Optional EF Core interceptors can be attached for race-condition tests.
+    /// </summary>
+    public static MosaicDbContext CreateNamed(string databaseName, params IInterceptor[] interceptors)
+    {
+        var builder = new DbContextOptionsBuilder<MosaicDbContext>()
+            .UseInMemoryDatabase(databaseName: databaseName)
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning));
+
+        if (interceptors.Length > 0)
+        {
+            builder = builder.AddInterceptors(interceptors);
+        }
+
+        var context = new MosaicDbContext(builder.Options);
+        context.Database.EnsureCreated();
+        return context;
+    }
 }
