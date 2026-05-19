@@ -257,6 +257,16 @@ export async function localAuthLogin(
   accountSalt: Uint8Array;
   isNewUser: boolean;
   wrappedAccountKey: Uint8Array | null;
+  /**
+   * Wrapped identity seed for deterministic identity re-derivation on
+   * subsequent logins. Threading this all the way to
+   * `initWithWrappedKey` is mandatory: without it the crypto worker
+   * falls back to `createIdentityForAccount`, which mints a fresh
+   * random identity each login and breaks every previously-sealed
+   * epoch bundle (rust `BundleSealOpenFailed`, code 222 — v1.0.x
+   * `bundle-seal-222` regression).
+   */
+  wrappedIdentitySeed: Uint8Array | null;
   kdfParams: Argon2Params;
 }> {
   // Step 1: Get challenge from server
@@ -313,11 +323,19 @@ export async function localAuthLogin(
     ? fromBase64(verifyResult.wrappedAccountKey)
     : null;
 
+  // v1.0.x `bundle-seal-222`: also return the wrapped identity seed so
+  // session.localLogin can pass it to `initWithWrappedKey` and the
+  // worker opens the persisted identity instead of minting a new one.
+  const wrappedIdentitySeed = verifyResult.wrappedIdentitySeed
+    ? fromBase64(verifyResult.wrappedIdentitySeed)
+    : null;
+
   return {
     userId: verifyResult.userId,
     userSalt: userSaltBytes,
     accountSalt: serverAccountSalt,
     wrappedAccountKey,
+    wrappedIdentitySeed,
     kdfParams: verifiedKdfParams,
     isNewUser: false,
   };
@@ -340,6 +358,8 @@ export async function localAuthRegister(
   accountSalt: Uint8Array;
   isNewUser: boolean;
   wrappedAccountKey: Uint8Array | null;
+  /** See {@link localAuthLogin} — required for identity persistence. */
+  wrappedIdentitySeed: Uint8Array | null;
   kdfParams: Argon2Params;
 }> {
   // Step 1: Get a challenge to derive the user salt
@@ -366,6 +386,8 @@ async function registerNewUser(
   accountSalt: Uint8Array;
   isNewUser: boolean;
   wrappedAccountKey: Uint8Array | null;
+  /** See {@link localAuthLogin} — required for identity persistence. */
+  wrappedIdentitySeed: Uint8Array | null;
   kdfParams: Argon2Params;
 }> {
   // Generate account salt
@@ -402,7 +424,17 @@ async function registerNewUser(
     throw new Error('Failed to get wrapped account key');
   }
 
-  // Register with server (include wrapped account key for future logins)
+  // v1.0.x `bundle-seal-222`: the wrapped identity seed must also be
+  // uploaded at registration. Without it the server cannot return it
+  // on subsequent `verifyAuth` responses, which forces every login to
+  // mint a fresh random identity and breaks all sealed epoch bundles.
+  const wrappedIdentitySeed = await cryptoClient.getWrappedIdentitySeed();
+  if (!wrappedIdentitySeed || wrappedIdentitySeed.length === 0) {
+    throw new Error('Failed to get wrapped identity seed');
+  }
+
+  // Register with server (include wrapped account key + identity seed
+  // so future logins can deterministically re-open the same identity).
   await registerUser({
     username,
     authPubkey: toBase64(authPubkey),
@@ -410,6 +442,7 @@ async function registerNewUser(
     userSalt: toBase64(userSalt),
     accountSalt: toBase64(accountSalt),
     wrappedAccountKey: toBase64(wrappedAccountKey),
+    wrappedIdentitySeed: toBase64(wrappedIdentitySeed),
     kdfMemoryKib: kdfParams.memory,
     kdfIterations: kdfParams.iterations,
     kdfParallelism: kdfParams.parallelism,
@@ -442,6 +475,7 @@ async function registerNewUser(
     accountSalt,
     isNewUser: true,
     wrappedAccountKey: null, // New user already has correct keys loaded
+    wrappedIdentitySeed: null, // Identity already open in worker; nothing to re-thread.
     kdfParams: parseAuthKdfProfile(verifyResult),
   };
 }

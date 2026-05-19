@@ -831,6 +831,7 @@ class SessionManager {
         accountSalt,
         isNewUser,
         wrappedAccountKey,
+        wrappedIdentitySeed,
         kdfParams,
       } =
         await localAuthLogin(username, password);
@@ -848,13 +849,18 @@ class SessionManager {
       // that was used when the epoch keys were sealed
       const cryptoClient = await getCryptoClient();
       if (wrappedAccountKey) {
-        // Returning user: unwrap their existing account key
+        // Returning user: unwrap their existing account key AND identity
+        // seed so the Ed25519/X25519 identity is deterministically
+        // restored. Without `wrappedIdentitySeed` the worker would mint
+        // a fresh random identity and break every previously-sealed
+        // epoch bundle (v1.0.x `bundle-seal-222`, rust code 222).
         await cryptoClient.initWithWrappedKey(
           password,
           userSalt,
           accountSalt,
           wrappedAccountKey,
           workerKdfParams,
+          wrappedIdentitySeed ?? undefined,
         );
       } else if (!isNewUser) {
         // Returning user but no wrapped key on server - this is a problem!
@@ -915,7 +921,14 @@ class SessionManager {
       }
 
       // Perform LocalAuth registration (will fail if user exists)
-      const { userId, userSalt, accountSalt, wrappedAccountKey, kdfParams } =
+      const {
+        userId,
+        userSalt,
+        accountSalt,
+        wrappedAccountKey,
+        wrappedIdentitySeed,
+        kdfParams,
+      } =
         await localAuthRegister(username, password);
       const workerKdfParams = toWorkerKdfParams(kdfParams);
 
@@ -938,6 +951,7 @@ class SessionManager {
           accountSalt,
           wrappedAccountKey,
           workerKdfParams,
+          wrappedIdentitySeed ?? undefined,
         );
       }
       await cryptoClient.deriveIdentity();
