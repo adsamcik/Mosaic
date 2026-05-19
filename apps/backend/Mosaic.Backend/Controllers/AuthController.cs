@@ -947,6 +947,13 @@ public partial class AuthController : ControllerBase
             earlyExit = null;
             revokedCount = 0;
 
+            // Refresh `now` at the START of every attempt. A session whose
+            // absolute or sliding expiry boundary is crossed during retry
+            // backoff must NOT pass the in-tx re-check just because the
+            // request-entry timestamp captured below at line 861 still
+            // pre-dates the boundary (security-review-2026-05-19-09).
+            var attemptNow = _timeProvider.GetUtcNow().UtcDateTime;
+
             Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? tx = null;
             if (supportsTx)
             {
@@ -969,20 +976,16 @@ public partial class AuthController : ControllerBase
                 }
                 else if (currentTokenHash != null)
                 {
-                    // Re-verify the caller's session is still active under the same
-                    // full predicate used by GetCurrentUserIdAsync (revocation +
-                    // absolute expiry + sliding expiry). A concurrent rotation may
-                    // have revoked it, or the session may have expired between
-                    // request entry and commit; if so the caller no longer has
+                    // Re-verify the caller's session is still active under the
+                    // SAME predicate used by GetCurrentUserIdAsync (revocation +
+                    // absolute expiry + sliding expiry), evaluated against the
+                    // fresh `attemptNow`. A concurrent rotation may have revoked
+                    // it, or the session may have expired between request entry
+                    // and this attempt's commit; if so the caller no longer has
                     // standing to rotate credentials.
-                    // (security-review-2026-05-19-06)
-                    var slidingCutoff = now.Add(-SessionSlidingExpiry);
-                    var stillActive = await _db.Sessions
-                        .AnyAsync(s => s.UserId == user.Id
-                            && s.TokenHash == currentTokenHash
-                            && s.RevokedAt == null
-                            && s.ExpiresAt > now
-                            && s.LastSeenAt >= slidingCutoff);
+                    // (security-review-2026-05-19-06, -09)
+                    var stillActive = await ActiveSessionsQuery(currentTokenHash, attemptNow)
+                        .AnyAsync(s => s.UserId == user.Id);
                     if (!stillActive)
                     {
                         earlyExit = Unauthorized();
@@ -1012,7 +1015,7 @@ public partial class AuthController : ControllerBase
 
                     foreach (var s in sessionsToRevoke)
                     {
-                        s.RevokedAt = now;
+                        s.RevokedAt = attemptNow;
                     }
                     revokedCount = sessionsToRevoke.Count;
 
@@ -1170,28 +1173,42 @@ public partial class AuthController : ControllerBase
         }
 
         var tokenHash = SHA256.HashData(token);
-        var session = await _db.Sessions
-            .FirstOrDefaultAsync(s =>
-                s.TokenHash == tokenHash &&
-                s.RevokedAt == null &&
-                s.ExpiresAt > _timeProvider.GetUtcNow().UtcDateTime);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        // Single source of truth for session validity (revoked / absolute /
+        // sliding expiry) — matched against the same predicate the rotation
+        // in-transaction re-check uses (security-review-2026-05-19-09).
+        var session = await ActiveSessionsQuery(tokenHash, now)
+            .FirstOrDefaultAsync();
 
         if (session == null)
         {
             return null;
         }
 
-        // Check sliding expiration (7 days since last use)
-        if (session.LastSeenAt < _timeProvider.GetUtcNow().UtcDateTime.Add(-SessionSlidingExpiry))
-        {
-            return null;
-        }
-
-        // Update last seen
-        session.LastSeenAt = _timeProvider.GetUtcNow().UtcDateTime;
+        session.LastSeenAt = now;
         await _db.SaveChangesAsync();
 
         return session.UserId;
+    }
+
+    /// <summary>
+    /// Returns the set of sessions matching <paramref name="tokenHash"/> that
+    /// are still valid as of <paramref name="now"/> — not revoked, before
+    /// absolute expiry, and within the sliding window. Centralising this
+    /// predicate guarantees that the auth gate (<see cref="GetCurrentUserIdAsync"/>)
+    /// and the in-transaction password-rotation re-check evaluate identical
+    /// criteria, eliminating the stale-<c>now</c> drift between request entry
+    /// and rotation commit (security-review-2026-05-19-09).
+    /// </summary>
+    private IQueryable<Session> ActiveSessionsQuery(byte[] tokenHash, DateTime now)
+    {
+        var slidingCutoff = now.Add(-SessionSlidingExpiry);
+        return _db.Sessions.Where(s =>
+            s.TokenHash == tokenHash &&
+            s.RevokedAt == null &&
+            s.ExpiresAt > now &&
+            s.LastSeenAt >= slidingCutoff);
     }
 
     // Random fallback secret generated once per process lifetime.
