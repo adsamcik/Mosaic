@@ -315,7 +315,7 @@ public partial class AuthController : ControllerBase
                     AuditEventTypes.AuthLoginFailed,
                     AuditOutcomes.Denied,
                     HttpContext,
-                    details: new { username = request.Username, reason = "user-not-found" });
+                    details: new { reason = "user-not-found" });
             }
             return Problem(
                 detail: "Invalid credentials",
@@ -344,7 +344,7 @@ public partial class AuthController : ControllerBase
                         AuditOutcomes.Denied,
                         HttpContext,
                         actorUserId: user.Id,
-                        details: new { username = request.Username, reason = "invalid-signature" });
+                        details: new { reason = "invalid-signature" });
                 }
                 return Problem(
                     detail: "Invalid credentials",
@@ -361,7 +361,7 @@ public partial class AuthController : ControllerBase
                     AuditOutcomes.Error,
                     HttpContext,
                     actorUserId: user.Id,
-                    details: new { username = request.Username, reason = "signature-verification-error" });
+                    details: new { reason = "signature-verification-error" });
             }
             return Problem(
                 detail: "Invalid credentials",
@@ -385,9 +385,11 @@ public partial class AuthController : ControllerBase
         _db.Sessions.Add(session);
         await _db.SaveChangesAsync();
 
-        // D1 audit: record successful sign-in. Username + KDF version
-        // are non-secret operational metadata. The session token NEVER
-        // appears in the audit log.
+        // D1 audit: record successful sign-in. The actorUserId is the
+        // canonical opaque identifier — the plaintext username is NOT
+        // included in details to comply with GDPR Article 17 (right to
+        // erasure) without retroactive scrubbing. The session token
+        // NEVER appears in the audit log.
         if (_auditLog is not null)
         {
             await _auditLog.WriteAsync(
@@ -395,7 +397,7 @@ public partial class AuthController : ControllerBase
                 AuditOutcomes.Success,
                 HttpContext,
                 actorUserId: user.Id,
-                details: new { username = request.Username, kdfAlgVersion = user.KdfAlgVersion });
+                details: new { kdfAlgVersion = user.KdfAlgVersion });
         }
 
         // Set session cookie

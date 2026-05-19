@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
@@ -94,6 +96,31 @@ public sealed class UserErasureService : IUserErasureService
         _storage = storage;
         _config = config;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Removes the <c>username</c> property from an audit
+    /// <see cref="AuditLogEntry.DetailsJson"/> payload while preserving
+    /// any other fields. Falls back to a "redacted" sentinel if the JSON
+    /// is malformed (defence in depth — a corrupt details row should not
+    /// block GDPR Article 17 erasure).
+    /// </summary>
+    internal static string StripUsernameFromDetailsJson(string detailsJson)
+    {
+        try
+        {
+            var node = JsonNode.Parse(detailsJson);
+            if (node is JsonObject obj && obj.ContainsKey("username"))
+            {
+                obj.Remove("username");
+                return obj.ToJsonString();
+            }
+            return detailsJson;
+        }
+        catch (JsonException)
+        {
+            return "{\"redacted\":true,\"reason\":\"malformed-details-on-erasure\"}";
+        }
     }
 
     public async Task<UserErasureResult> EraseAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -198,6 +225,47 @@ public sealed class UserErasureService : IUserErasureService
         int shardsDeleted;
         try
         {
+            // GDPR Article 17 (security-review-2026-05-19-01): scrub the
+            // plaintext `username` field from historical audit details
+            // BEFORE we null the actor_user_id link. We use PostgreSQL's
+            // jsonb operators via a cast — DetailsJson is stored as
+            // `text` but its contents are always valid JSON (capped at
+            // 4 KiB by the [MaxLength] on the entity).
+            //
+            // The query is wrapped in the same transaction as the rest
+            // of the erasure so a downstream failure rolls back the
+            // scrub atomically with the user delete.
+            if (_db.Database.IsNpgsql())
+            {
+                await _db.Database.ExecuteSqlRawAsync(
+                    @"UPDATE audit_log_entries
+                      SET details_json = (details_json::jsonb - 'username')::text
+                      WHERE actor_user_id = {0}
+                        AND details_json IS NOT NULL
+                        AND details_json::jsonb ? 'username'",
+                    new object[] { userId },
+                    cancellationToken);
+            }
+            else
+            {
+                // Non-Postgres providers (e.g. unit-test in-memory DB)
+                // don't support jsonb. Fall back to a managed scrub: load
+                // matching rows, mutate via System.Text.Json, save back.
+                var rowsWithUsername = await _db.AuditLogEntries
+                    .Where(a => a.ActorUserId == userId
+                                && a.DetailsJson != null
+                                && a.DetailsJson.Contains("\"username\""))
+                    .ToListAsync(cancellationToken);
+                foreach (var row in rowsWithUsername)
+                {
+                    row.DetailsJson = StripUsernameFromDetailsJson(row.DetailsJson!);
+                }
+                if (rowsWithUsername.Count > 0)
+                {
+                    await _db.SaveChangesAsync(cancellationToken);
+                }
+            }
+
             // Anonymise audit log first — once the User row is gone, the
             // ActorUserId values would still be intact (no FK on
             // audit_log_entries.actor_user_id), but anonymising in place

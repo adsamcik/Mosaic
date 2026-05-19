@@ -351,6 +351,100 @@ public sealed class UserErasureIntegrationTests
         }
     }
 
+    [DockerRequiredFact]
+    [Trait("Category", "Integration")]
+    public async Task EraseAsync_RemovesUsernameFromHistoricalAuditDetails()
+    {
+        // security-review-2026-05-19-01: historical audit rows that
+        // pre-date the AuthController fix may still contain a plaintext
+        // "username" property in their details. The erasure service
+        // must scrub the field while preserving other detail keys, and
+        // the anonymisation (ActorUserId -> NULL, ActorWasErased -> true)
+        // must still run.
+        await using var db = await _fixture.CreateFreshDbContextAsync();
+        var data = new TestDataBuilder(db);
+        var storage = new MockStorageService();
+
+        var user = await data.CreateUserAsync(OwnerAuthSub);
+        db.AuditLogEntries.Add(new AuditLogEntry
+        {
+            Id = Guid.NewGuid(),
+            EventType = AuditEventTypes.AuthLoginSucceeded,
+            Outcome = AuditOutcomes.Success,
+            ActorUserId = user.Id,
+            ActorWasErased = false,
+            DetailsJson = "{\"username\":\"" + OwnerAuthSub + "\",\"kdfAlgVersion\":19}"
+        });
+        db.AuditLogEntries.Add(new AuditLogEntry
+        {
+            Id = Guid.NewGuid(),
+            EventType = AuditEventTypes.AuthLoginFailed,
+            Outcome = AuditOutcomes.Denied,
+            ActorUserId = user.Id,
+            ActorWasErased = false,
+            DetailsJson = "{\"username\":\"" + OwnerAuthSub + "\",\"reason\":\"invalid-signature\"}"
+        });
+        // A row without a username field — must be left structurally
+        // untouched (apart from the actor anonymisation).
+        var noUsernameId = Guid.NewGuid();
+        db.AuditLogEntries.Add(new AuditLogEntry
+        {
+            Id = noUsernameId,
+            EventType = AuditEventTypes.AuthLogout,
+            Outcome = AuditOutcomes.Success,
+            ActorUserId = user.Id,
+            ActorWasErased = false,
+            DetailsJson = "{\"reason\":\"user-initiated\"}"
+        });
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db, storage);
+        await sut.EraseAsync(user.Id);
+
+        await using var verify = await _fixture.GetContextAsync();
+        var allUserRows = await verify.AuditLogEntries.AsNoTracking()
+            .Where(a => a.EventType == AuditEventTypes.AuthLoginSucceeded
+                     || a.EventType == AuditEventTypes.AuthLoginFailed
+                     || a.EventType == AuditEventTypes.AuthLogout)
+            .ToListAsync();
+
+        Assert.NotEmpty(allUserRows);
+        foreach (var row in allUserRows)
+        {
+            Assert.Null(row.ActorUserId);
+            Assert.True(row.ActorWasErased);
+            Assert.DoesNotContain(OwnerAuthSub, row.DetailsJson ?? string.Empty,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain("\"username\"", row.DetailsJson ?? string.Empty,
+                StringComparison.Ordinal);
+        }
+
+        // Other detail fields must be preserved.
+        var successRow = allUserRows.Single(r => r.EventType == AuditEventTypes.AuthLoginSucceeded);
+        Assert.Contains("kdfAlgVersion", successRow.DetailsJson ?? string.Empty,
+            StringComparison.Ordinal);
+        var failedRow = allUserRows.Single(r => r.EventType == AuditEventTypes.AuthLoginFailed);
+        Assert.Contains("invalid-signature", failedRow.DetailsJson ?? string.Empty,
+            StringComparison.Ordinal);
+        var logoutRow = allUserRows.Single(r => r.Id == noUsernameId);
+        Assert.Contains("user-initiated", logoutRow.DetailsJson ?? string.Empty,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void LoginAudit_StripUsernameFromDetailsJson_RemovesField()
+    {
+        // security-review-2026-05-19-01: unit-level coverage for the
+        // managed-fallback scrub helper used when running against a
+        // non-PostgreSQL provider.
+        var input = "{\"username\":\"alice\",\"kdfAlgVersion\":19}";
+        var output = UserErasureService.StripUsernameFromDetailsJson(input);
+        Assert.DoesNotContain("alice", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"username\"", output, StringComparison.Ordinal);
+        Assert.Contains("kdfAlgVersion", output, StringComparison.Ordinal);
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────
 
     private static UserErasureService CreateService(MosaicDbContext db, MockStorageService storage)
