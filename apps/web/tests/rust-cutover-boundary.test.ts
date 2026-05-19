@@ -297,6 +297,7 @@ describe('web Rust crypto cutover boundaries', () => {
         'lib/link-tier-key-store.ts',
         'lib/local-auth.ts',
         'lib/opfs-staging.ts',
+      'lib/password-rotation.ts',
       'lib/scope-key.ts',
       'lib/session-salt.ts',
       'lib/session.ts',
