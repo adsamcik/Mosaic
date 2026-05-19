@@ -106,6 +106,13 @@ class SessionManager {
    * test environments where it isn't polyfilled.
    */
   private broadcast: BroadcastChannel | null = null;
+  /**
+   * Active DB-crypto bridge disposers. Flipped on `dispose()` so any
+   * post-dispose `wrap`/`unwrap` callback from the DB worker fails fast
+   * with `WorkerCryptoError(ClosedHandle)` instead of hitting a torn-down
+   * Comlink port (v1.0.x `comlink-bridge-liveness`).
+   */
+  private dbBridgeDisposers = new Set<() => void>();
 
   constructor() {
     this.boundResetIdleTimer = this.resetIdleTimer.bind(this);
@@ -596,7 +603,7 @@ class SessionManager {
       // Slice 8: bridge OPFS snapshot wrap/unwrap through the crypto
       // worker — the DB worker no longer holds raw key bytes.
       const db = await getDbClient();
-      await db.init(makeDbCryptoBridge(cryptoClient));
+      await db.init(this.attachDbCryptoBridge(cryptoClient));
 
       this.markLoggedIn();
 
@@ -778,7 +785,7 @@ class SessionManager {
       // Slice 8: bridge OPFS snapshot wrap/unwrap through the crypto
       // worker — the DB worker no longer holds raw key bytes.
       const db = await getDbClient();
-      await db.init(makeDbCryptoBridge(cryptoClient));
+      await db.init(this.attachDbCryptoBridge(cryptoClient));
 
       this.markLoggedIn();
 
@@ -863,7 +870,7 @@ class SessionManager {
       // Slice 8: bridge OPFS snapshot wrap/unwrap through the crypto
       // worker — the DB worker no longer holds raw key bytes.
       const db = await getDbClient();
-      await db.init(makeDbCryptoBridge(cryptoClient));
+      await db.init(this.attachDbCryptoBridge(cryptoClient));
 
       this.markLoggedIn();
 
@@ -938,7 +945,7 @@ class SessionManager {
       // Slice 8: bridge OPFS snapshot wrap/unwrap through the crypto
       // worker — the DB worker no longer holds raw key bytes.
       const db = await getDbClient();
-      await db.init(makeDbCryptoBridge(cryptoClient));
+      await db.init(this.attachDbCryptoBridge(cryptoClient));
 
       this.markLoggedIn();
 
@@ -1195,6 +1202,30 @@ class SessionManager {
       this.settingsUnsubscribe = null;
     }
     this.detachIdleListeners();
+    // v1.0.x comlink-bridge-liveness: flip all active DB-crypto bridges so
+    // any post-dispose `wrap`/`unwrap` callback from the DB worker fails
+    // with `WorkerCryptoError(ClosedHandle)` rather than crashing on a
+    // closed Comlink port with "rawValue.apply is not a function".
+    for (const disposeBridge of this.dbBridgeDisposers) {
+      try {
+        disposeBridge();
+      } catch {
+        // best-effort
+      }
+    }
+    this.dbBridgeDisposers.clear();
+  }
+
+  /**
+   * Build a DB-crypto bridge and track its disposer so it gets torn down
+   * with the SessionManager. See `comlink-bridge-liveness`.
+   */
+  private attachDbCryptoBridge(
+    cryptoClient: Parameters<typeof makeDbCryptoBridge>[0],
+  ): ReturnType<typeof makeDbCryptoBridge>['bridge'] {
+    const handle = makeDbCryptoBridge(cryptoClient);
+    this.dbBridgeDisposers.add(handle.dispose);
+    return handle.bridge;
   }
 }
 

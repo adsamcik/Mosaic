@@ -7,6 +7,20 @@
  */
 import * as Comlink from 'comlink';
 import type { CryptoWorkerApi, DbCryptoBridge } from '../workers/types';
+import { WorkerCryptoError } from '../workers/types';
+import { WorkerCryptoErrorCode } from '../workers/worker-crypto-error-code.generated';
+
+/**
+ * Handle returned by {@link makeDbCryptoBridge}. Call `dispose()` when the
+ * owning `SessionManager` is torn down so that any in-flight or future
+ * DB-worker callbacks fail fast with a `ClosedHandle` `WorkerCryptoError`
+ * instead of resolving on a CLOSED Comlink port and surfacing as the
+ * cryptic `rawValue.apply is not a function` error.
+ */
+export interface DbCryptoBridgeHandle {
+  readonly bridge: DbCryptoBridge;
+  readonly dispose: () => void;
+}
 
 /**
  * Build a Comlink-proxied {@link DbCryptoBridge} that the DB SharedWorker
@@ -17,16 +31,43 @@ import type { CryptoWorkerApi, DbCryptoBridge } from '../workers/types';
  * material, and instead invokes these callbacks across the worker
  * boundary, which round-trip through the crypto worker's Rust-backed
  * `wrapDbBlob` / `unwrapDbBlob` methods.
+ *
+ * Liveness contract: returns a handle whose `dispose()` flips an internal
+ * flag. After dispose, subsequent `wrap`/`unwrap` invocations throw
+ * {@link WorkerCryptoError} with code `ClosedHandle` instead of forwarding
+ * to a possibly-torn-down crypto worker port. Wire this into
+ * `SessionManager.dispose()` to harden the bridge against the
+ * post-dispose Comlink races observed in v1.0.x validation gates
+ * (`comlink-bridge-liveness`).
  */
 export function makeDbCryptoBridge(
   cryptoClient: Comlink.Remote<CryptoWorkerApi>,
-): DbCryptoBridge {
-  return Comlink.proxy({
-    wrap: (plaintext: Uint8Array): Promise<Uint8Array> =>
-      cryptoClient.wrapDbBlob(plaintext),
-    unwrap: (wrapped: Uint8Array): Promise<Uint8Array> =>
-      cryptoClient.unwrapDbBlob(wrapped),
+): DbCryptoBridgeHandle {
+  let disposed = false;
+  const guard = (): void => {
+    if (disposed) {
+      throw new WorkerCryptoError(
+        WorkerCryptoErrorCode.ClosedHandle,
+        'cryptoClient bridge disposed',
+      );
+    }
+  };
+  const bridge = Comlink.proxy({
+    wrap: async (plaintext: Uint8Array): Promise<Uint8Array> => {
+      guard();
+      return cryptoClient.wrapDbBlob(plaintext);
+    },
+    unwrap: async (wrapped: Uint8Array): Promise<Uint8Array> => {
+      guard();
+      return cryptoClient.unwrapDbBlob(wrapped);
+    },
   });
+  return {
+    bridge,
+    dispose: (): void => {
+      disposed = true;
+    },
+  };
 }
 
 /** Events that reset the idle timer.
