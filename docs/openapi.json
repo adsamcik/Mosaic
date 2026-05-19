@@ -2762,7 +2762,6 @@
         "type": "object",
         "properties": {
           "confirmationText": {
-            "maxLength": 256,
             "type": "string"
           },
           "challengeId": {
@@ -2771,7 +2770,6 @@
             "nullable": true
           },
           "confirmationSignature": {
-            "maxLength": 8192,
             "type": "string",
             "nullable": true
           },
@@ -3038,7 +3036,6 @@
             "format": "uuid"
           },
           "currentSignature": {
-            "maxLength": 256,
             "type": "string"
           },
           "timestamp": {
@@ -3047,15 +3044,12 @@
             "nullable": true
           },
           "newUserSalt": {
-            "maxLength": 128,
             "type": "string"
           },
           "newAuthPubkey": {
-            "maxLength": 128,
             "type": "string"
           },
           "newWrappedAccountKey": {
-            "maxLength": 2048,
             "type": "string"
           }
         }
