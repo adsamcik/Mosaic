@@ -254,7 +254,7 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
             () => closeTask.IsCompleted,
             timeProvider,
             TimeSpan.FromMilliseconds(50),
-            TimeSpan.FromSeconds(1));
+            TimeSpan.FromSeconds(5));
 
         a.Dispose();
         b.Dispose();
@@ -371,6 +371,12 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
             {
                 await Task.Yield();
             }
+            // The close-task completion path involves real wall-clock
+            // WebSocket I/O on the TestServer (close frame propagation
+            // across threads), which Task.Yield alone does not service.
+            // Sleep a tiny real-time slice so the I/O plumbing can
+            // actually make progress between fake-time advances.
+            await Task.Delay(5);
         }
 
         Assert.True(condition(), $"condition was not met after advancing fake time by {maxAdvance}");

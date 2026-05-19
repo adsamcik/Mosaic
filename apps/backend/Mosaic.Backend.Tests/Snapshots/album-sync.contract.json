@@ -13,6 +13,8 @@
       "encryptedMeta": "string",
       "signature": "string",
       "signerPubkey": "string",
+      "createdAt": "string",
+      "updatedAt": "string",
       "shardIds": [
         "string"
       ],
