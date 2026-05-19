@@ -264,6 +264,35 @@ export class RustHandleFacade {
     throwIfErrorCode(code, 'closeAccountKeyHandle');
   }
 
+  /**
+   * Re-wrap the L2 referenced by `accountHandle` under a fresh L1 derived
+   * from `(newPassword, newUserSalt, newAccountSalt, kdf)`. Returns the
+   * opaque wrapped-account-key envelope expected by the password-rotation
+   * endpoint. The L2 bytes never cross the WASM boundary.
+   */
+  rewrapAccountKeyWithHandle(opts: {
+    accountHandle: bigint;
+    newPassword: Uint8Array;
+    newUserSalt: Uint8Array;
+    newAccountSalt: Uint8Array;
+    kdfMemoryKib: number;
+    kdfIterations: number;
+    kdfParallelism: number;
+  }): Uint8Array {
+    const result = rustWasm.rewrapAccountKeyWithHandle(
+      opts.accountHandle,
+      opts.newPassword,
+      opts.newUserSalt,
+      opts.newAccountSalt,
+      opts.kdfMemoryKib,
+      opts.kdfIterations,
+      opts.kdfParallelism,
+    );
+    return consumeResult(result, 'rewrapAccountKeyWithHandle', (r) =>
+      copyBytes(r.bytes),
+    );
+  }
+
   accountKeyHandleIsOpen(handle: bigint): boolean {
     const result = rustWasm.accountKeyHandleIsOpen(handle);
     return consumeResult(result, 'accountKeyHandleIsOpen', (r) => r.isOpen);

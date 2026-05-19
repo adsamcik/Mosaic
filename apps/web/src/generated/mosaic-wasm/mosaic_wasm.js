@@ -4381,6 +4381,33 @@ export function progressProbe(total_steps, cancel_after) {
 }
 
 /**
+ * Re-wraps the L2 referenced by `account_handle` under a fresh L1 derived
+ * from `new_password + new_user_salt + new_account_salt` through WASM.
+ *
+ * Used by the password-rotation flow. The L2 bytes never cross the JS
+ * boundary; the returned value is the server-storable wrapped account key
+ * envelope (`nonce(24) || ciphertext+tag`).
+ * @param {bigint} account_handle
+ * @param {Uint8Array} new_password
+ * @param {Uint8Array} new_user_salt
+ * @param {Uint8Array} new_account_salt
+ * @param {number} kdf_memory_kib
+ * @param {number} kdf_iterations
+ * @param {number} kdf_parallelism
+ * @returns {BytesResult}
+ */
+export function rewrapAccountKeyWithHandle(account_handle, new_password, new_user_salt, new_account_salt, kdf_memory_kib, kdf_iterations, kdf_parallelism) {
+    const ptr0 = passArray8ToWasm0(new_password, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(new_user_salt, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(new_account_salt, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.rewrapAccountKeyWithHandle(account_handle, ptr0, len0, ptr1, len1, ptr2, len2, kdf_memory_kib, kdf_iterations, kdf_parallelism);
+    return BytesResult.__wrap(ret);
+}
+
+/**
  * Atomically seals an epoch key bundle for `recipient_pubkey` using a
  * Rust-owned epoch handle through WASM. Bundle payload bytes never cross
  * the FFI boundary.

@@ -1139,6 +1139,39 @@ class CryptoWorker implements CryptoWorkerApi {
     return handle ? (handle.id as AccountHandleId) : null;
   }
 
+  async rewrapAccountKey(opts: {
+    accountHandleId: AccountHandleId;
+    newPassword: string;
+    newUserSalt: Uint8Array;
+    newAccountSalt: Uint8Array;
+    kdf: WorkerKdfParams;
+  }): Promise<{ wrappedAccountKey: Uint8Array }> {
+    const facade = await getRustFacade();
+    const passwordBytes = normalizePasswordForKdf(opts.newPassword);
+    try {
+      const wrappedAccountKey = await this.handleRegistry.withLease(
+        opts.accountHandleId,
+        'account',
+        (rustAccount) =>
+          facade.rewrapAccountKeyWithHandle({
+            accountHandle: rustAccount,
+            newPassword: passwordBytes,
+            newUserSalt: opts.newUserSalt,
+            newAccountSalt: opts.newAccountSalt,
+            kdfMemoryKib: opts.kdf.memoryKib,
+            kdfIterations: opts.kdf.iterations,
+            kdfParallelism: opts.kdf.parallelism,
+          }),
+      );
+      // Refresh the cached wrapped account key so subsequent
+      // `getWrappedAccountKey` calls reflect the new envelope.
+      this.wrappedAccountKey = new Uint8Array(wrappedAccountKey);
+      return { wrappedAccountKey: new Uint8Array(wrappedAccountKey) };
+    } finally {
+      passwordBytes.fill(0);
+    }
+  }
+
   async createIdentityForAccount(
     accountHandleId: AccountHandleId,
   ): Promise<{

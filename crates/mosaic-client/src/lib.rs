@@ -25,6 +25,7 @@ use mosaic_crypto::{
     seal_and_sign_bundle as crypto_seal_and_sign_bundle, sign_auth_challenge,
     sign_manifest_transcript as crypto_sign_manifest_transcript,
     sign_manifest_with_identity as crypto_sign_manifest_with_identity, unwrap_account_key,
+    wrap_account_key,
     unwrap_cache_blob as crypto_unwrap_cache_blob,
     unwrap_link_tier_blob as crypto_unwrap_link_tier_blob, unwrap_secret_with_aad,
     unwrap_tier_key_from_link as crypto_unwrap_tier_key_from_link,
@@ -1624,6 +1625,53 @@ pub fn unwrap_with_account_handle(handle: u64, wrapped: &[u8]) -> BytesResult {
         Ok(bytes) => BytesResult {
             code: ClientErrorCode::Ok,
             bytes: bytes.to_vec(),
+        },
+        Err(error) => bytes_error_code(map_crypto_error(error)),
+    }
+}
+
+/// Re-wraps the L2 referenced by `handle` under a fresh L1 derived from
+/// `new_password + new_user_salt + new_account_salt`.
+///
+/// Used by password rotation to produce the server-storable wrapped account
+/// key (`NewWrappedAccountKey` in `PasswordRotationRequest`) without ever
+/// exposing the L2 bytes outside the Rust handle registry. The caller-owned
+/// `new_password` buffer is zeroized on every path before this function
+/// returns. The L2 is cloned in-Rust, used to perform the wrap, and then
+/// zeroized; the original handle remains open.
+#[must_use]
+pub fn rewrap_account_key_with_handle(
+    handle: u64,
+    new_password: &mut [u8],
+    new_user_salt: &[u8],
+    new_account_salt: &[u8],
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+) -> BytesResult {
+    let account_key = match account_secret_key_from_handle(handle) {
+        Ok(value) => value,
+        Err(error) => {
+            new_password.zeroize();
+            return bytes_error(error);
+        }
+    };
+    let password_copy = Zeroizing::new(new_password.to_vec());
+    new_password.zeroize();
+    let profile = match KdfProfile::new(kdf_memory_kib, kdf_iterations, kdf_parallelism) {
+        Ok(value) => value,
+        Err(error) => return bytes_error_code(map_crypto_error(error)),
+    };
+    match wrap_account_key(
+        password_copy,
+        new_user_salt,
+        new_account_salt,
+        &account_key,
+        profile,
+    ) {
+        Ok(bytes) => BytesResult {
+            code: ClientErrorCode::Ok,
+            bytes,
         },
         Err(error) => bytes_error_code(map_crypto_error(error)),
     }

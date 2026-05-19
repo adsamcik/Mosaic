@@ -101,7 +101,7 @@ export async function parseProblemDetails(response: Response): Promise<string> {
   }
 }
 
-function toWorkerKdfParams(params: Argon2Params): WorkerKdfParams {
+export function toWorkerKdfParams(params: Argon2Params): WorkerKdfParams {
   return {
     memoryKib: params.memory,
     iterations: params.iterations,
@@ -109,7 +109,7 @@ function toWorkerKdfParams(params: Argon2Params): WorkerKdfParams {
   };
 }
 
-function parseAuthKdfProfile(payload: {
+export function parseAuthKdfProfile(payload: {
   kdfMemoryKib?: number;
   kdfIterations?: number;
   kdfParallelism?: number;

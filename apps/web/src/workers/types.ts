@@ -923,6 +923,23 @@ export interface CryptoWorkerApi {
   /** Returns the currently-open account handle ID, or null if none. */
   getAccountHandleId(): Promise<AccountHandleId | null>;
 
+  /**
+   * Re-wrap the L2 referenced by `accountHandleId` under a fresh L1 derived
+   * from `newPassword + newUserSalt + newAccountSalt`. Used by the
+   * password-rotation flow to produce the server-storable wrapped account
+   * key without ever exposing L2 outside the Rust handle registry.
+   *
+   * The returned bytes are the opaque `nonce(24) || ciphertext+tag`
+   * envelope expected by the backend `PasswordRotationRequest`.
+   */
+  rewrapAccountKey(opts: {
+    accountHandleId: AccountHandleId;
+    newPassword: string;
+    newUserSalt: Uint8Array;
+    newAccountSalt: Uint8Array;
+    kdf: WorkerKdfParams;
+  }): Promise<{ wrappedAccountKey: Uint8Array }>;
+
   // ---- Identity handle lifecycle (Slice 2 will route deriveIdentity through these) ----
 
   /**

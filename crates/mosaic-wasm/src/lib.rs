@@ -2796,6 +2796,32 @@ pub fn unwrap_with_account_handle(account_handle: u64, wrapped: Vec<u8>) -> Byte
     bytes_result_from_client(result)
 }
 
+/// Re-wraps the L2 referenced by `account_handle` under a fresh L1 derived
+/// from `new_password + new_user_salt + new_account_salt`. Used by the
+/// password-rotation flow.
+#[must_use]
+pub fn rewrap_account_key_with_handle(
+    account_handle: u64,
+    new_password: Vec<u8>,
+    new_user_salt: Vec<u8>,
+    new_account_salt: Vec<u8>,
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+) -> BytesResult {
+    let mut new_password = Zeroizing::new(new_password);
+    let result = mosaic_client::rewrap_account_key_with_handle(
+        account_handle,
+        new_password.as_mut_slice(),
+        &new_user_salt,
+        &new_account_salt,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
+    );
+    bytes_result_from_client(result)
+}
+
 /// Encrypts a user salt with an account-key handle.
 #[must_use]
 pub fn encrypt_user_salt_envelope_v2(account_handle: u64, salt: Vec<u8>) -> SaltEnvelopeResult {
@@ -5427,6 +5453,34 @@ pub fn wrap_with_account_handle_js(account_handle: u64, plaintext: Vec<u8>) -> J
 #[must_use]
 pub fn unwrap_with_account_handle_js(account_handle: u64, wrapped: Vec<u8>) -> JsBytesResult {
     js_bytes_result_from_rust(unwrap_with_account_handle(account_handle, wrapped))
+}
+
+/// Re-wraps the L2 referenced by `account_handle` under a fresh L1 derived
+/// from `new_password + new_user_salt + new_account_salt` through WASM.
+///
+/// Used by the password-rotation flow. The L2 bytes never cross the JS
+/// boundary; the returned value is the server-storable wrapped account key
+/// envelope (`nonce(24) || ciphertext+tag`).
+#[wasm_bindgen(js_name = rewrapAccountKeyWithHandle)]
+#[must_use]
+pub fn rewrap_account_key_with_handle_js(
+    account_handle: u64,
+    new_password: Vec<u8>,
+    new_user_salt: Vec<u8>,
+    new_account_salt: Vec<u8>,
+    kdf_memory_kib: u32,
+    kdf_iterations: u32,
+    kdf_parallelism: u32,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(rewrap_account_key_with_handle(
+        account_handle,
+        new_password,
+        new_user_salt,
+        new_account_salt,
+        kdf_memory_kib,
+        kdf_iterations,
+        kdf_parallelism,
+    ))
 }
 
 /// Builds the canonical LocalAuth challenge transcript through WASM.
