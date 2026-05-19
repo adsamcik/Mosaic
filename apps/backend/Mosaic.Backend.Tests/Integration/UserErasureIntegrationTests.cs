@@ -431,6 +431,101 @@ public sealed class UserErasureIntegrationTests
             StringComparison.Ordinal);
     }
 
+    [DockerRequiredFact]
+    [Trait("Category", "Integration")]
+    public async Task EraseAsync_HandlesMalformedAuditJson_DoesNotAbortErasure()
+    {
+        // Regression: security-review-2026-05-19-04 — a single malformed
+        // historical `details_json` row in PostgreSQL caused the bulk
+        // `(details_json::jsonb - 'username')` UPDATE to throw
+        // `invalid_text_representation` and abort the entire erasure
+        // transaction, leaving the user un-deletable.
+        //
+        // The defensive scrub must:
+        //   1. Strip "username" from well-formed rows (fast path).
+        //   2. Skip malformed rows without aborting.
+        //   3. Still null `actor_user_id` and set `actor_was_erased = true`
+        //      across every row owned by the user — including the
+        //      malformed one — so linkability is broken.
+        //   4. Delete the user row.
+        await using var db = await _fixture.CreateFreshDbContextAsync();
+        var data = new TestDataBuilder(db);
+        var storage = new MockStorageService();
+
+        var user = await data.CreateUserAsync(OwnerAuthSub);
+
+        // Well-formed row — should be scrubbed in the fast path or
+        // fallback.
+        db.AuditLogEntries.Add(new AuditLogEntry
+        {
+            Id = Guid.NewGuid(),
+            EventType = AuditEventTypes.AuthLoginSucceeded,
+            Outcome = AuditOutcomes.Success,
+            ActorUserId = user.Id,
+            ActorWasErased = false,
+            DetailsJson = "{\"username\":\"" + OwnerAuthSub + "\",\"kdfAlgVersion\":19}"
+        });
+        // Malformed row — must not abort the erasure. Intentionally
+        // broken: truncated JSON that fails `::jsonb` cast with
+        // `invalid_text_representation` (SQLSTATE 22P02).
+        var malformedId = Guid.NewGuid();
+        db.AuditLogEntries.Add(new AuditLogEntry
+        {
+            Id = malformedId,
+            EventType = AuditEventTypes.AuthLoginFailed,
+            Outcome = AuditOutcomes.Denied,
+            ActorUserId = user.Id,
+            ActorWasErased = false,
+            DetailsJson = "{this is not valid json at all"
+        });
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db, storage);
+
+        // Erasure must complete without throwing. Capture and surface a
+        // descriptive failure if it does.
+        var result = await sut.EraseAsync(user.Id);
+
+        Assert.True(result.AuditEntriesAnonymised >= 2,
+            "Both audit rows must be anonymised even if the bulk jsonb scrub aborts on the malformed row.");
+
+        await using var verify = await _fixture.GetContextAsync();
+
+        // The user row is gone.
+        Assert.False(await verify.Users.AnyAsync(u => u.Id == user.Id));
+
+        // Both audit rows survived (audit log retained for compliance)
+        // and both have been anonymised — actor link broken even for the
+        // malformed row.
+        var rows = await verify.AuditLogEntries.AsNoTracking()
+            .Where(a => a.EventType == AuditEventTypes.AuthLoginSucceeded
+                     || a.EventType == AuditEventTypes.AuthLoginFailed)
+            .ToListAsync();
+        Assert.Equal(2, rows.Count);
+        foreach (var row in rows)
+        {
+            Assert.Null(row.ActorUserId);
+            Assert.True(row.ActorWasErased);
+        }
+
+        // The well-formed row had its "username" key removed.
+        var goodRow = rows.Single(r => r.EventType == AuditEventTypes.AuthLoginSucceeded);
+        Assert.DoesNotContain("\"username\"", goodRow.DetailsJson ?? string.Empty,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(OwnerAuthSub, goodRow.DetailsJson ?? string.Empty,
+            StringComparison.Ordinal);
+        Assert.Contains("kdfAlgVersion", goodRow.DetailsJson ?? string.Empty,
+            StringComparison.Ordinal);
+
+        // The malformed row is left structurally as-is (we cannot edit
+        // a payload we cannot parse) but the actor link is broken — the
+        // username string in the malformed blob can no longer be tied
+        // back to the deleted user.
+        var malformedRow = rows.Single(r => r.Id == malformedId);
+        Assert.True(malformedRow.ActorWasErased);
+        Assert.Null(malformedRow.ActorUserId);
+    }
+
     [Fact]
     [Trait("Category", "Integration")]
     public void LoginAudit_StripUsernameFromDetailsJson_RemovesField()

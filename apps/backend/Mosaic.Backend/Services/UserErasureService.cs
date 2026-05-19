@@ -237,14 +237,87 @@ public sealed class UserErasureService : IUserErasureService
             // scrub atomically with the user delete.
             if (_db.Database.IsNpgsql())
             {
+                // security-review-2026-05-19-04: defensive jsonb scrub.
+                // `details_json` is stored as text and *should* always be
+                // valid JSON (capped at 4 KiB) but historical rows from
+                // before validation was tightened may contain malformed
+                // payloads. A bulk `(details_json::jsonb - 'username')`
+                // UPDATE aborts the entire transaction the moment it hits
+                // a single malformed row (Postgres `invalid_text_representation`
+                // / `datatype_mismatch`), which would block the user erasure.
+                //
+                // Two-step strategy:
+                //   1. Try the bulk fast path inside a SAVEPOINT.
+                //   2. On failure, roll back to the savepoint and fall
+                //      through to a row-by-row managed scrub that skips
+                //      any row that fails to parse. The actor_user_id
+                //      link is still nulled in the subsequent anonymise
+                //      step, so PII is not retained even for skipped
+                //      rows.
+                var bulkSucceeded = false;
                 await _db.Database.ExecuteSqlRawAsync(
-                    @"UPDATE audit_log_entries
-                      SET details_json = (details_json::jsonb - 'username')::text
-                      WHERE actor_user_id = {0}
-                        AND details_json IS NOT NULL
-                        AND details_json::jsonb ? 'username'",
-                    new object[] { userId },
+                    "SAVEPOINT audit_scrub",
                     cancellationToken);
+                try
+                {
+                    await _db.Database.ExecuteSqlRawAsync(
+                        @"UPDATE audit_log_entries
+                          SET details_json = (details_json::jsonb - 'username')::text
+                          WHERE actor_user_id = {0}
+                            AND details_json IS NOT NULL
+                            AND details_json::jsonb ? 'username'",
+                        new object[] { userId },
+                        cancellationToken);
+                    await _db.Database.ExecuteSqlRawAsync(
+                        "RELEASE SAVEPOINT audit_scrub",
+                        cancellationToken);
+                    bulkSucceeded = true;
+                }
+                catch (Npgsql.PostgresException ex) when (
+                    ex.SqlState == "22P02" /* invalid_text_representation */ ||
+                    ex.SqlState == "42804" /* datatype_mismatch */)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Audit scrub bulk cast aborted by malformed historical jsonb for user {UserId}; falling back to per-row scrub",
+                        userId);
+                    await _db.Database.ExecuteSqlRawAsync(
+                        "ROLLBACK TO SAVEPOINT audit_scrub",
+                        cancellationToken);
+                }
+
+                if (!bulkSucceeded)
+                {
+                    // Per-row managed scrub: load actor rows whose text
+                    // contains a "username" token, attempt to parse and
+                    // strip in .NET, and write back only the rows we
+                    // could parse. Malformed rows are left untouched —
+                    // the parent anonymise step nulls actor_user_id so
+                    // the linkability invariant is still upheld.
+                    var rowsWithUsername = await _db.AuditLogEntries
+                        .Where(a => a.ActorUserId == userId
+                                    && a.DetailsJson != null
+                                    && a.DetailsJson.Contains("\"username\""))
+                        .ToListAsync(cancellationToken);
+                    foreach (var row in rowsWithUsername)
+                    {
+                        try
+                        {
+                            row.DetailsJson = StripUsernameFromDetailsJson(row.DetailsJson!);
+                        }
+                        catch (System.Text.Json.JsonException jex)
+                        {
+                            _logger.LogWarning(
+                                jex,
+                                "Skipping malformed audit row {AuditId} during fallback scrub",
+                                row.Id);
+                        }
+                    }
+                    if (rowsWithUsername.Count > 0)
+                    {
+                        await _db.SaveChangesAsync(cancellationToken);
+                    }
+                }
             }
             else
             {
