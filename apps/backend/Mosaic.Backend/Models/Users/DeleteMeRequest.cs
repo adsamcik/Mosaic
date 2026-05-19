@@ -38,8 +38,8 @@ public record DeleteMeRequest(
     /// the caller's username (their <c>AuthSub</c>) before the cascade runs.
     /// Capped at 256 to match the username column length plus headroom.
     /// </summary>
-    [property: Required(AllowEmptyStrings = false)]
-    [property: MaxLength(256)]
+    [Required(AllowEmptyStrings = false)]
+    [MaxLength(256)]
     string ConfirmationText,
 
     /// <summary>
@@ -55,7 +55,7 @@ public record DeleteMeRequest(
     /// transcript (same transcript builder as login). 64 raw bytes after
     /// decoding; capped at 8192 chars to bound request size.
     /// </summary>
-    [property: MaxLength(8192)]
+    [MaxLength(8192)]
     string? ConfirmationSignature = null,
 
     /// <summary>

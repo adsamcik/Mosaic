@@ -70,12 +70,12 @@ public record AuthRegisterRequest(
 /// </list>
 /// </summary>
 public record PasswordRotationRequest(
-    [property: Required] Guid ChallengeId,
-    [property: Required, MaxLength(256)] string CurrentSignature,
+    [Required] Guid ChallengeId,
+    [Required, MaxLength(256)] string CurrentSignature,
     long? Timestamp,
-    [property: Required, MaxLength(128)] string NewUserSalt,
-    [property: Required, MaxLength(128)] string NewAuthPubkey,
-    [property: Required, MaxLength(2048)] string NewWrappedAccountKey
+    [Required, MaxLength(128)] string NewUserSalt,
+    [Required, MaxLength(128)] string NewAuthPubkey,
+    [Required, MaxLength(2048)] string NewWrappedAccountKey
 );
 
 /// <summary>
