@@ -137,7 +137,7 @@ start_backend() {
     info "API Docs: http://localhost:$BACKEND_PORT/swagger"
     echo ""
     
-    dotnet watch run
+    dotnet watch run --no-launch-profile
 }
 
 start_frontend() {

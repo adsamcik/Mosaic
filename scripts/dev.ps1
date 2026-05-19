@@ -193,9 +193,13 @@ function Start-BackendService {
 `$env:Storage__Path = '$storagePath'
 `$env:Auth__TrustedProxies__0 = '127.0.0.0/8'
 `$env:Auth__TrustedProxies__1 = '::1/128'
+`$env:Auth__ServerSecret = 'dGVzdGluZy1zZXJ2ZXItc2VjcmV0LWRldi1vbmx5LTMyYnl0ZXM='
+`$env:Auth__LocalAuthEnabled = 'true'
+`$env:Auth__ProxyAuthEnabled = 'true'
+`$env:Auth__AllowDualMode = 'true'
 `$env:RUN_MIGRATIONS = 'true'
 Set-Location '$backendPath'
-dotnet watch run --no-hot-reload 2>&1
+dotnet watch run --no-hot-reload --no-launch-profile 2>&1
 "@
     
     $wrapperFile = Join-Path $PidDir "run-backend.ps1"
