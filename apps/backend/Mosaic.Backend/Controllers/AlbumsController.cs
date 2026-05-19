@@ -508,6 +508,15 @@ public class AlbumsController : ControllerBase
                 // replaying old signed manifests). NULL on pre-A3 rows.
                 m.ManifestSeq,
                 m.ExpiresAt,
+                // sync-500: createdAt is REQUIRED by the frontend
+                // SyncResponseSchema -> ManifestRecordSchema. Omitting these
+                // caused Zod validation to fail with "Invalid response shape"
+                // (surfaced as a synthetic ApiError 500 in the client),
+                // cascading into album-content, photo-upload persistence,
+                // format-conversion, album-management, and album-rename
+                // flows that all run a post-mutation sync.
+                m.CreatedAt,
+                m.UpdatedAt,
                 // Legacy format for backward compatibility
                 ShardIds = m.ManifestShards
                     .OrderBy(ms => ms.ChunkIndex)

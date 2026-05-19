@@ -61,6 +61,24 @@ public class AlbumsSyncShapeTests
         Assert.Equal(2, shards.Length);
         AssertShard(shards[0], preview.Id, (int)ShardTier.Preview, 0, preview.Sha256!, preview.SizeBytes, 3);
         AssertShard(shards[1], thumb.Id, (int)ShardTier.Thumb, 0, thumb.Sha256!, thumb.SizeBytes, 3);
+
+        // sync-500 regression: the frontend SyncResponseSchema /
+        // ManifestRecordSchema (apps/web/src/lib/api-schemas.ts) requires
+        // `createdAt` as a non-null ISO datetime and accepts `updatedAt`
+        // nullish. Dropping either from this projection causes the
+        // ApiClient to throw "Invalid response shape" (synthesized as
+        // ApiError 500) and breaks every post-mutation sync path
+        // (uploads, renames, album-content fetch, format conversion).
+        var createdAt = manifestElement.GetProperty("createdAt").GetString();
+        Assert.False(string.IsNullOrEmpty(createdAt));
+        Assert.True(
+            DateTime.TryParse(createdAt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out _),
+            $"createdAt must be ISO-8601 parseable, got: {createdAt}");
+        var updatedAt = manifestElement.GetProperty("updatedAt").GetString();
+        Assert.False(string.IsNullOrEmpty(updatedAt));
+        Assert.True(
+            DateTime.TryParse(updatedAt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out _),
+            $"updatedAt must be ISO-8601 parseable when present, got: {updatedAt}");
     }
 
     private static void AssertShard(
