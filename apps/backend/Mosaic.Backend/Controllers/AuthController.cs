@@ -930,98 +930,172 @@ public partial class AuthController : ControllerBase
         // (security-review-2026-05-19-05: last-writer-wins credential race).
         var currentTokenHash = GetCurrentTokenHash();
         var originalSaltVersion = user.SaltVersion;
-        int revokedCount;
+        int revokedCount = 0;
         IActionResult? earlyExit = null;
 
         var supportsTx = _db.Database.IsRelational();
-        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? tx = null;
-        if (supportsTx)
-        {
-            tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
-        }
 
-        try
+        // Bounded retry on PostgreSQL serialization failures (40001) and
+        // deadlocks (40P01). Better UX than asking the client to re-derive a
+        // fresh challenge + Argon2id-derived keys.
+        // (security-review-2026-05-19-07)
+        const int MaxRotationAttempts = 3;
+        var rotationBackoffsMs = new[] { 250, 500, 1000 };
+
+        for (int attempt = 0; attempt < MaxRotationAttempts; attempt++)
         {
-            // Re-read the user under the (Serializable) transaction. If SaltVersion
-            // moved, another rotation already committed using state we no longer
-            // own — fail fast rather than overwrite the newer credentials.
-            await _db.Entry(user).ReloadAsync();
-            if (user.SaltVersion != originalSaltVersion)
+            earlyExit = null;
+            revokedCount = 0;
+
+            Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? tx = null;
+            if (supportsTx)
             {
-                earlyExit = Problem(
-                    title: "Concurrent password rotation detected",
-                    detail: "Another password rotation completed before this one could commit. Retry with a fresh challenge.",
-                    statusCode: StatusCodes.Status409Conflict);
+                tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             }
-            else if (currentTokenHash != null)
+
+            try
             {
-                // Re-verify the caller's session is still active under the same
-                // full predicate used by GetCurrentUserIdAsync (revocation +
-                // absolute expiry + sliding expiry). A concurrent rotation may
-                // have revoked it, or the session may have expired between
-                // request entry and commit; if so the caller no longer has
-                // standing to rotate credentials.
-                // (security-review-2026-05-19-06)
-                var slidingCutoff = now.Add(-SessionSlidingExpiry);
-                var stillActive = await _db.Sessions
-                    .AnyAsync(s => s.UserId == user.Id
-                        && s.TokenHash == currentTokenHash
-                        && s.RevokedAt == null
-                        && s.ExpiresAt > now
-                        && s.LastSeenAt >= slidingCutoff);
-                if (!stillActive)
+                // Re-read the user under the (Serializable) transaction. ReloadAsync
+                // also discards any unsaved mutations from a previous failed attempt
+                // (e.g. UserSalt/AuthPubkey/WrappedAccountKey/SaltVersion writes from
+                // a rolled-back retry), restoring fresh DB state.
+                await _db.Entry(user).ReloadAsync();
+                if (user.SaltVersion != originalSaltVersion)
                 {
-                    earlyExit = Unauthorized();
+                    earlyExit = Problem(
+                        title: "Concurrent password rotation detected",
+                        detail: "Another password rotation completed before this one could commit. Retry with a fresh challenge.",
+                        statusCode: StatusCodes.Status409Conflict);
                 }
-            }
+                else if (currentTokenHash != null)
+                {
+                    // Re-verify the caller's session is still active under the same
+                    // full predicate used by GetCurrentUserIdAsync (revocation +
+                    // absolute expiry + sliding expiry). A concurrent rotation may
+                    // have revoked it, or the session may have expired between
+                    // request entry and commit; if so the caller no longer has
+                    // standing to rotate credentials.
+                    // (security-review-2026-05-19-06)
+                    var slidingCutoff = now.Add(-SessionSlidingExpiry);
+                    var stillActive = await _db.Sessions
+                        .AnyAsync(s => s.UserId == user.Id
+                            && s.TokenHash == currentTokenHash
+                            && s.RevokedAt == null
+                            && s.ExpiresAt > now
+                            && s.LastSeenAt >= slidingCutoff);
+                    if (!stillActive)
+                    {
+                        earlyExit = Unauthorized();
+                    }
+                }
 
-            if (earlyExit != null)
+                if (earlyExit != null)
+                {
+                    revokedCount = 0;
+                    if (tx is not null)
+                    {
+                        await tx.RollbackAsync();
+                    }
+                }
+                else
+                {
+                    user.UserSalt = newUserSalt;
+                    user.AuthPubkey = request.NewAuthPubkey;
+                    user.WrappedAccountKey = newWrappedAccountKey;
+                    user.SaltVersion = user.SaltVersion + 1;
+
+                    var sessionsToRevoke = await _db.Sessions
+                        .Where(s => s.UserId == user.Id
+                            && s.RevokedAt == null
+                            && (currentTokenHash == null || s.TokenHash != currentTokenHash))
+                        .ToListAsync();
+
+                    foreach (var s in sessionsToRevoke)
+                    {
+                        s.RevokedAt = now;
+                    }
+                    revokedCount = sessionsToRevoke.Count;
+
+                    await _db.SaveChangesAsync();
+                    if (tx is not null)
+                    {
+                        await tx.CommitAsync();
+                    }
+                }
+
+                break; // success (or non-retryable earlyExit) — leave the retry loop
+            }
+            catch (DbUpdateException dbEx) when (
+                IsRetryablePostgresConflict(dbEx) && attempt + 1 < MaxRotationAttempts)
             {
-                revokedCount = 0;
                 if (tx is not null)
                 {
                     await tx.RollbackAsync();
                 }
+                _logger.LogWarning(
+                    "Password rotation hit serialization/deadlock conflict for user {UserId} on attempt {Attempt}; retrying after {BackoffMs}ms",
+                    user.Id, attempt + 1, rotationBackoffsMs[attempt]);
+                await Task.Delay(rotationBackoffsMs[attempt]);
+                continue;
             }
-            else
+            catch (Npgsql.PostgresException pex) when (
+                (pex.SqlState == "40001" || pex.SqlState == "40P01") && attempt + 1 < MaxRotationAttempts)
             {
-                user.UserSalt = newUserSalt;
-                user.AuthPubkey = request.NewAuthPubkey;
-                user.WrappedAccountKey = newWrappedAccountKey;
-                user.SaltVersion = user.SaltVersion + 1;
-
-                var sessionsToRevoke = await _db.Sessions
-                    .Where(s => s.UserId == user.Id
-                        && s.RevokedAt == null
-                        && (currentTokenHash == null || s.TokenHash != currentTokenHash))
-                    .ToListAsync();
-
-                foreach (var s in sessionsToRevoke)
-                {
-                    s.RevokedAt = now;
-                }
-                revokedCount = sessionsToRevoke.Count;
-
-                await _db.SaveChangesAsync();
                 if (tx is not null)
                 {
-                    await tx.CommitAsync();
+                    await tx.RollbackAsync();
                 }
+                _logger.LogWarning(
+                    "Password rotation hit serialization/deadlock conflict ({SqlState}) for user {UserId} on attempt {Attempt}; retrying after {BackoffMs}ms",
+                    pex.SqlState, user.Id, attempt + 1, rotationBackoffsMs[attempt]);
+                await Task.Delay(rotationBackoffsMs[attempt]);
+                continue;
             }
-        }
-        catch
-        {
-            if (tx is not null)
+            catch (DbUpdateException dbEx) when (IsRetryablePostgresConflict(dbEx))
             {
-                await tx.RollbackAsync();
+                // Retries exhausted — surface a clean 409 instead of a raw 500.
+                if (tx is not null)
+                {
+                    await tx.RollbackAsync();
+                }
+                _logger.LogWarning(dbEx,
+                    "Password rotation exhausted {MaxAttempts} retries on serialization/deadlock conflict for user {UserId}",
+                    MaxRotationAttempts, user.Id);
+                earlyExit = Problem(
+                    title: "Concurrent password rotation detected",
+                    detail: "The database could not serialize this rotation against a concurrent transaction. Retry with a fresh challenge.",
+                    statusCode: StatusCodes.Status409Conflict);
+                break;
             }
-            throw;
-        }
-        finally
-        {
-            if (tx is not null)
+            catch (Npgsql.PostgresException pex) when (pex.SqlState == "40001" || pex.SqlState == "40P01")
             {
-                await tx.DisposeAsync();
+                if (tx is not null)
+                {
+                    await tx.RollbackAsync();
+                }
+                _logger.LogWarning(pex,
+                    "Password rotation exhausted {MaxAttempts} retries on serialization/deadlock conflict ({SqlState}) for user {UserId}",
+                    MaxRotationAttempts, pex.SqlState, user.Id);
+                earlyExit = Problem(
+                    title: "Concurrent password rotation detected",
+                    detail: "The database could not serialize this rotation against a concurrent transaction. Retry with a fresh challenge.",
+                    statusCode: StatusCodes.Status409Conflict);
+                break;
+            }
+            catch
+            {
+                if (tx is not null)
+                {
+                    await tx.RollbackAsync();
+                }
+                throw;
+            }
+            finally
+            {
+                if (tx is not null)
+                {
+                    await tx.DisposeAsync();
+                }
             }
         }
 
@@ -1151,6 +1225,27 @@ public partial class AuthController : ControllerBase
     // Random fallback secret generated once per process lifetime.
     // Used only when Auth:ServerSecret is not configured (should not happen - Program.cs sets it).
     private static readonly Lazy<byte[]> FallbackServerSecret = new(() => RandomNumberGenerator.GetBytes(32));
+
+    // PostgreSQL serialization failure (40001) and deadlock (40P01) detection.
+    // EF wraps the underlying Npgsql exception in DbUpdateException for write
+    // failures; unwrap and inspect the SqlState to decide whether the rotation
+    // can be safely retried.
+    private static bool IsRetryablePostgresConflict(Exception ex)
+    {
+        for (var e = ex; e != null; e = e.InnerException!)
+        {
+            if (e is Npgsql.PostgresException pex &&
+                (pex.SqlState == "40001" || pex.SqlState == "40P01"))
+            {
+                return true;
+            }
+            if (e.InnerException == null)
+            {
+                break;
+            }
+        }
+        return false;
+    }
 
     private byte[] GenerateFakeSalt(string username)
     {
