@@ -1,4 +1,6 @@
 using System.Net;
+using Microsoft.Extensions.Hosting;
+using Mosaic.Backend.Infrastructure;
 
 namespace Mosaic.Backend.Middleware;
 
@@ -52,8 +54,9 @@ public sealed class OriginValidationMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<OriginValidationMiddleware> _logger;
+    private readonly string[] _exemptPathPrefixes;
 
-    private static readonly string[] ExemptPathPrefixes =
+    private static readonly string[] BaseExemptPathPrefixes =
     {
         "/api/v1/auth/init",
         "/api/v1/auth/verify",
@@ -63,6 +66,18 @@ public sealed class OriginValidationMiddleware
         "/health",
         "/api/v1/health",
     };
+
+    /// <summary>
+    /// E2E test-seed endpoints are called by out-of-browser tooling
+    /// (Node's <c>fetch</c>, curl, Playwright global-setup) that does not
+    /// emit <c>Sec-Fetch-Site</c> or <c>Origin</c> headers. They are
+    /// exempted from origin validation, but ONLY when the host
+    /// environment also enables the test-seed controller — i.e.
+    /// <c>Development</c> or <c>Testing</c>. In <c>Production</c> the
+    /// path is NOT exempt and the controller itself is gated to 404 by
+    /// <see cref="AuthConfigurationResolver.IsTestSeedEnabled"/>.
+    /// </summary>
+    private const string TestSeedPathPrefix = "/api/v1/test-seed/";
 
     private static readonly HashSet<string> SafeMethods = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -74,10 +89,22 @@ public sealed class OriginValidationMiddleware
 
     public OriginValidationMiddleware(
         RequestDelegate next,
-        ILogger<OriginValidationMiddleware> logger)
+        ILogger<OriginValidationMiddleware> logger,
+        IHostEnvironment environment)
     {
         _next = next;
         _logger = logger;
+
+        if (AuthConfigurationResolver.IsTestSeedEnabled(environment))
+        {
+            _exemptPathPrefixes = new string[BaseExemptPathPrefixes.Length + 1];
+            Array.Copy(BaseExemptPathPrefixes, _exemptPathPrefixes, BaseExemptPathPrefixes.Length);
+            _exemptPathPrefixes[BaseExemptPathPrefixes.Length] = TestSeedPathPrefix;
+        }
+        else
+        {
+            _exemptPathPrefixes = BaseExemptPathPrefixes;
+        }
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -89,7 +116,7 @@ public sealed class OriginValidationMiddleware
         }
 
         var path = context.Request.Path.Value ?? string.Empty;
-        if (IsExempt(path))
+        if (IsExempt(path, _exemptPathPrefixes))
         {
             await _next(context);
             return;
@@ -161,9 +188,9 @@ public sealed class OriginValidationMiddleware
         await RejectAsync(context);
     }
 
-    private static bool IsExempt(string path)
+    private static bool IsExempt(string path, string[] exemptPathPrefixes)
     {
-        foreach (var prefix in ExemptPathPrefixes)
+        foreach (var prefix in exemptPathPrefixes)
         {
             if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             {
