@@ -87,18 +87,27 @@ public sealed class PasswordRotationConcurrencyPostgresTests
             _seededChallenge2 = ch2;
         }
 
-        // Barrier blocks each controller's in-tx SaveChangesAsync (the 3rd save
-        // overall on each controller's DbContext) until both have arrived,
-        // forcing the serializable conflict at commit.
+        // Synchronize at the REAL transactional barrier: fire when each
+        // controller has executed BEGIN ISOLATION LEVEL SERIALIZABLE. This
+        // guarantees both transactions are open before either reads the user
+        // row or attempts its UPDATE, so Postgres SSI must detect the
+        // read/write conflict and rotate one of the transactions through the
+        // bounded retry loop (security-review-2026-05-19-10). The previous
+        // BarrierOnNthSaveInterceptor never fired in practice because the
+        // rotation path only executes two SaveChanges calls (challenge claim
+        // uses ExecuteUpdateAsync, which bypasses SaveChanges interceptors)
+        // — so the test was passing via the stale-SaltVersion 409 path
+        // rather than the real Serializable retry path it was meant to
+        // verify.
         using var barrier = new Barrier(2);
-        var interceptorA = new BarrierOnNthSaveInterceptor(barrier, fireOnNthSave: 3);
-        var interceptorB = new BarrierOnNthSaveInterceptor(barrier, fireOnNthSave: 3);
+        var interceptorA = new BarrierOnSerializableTransactionInterceptor(barrier);
+        var interceptorB = new BarrierOnSerializableTransactionInterceptor(barrier);
 
         await using var dbA = _fixture.CreateContext(interceptorA);
         await using var dbB = _fixture.CreateContext(interceptorB);
 
-        var controllerA = CreateController(dbA, _seededSessionToken);
-        var controllerB = CreateController(dbB, _seededSessionToken);
+        var (controllerA, loggerA) = CreateController(dbA, _seededSessionToken);
+        var (controllerB, loggerB) = CreateController(dbB, _seededSessionToken);
 
         var reqA = BuildRequest(_seededChallenge1!, _seededAuthPubkey!, _seededAuthSecret!);
         var reqB = BuildRequest(_seededChallenge2!, _seededAuthPubkey!, _seededAuthSecret!);
@@ -120,6 +129,24 @@ public sealed class PasswordRotationConcurrencyPostgresTests
         await using var verifyDb = _fixture.CreateContext();
         var finalUser = await verifyDb.Users.FirstAsync(u => u.Id == _seededUserId);
         Assert.Equal(2, finalUser.SaltVersion);
+
+        // The barrier actually fired on BOTH controllers' Serializable BEGIN.
+        // If it didn't, the test would be falling back to the stale-
+        // SaltVersion 409 path instead of exercising the retry loop.
+        Assert.True(interceptorA.Fired,
+            "Controller A's Serializable transaction barrier did not fire — test is not exercising the in-transaction race.");
+        Assert.True(interceptorB.Fired,
+            "Controller B's Serializable transaction barrier did not fire — test is not exercising the in-transaction race.");
+
+        // The retry-loop warning ("serialization/deadlock conflict ... retrying"
+        // or "exhausted ... retries") must have fired on the loser, proving
+        // that the controller actually encountered a Postgres SSI conflict
+        // (40001) — i.e. the real transactional contention path, not merely
+        // the SaltVersion-mismatch shortcut.
+        var retryLoggedOnA = LoggerReceivedRotationConflictWarning(loggerA);
+        var retryLoggedOnB = LoggerReceivedRotationConflictWarning(loggerB);
+        Assert.True(retryLoggedOnA || retryLoggedOnB,
+            "Neither controller logged a serialization/deadlock-conflict warning — the test did not exercise the retry path.");
     }
 
     [DockerRequiredFact]
@@ -165,7 +192,7 @@ public sealed class PasswordRotationConcurrencyPostgresTests
         var hook = new FireOnceOnNthSaveInterceptor(expireSession, fireOnNthSave: 1);
 
         await using var db = _fixture.CreateContext(hook);
-        var controller = CreateController(db, token);
+        var (controller, _) = CreateController(db, token);
         var req = BuildRequest(challenge, pub, sec);
 
         var result = await controller.RotatePassword(req);
@@ -200,9 +227,14 @@ public sealed class PasswordRotationConcurrencyPostgresTests
         _ => StatusCodes.Status500InternalServerError,
     };
 
-    private AuthController CreateController(MosaicDbContext db, byte[] sessionToken)
+    private (AuthController Controller, ILogger<AuthController> Logger) CreateController(
+        MosaicDbContext db, byte[] sessionToken)
     {
         var logger = Substitute.For<ILogger<AuthController>>();
+        // ILogger.Log<TState> requires IsEnabled(LogLevel.Warning) == true so
+        // the warning the controller emits on a serialization conflict is
+        // actually dispatched to our NSubstitute mock.
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var env = Substitute.For<IWebHostEnvironment>();
         env.EnvironmentName.Returns("Production");
         var cache = new MemoryCache(new MemoryCacheOptions());
@@ -218,10 +250,42 @@ public sealed class PasswordRotationConcurrencyPostgresTests
             })
             .Build();
 
-        return new AuthController(db, config, logger, env, cache, RustHost.Value)
+        var controller = new AuthController(db, config, logger, env, cache, RustHost.Value)
         {
             ControllerContext = new ControllerContext { HttpContext = http }
         };
+        return (controller, logger);
+    }
+
+    /// <summary>
+    /// Returns true if the supplied logger received a Warning-level Log call
+    /// whose state stringifies to a message produced by the rotation retry
+    /// loop (security-review-2026-05-19-07 / -10). We inspect the underlying
+    /// <c>ILogger.Log&lt;TState&gt;</c> invocation rather than the extension
+    /// methods so we can read the un-rendered structured-logging state.
+    /// </summary>
+    private static bool LoggerReceivedRotationConflictWarning(ILogger<AuthController> logger)
+    {
+        foreach (var call in logger.ReceivedCalls())
+        {
+            if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+            {
+                continue;
+            }
+            var args = call.GetArguments();
+            if (args.Length < 3 || args[0] is not LogLevel level || level != LogLevel.Warning)
+            {
+                continue;
+            }
+            var rendered = args[2]?.ToString();
+            if (rendered != null &&
+                (rendered.Contains("serialization/deadlock conflict", StringComparison.Ordinal) ||
+                 rendered.Contains("exhausted", StringComparison.Ordinal)))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static User NewUser(byte[] authPubkey) => new()
@@ -296,40 +360,45 @@ public sealed class PasswordRotationConcurrencyPostgresTests
 
     // ---------- Interceptors ----------
 
-    private sealed class BarrierOnNthSaveInterceptor : ISaveChangesInterceptor
+    private sealed class BarrierOnSerializableTransactionInterceptor : IDbTransactionInterceptor
     {
         private readonly Barrier _barrier;
-        private readonly int _fireOnNthSave;
-        private int _count;
-        private bool _fired;
+        private int _firedFlag;
 
-        public BarrierOnNthSaveInterceptor(Barrier barrier, int fireOnNthSave)
+        public BarrierOnSerializableTransactionInterceptor(Barrier barrier)
         {
             _barrier = barrier;
-            _fireOnNthSave = fireOnNthSave;
         }
 
-        public ValueTask<InterceptionResult<int>> SavingChangesAsync(
-            DbContextEventData eventData,
-            InterceptionResult<int> result,
+        public bool Fired => Volatile.Read(ref _firedFlag) != 0;
+
+        // Fires AFTER `BEGIN ISOLATION LEVEL SERIALIZABLE` has actually been
+        // issued to Postgres — i.e. the transaction is open on the server
+        // before either controller proceeds to read the user row or execute
+        // its UPDATE. This is the true synchronization point for forcing a
+        // Postgres SSI conflict (security-review-2026-05-19-10).
+        public ValueTask<System.Data.Common.DbTransaction> TransactionStartedAsync(
+            System.Data.Common.DbConnection connection,
+            TransactionEndEventData eventData,
+            System.Data.Common.DbTransaction result,
             CancellationToken cancellationToken = default)
         {
-            var c = Interlocked.Increment(ref _count);
-            if (!_fired && c == _fireOnNthSave)
+            if (result.IsolationLevel == System.Data.IsolationLevel.Serializable &&
+                Interlocked.Exchange(ref _firedFlag, 1) == 0)
             {
-                _fired = true;
                 _barrier.SignalAndWait(TimeSpan.FromSeconds(30));
             }
-            return new ValueTask<InterceptionResult<int>>(result);
+            return new ValueTask<System.Data.Common.DbTransaction>(result);
         }
 
-        public InterceptionResult<int> SavingChanges(
-            DbContextEventData eventData, InterceptionResult<int> result)
+        public System.Data.Common.DbTransaction TransactionStarted(
+            System.Data.Common.DbConnection connection,
+            TransactionEndEventData eventData,
+            System.Data.Common.DbTransaction result)
         {
-            var c = Interlocked.Increment(ref _count);
-            if (!_fired && c == _fireOnNthSave)
+            if (result.IsolationLevel == System.Data.IsolationLevel.Serializable &&
+                Interlocked.Exchange(ref _firedFlag, 1) == 0)
             {
-                _fired = true;
                 _barrier.SignalAndWait(TimeSpan.FromSeconds(30));
             }
             return result;
