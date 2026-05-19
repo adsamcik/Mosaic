@@ -185,7 +185,12 @@ public class ShareLinksController : ControllerBase
             return Created($"/api/v1/share-links/{shareLink.Id}", new ShareLinkResponse
             {
                 Id = shareLink.Id,
-                LinkId = Base64UrlHelper.ToBase64Url(shareLink.LinkId),
+                // v1.0.x shares-01: frontend Zod schema (Base64Schema = z.string().base64())
+                // requires standard base64 with `+`/`/`/`=` alphabet. base64url
+                // (with `-`/`_` and no padding) fails validation. Emit standard
+                // base64 here; `Base64UrlHelper.FromBase64Url` on the inbound
+                // path already accepts both encodings.
+                LinkId = Convert.ToBase64String(shareLink.LinkId),
                 AccessTier = shareLink.AccessTier,
                 ExpiresAt = shareLink.ExpiresAt,
                 MaxUses = shareLink.MaxUses,
@@ -234,7 +239,8 @@ public class ShareLinksController : ControllerBase
             .Select(sl => new ShareLinkResponse
             {
                 Id = sl.Id,
-                LinkId = Base64UrlHelper.ToBase64Url(sl.LinkId),
+                // v1.0.x shares-01: see Create() for rationale.
+                LinkId = Convert.ToBase64String(sl.LinkId),
                 AccessTier = sl.AccessTier,
                 ExpiresAt = sl.ExpiresAt,
                 MaxUses = sl.MaxUses,
@@ -303,7 +309,8 @@ public class ShareLinksController : ControllerBase
             .Select(sl => new ShareLinkWithSecretResponse
             {
                 Id = sl.Id,
-                LinkId = Base64UrlHelper.ToBase64Url(sl.LinkId),
+                // v1.0.x shares-01: see Create() for rationale.
+                LinkId = Convert.ToBase64String(sl.LinkId),
                 AccessTier = sl.AccessTier,
                 IsRevoked = sl.IsRevoked,
                 OwnerEncryptedSecret = sl.OwnerEncryptedSecret
@@ -440,7 +447,8 @@ public class ShareLinksController : ControllerBase
         return Ok(new ShareLinkResponse
         {
             Id = shareLink.Id,
-            LinkId = Base64UrlHelper.ToBase64Url(shareLink.LinkId),
+            // v1.0.x shares-01: see Create() for rationale.
+            LinkId = Convert.ToBase64String(shareLink.LinkId),
             AccessTier = shareLink.AccessTier,
             ExpiresAt = shareLink.ExpiresAt,
             MaxUses = shareLink.MaxUses,

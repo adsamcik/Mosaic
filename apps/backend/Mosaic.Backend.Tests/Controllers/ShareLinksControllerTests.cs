@@ -439,6 +439,54 @@ public class ShareLinksControllerTests
     }
 
     [Fact]
+    public async Task Create_ReturnsStandardBase64LinkId_MatchingFrontendZodSchema()
+    {
+        // Regression: v1.0.x shares-01 — frontend Zod schema validates
+        // `linkId` as standard base64 (`z.string().base64()` requires the
+        // `+`/`/`/`=` alphabet). Emitting base64url (with `-`/`_` and no
+        // padding) caused every share-link create response to be rejected
+        // client-side with "API Error 500: Invalid response shape".
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+
+        var controller = new ShareLinksController(db, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        // Deliberately use bytes that produce `+`, `/`, `=` in standard
+        // base64 so we exercise the full alphabet (not just the safe subset).
+        var linkIdBytes = new byte[]
+        {
+            0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8,
+            0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf2, 0xf1, 0xf0
+        };
+        var request = CreateValidRequest(linkId: linkIdBytes);
+
+        var result = await controller.Create(album.Id, request);
+
+        var createdResult = Assert.IsType<CreatedResult>(result);
+        var response = Assert.IsType<ShareLinkResponse>(createdResult.Value);
+
+        // Standard base64 of 16 bytes is 24 chars with 2 padding `=`.
+        Assert.Equal(24, response.LinkId.Length);
+        Assert.EndsWith("==", response.LinkId);
+        // Must NOT contain the base64url-only alphabet chars.
+        Assert.DoesNotContain('-', response.LinkId);
+        Assert.DoesNotContain('_', response.LinkId);
+        // Must round-trip via standard Convert.FromBase64String (proves it
+        // satisfies the frontend Zod contract).
+        var roundTripped = Convert.FromBase64String(response.LinkId);
+        Assert.Equal(linkIdBytes, roundTripped);
+    }
+
+    [Fact]
     public async Task Create_ReturnsConflict_WhenLinkIdAlreadyExists()
     {
         // Arrange
