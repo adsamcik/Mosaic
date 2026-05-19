@@ -59,7 +59,16 @@ wasm-bindgen \
   --out-dir "$out_dir" \
   "$PROJECT_ROOT/target/wasm32-unknown-unknown/release/mosaic_wasm.wasm"
 
-web_out_dir="$PROJECT_ROOT/apps/web/src/generated/mosaic-wasm"
+# Output directory inside the web app. Defaults to the canonical
+# production path; can be overridden (e.g. for the test-only weak-kdf
+# artifact at apps/web/src/generated/mosaic-wasm-test-weak). The override
+# is interpreted relative to PROJECT_ROOT when given as a relative path.
+out_subpath="${MOSAIC_WASM_OUT_DIR:-apps/web/src/generated/mosaic-wasm}"
+if [[ "$out_subpath" = /* ]]; then
+  web_out_dir="$out_subpath"
+else
+  web_out_dir="$PROJECT_ROOT/$out_subpath"
+fi
 mkdir -p "$web_out_dir"
 cp "$out_dir/mosaic_wasm.js" "$web_out_dir/"
 cp "$out_dir/mosaic_wasm.d.ts" "$web_out_dir/"

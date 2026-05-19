@@ -8,6 +8,7 @@ using Mosaic.Backend.Data;
 using Mosaic.Backend.Models.Auth;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Logging;
+using Mosaic.Backend.Security;
 using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
@@ -40,10 +41,6 @@ public partial class AuthController : ControllerBase
     private const int DefaultKdfIterations = 3;
     private const int DefaultKdfParallelism = 1;
     private const byte DefaultKdfAlgVersion = 0x13;
-    private const int MinimumKdfMemoryKib = 8192;
-    private const int MaximumKdfMemoryKib = 1_048_576;
-    private const int MaximumKdfIterations = 32;
-    private const int MaximumKdfParallelism = 16;
 
     [GeneratedRegex(@"^[a-zA-Z0-9_\-@.]+$", RegexOptions.Compiled)]
     private static partial Regex ValidUsernamePattern();
@@ -53,6 +50,7 @@ public partial class AuthController : ControllerBase
     private readonly IAuditLogService? _auditLog;
     private readonly TimeProvider _timeProvider;
     private readonly MosaicMetrics? _metrics;
+    private readonly KdfPolicy _kdfPolicy;
     private readonly bool _isProxyAuthMode;
 
     public AuthController(
@@ -62,6 +60,7 @@ public partial class AuthController : ControllerBase
         IWebHostEnvironment env,
         IMemoryCache cache,
         RustCoreHost rustHost,
+        KdfPolicy kdfPolicy,
         IAuditLogService? auditLog = null,
         TimeProvider? timeProvider = null,
         MosaicMetrics? metrics = null)
@@ -75,6 +74,7 @@ public partial class AuthController : ControllerBase
         _auditLog = auditLog;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _metrics = metrics;
+        _kdfPolicy = kdfPolicy;
 
         // Check if LocalAuth mode is enabled (support both new and legacy config)
         var legacyMode = config["Auth:Mode"];
@@ -459,7 +459,7 @@ public partial class AuthController : ControllerBase
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
-        if (!IsValidKdfProfile(request.KdfMemoryKib, request.KdfIterations, request.KdfParallelism, request.KdfAlgVersion))
+        if (!_kdfPolicy.IsValid(request.KdfMemoryKib, request.KdfIterations, request.KdfParallelism, request.KdfAlgVersion))
         {
             return Problem(
                 detail: "Invalid KDF profile",
@@ -1107,17 +1107,6 @@ public partial class AuthController : ControllerBase
     }
 
     // ===== Helper Methods (continued) =====
-
-    private static bool IsValidKdfProfile(long memoryKib, int iterations, int parallelism, byte algVersion)
-    {
-        return memoryKib >= MinimumKdfMemoryKib &&
-               memoryKib <= MaximumKdfMemoryKib &&
-               iterations >= 1 &&
-               iterations <= MaximumKdfIterations &&
-               parallelism >= 1 &&
-               parallelism <= MaximumKdfParallelism &&
-               algVersion == DefaultKdfAlgVersion;
-    }
 
     private async Task<bool> TryClaimAuthChallengeAsync(Guid challengeId, DateTime now)
     {

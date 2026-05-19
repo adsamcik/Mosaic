@@ -95,7 +95,7 @@ public class PasswordRotationConcurrencyTests
         var http = new DefaultHttpContext();
         http.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("127.0.0.1");
 
-        return new AuthController(db, LocalAuthConfig(), logger, env, cache, RustHost.Value)
+        return new AuthController(db, LocalAuthConfig(), logger, env, cache, RustHost.Value, Mosaic.Backend.Security.KdfPolicy.ForTesting())
         {
             ControllerContext = new ControllerContext { HttpContext = http }
         };

@@ -49,6 +49,9 @@ env_args=()
 if [[ -n "${MOSAIC_WASM_CARGO_FEATURES:-}" ]]; then
   env_args+=(-e "MOSAIC_WASM_CARGO_FEATURES=$MOSAIC_WASM_CARGO_FEATURES")
 fi
+if [[ -n "${MOSAIC_WASM_OUT_DIR:-}" ]]; then
+  env_args+=(-e "MOSAIC_WASM_OUT_DIR=$MOSAIC_WASM_OUT_DIR")
+fi
 
 echo "[wasm-docker] running deterministic WASM build inside $IMAGE_TAG..." >&2
 docker run --rm \

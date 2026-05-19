@@ -1,6 +1,41 @@
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
+
+/**
+ * When `VITE_E2E_WEAK_KEYS=true`, swap every relative import that targets
+ * `generated/mosaic-wasm/...` (the production artifact, built WITHOUT the
+ * `weak-kdf` cargo feature) to `generated/mosaic-wasm-test-weak/...` (an
+ * isolated artifact built WITH `weak-kdf`, so Argon2 derivations finish in
+ * milliseconds for E2E fixtures).
+ *
+ * Gating rules (defense in depth, security-review-2026-05-20-01):
+ *   - The redirect runs only when the env var is the literal string "true".
+ *   - The redirect cannot point at the production artifact — it always
+ *     resolves to a path containing `mosaic-wasm-test-weak/`.
+ *   - The production artifact ships at the canonical path, so prod bundles
+ *     can never accidentally bundle the weak-kdf bytes.
+ */
+function mosaicWeakKdfRedirectPlugin(): Plugin {
+  const enabled = process.env.VITE_E2E_WEAK_KEYS === 'true';
+  const PROD_MARKER = 'generated/mosaic-wasm/';
+  const TEST_MARKER = 'generated/mosaic-wasm-test-weak/';
+  return {
+    name: 'mosaic-weak-kdf-redirect',
+    enforce: 'pre',
+    async resolveId(source, importer, options) {
+      if (!enabled) return null;
+      if (!source.includes(PROD_MARKER)) return null;
+      if (source.includes(TEST_MARKER)) return null;
+      const redirected = source.replace(PROD_MARKER, TEST_MARKER);
+      const resolved = await this.resolve(redirected, importer, {
+        ...options,
+        skipSelf: true,
+      });
+      return resolved;
+    },
+  };
+}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -9,7 +44,7 @@ export default defineConfig(({ mode }) => {
   const apiPort = env.VITE_API_PORT || '5000';
 
   return {
-    plugins: [react()],
+    plugins: [mosaicWeakKdfRedirectPlugin(), react()],
 
     resolve: {
       alias: {

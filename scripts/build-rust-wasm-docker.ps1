@@ -51,6 +51,9 @@ $envArgs = @()
 if ($env:MOSAIC_WASM_CARGO_FEATURES) {
     $envArgs += @('-e', "MOSAIC_WASM_CARGO_FEATURES=$($env:MOSAIC_WASM_CARGO_FEATURES)")
 }
+if ($env:MOSAIC_WASM_OUT_DIR) {
+    $envArgs += @('-e', "MOSAIC_WASM_OUT_DIR=$($env:MOSAIC_WASM_OUT_DIR)")
+}
 
 Write-Host "[wasm-docker] running deterministic WASM build inside $ImageTag..." -ForegroundColor Cyan
 docker run --rm `

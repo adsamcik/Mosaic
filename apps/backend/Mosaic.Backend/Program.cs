@@ -51,6 +51,7 @@ builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IEpochKeyRotationService, EpochKeyRotationService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<MosaicMetrics>();
+builder.Services.AddSingleton<Mosaic.Backend.Security.KdfPolicy>();
 builder.Services.AddOptions<IdempotencyOptions>()
     .Bind(builder.Configuration.GetSection("Idempotency"))
     .ValidateOnStart();

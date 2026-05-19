@@ -250,7 +250,7 @@ public sealed class PasswordRotationConcurrencyPostgresTests
             })
             .Build();
 
-        var controller = new AuthController(db, config, logger, env, cache, RustHost.Value)
+        var controller = new AuthController(db, config, logger, env, cache, RustHost.Value, Mosaic.Backend.Security.KdfPolicy.ForTesting())
         {
             ControllerContext = new ControllerContext { HttpContext = http }
         };

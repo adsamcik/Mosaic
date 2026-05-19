@@ -56,13 +56,113 @@ public class AuthControllerTests
         var httpContext = new DefaultHttpContext();
         httpContext.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(remoteIp ?? "127.0.0.1");
 
-        return new AuthController(db, config, logger, env, cache, RustHost.Value, auditLog: null, timeProvider: timeProvider ?? TimeProvider.System, metrics: metrics)
+        return new AuthController(db, config, logger, env, cache, RustHost.Value, Mosaic.Backend.Security.KdfPolicy.ForTesting(), auditLog: null, timeProvider: timeProvider ?? TimeProvider.System, metrics: metrics)
         {
             ControllerContext = new ControllerContext
             {
                 HttpContext = httpContext
             }
         };
+    }
+
+    private static AuthController CreateControllerWithEnvironmentPolicy(
+        Data.MosaicDbContext db,
+        string environmentName,
+        IConfiguration? config = null)
+    {
+        config ??= CreateConfig();
+        var logger = Substitute.For<ILogger<AuthController>>();
+        var env = Substitute.For<IWebHostEnvironment>();
+        env.EnvironmentName.Returns(environmentName);
+        var cache = new MemoryCache(new MemoryCacheOptions());
+
+        var httpContext = new DefaultHttpContext();
+        httpContext.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("127.0.0.1");
+
+        // Use the real environment-derived KdfPolicy so the floor matches
+        // production behaviour for the supplied environmentName.
+        var policy = new Mosaic.Backend.Security.KdfPolicy(env);
+
+        return new AuthController(db, config, logger, env, cache, RustHost.Value, policy)
+        {
+            ControllerContext = new ControllerContext { HttpContext = httpContext }
+        };
+    }
+
+    [Fact]
+    public async Task Register_InProductionEnv_RejectsWeakKdf_8MiB_1Iter()
+    {
+        // security-review-2026-05-20-01: in Production the server MUST
+        // refuse to register accounts with 8 MiB / 1 iter Argon2.
+        using var db = TestDbContextFactory.Create();
+        var controller = CreateControllerWithEnvironmentPolicy(db, "Production");
+
+        var result = await controller.Register(new AuthRegisterRequest(
+            "newuser",
+            "auth-pubkey-base64",
+            "identity-pubkey-base64",
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            KdfMemoryKib: 8_192,
+            KdfIterations: 1,
+            KdfParallelism: 1,
+            KdfAlgVersion: 0x13
+        ));
+
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("Invalid KDF profile", ProblemDetailsAssertions.GetDetail(badRequest));
+        Assert.Empty(db.Users);
+    }
+
+    [Fact]
+    public async Task Register_InTestingEnv_AcceptsWeakKdf_8MiB_1Iter()
+    {
+        // The Testing environment intentionally relaxes the floor so the
+        // weak-kdf E2E pool (VITE_E2E_WEAK_KEYS=true) can register users
+        // in milliseconds.
+        using var db = TestDbContextFactory.Create();
+        var controller = CreateControllerWithEnvironmentPolicy(db, "Testing");
+
+        var result = await controller.Register(new AuthRegisterRequest(
+            "newuser",
+            "auth-pubkey-base64",
+            "identity-pubkey-base64",
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            KdfMemoryKib: 8_192,
+            KdfIterations: 1,
+            KdfParallelism: 1,
+            KdfAlgVersion: 0x13
+        ));
+
+        Assert.IsType<CreatedResult>(result);
+        var user = Assert.Single(db.Users);
+        Assert.Equal(8_192, user.KdfMemoryKib);
+        Assert.Equal(1, user.KdfIterations);
+    }
+
+    [Fact]
+    public async Task Register_InProductionEnv_AcceptsDefaultKdf_64MiB_3Iter()
+    {
+        using var db = TestDbContextFactory.Create();
+        var controller = CreateControllerWithEnvironmentPolicy(db, "Production");
+
+        var result = await controller.Register(new AuthRegisterRequest(
+            "newuser",
+            "auth-pubkey-base64",
+            "identity-pubkey-base64",
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            KdfMemoryKib: 65_536,
+            KdfIterations: 3,
+            KdfParallelism: 1,
+            KdfAlgVersion: 0x13
+        ));
+
+        Assert.IsType<CreatedResult>(result);
+        var user = Assert.Single(db.Users);
+        Assert.Equal(65_536, user.KdfMemoryKib);
+        Assert.Equal(3, user.KdfIterations);
     }
 
     private static (byte[] publicKey, byte[] secretKey) GenerateEd25519Keypair()
