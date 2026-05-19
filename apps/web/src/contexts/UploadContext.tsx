@@ -19,6 +19,7 @@ import {
   WasmUploadAdapterPort,
 } from '../lib/rust-core/wasm-upload-adapter-port';
 import { syncEngine } from '../lib/sync-engine';
+import { syncCoordinator } from '../lib/sync-coordinator';
 import { UploadError, UploadErrorCode } from '../lib/upload-errors';
 import {
   createUuidV7,
@@ -289,6 +290,20 @@ export function UploadProvider({ children }: UploadProviderProps) {
           try {
             await syncEngine.sync(task.albumId, epochKey.epochHandleId);
             log.info(`Post-upload sync complete for album ${task.albumId}`);
+            // Safety-net: force-flush sync-complete processing synchronously
+            // so the pending overlay clears deterministically. Without this,
+            // single-photo uploads can race the 100ms SyncCoordinator
+            // debounce and leave the overlay stuck (validation-photos-02).
+            try {
+              await syncCoordinator.flushSyncCompleteNow(task.albumId);
+            } catch (flushErr) {
+              log.warn('flushSyncCompleteNow failed (non-fatal):', {
+                error:
+                  flushErr instanceof Error
+                    ? flushErr.message
+                    : String(flushErr),
+              });
+            }
           } catch (syncErr) {
             // Non-fatal: photo was uploaded, sync will happen later
             log.warn('Post-upload sync failed (photo still uploaded):', {

@@ -230,6 +230,22 @@ class SyncCoordinator {
   }
 
   /**
+   * Force an immediate sync-complete processing for an album, bypassing the
+   * 100ms debounce. Used by UploadContext as a safety-net after a successful
+   * upload+sync to ensure pending overlays clear deterministically without
+   * waiting for the debounced event-driven path (which can race for
+   * single-photo uploads where only one sync-complete event fires).
+   */
+  async flushSyncCompleteNow(albumId: string): Promise<void> {
+    const existing = this.debounceTimers.get(albumId);
+    if (existing) {
+      clearTimeout(existing);
+      this.debounceTimers.delete(albumId);
+    }
+    await this.handleSyncComplete(albumId);
+  }
+
+  /**
    * Handle sync-complete for an album.
    * This is THE ONLY handler for sync-complete events.
    */
