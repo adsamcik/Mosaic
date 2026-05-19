@@ -955,13 +955,20 @@ public partial class AuthController : ControllerBase
             }
             else if (currentTokenHash != null)
             {
-                // Re-verify the caller's session is still active. A concurrent
-                // rotation may have just revoked it; if so, the caller no longer
-                // has standing to rotate credentials.
+                // Re-verify the caller's session is still active under the same
+                // full predicate used by GetCurrentUserIdAsync (revocation +
+                // absolute expiry + sliding expiry). A concurrent rotation may
+                // have revoked it, or the session may have expired between
+                // request entry and commit; if so the caller no longer has
+                // standing to rotate credentials.
+                // (security-review-2026-05-19-06)
+                var slidingCutoff = now.Add(-SessionSlidingExpiry);
                 var stillActive = await _db.Sessions
                     .AnyAsync(s => s.UserId == user.Id
                         && s.TokenHash == currentTokenHash
-                        && s.RevokedAt == null);
+                        && s.RevokedAt == null
+                        && s.ExpiresAt > now
+                        && s.LastSeenAt >= slidingCutoff);
                 if (!stillActive)
                 {
                     earlyExit = Unauthorized();
