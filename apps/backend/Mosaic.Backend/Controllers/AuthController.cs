@@ -1025,57 +1025,29 @@ public partial class AuthController : ControllerBase
 
                 break; // success (or non-retryable earlyExit) — leave the retry loop
             }
-            catch (DbUpdateException dbEx) when (
-                IsRetryablePostgresConflict(dbEx) && attempt + 1 < MaxRotationAttempts)
+            catch (Exception ex) when (
+                IsRetryablePostgresConflict(ex) && attempt + 1 < MaxRotationAttempts)
             {
                 if (tx is not null)
                 {
                     await tx.RollbackAsync();
                 }
-                _logger.LogWarning(
+                _logger.LogWarning(ex,
                     "Password rotation hit serialization/deadlock conflict for user {UserId} on attempt {Attempt}; retrying after {BackoffMs}ms",
                     user.Id, attempt + 1, rotationBackoffsMs[attempt]);
                 await Task.Delay(rotationBackoffsMs[attempt]);
                 continue;
             }
-            catch (Npgsql.PostgresException pex) when (
-                (pex.SqlState == "40001" || pex.SqlState == "40P01") && attempt + 1 < MaxRotationAttempts)
-            {
-                if (tx is not null)
-                {
-                    await tx.RollbackAsync();
-                }
-                _logger.LogWarning(
-                    "Password rotation hit serialization/deadlock conflict ({SqlState}) for user {UserId} on attempt {Attempt}; retrying after {BackoffMs}ms",
-                    pex.SqlState, user.Id, attempt + 1, rotationBackoffsMs[attempt]);
-                await Task.Delay(rotationBackoffsMs[attempt]);
-                continue;
-            }
-            catch (DbUpdateException dbEx) when (IsRetryablePostgresConflict(dbEx))
+            catch (Exception ex) when (IsRetryablePostgresConflict(ex))
             {
                 // Retries exhausted — surface a clean 409 instead of a raw 500.
                 if (tx is not null)
                 {
                     await tx.RollbackAsync();
                 }
-                _logger.LogWarning(dbEx,
+                _logger.LogWarning(ex,
                     "Password rotation exhausted {MaxAttempts} retries on serialization/deadlock conflict for user {UserId}",
                     MaxRotationAttempts, user.Id);
-                earlyExit = Problem(
-                    title: "Concurrent password rotation detected",
-                    detail: "The database could not serialize this rotation against a concurrent transaction. Retry with a fresh challenge.",
-                    statusCode: StatusCodes.Status409Conflict);
-                break;
-            }
-            catch (Npgsql.PostgresException pex) when (pex.SqlState == "40001" || pex.SqlState == "40P01")
-            {
-                if (tx is not null)
-                {
-                    await tx.RollbackAsync();
-                }
-                _logger.LogWarning(pex,
-                    "Password rotation exhausted {MaxAttempts} retries on serialization/deadlock conflict ({SqlState}) for user {UserId}",
-                    MaxRotationAttempts, pex.SqlState, user.Id);
                 earlyExit = Problem(
                     title: "Concurrent password rotation detected",
                     detail: "The database could not serialize this rotation against a concurrent transaction. Retry with a fresh challenge.",
