@@ -552,12 +552,21 @@ class SessionManager {
       const cryptoClient = await getCryptoClient();
       if (this._currentUser.wrappedAccountKey) {
         const wrappedKey = fromBase64(this._currentUser.wrappedAccountKey);
+        // v1.0.x bundle-seal-222 follow-up: thread the wrapped identity seed
+        // from /me into the worker so the Ed25519/X25519 identity is
+        // deterministically restored on cookie-only reload. Without this
+        // the worker would mint a fresh random identity and every
+        // previously-sealed epoch bundle would fail to open (rust code 222).
+        const wrappedIdentitySeed = this._currentUser.wrappedIdentitySeed
+          ? fromBase64(this._currentUser.wrappedIdentitySeed)
+          : undefined;
         await cryptoClient.initWithWrappedKey(
           password,
           userSalt,
           accountSalt,
           wrappedKey,
           workerKdfParams,
+          wrappedIdentitySeed,
         );
       } else {
         log.warn(

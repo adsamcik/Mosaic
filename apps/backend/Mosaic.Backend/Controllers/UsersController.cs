@@ -80,6 +80,12 @@ public class UsersController : ControllerBase
         var saltNonce = user.SaltNonce != null ? Convert.ToBase64String(user.SaltNonce) : null;
         var accountSalt = user.AccountSalt != null ? Convert.ToBase64String(user.AccountSalt) : null;
         var wrappedAccountKey = user.WrappedAccountKey != null ? Convert.ToBase64String(user.WrappedAccountKey) : null;
+        // v1.0.x bundle-seal-222 follow-up: surface the wrapped identity seed on
+        // /me so the cookie-only `session.restoreSession()` path can re-thread it
+        // into the crypto worker's `initWithWrappedKey`. Without this field the
+        // worker re-mints a random Ed25519/X25519 identity on reload and every
+        // previously-sealed epoch bundle fails to open (rust code 222).
+        var wrappedIdentitySeed = user.WrappedIdentitySeed != null ? Convert.ToBase64String(user.WrappedIdentitySeed) : null;
         var quotaResponse = quota != null
             ? new { quota.MaxStorageBytes, quota.UsedStorageBytes }
             : null;
@@ -96,6 +102,7 @@ public class UsersController : ControllerBase
                 SaltNonce = saltNonce,
                 AccountSalt = accountSalt,
                 WrappedAccountKey = wrappedAccountKey,
+                WrappedIdentitySeed = wrappedIdentitySeed,
                 user.KdfMemoryKib,
                 user.KdfIterations,
                 user.KdfParallelism,
@@ -115,6 +122,7 @@ public class UsersController : ControllerBase
             SaltNonce = saltNonce,
             AccountSalt = accountSalt,
             WrappedAccountKey = wrappedAccountKey,
+            WrappedIdentitySeed = wrappedIdentitySeed,
             user.KdfMemoryKib,
             user.KdfIterations,
             user.KdfParallelism,

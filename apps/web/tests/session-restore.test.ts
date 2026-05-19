@@ -453,8 +453,42 @@ describe('Session Restore', () => {
         accountSalt,
         wrappedAccountKey,
         { memoryKib: 65536, iterations: 3, parallelism: 1 },
+        undefined,
       );
       expect(mockCryptoClient.init).not.toHaveBeenCalled();
+    });
+
+    it('threads wrappedIdentitySeed from /me into initWithWrappedKey (v1.0.x bundle-seal-222)', async () => {
+      const { session } = await getSessionModule();
+
+      const userSalt = new Uint8Array(16).fill(11);
+      const accountSalt = new Uint8Array(
+        Array.from({ length: 16 }, (_, index) => index + 2),
+      );
+      const wrappedAccountKey = new Uint8Array(72).fill(12);
+      const wrappedIdentitySeed = new Uint8Array(56).fill(13);
+      localStorage.setItem(
+        'mosaic:userSalt',
+        btoa(String.fromCharCode(...userSalt)),
+      );
+
+      const returningUser: User = {
+        ...mockUser,
+        accountSalt: btoa(String.fromCharCode(...accountSalt)),
+        wrappedAccountKey: btoa(String.fromCharCode(...wrappedAccountKey)),
+        wrappedIdentitySeed: btoa(String.fromCharCode(...wrappedIdentitySeed)),
+      };
+
+      await session.restoreSession('test-password', returningUser);
+
+      expect(mockCryptoClient.initWithWrappedKey).toHaveBeenCalledWith(
+        'test-password',
+        userSalt,
+        accountSalt,
+        wrappedAccountKey,
+        { memoryKib: 65536, iterations: 3, parallelism: 1 },
+        wrappedIdentitySeed,
+      );
     });
   });
 

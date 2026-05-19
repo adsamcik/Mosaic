@@ -67,6 +67,14 @@ export interface User {
   accountSalt?: string;
   /** Base64-encoded wrapped account key for identity persistence */
   wrappedAccountKey?: string;
+  /**
+   * Base64-encoded wrapped identity seed. Returned by /me so the
+   * cookie-only `restoreSession()` reload path can re-thread it into
+   * the crypto worker; without it the worker re-mints a random
+   * identity and previously-sealed epoch bundles fail to open
+   * (v1.0.x bundle-seal-222, rust code 222).
+   */
+  wrappedIdentitySeed?: string;
   /** Argon2id memory cost in KiB pinned at registration */
   kdfMemoryKib: number;
   /** Argon2id time cost pinned at registration */

@@ -96,6 +96,62 @@ public class UsersControllerTests
     }
 
     [Fact]
+    public async Task GetMe_ReturnsWrappedIdentitySeed_WhenStored()
+    {
+        // v1.0.x bundle-seal-222 follow-up: /me must surface the wrapped
+        // identity seed so cookie-only reload (restoreSession) can re-thread
+        // it into the crypto worker. Without this, the worker re-mints a
+        // random identity and every previously-sealed epoch bundle fails to
+        // open with rust code 222 BundleSealOpenFailed.
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+        var wrappedIdentitySeed = Enumerable.Range(1, 56).Select(i => (byte)i).ToArray();
+        var user = await builder.CreateUserAsync(TestAuthSub, "existing-pubkey");
+        user.WrappedIdentitySeed = wrappedIdentitySeed;
+        await db.SaveChangesAsync();
+
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var result = await controller.GetMe();
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var prop = okResult.Value!.GetType().GetProperty("WrappedIdentitySeed");
+        Assert.NotNull(prop);
+        Assert.Equal(Convert.ToBase64String(wrappedIdentitySeed), prop!.GetValue(okResult.Value));
+    }
+
+    [Fact]
+    public async Task GetMe_ReturnsNullWrappedIdentitySeed_WhenUnset()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var builder = new TestDataBuilder(db);
+        await builder.CreateUserAsync(TestAuthSub, "existing-pubkey");
+
+        var controller = new UsersController(db, config, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var result = await controller.GetMe();
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var prop = okResult.Value!.GetType().GetProperty("WrappedIdentitySeed");
+        Assert.NotNull(prop);
+        Assert.Null(prop!.GetValue(okResult.Value));
+    }
+
+    [Fact]
     public async Task UpdateMe_SetsIdentityPubkey_WhenEmpty()
     {
         // Arrange
