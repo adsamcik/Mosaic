@@ -690,7 +690,12 @@ public class ManifestsController : ControllerBase
         return Ok(new
         {
             ProtocolVersion = manifest.ProtocolVersion,
-            ManifestId = manifest.Id,
+            // audit-projections-getmanifest: frontend ManifestRecordSchema
+            // requires top-level `id` (UUID). Earlier projections shipped
+            // `manifestId` which Zod rejected as a missing required field,
+            // surfacing as a synthetic 500 in the client and cascading into
+            // any flow that fetched a single manifest by ID.
+            Id = manifest.Id,
             manifest.AlbumId,
             manifest.AssetType,
             manifest.MetadataVersion,
@@ -703,9 +708,26 @@ public class ManifestsController : ControllerBase
             manifest.SignerPubkey,
             manifest.ExpiresAt,
             // Legacy format for backward compatibility
-            ShardIds = manifest.ManifestShards.Select(ms => ms.ShardId),
-            // New format with tier info
-            Shards = manifest.ManifestShards.Select(ms => new { ms.ShardId, ms.Tier }),
+            ShardIds = manifest.ManifestShards
+                .OrderBy(ms => ms.ChunkIndex)
+                .Select(ms => ms.ShardId),
+            // audit-projections-getmanifest: ManifestShardProjectionSchema
+            // requires shardIndex, sha256 (lowercase hex), contentLength,
+            // and envelopeVersion in addition to shardId/tier. Mirror the
+            // /albums/{id}/sync projection (AlbumsController.cs:525-535).
+            Shards = manifest.ManifestShards
+                .OrderBy(ms => ms.ChunkIndex)
+                .Select(ms => new
+                {
+                    ms.ShardId,
+                    ms.Tier,
+                    ms.ShardIndex,
+                    Sha256 = ms.Sha256.ToLower(),
+                    ms.ContentLength,
+                    ms.EnvelopeVersion
+                }),
+            // TieredShards preserved for any consumer relying on the
+            // tier-first ordering; the canonical projection is now Shards.
             TieredShards = manifest.ManifestShards
                 .OrderBy(ms => ms.Tier)
                 .ThenBy(ms => ms.ShardIndex)

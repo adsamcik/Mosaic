@@ -480,6 +480,120 @@ public class ManifestsControllerTests
         Assert.IsType<ForbidResult>(result);
     }
 
+    [Fact]
+    public async Task Get_ProjectionMatchesFrontendManifestRecordSchema()
+    {
+        // Regression for audit-projections-getmanifest: GET /manifests/{id}
+        // must ship a payload that satisfies the frontend ManifestRecordSchema
+        // and ManifestShardProjectionSchema (apps/web/src/lib/api-schemas.ts).
+        //
+        // Prior drift:
+        //   * Top-level `id` was renamed to `manifestId` → Zod missing-field.
+        //   * `shards[]` only included `{shardId, tier}` → schema requires
+        //     `shardIndex`, `sha256`, `contentLength`, `envelopeVersion`.
+        //   * `createdAt`/`updatedAt` are required (createdAt) / nullish
+        //     (updatedAt) but must be ISO-8601 round-trip parseable when
+        //     present.
+        // Same root cause as the sync-500 fix (dce5f502).
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var quotaService = TestConfiguration.CreateQuotaService(db, config);
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shardA = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        var shardB = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE);
+        var manifest = await builder.CreateManifestAsync(album, [shardA, shardB]);
+
+        // Populate the shard projection columns so the assertions verify the
+        // *real* values flow through (not just defaults).
+        var manifestShards = await db.ManifestShards
+            .Where(ms => ms.ManifestId == manifest.Id)
+            .OrderBy(ms => ms.ChunkIndex)
+            .ToListAsync();
+        manifestShards[0].ShardIndex = 0;
+        manifestShards[0].Sha256 = "AABBCCDDEEFF00112233445566778899AABBCCDDEEFF00112233445566778899";
+        manifestShards[0].ContentLength = 4096;
+        manifestShards[0].EnvelopeVersion = 3;
+        manifestShards[1].ShardIndex = 1;
+        manifestShards[1].Sha256 = "1122334455667788990011223344556677889900112233445566778899001122";
+        manifestShards[1].ContentLength = 8192;
+        manifestShards[1].EnvelopeVersion = 4;
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db, config, quotaService, OwnerAuthSub);
+
+        var result = await controller.Get(manifest.Id);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.NotNull(okResult.Value);
+
+        // Serialize using the same camelCase web defaults the API pipeline
+        // uses so we observe the wire shape the frontend Zod schema sees.
+        var webOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var json = JsonSerializer.Serialize(okResult.Value, webOptions);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        // Top-level: `id` is required; `manifestId` MUST NOT appear.
+        Assert.True(root.TryGetProperty("id", out var idEl), "Response missing required `id` field");
+        Assert.Equal(manifest.Id, idEl.GetGuid());
+        Assert.False(root.TryGetProperty("manifestId", out _),
+            "Response must not include legacy `manifestId` (frontend schema is `id`).");
+
+        // createdAt: required, ISO-8601 round-trip parseable.
+        Assert.True(root.TryGetProperty("createdAt", out var createdAtEl));
+        Assert.Equal(JsonValueKind.String, createdAtEl.ValueKind);
+        var createdAt = DateTimeOffset.Parse(createdAtEl.GetString()!,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind);
+        Assert.True(createdAt.UtcDateTime > DateTime.UtcNow.AddMinutes(-5));
+
+        // updatedAt: nullish in schema; if present must be ISO-8601 parseable.
+        Assert.True(root.TryGetProperty("updatedAt", out var updatedAtEl));
+        if (updatedAtEl.ValueKind == JsonValueKind.String)
+        {
+            var updatedAt = DateTimeOffset.Parse(updatedAtEl.GetString()!,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind);
+            Assert.True(updatedAt.UtcDateTime > DateTime.UtcNow.AddMinutes(-5));
+        }
+        else
+        {
+            Assert.Equal(JsonValueKind.Null, updatedAtEl.ValueKind);
+        }
+
+        // shards[]: every entry must include shardId, tier, shardIndex,
+        // sha256, contentLength, envelopeVersion.
+        Assert.True(root.TryGetProperty("shards", out var shardsEl));
+        Assert.Equal(JsonValueKind.Array, shardsEl.ValueKind);
+        Assert.Equal(2, shardsEl.GetArrayLength());
+        foreach (var shardEl in shardsEl.EnumerateArray())
+        {
+            Assert.True(shardEl.TryGetProperty("shardId", out _), "shard missing `shardId`");
+            Assert.True(shardEl.TryGetProperty("tier", out _), "shard missing `tier`");
+            Assert.True(shardEl.TryGetProperty("shardIndex", out var shardIndexEl),
+                "shard missing `shardIndex`");
+            Assert.True(shardIndexEl.GetInt32() >= 0);
+            Assert.True(shardEl.TryGetProperty("sha256", out var sha256El),
+                "shard missing `sha256`");
+            var sha256 = sha256El.GetString()!;
+            Assert.Equal(sha256.ToLowerInvariant(), sha256);
+            Assert.True(shardEl.TryGetProperty("contentLength", out var contentLengthEl),
+                "shard missing `contentLength`");
+            Assert.True(contentLengthEl.GetInt64() > 0);
+            Assert.True(shardEl.TryGetProperty("envelopeVersion", out var envelopeVersionEl),
+                "shard missing `envelopeVersion`");
+            Assert.InRange(envelopeVersionEl.GetInt32(), 3, 4);
+        }
+
+        // shardIds[] legacy projection must still be present.
+        Assert.True(root.TryGetProperty("shardIds", out var shardIdsEl));
+        Assert.Equal(JsonValueKind.Array, shardIdsEl.ValueKind);
+        Assert.Equal(2, shardIdsEl.GetArrayLength());
+    }
+
     // Note: Create and Delete tests are more complex because they use PostgreSQL-specific 
     // features (FOR UPDATE) that don't work with InMemory provider. These would require 
     // integration tests with a real PostgreSQL database.
