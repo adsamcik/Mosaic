@@ -1002,7 +1002,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       return userList.map((u, i) => {
         const response: AdminUserResponse = {
           id: u.id,
-          authSub: u.authSub,
+          authSub: u.authSub ?? u.id,
           isAdmin: i === 0, // First user is admin
           createdAt: u.createdAt,
           albumCount: Math.floor(Math.random() * 5),
