@@ -1198,16 +1198,29 @@ public partial class AuthController : ControllerBase
     // Used only when Auth:ServerSecret is not configured (should not happen - Program.cs sets it).
     private static readonly Lazy<byte[]> FallbackServerSecret = new(() => RandomNumberGenerator.GetBytes(32));
 
-    // PostgreSQL serialization failure (40001) and deadlock (40P01) detection.
+    // PostgreSQL conflict detection for the rotation retry loop. Covers:
+    //   * 40001 (serialization_failure)   — SSI rolled back our transaction.
+    //   * 40P01 (deadlock_detected)       — circular row-lock dependency.
+    //   * 55P03 (lock_not_available)      — row lock could not be acquired
+    //     within `lock_timeout`. Without this, any deployment that sets a
+    //     non-zero `lock_timeout` on the connection (e.g. tenant connection
+    //     pooler defaults) would surface a raw 500 instead of retrying.
+    //     (security-review-2026-05-19-11)
     // EF wraps the underlying Npgsql exception in DbUpdateException for write
-    // failures; unwrap and inspect the SqlState to decide whether the rotation
-    // can be safely retried.
+    // failures; unwrap and inspect the SqlState.
+    private static readonly HashSet<string> RetryableSqlStates = new(StringComparer.Ordinal)
+    {
+        "40001",
+        "40P01",
+        "55P03",
+    };
+
     private static bool IsRetryablePostgresConflict(Exception ex)
     {
         for (var e = ex; e != null; e = e.InnerException!)
         {
             if (e is Npgsql.PostgresException pex &&
-                (pex.SqlState == "40001" || pex.SqlState == "40P01"))
+                RetryableSqlStates.Contains(pex.SqlState))
             {
                 return true;
             }
