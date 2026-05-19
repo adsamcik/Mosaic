@@ -28,8 +28,16 @@ import { getApi } from '../../lib/api';
 import type { Album as ApiAlbum } from '../../lib/api-types';
 import { Dialog } from '../Shared/Dialog';
 import { SyncCoordinatorProvider } from '../../lib/sync-coordinator';
+import { getCryptoClient } from '../../lib/crypto-client';
+import { toBase64, fromBase64 } from '../../lib/api';
+import type { EpochHandleId } from '../../workers/types';
 import type { GeoFeature, PhotoMeta } from '../../workers/types';
-import { DeleteAlbumDialog, RenameAlbumDialog, AlbumExpirationSettings } from '../Albums';
+import {
+  DeleteAlbumDialog,
+  RenameAlbumDialog,
+  AlbumExpirationSettings,
+  EditDescriptionDialog,
+} from '../Albums';
 import { ContentEditor } from '../Content';
 import { MemberList } from '../Members/MemberList';
 import { ShareLinksPanel } from '../ShareLinks/ShareLinksPanel';
@@ -267,6 +275,10 @@ export function Gallery({
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showExpirationDialog, setShowExpirationDialog] = useState(false);
   const [expirationAlbum, setExpirationAlbum] = useState<ApiAlbum | null>(null);
+  const [showDescriptionDialog, setShowDescriptionDialog] = useState(false);
+  const [currentDescription, setCurrentDescription] = useState<string | null>(null);
+  const [isSavingDescription, setIsSavingDescription] = useState(false);
+  const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -576,6 +588,93 @@ export function Gallery({
     setExpirationAlbum(null);
   }, []);
 
+  // Handle edit album description
+  const handleEditDescription = useCallback(async () => {
+    try {
+      setDescriptionError(null);
+      const api = getApi();
+      const album = await api.getAlbum(albumId);
+
+      let decrypted: string | null = null;
+      if (album.encryptedDescription && currentEpochId !== null) {
+        const epochHandleId = epochKeys.get(currentEpochId);
+        if (epochHandleId) {
+          try {
+            const crypto = await getCryptoClient();
+            const envelope = fromBase64(album.encryptedDescription);
+            const plaintext = await crypto.decryptAlbumName(
+              epochHandleId as EpochHandleId,
+              envelope,
+            );
+            decrypted = new TextDecoder('utf-8', { fatal: true }).decode(
+              plaintext,
+            );
+          } catch (decErr) {
+            log.warn('Failed to decrypt existing album description', {
+              error: decErr instanceof Error ? decErr.message : String(decErr),
+            });
+          }
+        }
+      }
+      setCurrentDescription(decrypted);
+      setShowDescriptionDialog(true);
+    } catch (err) {
+      log.error('Failed to load album for description edit:', err);
+      setDescriptionError(
+        err instanceof Error ? err.message : 'Failed to load album',
+      );
+      setShowDescriptionDialog(true);
+    }
+  }, [albumId, currentEpochId, epochKeys]);
+
+  const handleSaveDescription = useCallback(
+    async (description: string | null): Promise<void> => {
+      setIsSavingDescription(true);
+      setDescriptionError(null);
+
+      try {
+        const api = getApi();
+
+        let encryptedDescription: string | null = null;
+        if (description !== null && description.length > 0) {
+          if (currentEpochId === null) {
+            throw new Error('Encryption keys not available');
+          }
+          const epochHandleId = epochKeys.get(currentEpochId);
+          if (!epochHandleId) {
+            throw new Error('Encryption keys not available');
+          }
+          const crypto = await getCryptoClient();
+          const plaintext = new TextEncoder().encode(description);
+          const envelope = await crypto.encryptAlbumName(
+            epochHandleId as EpochHandleId,
+            plaintext,
+          );
+          encryptedDescription = toBase64(envelope);
+        }
+
+        await api.updateAlbumDescription(albumId, { encryptedDescription });
+        setShowDescriptionDialog(false);
+        setCurrentDescription(description);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Failed to update description';
+        setDescriptionError(message);
+        throw err;
+      } finally {
+        setIsSavingDescription(false);
+      }
+    },
+    [albumId, currentEpochId, epochKeys],
+  );
+
+  const handleCloseDescription = useCallback(() => {
+    if (!isSavingDescription) {
+      setShowDescriptionDialog(false);
+      setDescriptionError(null);
+    }
+  }, [isSavingDescription]);
+
   // Compute preload queue for lightbox
   const preloadQueue = useMemo((): PhotoMeta[] => {
     if (!lightbox.isOpen || !lightbox.currentPhoto) return [];
@@ -645,6 +744,7 @@ export function Gallery({
               onShowShareLinks={() => setShowShareLinks(true)}
               onRenameAlbum={onRenameAlbum ? handleRenameAlbum : undefined}
               onDeleteAlbum={onDeleteAlbum ? handleDeleteAlbum : undefined}
+              onEditDescription={handleEditDescription}
               onExpiration={handleExpiration}
               onDownloadAll={handleDownloadAll}
               selection={{
@@ -776,6 +876,16 @@ export function Gallery({
                 onClose={handleCloseExpiration}
                 title={t('album.menu.expirationSettings')}
                 testId="expiration-dialog"
+                footer={
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={handleCloseExpiration}
+                    data-testid="expiration-dialog-cancel"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                }
               >
                 <AlbumExpirationSettings
                   album={expirationAlbum}
@@ -783,6 +893,16 @@ export function Gallery({
                 />
               </Dialog>
             )}
+
+            {/* Edit Description Dialog */}
+            <EditDescriptionDialog
+              isOpen={showDescriptionDialog}
+              onClose={handleCloseDescription}
+              onSave={handleSaveDescription}
+              isSaving={isSavingDescription}
+              error={descriptionError}
+              currentDescription={currentDescription}
+            />
 
             {/* Upload Error Toast */}
             <UploadErrorToast />

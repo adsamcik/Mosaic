@@ -193,6 +193,7 @@ vi.mock('../src/components/Albums', () => ({
   DeleteAlbumDialog: () => null,
   RenameAlbumDialog: () => null,
   AlbumExpirationSettings: () => null,
+  EditDescriptionDialog: () => null,
 }));
 
 vi.mock('../src/components/Content', () => ({
