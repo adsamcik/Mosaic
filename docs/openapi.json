@@ -367,24 +367,7 @@
         },
         "responses": {
           "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/AlbumExpirationUpdateResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AlbumExpirationUpdateResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AlbumExpirationUpdateResponse"
-                }
-              }
-            }
+            "description": "OK"
           }
         }
       }
@@ -2453,34 +2436,6 @@
           "encryptedDescription": {
             "type": "string",
             "nullable": true
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "AlbumExpirationUpdateResponse": {
-        "required": [
-          "id",
-          "expiresAt",
-          "expirationWarningDays",
-          "updatedAt"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "expirationWarningDays": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "format": "int32"
           },
           "updatedAt": {
             "type": "string",
