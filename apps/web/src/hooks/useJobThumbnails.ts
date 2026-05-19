@@ -45,7 +45,7 @@ export function useJobThumbnails(jobId: string | null): UseJobThumbnailsResult {
   useEffect(() => {
     if (!jobId) return undefined;
     let cancelled = false;
-    let unsubscribe: (() => void) | null = null;
+    let subscription: { unsubscribe: () => void | Promise<void> } | null = null;
     let proxiedCallback: ((p: string, u: string) => void) | null = null;
 
     void (async (): Promise<void> => {
@@ -68,10 +68,10 @@ export function useJobThumbnails(jobId: string | null): UseJobThumbnailsResult {
         proxiedCallback = cb;
         const sub = await api.subscribeToThumbnails(jobId, Comlink.proxy(cb));
         if (cancelled) {
-          sub.unsubscribe();
+          await sub.unsubscribe();
           return;
         }
-        unsubscribe = sub.unsubscribe;
+        subscription = sub;
       } catch (err) {
         log.warn('subscribeToThumbnails failed', {
           errName: err instanceof Error ? err.name : 'Unknown',
@@ -82,7 +82,7 @@ export function useJobThumbnails(jobId: string | null): UseJobThumbnailsResult {
     return (): void => {
       cancelled = true;
       try {
-        unsubscribe?.();
+        void subscription?.unsubscribe();
       } catch {
         // best-effort
       }

@@ -93,7 +93,10 @@ export async function waitForTerminal(
   onJobProgress: (event: JobProgressEvent) => void,
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    let unsubscribe: (() => void) | null = null;
+    let activeSubscription: { unsubscribe: () => void | Promise<void> } | null = null;
+    const callUnsubscribe = (): void => {
+      void activeSubscription?.unsubscribe();
+    };
     // Capture the progress-callback proxy so we can release the worker-side
     // handle when the job reaches a terminal state. Each unsupported leak
     // would grow worker memory by one closure per cancel/restart.
@@ -101,7 +104,7 @@ export async function waitForTerminal(
       onJobProgress(event);
       if (isTerminalPhase(event.phase)) {
         signal.removeEventListener('abort', onAbort);
-        unsubscribe?.();
+        callUnsubscribe();
         releaseProgressProxy();
         if (event.phase === 'Done') resolve();
         else if (event.phase === 'Cancelled') reject(new DOMException('Download cancelled', 'AbortError'));
@@ -118,7 +121,7 @@ export async function waitForTerminal(
       }
     };
     const onAbort = (): void => {
-      unsubscribe?.();
+      callUnsubscribe();
       releaseProgressProxy();
       reject(new DOMException('Download aborted', 'AbortError'));
     };
@@ -129,9 +132,9 @@ export async function waitForTerminal(
     signal.addEventListener('abort', onAbort, { once: true });
 
     api.subscribe(jobId, progressProxy).then((subscription) => {
-      unsubscribe = subscription.unsubscribe;
+      activeSubscription = subscription;
       if (signal.aborted) {
-        unsubscribe();
+        callUnsubscribe();
         // onAbort already rejected.
       }
     }).catch((err) => {

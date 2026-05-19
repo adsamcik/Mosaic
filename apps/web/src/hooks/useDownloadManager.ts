@@ -157,7 +157,7 @@ export function useDownloadManager(): UseDownloadManagerResult {
       return (): void => undefined;
     }
     let disposed = false;
-    let unsubscribe: (() => void) | null = null;
+    let activeSubscription: { unsubscribe: () => void | Promise<void> } | null = null;
     // Capture the progress-callback proxy so we can release the worker-side
     // handle on dispose. Without releaseProxy each unsubscribe leaked a
     // worker-side closure (audit "perf-slo H1").
@@ -175,11 +175,11 @@ export function useDownloadManager(): UseDownloadManagerResult {
     };
     void currentApi.subscribe(jobId, progressProxy).then((subscription) => {
       if (disposed) {
-        subscription.unsubscribe();
+        void subscription.unsubscribe();
         releaseProgressProxy();
         return;
       }
-      unsubscribe = subscription.unsubscribe;
+      activeSubscription = subscription;
     }).catch((caught) => {
       releaseProgressProxy();
       const nextError = caught instanceof Error ? caught : new Error(String(caught));
@@ -189,7 +189,7 @@ export function useDownloadManager(): UseDownloadManagerResult {
 
     return (): void => {
       disposed = true;
-      unsubscribe?.();
+      void activeSubscription?.unsubscribe();
       releaseProgressProxy();
     };
   }, [refreshJobs]);
