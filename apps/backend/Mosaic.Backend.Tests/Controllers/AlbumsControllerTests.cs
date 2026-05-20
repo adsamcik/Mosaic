@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Models.Albums;
@@ -556,6 +557,53 @@ public class AlbumsControllerTests
 
         var updatedShard = db.Shards.Single(s => s.Id == shard.Id);
         Assert.Equal(ShardStatus.TRASHED, updatedShard.Status);
+    }
+
+    /// <summary>
+    /// v1.0.1 photos-j regression: deleting an album with photos still
+    /// in it (i.e., before the user bulk-deletes them) must cascade-delete
+    /// the manifest rows so the album card disappears for good. Before the
+    /// photos-f fix this path was rarely reached on real backends — locking
+    /// the cascade contract here protects against future regressions of
+    /// the OnDelete(DeleteBehavior.Cascade) configuration on
+    /// <c>Manifest.Album</c>.
+    /// </summary>
+    [Fact]
+    public async Task Delete_CascadeDeletesManifests_WhenAlbumHasPhotos()
+    {
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+
+        var user = await builder.CreateUserAsync(TestAuthSub);
+        var album = await builder.CreateAlbumAsync(user);
+        var manifestIds = new List<Guid>();
+        for (var i = 0; i < 3; i++)
+        {
+            var shard = await builder.CreateShardAsync(user, ShardStatus.ACTIVE);
+            var manifest = await builder.CreateManifestAsync(album, [shard]);
+            manifestIds.Add(manifest.Id);
+        }
+
+        var controller = new AlbumsController(db, new MockQuotaSettingsService(), new MockCurrentUserService(db), NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+
+        var result = await controller.Delete(album.Id);
+
+        Assert.IsType<NoContentResult>(result);
+        Assert.Empty(db.Albums);
+        // Cascade must remove every manifest row referencing the deleted
+        // album — IgnoreQueryFilters so soft-deleted rows also count.
+        var remaining = await db.Manifests
+            .IgnoreQueryFilters()
+            .Where(m => manifestIds.Contains(m.Id))
+            .CountAsync();
+        Assert.Equal(0, remaining);
+        Assert.Empty(db.ManifestShards.Where(ms => manifestIds.Contains(ms.ManifestId)));
     }
 
     [Fact]

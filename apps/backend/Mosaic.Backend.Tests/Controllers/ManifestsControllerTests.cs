@@ -633,6 +633,109 @@ public class ManifestsControllerTests
         Assert.Equal(ShardStatus.TRASHED, db.Shards.Single(s => s.Id == shard.Id).Status);
     }
 
+    /// <summary>
+    /// v1.0.1 photos-f regression: the selection-mode bulk delete in the
+    /// frontend signs each tombstone and POSTs a body of shape
+    /// <c>{ tombstoneSignature, signerEpochId }</c>. The controller must
+    /// bind that body via <see cref="DeleteManifestRequest"/>, validate it
+    /// (64-byte base64 signature), persist both fields on the manifest row,
+    /// and still return 204 NoContent so the dialog closes cleanly.
+    /// Before this fix, the wire body was double-stringified on the
+    /// frontend, so this controller path was never exercised on the happy
+    /// path — locking the test in here protects the contract.
+    /// </summary>
+    [Fact]
+    public async Task Delete_PersistsTombstoneSignature_WhenBodyProvided()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var quotaService = TestConfiguration.CreateQuotaService(db, config);
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE, sizeBytes: 1024);
+        var manifest = await builder.CreateManifestAsync(album, [shard]);
+
+        var signatureBytes = new byte[64];
+        for (var i = 0; i < signatureBytes.Length; i++)
+        {
+            signatureBytes[i] = (byte)(i + 1);
+        }
+        var request = new DeleteManifestRequest(
+            TombstoneSignature: Convert.ToBase64String(signatureBytes),
+            SignerEpochId: 42);
+
+        var controller = CreateController(db, config, quotaService, OwnerAuthSub);
+
+        var result = await controller.Delete(manifest.Id, request);
+
+        Assert.IsType<NoContentResult>(result);
+
+        var stored = await db.Manifests
+            .IgnoreQueryFilters()
+            .SingleAsync(m => m.Id == manifest.Id);
+        Assert.True(stored.IsDeleted);
+        Assert.NotNull(stored.TombstoneSignature);
+        Assert.Equal(signatureBytes, stored.TombstoneSignature);
+        Assert.Equal(42, stored.TombstoneSignerEpochId);
+    }
+
+    /// <summary>
+    /// v1.0.1 photos-f regression: sequential bulk-delete (the loop in
+    /// <c>usePhotoActions.deletePhotos</c>) must successfully tombstone
+    /// every selected manifest. This exercises the same controller method
+    /// the frontend hits per photo, asserting all manifests end up flagged
+    /// as deleted and the album row remains intact (the album-card stays
+    /// available for the subsequent owner-only album delete).
+    /// </summary>
+    [Fact]
+    public async Task Delete_BulkSequentialDeletes_AllManifestsTombstoned()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var quotaService = TestConfiguration.CreateQuotaService(db, config);
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        db.AlbumLimits.Add(new AlbumLimits
+        {
+            AlbumId = album.Id,
+            CurrentPhotoCount = 3,
+            CurrentSizeBytes = 3 * 1024
+        });
+        await db.SaveChangesAsync();
+
+        var manifests = new List<Guid>();
+        for (var i = 0; i < 3; i++)
+        {
+            var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE, sizeBytes: 1024);
+            var manifest = await builder.CreateManifestAsync(album, [shard]);
+            manifests.Add(manifest.Id);
+        }
+
+        var controller = CreateController(db, config, quotaService, OwnerAuthSub);
+
+        foreach (var manifestId in manifests)
+        {
+            var result = await controller.Delete(manifestId);
+            Assert.IsType<NoContentResult>(result);
+        }
+
+        var deletedFlags = await db.Manifests
+            .IgnoreQueryFilters()
+            .Where(m => manifests.Contains(m.Id))
+            .Select(m => m.IsDeleted)
+            .ToListAsync();
+        Assert.Equal(3, deletedFlags.Count);
+        Assert.All(deletedFlags, Assert.True);
+
+        var albumLimits = await db.AlbumLimits.FindAsync(album.Id);
+        Assert.NotNull(albumLimits);
+        Assert.Equal(0, albumLimits!.CurrentPhotoCount);
+    }
+
     [Fact]
     public async Task UpdateMetadata_OwnerCanUpdate_ReturnsOk_AndBumpsVersion()
     {

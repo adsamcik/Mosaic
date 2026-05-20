@@ -914,10 +914,17 @@ export function createApiClient(): MosaicApi {
           method: 'DELETE',
         });
       }
+      // v1.0.1 photos-f: pass the body object directly. apiRequest already
+      // JSON.stringifies bodies and sets the Content-Type header; doing it
+      // manually here previously caused a double-stringify so the backend
+      // received a JSON-encoded *string* instead of a JSON object, which
+      // [FromBody] DeleteManifestRequest could not bind, yielding 400
+      // "Invalid request. Please check your input." for every selection-mode
+      // bulk delete (which calls deleteManifest sequentially with a signed
+      // tombstone body).
       return apiRequest(`/manifests/${manifestId}`, {
         method: 'DELETE',
-        body: JSON.stringify(body),
-        headers: { 'Content-Type': 'application/json' },
+        body,
       });
     },
 
