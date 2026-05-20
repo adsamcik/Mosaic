@@ -74,6 +74,28 @@ public class AlbumsSyncShapeTests
         Assert.True(
             DateTime.TryParse(createdAt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out _),
             $"createdAt must be ISO-8601 parseable, got: {createdAt}");
+        // v1.0.1 release-blocker `v101-upload-pipeline-cross-format-regression`:
+        // the legacy `shardIds` projection serializes server-allocated GUIDs
+        // with the default System.Guid -> JSON behavior, which emits the
+        // canonical dashed form. The TUS upload completion path on the
+        // client persists shard IDs into PhotoMeta as 32-hex (no dashes),
+        // and the cross-payload shard-list check in SyncEngine therefore
+        // has to normalize both representations. Pinning the on-wire form
+        // here documents the contract that the comparator relies on.
+        var legacyShardIds = manifestElement.GetProperty("shardIds")
+            .EnumerateArray()
+            .Select(element => element.GetString() ?? string.Empty)
+            .ToArray();
+        Assert.Equal(2, legacyShardIds.Length);
+        foreach (var shardIdString in legacyShardIds)
+        {
+            Assert.Matches(
+                "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                shardIdString);
+        }
+        Assert.Contains(preview.Id.ToString("D"), legacyShardIds);
+        Assert.Contains(thumb.Id.ToString("D"), legacyShardIds);
+
         var updatedAt = manifestElement.GetProperty("updatedAt").GetString();
         Assert.False(string.IsNullOrEmpty(updatedAt));
         Assert.True(
