@@ -177,6 +177,15 @@ export async function rotatePassword(
     );
 
     // 9. Post the envelope. NO plaintext passwords are sent.
+    //
+    // `newAccountSalt` MUST be included alongside `newUserSalt`: the
+    // server persists it as `user.AccountSalt`, and the next login uses
+    // it to re-derive the L1 that unwraps the freshly-rewrapped
+    // `newWrappedAccountKey`. Omitting it leaves the server-side
+    // AccountSalt stale, so subsequent logins succeed at /auth/verify
+    // (signature matches the new AuthPubkey) but the wrappedAccountKey
+    // fails to unwrap and the login form stays visible (v1.0.x
+    // validation-final-gate-auth-f).
     const response = await apiRequest<PasswordRotationServerResponse>(
       '/auth/password-rotation',
       {
@@ -186,6 +195,7 @@ export async function rotatePassword(
           currentSignature: toBase64(currentSignature),
           timestamp: init.timestamp,
           newUserSalt: toBase64(newUserSalt),
+          newAccountSalt: toBase64(newAccountSalt),
           newAuthPubkey: toBase64(newAuthPubkey),
           newWrappedAccountKey: toBase64(newWrappedAccountKey),
         },

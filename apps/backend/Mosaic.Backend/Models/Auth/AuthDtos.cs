@@ -64,16 +64,27 @@ public record AuthRegisterRequest(
 ///
 /// <list type="number">
 ///   <item><description>Verifies <see cref="CurrentSignature"/> over the issued <see cref="ChallengeId"/> using the user's <i>existing</i> AuthPubkey.</description></item>
-///   <item><description>Replaces <c>UserSalt</c>, <c>AuthPubkey</c>, and <c>WrappedAccountKey</c> with the new values.</description></item>
+///   <item><description>Replaces <c>UserSalt</c>, <c>AccountSalt</c>, <c>AuthPubkey</c>, and <c>WrappedAccountKey</c> with the new values.</description></item>
 ///   <item><description>Bumps <c>SaltVersion</c>.</description></item>
 ///   <item><description>Revokes every other active session so a stolen-cookie attacker is kicked out the moment the password changes.</description></item>
 /// </list>
+///
+/// <para>
+/// <c>NewAccountSalt</c> is mandatory and must accompany <c>NewUserSalt</c>.
+/// The client re-wraps the L2 account key under a fresh L1 derived from
+/// <c>(newPassword, newUserSalt, newAccountSalt)</c>; if the server does
+/// not also persist <c>newAccountSalt</c>, the next login derives L1 from
+/// a stale account salt and the new <c>WrappedAccountKey</c> fails to
+/// unwrap, leaving the login form visible after a successful rotation
+/// (v1.0.x validation-final-gate-auth-f regression).
+/// </para>
 /// </summary>
 public record PasswordRotationRequest(
     [Required] Guid ChallengeId,
     [Required, MaxLength(256)] string CurrentSignature,
     long? Timestamp,
     [Required, MaxLength(128)] string NewUserSalt,
+    [Required, MaxLength(128)] string NewAccountSalt,
     [Required, MaxLength(128)] string NewAuthPubkey,
     [Required, MaxLength(2048)] string NewWrappedAccountKey
 );

@@ -807,6 +807,7 @@ public partial class AuthController : ControllerBase
         // Decode all incoming key material up-front so a bad encoding fails
         // BEFORE we mutate any state.
         byte[] newUserSalt;
+        byte[] newAccountSalt;
         byte[] newWrappedAccountKey;
         byte[] currentSignature;
         byte[] currentPubkey;
@@ -814,6 +815,7 @@ public partial class AuthController : ControllerBase
         try
         {
             newUserSalt = Convert.FromBase64String(request.NewUserSalt);
+            newAccountSalt = Convert.FromBase64String(request.NewAccountSalt);
             newWrappedAccountKey = Convert.FromBase64String(request.NewWrappedAccountKey);
             currentSignature = Convert.FromBase64String(request.CurrentSignature);
             currentPubkey = Convert.FromBase64String(user.AuthPubkey);
@@ -830,6 +832,13 @@ public partial class AuthController : ControllerBase
         {
             return Problem(
                 detail: "newUserSalt must decode to exactly 16 bytes",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (newAccountSalt.Length != 16)
+        {
+            return Problem(
+                detail: "newAccountSalt must decode to exactly 16 bytes",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
@@ -969,7 +978,7 @@ public partial class AuthController : ControllerBase
             {
                 // Re-read the user under the (Serializable) transaction. ReloadAsync
                 // also discards any unsaved mutations from a previous failed attempt
-                // (e.g. UserSalt/AuthPubkey/WrappedAccountKey/SaltVersion writes from
+                // (e.g. UserSalt/AccountSalt/AuthPubkey/WrappedAccountKey/SaltVersion writes from
                 // a rolled-back retry), restoring fresh DB state.
                 await _db.Entry(user).ReloadAsync();
                 if (user.SaltVersion != originalSaltVersion)
@@ -1008,6 +1017,7 @@ public partial class AuthController : ControllerBase
                 else
                 {
                     user.UserSalt = newUserSalt;
+                    user.AccountSalt = newAccountSalt;
                     user.AuthPubkey = request.NewAuthPubkey;
                     user.WrappedAccountKey = newWrappedAccountKey;
                     user.SaltVersion = user.SaltVersion + 1;

@@ -132,6 +132,7 @@ public class AuthControllerPasswordRotationTests
             CurrentSignature: sig,
             Timestamp: ts,
             NewUserSalt: Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            NewAccountSalt: Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
             NewAuthPubkey: Convert.ToBase64String(pub),
             NewWrappedAccountKey: Convert.ToBase64String(RandomNumberGenerator.GetBytes(72)));
     }
@@ -162,7 +163,85 @@ public class AuthControllerPasswordRotationTests
         Assert.Equal(req.NewAuthPubkey, refreshed.AuthPubkey);
         Assert.Equal(2, refreshed.SaltVersion);
         Assert.Equal(Convert.FromBase64String(req.NewUserSalt), refreshed.UserSalt);
+        // v1.0.x validation-final-gate-auth-f: AccountSalt MUST also rotate.
+        // Without this, the next login derives L1 from a stale account salt
+        // and the freshly-rewrapped WrappedAccountKey fails to unwrap.
+        Assert.Equal(Convert.FromBase64String(req.NewAccountSalt), refreshed.AccountSalt);
         Assert.Equal(Convert.FromBase64String(req.NewWrappedAccountKey), refreshed.WrappedAccountKey);
+    }
+
+    /// <summary>
+    /// Regression for v1.0.x validation-final-gate-auth-f. Reproduces the
+    /// "password change succeeds but subsequent login fails" symptom by
+    /// verifying that the rotation transaction:
+    ///   1. Persists NewAccountSalt onto user.AccountSalt (so the next
+    ///      login derives the same L1 that the client used to rewrap L2).
+    ///   2. Leaves the row coherent: AccountSalt != prior AccountSalt, and
+    ///      all four rotated fields move together.
+    /// </summary>
+    [Fact]
+    public async Task RotatePassword_PersistsNewAccountSalt_SoNextLoginCanUnwrap()
+    {
+        var f = await SetupAsync();
+        using var db = f.Db;
+        var originalAccountSalt = RandomNumberGenerator.GetBytes(16);
+        f.User.AccountSalt = originalAccountSalt;
+        await db.SaveChangesAsync();
+
+        var controller = CreateController(db);
+        AttachSessionCookie(controller, f.CurrentTokenBytes);
+
+        var newAccountSalt = RandomNumberGenerator.GetBytes(16);
+        var newUserSalt = RandomNumberGenerator.GetBytes(16);
+        var newWrapped = RandomNumberGenerator.GetBytes(72);
+        var (newPub, _) = GenerateEd25519();
+        var sig = SignTranscript(f.Challenge.Challenge, f.User.AuthSub, f.CurrentSecret, null);
+        var req = new PasswordRotationRequest(
+            ChallengeId: f.Challenge.Id,
+            CurrentSignature: sig,
+            Timestamp: null,
+            NewUserSalt: Convert.ToBase64String(newUserSalt),
+            NewAccountSalt: Convert.ToBase64String(newAccountSalt),
+            NewAuthPubkey: Convert.ToBase64String(newPub),
+            NewWrappedAccountKey: Convert.ToBase64String(newWrapped));
+
+        var result = await controller.RotatePassword(req);
+        Assert.IsType<OkObjectResult>(result);
+
+        var refreshed = db.Users.Single();
+        Assert.Equal(newAccountSalt, refreshed.AccountSalt);
+        Assert.NotEqual(originalAccountSalt, refreshed.AccountSalt);
+        Assert.Equal(newUserSalt, refreshed.UserSalt);
+        Assert.Equal(newWrapped, refreshed.WrappedAccountKey);
+        Assert.Equal(Convert.ToBase64String(newPub), refreshed.AuthPubkey);
+    }
+
+    [Fact]
+    public async Task RotatePassword_WrongAccountSaltLength_Returns400_AndDoesNotMutate()
+    {
+        var f = await SetupAsync();
+        using var db = f.Db;
+        var controller = CreateController(db);
+        AttachSessionCookie(controller, f.CurrentTokenBytes);
+
+        var sig = SignTranscript(f.Challenge.Challenge, f.User.AuthSub, f.CurrentSecret, null);
+        var (newPub, _) = GenerateEd25519();
+        var req = new PasswordRotationRequest(
+            ChallengeId: f.Challenge.Id,
+            CurrentSignature: sig,
+            Timestamp: null,
+            NewUserSalt: Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            NewAccountSalt: Convert.ToBase64String(new byte[8]), // wrong length
+            NewAuthPubkey: Convert.ToBase64String(newPub),
+            NewWrappedAccountKey: Convert.ToBase64String(RandomNumberGenerator.GetBytes(72)));
+
+        var result = await controller.RotatePassword(req);
+        var obj = Assert.IsAssignableFrom<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status400BadRequest, obj.StatusCode);
+
+        var refreshed = db.Users.Single();
+        Assert.Equal(1, refreshed.SaltVersion);
+        Assert.Equal(Convert.ToBase64String(f.CurrentPubkey), refreshed.AuthPubkey);
     }
 
     [Fact]
@@ -217,6 +296,7 @@ public class AuthControllerPasswordRotationTests
             CurrentSignature: badSig,
             Timestamp: null,
             NewUserSalt: Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            NewAccountSalt: Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
             NewAuthPubkey: Convert.ToBase64String(newPub),
             NewWrappedAccountKey: Convert.ToBase64String(RandomNumberGenerator.GetBytes(72)));
 
@@ -303,6 +383,7 @@ public class AuthControllerPasswordRotationTests
             CurrentSignature: "not-base64!@#",
             Timestamp: null,
             NewUserSalt: "AAAA",
+            NewAccountSalt: "AAAA",
             NewAuthPubkey: "AAAA",
             NewWrappedAccountKey: "AAAA");
 
@@ -326,6 +407,7 @@ public class AuthControllerPasswordRotationTests
             CurrentSignature: sig,
             Timestamp: null,
             NewUserSalt: Convert.ToBase64String(new byte[8]),  // wrong length
+            NewAccountSalt: Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
             NewAuthPubkey: Convert.ToBase64String(newPub),
             NewWrappedAccountKey: Convert.ToBase64String(RandomNumberGenerator.GetBytes(72)));
 

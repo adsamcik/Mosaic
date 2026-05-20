@@ -151,11 +151,16 @@ describe('rotatePassword (validation-2026-05-19-auth-03)', () => {
     expect(typeof body.currentSignature).toBe('string');
     expect(body.timestamp).toBe(1700000000);
     expect(typeof body.newUserSalt).toBe('string');
+    expect(typeof body.newAccountSalt).toBe('string');
     expect(typeof body.newAuthPubkey).toBe('string');
     expect(typeof body.newWrappedAccountKey).toBe('string');
 
     // Salt and pubkey decode to the right lengths.
     expect(atob(body.newUserSalt).length).toBe(16);
+    // v1.0.x validation-final-gate-auth-f: newAccountSalt MUST accompany
+    // newUserSalt; the server persists it so the next login derives the
+    // same L1 that the client used to rewrap L2.
+    expect(atob(body.newAccountSalt).length).toBe(16);
     expect(atob(body.newAuthPubkey).length).toBe(32);
     expect(atob(body.currentSignature).length).toBe(64);
 

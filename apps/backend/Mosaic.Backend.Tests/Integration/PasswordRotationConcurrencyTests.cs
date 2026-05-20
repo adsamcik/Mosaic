@@ -171,6 +171,7 @@ public class PasswordRotationConcurrencyTests
             CurrentSignature: SignTranscript(s.Challenge.Challenge, "alice", s.CurrentSecret),
             Timestamp: null,
             NewUserSalt: Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+            NewAccountSalt: Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
             NewAuthPubkey: Convert.ToBase64String(newPub),
             NewWrappedAccountKey: Convert.ToBase64String(RandomNumberGenerator.GetBytes(72)));
     }
