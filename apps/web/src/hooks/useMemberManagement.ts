@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { fromBase64, getApi, paginateAll, toBase64 } from '../lib/api';
 import type {
   AlbumMember,
-  CreateEpochKeyRequest,
+  InviteEpochKey,
   UserPublic,
 } from '../lib/api-types';
 import { getCryptoClient } from '../lib/crypto-client';
@@ -321,7 +321,7 @@ export function useMemberManagement(
         }
 
         // Create sealed bundles for each epoch
-        const epochKeys: CreateEpochKeyRequest[] = [];
+        const epochKeys: InviteEpochKey[] = [];
 
         for (const bundle of epochBundles) {
           try {
@@ -335,8 +335,12 @@ export function useMemberManagement(
               recipientPubkey,
             );
 
+            // Per-key `recipientId` is intentionally omitted — the
+            // backend `EpochKeyCreate` DTO does not accept it and runs
+            // with `UnmappedMemberHandling.Disallow`, so including it
+            // produces a JSON model-validation 400. The recipient is
+            // already carried on the outer InviteRequest.
             epochKeys.push({
-              recipientId,
               epochId: bundle.epochId,
               encryptedKeyBundle: toBase64(
                 new Uint8Array([

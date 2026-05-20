@@ -49,15 +49,25 @@ export class MembersPanel {
   }
 
   async removeMember(userIdOrDisplayName: string): Promise<void> {
+    // Prefer the stable per-user testid emitted by MemberList
+    // (`remove-member-${userId}`). Falling back to text-based filtering is
+    // ambiguous when adjacent rows share a UUIDv7 time prefix (owner + invitee
+    // registered seconds apart collide on the displayed `User <8 hex>` label).
+    const directRemoveBtn = this.page.getByTestId(`remove-member-${userIdOrDisplayName}`);
+    if (await directRemoveBtn.isVisible().catch(() => false)) {
+      await directRemoveBtn.click();
+      return;
+    }
+
     let memberRow = this.page.getByTestId('member-item').filter({ hasText: userIdOrDisplayName });
     let isVisible = await memberRow.first().isVisible().catch(() => false);
-    
+
     if (!isVisible && userIdOrDisplayName.length > 8) {
       const shortId = userIdOrDisplayName.substring(0, 8);
       memberRow = this.page.getByTestId('member-item').filter({ hasText: shortId });
       isVisible = await memberRow.first().isVisible().catch(() => false);
     }
-    
+
     if (!isVisible) {
       const removeButtons = this.page.getByTestId('member-item').getByRole('button', { name: /remove|delete/i });
       const count = await removeButtons.count();
@@ -67,7 +77,7 @@ export class MembersPanel {
       }
       throw new Error(`Member not found: ${userIdOrDisplayName}`);
     }
-    
+
     const removeBtn = memberRow.first().getByRole('button', { name: /remove|delete/i });
     await removeBtn.click();
   }

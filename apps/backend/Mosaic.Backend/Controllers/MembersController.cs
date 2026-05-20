@@ -71,7 +71,15 @@ public class MembersController : ControllerBase
                 am.Role,
                 am.JoinedAt,
                 am.RevokedAt,
-                am.InvitedBy
+                am.InvitedBy,
+                // Include the minimal UserPublic projection so client-side
+                // epoch rotation can seal the new epoch key for each
+                // remaining member without an extra round trip.
+                user = new
+                {
+                    id = am.User.Id,
+                    identityPubkey = am.User.IdentityPubkey,
+                }
             })
             .ToListAsync();
 
@@ -198,13 +206,32 @@ public class MembersController : ControllerBase
                     });
             }
 
-            return Created($"/api/v1/albums/{albumId}/members/{request.RecipientId}", new
-            {
-                albumId,
-                userId = request.RecipientId,
-                request.Role,
-                epochKeysCount = request.EpochKeys.Length
-            });
+            // Return the persisted AlbumMember row so the response matches
+            // the listing endpoint's contract and the frontend
+            // AlbumMemberSchema (which requires `joinedAt`). Re-fetch the
+            // entity (post-commit) so reactivation flows return the new
+            // JoinedAt timestamp, not the stale one.
+            var persisted = await _db.AlbumMembers
+                .AsNoTracking()
+                .Where(am => am.AlbumId == albumId && am.UserId == request.RecipientId)
+                .Select(am => new
+                {
+                    am.UserId,
+                    am.Role,
+                    am.JoinedAt,
+                    am.RevokedAt,
+                    am.InvitedBy,
+                    user = new
+                    {
+                        id = am.User.Id,
+                        identityPubkey = am.User.IdentityPubkey,
+                    }
+                })
+                .FirstAsync();
+
+            return Created(
+                $"/api/v1/albums/{albumId}/members/{request.RecipientId}",
+                persisted);
         }
         catch (FormatException)
         {

@@ -265,10 +265,26 @@ export interface AlbumMember {
   user?: UserPublic;
 }
 
+/**
+ * Per-epoch key payload for invite requests. Matches the backend
+ * `Mosaic.Backend.Models.Members.EpochKeyCreate` record. NOTE: this
+ * intentionally omits `recipientId` — the recipient is specified once
+ * on the outer `InviteRequest`. The backend deserializer runs with
+ * `UnmappedMemberHandling.Disallow`, so sending a per-key `recipientId`
+ * fails JSON model validation with `$.epochKeys[i].recipientId`.
+ */
+export interface InviteEpochKey {
+  epochId: number;
+  encryptedKeyBundle: string;
+  ownerSignature: string;
+  sharerPubkey: string;
+  signPubkey: string;
+}
+
 export interface InviteRequest {
   recipientId: string;
   role: 'editor' | 'viewer';
-  epochKeys: CreateEpochKeyRequest[];
+  epochKeys: InviteEpochKey[];
 }
 
 // =============================================================================
