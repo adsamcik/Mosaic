@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
+import { guardComlinkProxy } from '../lib/comlink-proxy-guard';
 import { getDownloadManager } from '../lib/download-manager';
 import { defaultSaveTargetProvider } from '../lib/save-target-bridge';
 import { useDownloadScopeKey } from './useDownloadScopeKey';
@@ -156,41 +157,41 @@ export function useDownloadManager(): UseDownloadManagerResult {
     if (!currentApi) {
       return (): void => undefined;
     }
-    let disposed = false;
     let activeSubscription: { unsubscribe: () => void | Promise<void> } | null = null;
-    // Capture the progress-callback proxy so we can release the worker-side
-    // handle on dispose. Without releaseProxy each unsubscribe leaked a
-    // worker-side closure (audit "perf-slo H1").
-    const progressProxy = Comlink.proxy((): void => {
+    // Wrap the progress callback so any worker→main message that arrives
+    // after the React effect's cleanup runs lands on a disposed-guard
+    // (throwing typed ClosedHandle) instead of producing the cryptic
+    // `rawValue.apply is not a function` unhandled rejection burst
+    // documented in the P0-IDENTITY-STRESS validation gate.
+    const guarded = guardComlinkProxy((): void => {
       void refreshJobs();
-    });
-    const releaseProgressProxy = (): void => {
-      try {
-        (progressProxy as unknown as { [Comlink.releaseProxy]?: () => void })[
-          Comlink.releaseProxy
-        ]?.();
-      } catch {
-        // Best-effort release.
-      }
-    };
-    void currentApi.subscribe(jobId, progressProxy).then((subscription) => {
-      if (disposed) {
-        void subscription.unsubscribe();
-        releaseProgressProxy();
+    }, 'useDownloadManager.progress');
+    void currentApi.subscribe(jobId, guarded.proxy).then((subscription) => {
+      if (guarded.isDisposed()) {
+        // Cleanup ran before subscribe resolved — tear down the worker
+        // side immediately and release the proxy handle.
+        void Promise.resolve(subscription.unsubscribe())
+          .catch(() => undefined)
+          .finally(() => guarded.releaseProxy());
         return;
       }
       activeSubscription = subscription;
     }).catch((caught) => {
-      releaseProgressProxy();
+      guarded.releaseProxy();
       const nextError = caught instanceof Error ? caught : new Error(String(caught));
       setError(nextError);
       log.warn('Download job subscription failed', { errorName: nextError.name });
     });
 
     return (): void => {
-      disposed = true;
-      void activeSubscription?.unsubscribe();
-      releaseProgressProxy();
+      guarded.dispose();
+      // Defer the proxy release until the worker has acknowledged the
+      // unsubscribe — releasing too early lets in-flight progress
+      // messages land on a released slot inside Comlink and surface as
+      // `rawValue.apply is not a function` unhandled rejections.
+      void Promise.resolve(activeSubscription?.unsubscribe())
+        .catch(() => undefined)
+        .finally(() => guarded.releaseProxy());
     };
   }, [refreshJobs]);
 

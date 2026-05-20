@@ -167,6 +167,26 @@ export class DbWorker implements DbWorkerApi {
    */
   private crypto: DbCryptoBridge | null = null;
   private lastError: DbWorkerError | null = null;
+  /**
+   * Tail of a per-worker chain of in-flight OPFS writes.
+   *
+   * Comlink can dispatch multiple async method calls concurrently on a
+   * single worker — each `await` yields the message loop and lets the
+   * next queued call begin. Without serialization, two `saveToOPFS()`
+   * calls could open two `createWritable()` streams on the same
+   * `mosaic.db.enc` file handle in parallel; whichever `close()`d last
+   * would silently overwrite the other, losing freshly persisted data.
+   * Under burst-upload load this manifested as the post-reload regression
+   * in `identity-persistence-stress.spec.ts` (P0-IDENTITY-STRESS): 3
+   * uploads succeeded in-memory but only 1 made it into OPFS before the
+   * test reloaded the page.
+   *
+   * Every call to `saveToOPFS()` chains onto this promise so writes are
+   * processed strictly in-order, and `flushSnapshot()` simply awaits the
+   * current tail to give callers a deterministic "OPFS is up to date"
+   * fence (used by `UploadContext` after `flushSyncCompleteNow`).
+   */
+  private snapshotChain: Promise<void> = Promise.resolve();
 
   async init(crypto: DbCryptoBridge): Promise<void> {
     if (this.lastError) {
@@ -944,7 +964,21 @@ export class DbWorker implements DbWorkerApi {
   }
 
   private async saveToOPFS(): Promise<void> {
+    // Snapshot the in-memory DB synchronously, BEFORE chaining onto the
+    // pending write tail. This pins the "version" of the DB this caller
+    // intended to persist; chained writes then proceed in FIFO order.
     const data = this.getReadyDb().export();
+
+    const next = this.snapshotChain.then(async () => {
+      await this.writeSnapshotToOPFS(data);
+    });
+    // Don't let one failed write break the chain for subsequent callers,
+    // but DO surface the failure to the immediate awaiter below.
+    this.snapshotChain = next.catch(() => undefined);
+    await next;
+  }
+
+  private async writeSnapshotToOPFS(data: Uint8Array): Promise<void> {
     // Encrypt database with XChaCha20-Poly1305 using session key
     const encrypted = await this.encryptBlob(data);
 
@@ -958,6 +992,35 @@ export class DbWorker implements DbWorkerApi {
     new Uint8Array(buffer).set(encrypted);
     await writable.write(buffer);
     await writable.close();
+  }
+
+  /**
+   * Wait until every previously-queued OPFS write has completed.
+   *
+   * Used by `UploadContext` after a successful upload + sync round-trip
+   * so the next page reload is guaranteed to see the freshly persisted
+   * manifests. Without this fence, the SharedWorker (or regular Worker
+   * in automated test environments) could still have an in-flight
+   * `saveToOPFS()` whose `writable.close()` had not yet flushed when the
+   * test issued `page.reload()`, causing the post-reload SQLite
+   * database to silently regress to an older snapshot (P0-IDENTITY-STRESS).
+   *
+   * The loop guards against a producer that enqueues another write while
+   * we are awaiting the current tail — we re-await until the chain
+   * settles on a stable tail promise.
+   */
+  async flushSnapshot(): Promise<void> {
+    let previousTail: Promise<void> | undefined;
+    // Bound the loop conservatively to avoid an unbounded await under
+    // a pathological producer; in practice the chain stabilizes in 1–2
+    // iterations once the upload pipeline goes idle.
+    for (let i = 0; i < 16; i += 1) {
+      if (previousTail === this.snapshotChain) {
+        return;
+      }
+      previousTail = this.snapshotChain;
+      await this.snapshotChain;
+    }
   }
 
   private async deleteFromOPFS(): Promise<void> {

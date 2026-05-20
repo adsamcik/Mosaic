@@ -380,6 +380,19 @@ export interface DbWorkerApi {
    * @param albumId - Album ID to clear photos for
    */
   clearAlbumPhotos(albumId: string): Promise<void>;
+
+  /**
+   * Block until every previously-queued OPFS snapshot write has been
+   * flushed to disk.
+   *
+   * Used by `UploadContext` immediately after a post-upload sync so the
+   * gallery survives a page reload deterministically; before this fence
+   * existed, burst uploads could leave the OPFS snapshot one or more
+   * `insertManifests()` writes behind the in-memory SQLite database
+   * (P0-IDENTITY-STRESS validation gate). Safe to call from any caller;
+   * resolves immediately when no writes are pending.
+   */
+  flushSnapshot(): Promise<void>;
 }
 
 /**

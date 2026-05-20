@@ -30,6 +30,21 @@ export function mountApp(container: HTMLElement): void {
     logger.error('Unhandled promise rejection', {
       reason: safeReason(event.reason),
     });
+    // Dev / E2E diagnostic: surface the specific Comlink-proxy-release
+    // race that the P0-IDENTITY-STRESS validation gate hunts so future
+    // regressions are immediately attributable. Strictly opt-in via
+    // VITE_E2E_WEAK_KEYS (already used to gate weak-KDF builds) or DEV
+    // mode; not enabled in production logs.
+    if (import.meta.env.DEV || import.meta.env.VITE_E2E_WEAK_KEYS === 'true') {
+      const reason = event.reason as { message?: unknown; stack?: unknown } | null | undefined;
+      const message = typeof reason?.message === 'string' ? reason.message : '';
+      if (message.includes('rawValue.apply')) {
+        // Use console.error so the stack survives logger redaction.
+        // eslint-disable-next-line no-console
+        console.error('[unhandledrejection rawValue.apply]', message,
+          typeof reason?.stack === 'string' ? reason.stack : undefined);
+      }
+    }
   });
 
   // Best-effort SW registration: enables Background Fetch on Chromium browsers

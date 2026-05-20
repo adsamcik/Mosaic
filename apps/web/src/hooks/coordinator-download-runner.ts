@@ -1,4 +1,5 @@
 import * as Comlink from 'comlink';
+import { guardComlinkProxy } from '../lib/comlink-proxy-guard';
 import { getOrFetchEpochKey } from '../lib/epoch-key-service';
 import type { DownloadSchedule } from '../lib/download-schedule';
 import type {
@@ -97,32 +98,34 @@ export async function waitForTerminal(
     const callUnsubscribe = (): void => {
       void activeSubscription?.unsubscribe();
     };
-    // Capture the progress-callback proxy so we can release the worker-side
-    // handle when the job reaches a terminal state. Each unsupported leak
-    // would grow worker memory by one closure per cancel/restart.
-    const progressProxy = Comlink.proxy((event: JobProgressEvent) => {
+    // Guard the progress callback so any worker→main message arriving
+    // after we tear down (terminal phase, abort, subscribe error) lands
+    // on a typed `WorkerCryptoError(ClosedHandle)` instead of producing
+    // the `rawValue.apply is not a function` unhandled rejection burst
+    // observed in the P0-IDENTITY-STRESS validation gate.
+    const guarded = guardComlinkProxy((event: JobProgressEvent) => {
       onJobProgress(event);
       if (isTerminalPhase(event.phase)) {
         signal.removeEventListener('abort', onAbort);
         callUnsubscribe();
-        releaseProgressProxy();
+        guarded.dispose();
+        // Defer release until after the worker has acknowledged the
+        // unsubscribe so in-flight progress messages land on the
+        // dispose-guard, not a released proxy slot.
+        void Promise.resolve(activeSubscription?.unsubscribe())
+          .catch(() => undefined)
+          .finally(() => guarded.releaseProxy());
         if (event.phase === 'Done') resolve();
         else if (event.phase === 'Cancelled') reject(new DOMException('Download cancelled', 'AbortError'));
         else reject(new Error(`Download failed: ${event.phase}`));
       }
-    });
-    const releaseProgressProxy = (): void => {
-      try {
-        (progressProxy as unknown as { [Comlink.releaseProxy]?: () => void })[
-          Comlink.releaseProxy
-        ]?.();
-      } catch {
-        // Best-effort release.
-      }
-    };
+    }, 'waitForTerminal.progress');
     const onAbort = (): void => {
       callUnsubscribe();
-      releaseProgressProxy();
+      guarded.dispose();
+      void Promise.resolve(activeSubscription?.unsubscribe())
+        .catch(() => undefined)
+        .finally(() => guarded.releaseProxy());
       reject(new DOMException('Download aborted', 'AbortError'));
     };
     if (signal.aborted) {
@@ -131,7 +134,7 @@ export async function waitForTerminal(
     }
     signal.addEventListener('abort', onAbort, { once: true });
 
-    api.subscribe(jobId, progressProxy).then((subscription) => {
+    api.subscribe(jobId, guarded.proxy).then((subscription) => {
       activeSubscription = subscription;
       if (signal.aborted) {
         callUnsubscribe();
@@ -139,7 +142,8 @@ export async function waitForTerminal(
       }
     }).catch((err) => {
       signal.removeEventListener('abort', onAbort);
-      releaseProgressProxy();
+      guarded.dispose();
+      guarded.releaseProxy();
       reject(err instanceof Error ? err : new Error(String(err)));
     });
   });

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import * as Comlink from 'comlink';
 import { getDownloadManager } from '../lib/download-manager';
+import { guardComlinkProxy } from '../lib/comlink-proxy-guard';
 import { createLogger } from '../lib/logger';
 
 const log = createLogger('useJobThumbnails');
@@ -44,31 +44,35 @@ export function useJobThumbnails(jobId: string | null): UseJobThumbnailsResult {
 
   useEffect(() => {
     if (!jobId) return undefined;
-    let cancelled = false;
     let subscription: { unsubscribe: () => void | Promise<void> } | null = null;
-    let proxiedCallback: ((p: string, u: string) => void) | null = null;
+
+    // Guard the thumbnail callback so any worker-side emission that races
+    // with React effect cleanup lands on a typed ClosedHandle error
+    // instead of the `rawValue.apply is not a function` unhandled
+    // rejection observed in the P0-IDENTITY-STRESS validation gate.
+    const guarded = guardComlinkProxy((photoId: string, blobUrl: string): void => {
+      seenRef.current += 1;
+      setThumbnails((prev) => {
+        // Drop any existing entry for this photoId (prevents duplicates),
+        // then prepend, then cap.
+        const filtered = prev.filter((t) => t.photoId !== photoId);
+        const next: JobThumbnail[] = [{ photoId, blobUrl }, ...filtered];
+        if (next.length > JOB_THUMBNAIL_RING_BUFFER_SIZE) {
+          next.length = JOB_THUMBNAIL_RING_BUFFER_SIZE;
+        }
+        return next;
+      });
+    }, 'useJobThumbnails.subscribe');
 
     void (async (): Promise<void> => {
       try {
         const api = await getDownloadManager();
-        if (cancelled) return;
-        const cb = (photoId: string, blobUrl: string): void => {
-          seenRef.current += 1;
-          setThumbnails((prev) => {
-            // Drop any existing entry for this photoId (prevents duplicates),
-            // then prepend, then cap.
-            const filtered = prev.filter((t) => t.photoId !== photoId);
-            const next: JobThumbnail[] = [{ photoId, blobUrl }, ...filtered];
-            if (next.length > JOB_THUMBNAIL_RING_BUFFER_SIZE) {
-              next.length = JOB_THUMBNAIL_RING_BUFFER_SIZE;
-            }
-            return next;
-          });
-        };
-        proxiedCallback = cb;
-        const sub = await api.subscribeToThumbnails(jobId, Comlink.proxy(cb));
-        if (cancelled) {
-          await sub.unsubscribe();
+        if (guarded.isDisposed()) return;
+        const sub = await api.subscribeToThumbnails(jobId, guarded.proxy);
+        if (guarded.isDisposed()) {
+          void Promise.resolve(sub.unsubscribe())
+            .catch(() => undefined)
+            .finally(() => guarded.releaseProxy());
           return;
         }
         subscription = sub;
@@ -80,11 +84,17 @@ export function useJobThumbnails(jobId: string | null): UseJobThumbnailsResult {
     })();
 
     return (): void => {
-      cancelled = true;
+      guarded.dispose();
+      // Defer proxy release until the worker has acknowledged the
+      // unsubscribe — releasing too early lets in-flight thumbnail
+      // emissions land on a released proxy slot inside Comlink.
       try {
-        void subscription?.unsubscribe();
+        void Promise.resolve(subscription?.unsubscribe())
+          .catch(() => undefined)
+          .finally(() => guarded.releaseProxy());
       } catch {
         // best-effort
+        guarded.releaseProxy();
       }
       // Dev-mode leak diagnostic: at unmount we expect the worker-side stop
       // to have revoked blob URLs. We can't verify directly across the
@@ -95,8 +105,6 @@ export function useJobThumbnails(jobId: string | null): UseJobThumbnailsResult {
           observedCount: seenRef.current,
         });
       }
-      proxiedCallback = null;
-      void proxiedCallback;
     };
   }, [jobId]);
 

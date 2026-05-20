@@ -20,6 +20,7 @@ import {
 } from '../lib/rust-core/wasm-upload-adapter-port';
 import { syncEngine } from '../lib/sync-engine';
 import { syncCoordinator } from '../lib/sync-coordinator';
+import { getDbClient } from '../lib/db-client';
 import { UploadError, UploadErrorCode } from '../lib/upload-errors';
 import {
   createUuidV7,
@@ -302,6 +303,25 @@ export function UploadProvider({ children }: UploadProviderProps) {
                   flushErr instanceof Error
                     ? flushErr.message
                     : String(flushErr),
+              });
+            }
+
+            // P0-IDENTITY-STRESS: force OPFS snapshot to disk before
+            // returning control to the caller (which the E2E test
+            // immediately follows with `page.reload()`). Without this
+            // fence the DB worker could still have a queued
+            // `saveToOPFS()` whose `writable.close()` had not yet
+            // flushed when the page reloaded, regressing the
+            // post-reload SQLite snapshot.
+            try {
+              const db = await getDbClient();
+              await db.flushSnapshot();
+            } catch (flushSnapshotErr) {
+              log.warn('db.flushSnapshot failed (non-fatal):', {
+                error:
+                  flushSnapshotErr instanceof Error
+                    ? flushSnapshotErr.message
+                    : String(flushSnapshotErr),
               });
             }
           } catch (syncErr) {
