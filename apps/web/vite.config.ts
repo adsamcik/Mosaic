@@ -1,6 +1,6 @@
 import react from '@vitejs/plugin-react';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'path';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 
@@ -55,21 +55,41 @@ export default defineConfig(({ mode }) => {
           '(security-review-2026-05-20-02).',
       );
     }
-    const canonical = resolve(
-      __dirname,
-      'src/generated/mosaic-wasm/mosaic_wasm_bg.wasm',
-    );
-    const weak = resolve(
-      __dirname,
-      'src/generated/mosaic-wasm-test-weak/mosaic_wasm_bg.wasm',
-    );
+    const canonicalDir = resolve(__dirname, 'src/generated/mosaic-wasm');
+    const weakDir = resolve(__dirname, 'src/generated/mosaic-wasm-test-weak');
+    const canonical = resolve(canonicalDir, 'mosaic_wasm_bg.wasm');
+    const weak = resolve(weakDir, 'mosaic_wasm_bg.wasm');
     if (!existsSync(canonical)) {
       throw new Error(
         `Canonical production WASM is missing at ${canonical}. ` +
           'Run scripts/build-rust-wasm.sh (without weak-kdf) first.',
       );
     }
+    // HIGH security-review-2026-05-20-03: defend against path-alias /
+    // symlink bypasses by comparing real paths, not just byte hashes.
+    const safeRealpath = (p: string): string => {
+      try {
+        return realpathSync(p);
+      } catch {
+        return p;
+      }
+    };
+    if (existsSync(canonicalDir) && existsSync(weakDir)) {
+      if (safeRealpath(canonicalDir) === safeRealpath(weakDir)) {
+        throw new Error(
+          'Canonical and test-weak WASM directories resolve to the same real path. ' +
+            'A path-alias or symlink bypass routed weak-kdf bytes into the production path ' +
+            '(security-review-2026-05-20-03).',
+        );
+      }
+    }
     if (existsSync(weak)) {
+      if (safeRealpath(canonical) === safeRealpath(weak)) {
+        throw new Error(
+          'Canonical WASM and test-weak WASM resolve to the same real file. ' +
+            'Symlink / path-alias bypass detected (security-review-2026-05-20-03).',
+        );
+      }
       const canonicalHash = createHash('sha256').update(readFileSync(canonical)).digest('hex');
       const weakHash = createHash('sha256').update(readFileSync(weak)).digest('hex');
       if (canonicalHash === weakHash) {

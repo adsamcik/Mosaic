@@ -36,19 +36,71 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-# Security guard (HIGH security-review-2026-05-20-02): reject weak-kdf builds
-# that would land in the canonical production WASM path BEFORE we even spin
-# up the build container. The inner script enforces this too, but failing
-# fast here gives operators a clearer error and avoids Docker noise.
+# Security guard (HIGH security-review-2026-05-20-02 + -03): reject weak-kdf
+# builds that would land in the canonical production WASM path BEFORE we
+# even spin up the build container. Canonicalizes both sides to defeat
+# `./`, `..`, trailing separators, absolute aliases, and symlinks. The
+# inner script enforces this too; we fail fast for a clearer error.
 CANONICAL_OUT_DIR="apps/web/src/generated/mosaic-wasm"
 EXPECTED_WEAK_OUT_DIR="apps/web/src/generated/mosaic-wasm-test-weak"
+
+canonicalize_path() {
+  local p="$1"
+  if command -v realpath >/dev/null 2>&1; then
+    if out="$(realpath -m -- "$p" 2>/dev/null)"; then echo "$out"; return; fi
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    if out="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$p" 2>/dev/null)"; then
+      echo "$out"; return
+    fi
+  fi
+  if command -v python >/dev/null 2>&1; then
+    if out="$(python -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$p" 2>/dev/null)"; then
+      echo "$out"; return
+    fi
+  fi
+  if [[ -d "$p" ]]; then (cd "$p" && pwd -P); return; fi
+  local parent base
+  parent="$(dirname "$p")"
+  base="$(basename "$p")"
+  if [[ -d "$parent" ]]; then
+    echo "$(cd "$parent" && pwd -P)/$base"
+  else
+    echo "$p"
+  fi
+}
+
+repo_root_abs="$(cd "$PROJECT_ROOT" && pwd -P)"
+canonical_abs="$(canonicalize_path "$repo_root_abs/$CANONICAL_OUT_DIR")"
+expected_weak_abs="$(canonicalize_path "$repo_root_abs/$EXPECTED_WEAK_OUT_DIR")"
+
 if [[ ",${MOSAIC_WASM_CARGO_FEATURES:-}," == *",weak-kdf,"* ]]; then
-  effective_out_dir="${MOSAIC_WASM_OUT_DIR:-${CANONICAL_OUT_DIR}}"
-  if [[ "${effective_out_dir}" == "${CANONICAL_OUT_DIR}" ]]; then
-    echo "❌ ERROR: weak-kdf feature requires MOSAIC_WASM_OUT_DIR=${EXPECTED_WEAK_OUT_DIR}" >&2
-    echo "   Writing weak-kdf bytes into the canonical production path would undermine" >&2
-    echo "   the production crypto floor (security-review-2026-05-20-02)." >&2
+  effective_out_dir_raw="${MOSAIC_WASM_OUT_DIR:-$CANONICAL_OUT_DIR}"
+  case "$effective_out_dir_raw" in
+    /*) effective_abs_input="$effective_out_dir_raw" ;;
+    *)  effective_abs_input="$repo_root_abs/$effective_out_dir_raw" ;;
+  esac
+  effective_abs="$(canonicalize_path "$effective_abs_input")"
+  if [[ "$effective_abs" == "$canonical_abs" ]]; then
+    echo "❌ ERROR: weak-kdf feature must NOT write to the canonical production path." >&2
+    echo "   canonical: $canonical_abs" >&2
+    echo "   requested: $effective_abs (raw: $effective_out_dir_raw)" >&2
     exit 64
+  fi
+  if [[ "$effective_abs" != "$expected_weak_abs" ]]; then
+    echo "❌ ERROR: weak-kdf builds must write to $EXPECTED_WEAK_OUT_DIR." >&2
+    echo "   expected: $expected_weak_abs" >&2
+    echo "   requested: $effective_abs (raw: $effective_out_dir_raw)" >&2
+    exit 64
+  fi
+  if [[ -L "$effective_abs_input" ]]; then
+    if command -v readlink >/dev/null 2>&1; then
+      link_target="$(readlink -f -- "$effective_abs_input" 2>/dev/null || true)"
+      if [[ -n "$link_target" && "$link_target" == "$canonical_abs" ]]; then
+        echo "❌ ERROR: MOSAIC_WASM_OUT_DIR is a symlink resolving to canonical production path." >&2
+        exit 64
+      fi
+    fi
   fi
 fi
 
