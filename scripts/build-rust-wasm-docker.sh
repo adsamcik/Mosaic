@@ -36,6 +36,22 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
+# Security guard (HIGH security-review-2026-05-20-02): reject weak-kdf builds
+# that would land in the canonical production WASM path BEFORE we even spin
+# up the build container. The inner script enforces this too, but failing
+# fast here gives operators a clearer error and avoids Docker noise.
+CANONICAL_OUT_DIR="apps/web/src/generated/mosaic-wasm"
+EXPECTED_WEAK_OUT_DIR="apps/web/src/generated/mosaic-wasm-test-weak"
+if [[ ",${MOSAIC_WASM_CARGO_FEATURES:-}," == *",weak-kdf,"* ]]; then
+  effective_out_dir="${MOSAIC_WASM_OUT_DIR:-${CANONICAL_OUT_DIR}}"
+  if [[ "${effective_out_dir}" == "${CANONICAL_OUT_DIR}" ]]; then
+    echo "❌ ERROR: weak-kdf feature requires MOSAIC_WASM_OUT_DIR=${EXPECTED_WEAK_OUT_DIR}" >&2
+    echo "   Writing weak-kdf bytes into the canonical production path would undermine" >&2
+    echo "   the production crypto floor (security-review-2026-05-20-02)." >&2
+    exit 64
+  fi
+fi
+
 # Build (or refresh) the image if it does not already exist locally.
 if ! docker image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
   echo "[wasm-docker] image $IMAGE_TAG not found, building..." >&2

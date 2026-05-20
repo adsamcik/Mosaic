@@ -7,6 +7,25 @@ $WasmBindgenVersion = "0.2.118"
 Push-Location $ProjectRoot
 
 try {
+    # Security guard (HIGH security-review-2026-05-20-02): weak-kdf feature
+    # MUST NOT write into the canonical production WASM path. See
+    # scripts/build-rust-wasm.sh for the matching guard.
+    $CanonicalOutDir = 'apps/web/src/generated/mosaic-wasm'
+    $ExpectedWeakOutDir = 'apps/web/src/generated/mosaic-wasm-test-weak'
+    if ($env:MOSAIC_WASM_CARGO_FEATURES) {
+        $featureList = ",$($env:MOSAIC_WASM_CARGO_FEATURES),"
+        if ($featureList -like '*,weak-kdf,*') {
+            $effectiveOutDir = if ($env:MOSAIC_WASM_OUT_DIR) { $env:MOSAIC_WASM_OUT_DIR } else { $CanonicalOutDir }
+            if ($effectiveOutDir -eq $CanonicalOutDir) {
+                Write-Error "❌ weak-kdf feature requires MOSAIC_WASM_OUT_DIR=$ExpectedWeakOutDir.`n   Writing weak-kdf bytes into the canonical production path would undermine`n   the production crypto floor (security-review-2026-05-20-02)."
+                exit 64
+            }
+            if ($effectiveOutDir -ne $ExpectedWeakOutDir) {
+                Write-Warning "MOSAIC_WASM_OUT_DIR=$effectiveOutDir for weak-kdf build — recommended path is $ExpectedWeakOutDir"
+            }
+        }
+    }
+
     $installedTargets = rustup target list --installed
     if ($installedTargets -notcontains "wasm32-unknown-unknown") {
         rustup target add wasm32-unknown-unknown
@@ -68,7 +87,16 @@ try {
         --out-dir $OutDir `
         "$ProjectRoot/target/wasm32-unknown-unknown/release/mosaic_wasm.wasm"
 
-    $WebOutDir = Join-Path $ProjectRoot "apps/web/src/generated/mosaic-wasm"
+    # Output directory inside the web app. Defaults to the canonical
+    # production path; can be overridden (e.g. for the test-only weak-kdf
+    # artifact at apps/web/src/generated/mosaic-wasm-test-weak). Override
+    # is interpreted relative to $ProjectRoot when given as a relative path.
+    $OutSubpath = if ($env:MOSAIC_WASM_OUT_DIR) { $env:MOSAIC_WASM_OUT_DIR } else { 'apps/web/src/generated/mosaic-wasm' }
+    if ([System.IO.Path]::IsPathRooted($OutSubpath)) {
+        $WebOutDir = $OutSubpath
+    } else {
+        $WebOutDir = Join-Path $ProjectRoot $OutSubpath
+    }
     New-Item -ItemType Directory -Force -Path $WebOutDir | Out-Null
     Copy-Item -Force -Path (Join-Path $OutDir "mosaic_wasm.js") -Destination $WebOutDir
     Copy-Item -Force -Path (Join-Path $OutDir "mosaic_wasm.d.ts") -Destination $WebOutDir

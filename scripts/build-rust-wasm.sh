@@ -6,6 +6,28 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 WASM_BINDGEN_VERSION="0.2.118"
 cd "$PROJECT_ROOT"
 
+# Security guard (HIGH security-review-2026-05-20-02): the `weak-kdf` cargo
+# feature relaxes Argon2id to a test-only profile (8 MiB / 1 iter). Bytes
+# built with it MUST NOT land at the canonical production output path
+# (apps/web/src/generated/mosaic-wasm) — otherwise a production bundle could
+# silently inherit the relaxed KDF floor. Hard-fail BEFORE any toolchain
+# work so misconfigured callers see a crisp error instead of toolchain noise.
+CANONICAL_OUT_DIR="apps/web/src/generated/mosaic-wasm"
+EXPECTED_WEAK_OUT_DIR="apps/web/src/generated/mosaic-wasm-test-weak"
+if [[ ",${MOSAIC_WASM_CARGO_FEATURES:-}," == *",weak-kdf,"* ]]; then
+  effective_out_dir="${MOSAIC_WASM_OUT_DIR:-${CANONICAL_OUT_DIR}}"
+  if [[ "${effective_out_dir}" == "${CANONICAL_OUT_DIR}" ]]; then
+    echo "❌ ERROR: weak-kdf feature requires MOSAIC_WASM_OUT_DIR=${EXPECTED_WEAK_OUT_DIR}" >&2
+    echo "   Writing weak-kdf bytes into the canonical production path would undermine" >&2
+    echo "   the production crypto floor (security-review-2026-05-20-02)." >&2
+    exit 64  # EX_USAGE
+  fi
+  if [[ "${effective_out_dir}" != "${EXPECTED_WEAK_OUT_DIR}" ]]; then
+    echo "⚠️  WARNING: MOSAIC_WASM_OUT_DIR=${effective_out_dir} for weak-kdf build" >&2
+    echo "   recommended path is ${EXPECTED_WEAK_OUT_DIR}" >&2
+  fi
+fi
+
 if ! rustup target list --installed | grep -qx "wasm32-unknown-unknown"; then
   rustup target add wasm32-unknown-unknown
 fi

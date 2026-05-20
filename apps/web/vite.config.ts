@@ -1,4 +1,6 @@
 import react from '@vitejs/plugin-react';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'path';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 
@@ -40,6 +42,46 @@ function mosaicWeakKdfRedirectPlugin(): Plugin {
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+
+  // Production-build hard guard (HIGH security-review-2026-05-20-02).
+  // Refuse to build a production bundle if the weak-kdf redirect is on,
+  // and refuse to build at all if the canonical WASM has been overwritten
+  // with the test-only weak-kdf bytes.
+  if (mode === 'production') {
+    if (process.env.VITE_E2E_WEAK_KEYS === 'true') {
+      throw new Error(
+        'VITE_E2E_WEAK_KEYS=true is set during a production build. ' +
+          'Weak KDF must never reach production bundles ' +
+          '(security-review-2026-05-20-02).',
+      );
+    }
+    const canonical = resolve(
+      __dirname,
+      'src/generated/mosaic-wasm/mosaic_wasm_bg.wasm',
+    );
+    const weak = resolve(
+      __dirname,
+      'src/generated/mosaic-wasm-test-weak/mosaic_wasm_bg.wasm',
+    );
+    if (!existsSync(canonical)) {
+      throw new Error(
+        `Canonical production WASM is missing at ${canonical}. ` +
+          'Run scripts/build-rust-wasm.sh (without weak-kdf) first.',
+      );
+    }
+    if (existsSync(weak)) {
+      const canonicalHash = createHash('sha256').update(readFileSync(canonical)).digest('hex');
+      const weakHash = createHash('sha256').update(readFileSync(weak)).digest('hex');
+      if (canonicalHash === weakHash) {
+        throw new Error(
+          'Canonical WASM is byte-identical to the test-weak artifact. ' +
+            'The weak-kdf build overwrote the production output ' +
+            '(security-review-2026-05-20-02).',
+        );
+      }
+    }
+  }
+
   // Default to port 5000 for local dev, override with VITE_API_PORT for containers
   const apiPort = env.VITE_API_PORT || '5000';
 

@@ -194,6 +194,33 @@ if (!constantTimeEqual(actualHash, expectedHash)) {
 }
 ```
 
+### Production WASM Build Floor
+
+**CRITICAL:** The `weak-kdf` Cargo feature on `mosaic-crypto` / `mosaic-wasm`
+relaxes Argon2id to a test-only profile (8 MiB / 1 iter) so KDF-bound test
+runs stay tractable. Bytes built with `weak-kdf` MUST NEVER land at the
+canonical production WASM path `apps/web/src/generated/mosaic-wasm/` —
+otherwise a production bundle could silently inherit the relaxed KDF floor
+(see `security-review-2026-05-20-02`).
+
+Defense in depth (all four must pass):
+
+1. **Script-level guard** — `scripts/build-rust-wasm.{sh,ps1}` and the
+   Docker wrappers reject builds where `MOSAIC_WASM_CARGO_FEATURES`
+   contains `weak-kdf` unless `MOSAIC_WASM_OUT_DIR` is set to the dedicated
+   `apps/web/src/generated/mosaic-wasm-test-weak/` path. Exit code 64.
+2. **CI workflow pinning** — every weak-kdf build step in
+   `.github/workflows/{tests,publish}.yml` sets
+   `MOSAIC_WASM_OUT_DIR=apps/web/src/generated/mosaic-wasm-test-weak`
+   alongside the feature flag.
+3. **Prebuild verifier** — `apps/web` `prebuild` invokes
+   `scripts/verify-production-wasm-no-weak-kdf.mjs`, which fails the build
+   if the canonical WASM is byte-identical to the test-weak artifact
+   (smoking-gun evidence of contamination).
+4. **Vite production guard** — `apps/web/vite.config.ts` refuses to start
+   a production build when `VITE_E2E_WEAK_KEYS=true` or when the canonical
+   and test-weak WASM bytes match.
+
 ## Forward Secrecy Limitations
 
 ### Epoch Keys

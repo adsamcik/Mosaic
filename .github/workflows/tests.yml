@@ -136,7 +136,10 @@ jobs:
         run: cargo install wasm-bindgen-cli --version 0.2.118 --locked
 
       - name: Build weak-key WASM for E2E
-        run: MOSAIC_WASM_CARGO_FEATURES=weak-kdf bash ./scripts/build-rust-wasm.sh
+        env:
+          MOSAIC_WASM_CARGO_FEATURES: weak-kdf
+          MOSAIC_WASM_OUT_DIR: apps/web/src/generated/mosaic-wasm-test-weak
+        run: bash ./scripts/build-rust-wasm.sh
       
       # Build and start services in Docker with port forwarding
       # Frontend: localhost:8080, Backend: localhost:5000
@@ -240,7 +243,10 @@ jobs:
         run: cargo install wasm-bindgen-cli --version 0.2.118 --locked
 
       - name: Build weak-key WASM for E2E
-        run: MOSAIC_WASM_CARGO_FEATURES=weak-kdf bash ./scripts/build-rust-wasm.sh
+        env:
+          MOSAIC_WASM_CARGO_FEATURES: weak-kdf
+          MOSAIC_WASM_OUT_DIR: apps/web/src/generated/mosaic-wasm-test-weak
+        run: bash ./scripts/build-rust-wasm.sh
 
       # Build and start services in Docker with port forwarding. The
       # ProxyAuth-mode override flips the backend into ProxyAuth-only mode

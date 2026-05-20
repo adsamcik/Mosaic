@@ -156,7 +156,13 @@ jobs:
         # compiled with the matching `weak-kdf` Cargo feature, otherwise the Rust
         # core rejects weak Argon2 profiles (KdfProfileTooWeak / code 208). Mirrors
         # the equivalent step in tests.yml (see commit 29bfa5f).
-        run: MOSAIC_WASM_CARGO_FEATURES=weak-kdf bash ./scripts/build-rust-wasm.sh
+        # MOSAIC_WASM_OUT_DIR redirects the weak-kdf bytes to the dedicated
+        # test-weak artifact path so they never overwrite the canonical
+        # production WASM (HIGH security-review-2026-05-20-02).
+        env:
+          MOSAIC_WASM_CARGO_FEATURES: weak-kdf
+          MOSAIC_WASM_OUT_DIR: apps/web/src/generated/mosaic-wasm-test-weak
+        run: bash ./scripts/build-rust-wasm.sh
 
       - name: Build and start services
         run: |
