@@ -106,9 +106,12 @@ test.describe('Identity Persistence: Stress and Logout Tests @p1 @auth @crypto @
       const gallery = new GalleryPage(page);
       await gallery.waitForLoad();
 
-      // Upload 3 photos sequentially
+      // Upload 3 photos sequentially. Vary the color per iteration so each
+      // upload produces byte-distinct content; otherwise the backend content-
+      // hash dedup folds photos 2 & 3 into photo 1, and the post-reload
+      // assertion fails.
       for (let i = 1; i <= 3; i++) {
-        const testImage = generateTestImage();
+        const testImage = generateTestImage('tiny', [i * 50, 100, 200]);
         await gallery.uploadPhoto(testImage, `stress-photo-${i}.png`);
         console.log(`[TEST] Uploaded photo ${i}/3`);
         // Wait for upload to complete via network idle
@@ -170,9 +173,10 @@ test.describe('Identity Persistence: Stress and Logout Tests @p1 @auth @crypto @
       }).toPass({ timeout: 5000, intervals: [100, 200, 500] });
       console.log(`[TEST] Stable count verified: 3`);
 
-      // Upload 2 more photos
+      // Upload 2 more photos with unique colors so each is byte-distinct (see
+      // Phase 1 comment about content-hash dedup).
       for (let i = 4; i <= 5; i++) {
-        const testImage = generateTestImage();
+        const testImage = generateTestImage('tiny', [i * 50, 100, 200]);
         await gallery.uploadPhoto(testImage, `stress-photo-${i}.png`);
         console.log(`[TEST] Uploaded photo ${i}/5`);
         // Wait for upload to complete via network idle

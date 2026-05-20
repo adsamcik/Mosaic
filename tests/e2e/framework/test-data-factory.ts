@@ -69,13 +69,21 @@ export function generateTestImage(
   }
 
   let result: Buffer;
-  
-  // For tiny size, use the simple 1x1 PNG
+
+  // For tiny size, use the simple 1x1 PNG fast-path when no custom color is
+  // requested. Callers that pass a color expect each color to yield a
+  // byte-distinct image (so the backend's content-hash dedup does not collapse
+  // them in a single album). For those cases, generate a proper 1x1 PNG with
+  // the requested color.
   if (size === 'tiny') {
-    // 1x1 red pixel PNG
-    const base64 =
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
-    result = Buffer.from(base64, 'base64');
+    if (color === undefined) {
+      // 1x1 red pixel PNG (fast path)
+      const base64 =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+      result = Buffer.from(base64, 'base64');
+    } else {
+      result = createSolidColorPNG(1, 1, r, g, b);
+    }
   } else {
     // For larger sizes, we need to generate proper PNGs
     // This is a simplified approach - in production you'd use sharp or similar
