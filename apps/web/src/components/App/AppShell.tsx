@@ -256,6 +256,7 @@ export function AppShell() {
                 onDeleteAlbum={deleteAlbum}
                 onRenameAlbum={renameAlbum}
                 onAlbumDeleted={handleBackToAlbums}
+                onAlbumUpdated={refetchAlbums}
               />
             </ErrorBoundary>
           )}

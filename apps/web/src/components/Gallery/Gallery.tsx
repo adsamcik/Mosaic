@@ -231,6 +231,12 @@ interface GalleryProps {
   onAlbumDeleted?: () => void;
   onDeleteAlbum?: (albumId: string) => Promise<boolean>;
   onRenameAlbum?: (albumId: string, newName: string) => Promise<boolean>;
+  /**
+   * Called after any album-level mutation that affects the parent album list
+   * (e.g. expiration changes). Used to refetch the AppShell-level album list
+   * so badges, names, etc. stay in sync when navigating back.
+   */
+  onAlbumUpdated?: () => Promise<void> | void;
 }
 
 /**
@@ -268,6 +274,7 @@ export function Gallery({
   onAlbumDeleted,
   onDeleteAlbum,
   onRenameAlbum,
+  onAlbumUpdated,
 }: GalleryProps) {
   const [showMembers, setShowMembers] = useState(false);
   const [showShareLinks, setShowShareLinks] = useState(false);
@@ -578,10 +585,13 @@ export function Gallery({
       const api = getApi();
       const album = await api.getAlbum(albumId);
       setExpirationAlbum(album);
+      // Refresh the parent AppShell album list so the expiration badge
+      // appears on the album card when the user navigates back.
+      await onAlbumUpdated?.();
     } catch (err) {
       log.error('Failed to refresh album after expiration update:', err);
     }
-  }, [albumId]);
+  }, [albumId, onAlbumUpdated]);
 
   const handleCloseExpiration = useCallback(() => {
     setShowExpirationDialog(false);
