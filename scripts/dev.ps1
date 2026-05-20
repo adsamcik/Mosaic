@@ -289,9 +289,13 @@ function Start-FrontendService {
         Pop-Location
     }
     
-    # Create a wrapper script
+    # Create a wrapper script. When -Testing is set, propagate VITE_E2E_WEAK_KEYS
+    # so vite swaps mosaic-wasm/ for mosaic-wasm-test-weak/ (E2E fixtures otherwise
+    # time out on production Argon2id parameters).
+    $weakKeysLine = if ($Testing) { "`$env:VITE_E2E_WEAK_KEYS = 'true'" } else { "" }
     $wrapperScript = @"
 Set-Location '$frontendPath'
+$weakKeysLine
 npm run dev 2>&1
 "@
     
