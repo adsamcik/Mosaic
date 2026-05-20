@@ -33,37 +33,43 @@ function useShareLinkParams(): {
   linkId: string | null;
   linkSecret: string | null;
 } {
-  const [params, setParams] = useState<{
+  // Capture linkId + linkSecret synchronously during the initial render via
+  // useState's lazy initializer. React preserves this state across the
+  // simulated unmount/remount that StrictMode performs in development, so the
+  // captured secret survives even after the effect below strips `#k=...` from
+  // `window.location.hash`. A previous implementation parsed the URL inside
+  // `useEffect`, which meant StrictMode's second pass observed the already-
+  // stripped (empty) hash and overwrote `linkSecret` with `null`, causing the
+  // viewer to render "Invalid Share Link / missing secret key" for every
+  // anonymous redemption (validation-final-gate-shares-c-f).
+  const [params] = useState<{
     linkId: string | null;
     linkSecret: string | null;
-  }>({
-    linkId: null,
-    linkSecret: null,
-  });
-
-  useEffect(() => {
+  }>(() => {
+    if (typeof window === 'undefined') {
+      return { linkId: null, linkSecret: null };
+    }
     // Extract linkId from path: /s/{linkId}
     const pathMatch = window.location.pathname.match(/\/s\/([A-Za-z0-9_-]+)$/);
     const linkId = pathMatch?.[1] ?? null;
-
     // Extract linkSecret from fragment: #k={linkSecret}
     const linkSecret = parseLinkFragment(window.location.hash);
+    return { linkId, linkSecret };
+  });
 
-    setParams({ linkId, linkSecret });
-
-    // Privacy: once the secret has been captured into memory, drop the
-    // fragment from the URL so it does not persist in browser history,
+  useEffect(() => {
+    // Privacy: once the secret has been captured into component state, drop
+    // the fragment from the URL so it does not persist in browser history,
     // tab restore, page-visibility callbacks, document.title, copy-link
     // menus, or any subresource Referer. The fragment never reaches the
     // server in any request, but it does survive in client-side history
-    // entries until explicitly replaced. The listener that previously
-    // tracked `hashchange` here was defensive against the user manually
-    // editing the fragment — that flow is intentionally retired now that
-    // we strip the fragment ourselves on first load.
-    if (linkSecret && window.location.hash) {
+    // entries until explicitly replaced. This effect is idempotent: on the
+    // StrictMode-induced second mount the hash is already empty, so the
+    // guard short-circuits.
+    if (params.linkSecret && window.location.hash) {
       window.history.replaceState(null, '', window.location.pathname);
     }
-  }, []);
+  }, [params.linkSecret]);
 
   return params;
 }
