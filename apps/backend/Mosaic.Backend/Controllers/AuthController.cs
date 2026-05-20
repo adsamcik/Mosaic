@@ -941,6 +941,11 @@ public partial class AuthController : ControllerBase
         // (security-review-2026-05-19-07)
         const int MaxRotationAttempts = 4;
         var rotationBackoffsMs = new[] { 250, 500, 1000 };
+        // Honor request abort. If the client disconnects mid-retry, stop
+        // burning CPU/DB on a rotation no one is waiting for. Falls back to
+        // CancellationToken.None when HttpContext is unavailable (unit tests).
+        // (security-review-2026-05-19-15)
+        var rotationCt = HttpContext?.RequestAborted ?? CancellationToken.None;
 
         for (int attempt = 0; attempt < MaxRotationAttempts; attempt++)
         {
@@ -1035,10 +1040,11 @@ public partial class AuthController : ControllerBase
                 {
                     await tx.RollbackAsync();
                 }
+                var backoffMs = ComputeRotationBackoffMs(rotationBackoffsMs[attempt]);
                 _logger.LogWarning(ex,
-                    "Password rotation hit serialization/deadlock conflict for user {UserId} on attempt {Attempt}; retrying after {BackoffMs}ms",
-                    user.Id, attempt + 1, rotationBackoffsMs[attempt]);
-                await Task.Delay(rotationBackoffsMs[attempt]);
+                    "Password rotation hit serialization/deadlock conflict for user {UserId} on attempt {Attempt}; retrying after {BackoffMs}ms (jittered from base {BaseMs}ms)",
+                    user.Id, attempt + 1, backoffMs, rotationBackoffsMs[attempt]);
+                await Task.Delay(backoffMs, rotationCt);
                 continue;
             }
             catch (Exception ex) when (IsRetryablePostgresConflict(ex))
@@ -1236,6 +1242,29 @@ public partial class AuthController : ControllerBase
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// Computes a jittered backoff delay for the password-rotation retry
+    /// loop. Returns a value in the closed interval <c>[baseMs, baseMs * 1.5]</c>:
+    /// the original base delay plus 0..50% additional jitter. The jitter
+    /// desynchronizes retry timing across concurrent rotations so that two
+    /// rotations that just collided do not retry in lock-step and collide
+    /// again on identical schedules (retry-storm avoidance).
+    /// (security-review-2026-05-19-15)
+    /// </summary>
+    /// <param name="baseMs">The base delay in milliseconds. Must be non-negative.</param>
+    /// <returns>The jittered delay in milliseconds; 0 when <paramref name="baseMs"/> is non-positive.</returns>
+    internal static int ComputeRotationBackoffMs(int baseMs)
+    {
+        if (baseMs <= 0)
+        {
+            return 0;
+        }
+        // Random.Shared.Next(0, max) returns [0, max) so use baseMs/2 + 1 as
+        // the exclusive upper bound to make the closed interval [0, baseMs/2]
+        // reachable. Resulting delay range: [baseMs, baseMs + baseMs/2].
+        return baseMs + Random.Shared.Next(0, baseMs / 2 + 1);
     }
 
     private byte[] GenerateFakeSalt(string username)

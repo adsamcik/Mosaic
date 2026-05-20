@@ -87,21 +87,44 @@ public sealed class PasswordRotationConcurrencyPostgresTests
             _seededChallenge2 = ch2;
         }
 
-        // Synchronize at the REAL transactional barrier: fire when each
-        // controller has executed BEGIN ISOLATION LEVEL SERIALIZABLE. This
-        // guarantees both transactions are open before either reads the user
-        // row or attempts its UPDATE, so Postgres SSI must detect the
-        // read/write conflict and rotate one of the transactions through the
-        // bounded retry loop (security-review-2026-05-19-10). The previous
-        // BarrierOnNthSaveInterceptor never fired in practice because the
-        // rotation path only executes two SaveChanges calls (challenge claim
-        // uses ExecuteUpdateAsync, which bypasses SaveChanges interceptors)
-        // — so the test was passing via the stale-SaltVersion 409 path
-        // rather than the real Serializable retry path it was meant to
-        // verify.
-        using var barrier = new Barrier(2);
-        var interceptorA = new BarrierOnSerializableTransactionInterceptor(barrier);
-        var interceptorB = new BarrierOnSerializableTransactionInterceptor(barrier);
+        // Synchronize at the REAL transactional barriers. We use TWO sync
+        // points to make the test fully deterministic:
+        //
+        //   Barrier 1 (TransactionStarted): fires when each controller has
+        //     issued BEGIN ISOLATION LEVEL SERIALIZABLE. Guarantees both
+        //     transactions are open on the server before either reads the
+        //     user row.
+        //
+        //   Barrier 2 (after first in-tx SELECT, before UPDATE): fires once
+        //     per controller right after its reload SELECT completes inside
+        //     the Serializable transaction. Guarantees both transactions
+        //     have read the user row (acquiring SSI predicate locks) before
+        //     either issues its UPDATE. This is the critical synchronization
+        //     that forces a Postgres SSI conflict — without it one
+        //     transaction could fully finish (SELECT+UPDATE+COMMIT) before
+        //     the other read the row, in which case the loser would hit the
+        //     stale-SaltVersion 409 path on its reload instead of exercising
+        //     the SSI retry loop. The previous single-barrier design was
+        //     observably nondeterministic on this point.
+        //     (security-review-2026-05-19-14)
+        //
+        // We deliberately do NOT barrier at COMMIT: the second transaction's
+        // UPDATE blocks on the first's exclusive row lock and never reaches
+        // TransactionCommitting, which would deadlock against a commit-time
+        // barrier.
+        //
+        // The retry loop (security-review-2026-05-19-07 / -10) either retries
+        // the loser to success or surfaces a clean 409 (never a raw 500).
+        // The previous BarrierOnNthSaveInterceptor never fired in practice
+        // because the rotation path only executes two SaveChanges calls
+        // (challenge claim uses ExecuteUpdateAsync, which bypasses
+        // SaveChanges interceptors) — so the test was passing via the stale-
+        // SaltVersion 409 path rather than the real Serializable retry path
+        // it was meant to verify.
+        using var beginBarrier = new Barrier(2);
+        using var afterSelectBarrier = new Barrier(2);
+        var interceptorA = new BarrierOnSerializableTransactionInterceptor(beginBarrier, afterSelectBarrier);
+        var interceptorB = new BarrierOnSerializableTransactionInterceptor(beginBarrier, afterSelectBarrier);
 
         await using var dbA = _fixture.CreateContext(interceptorA);
         await using var dbB = _fixture.CreateContext(interceptorB);
@@ -130,13 +153,17 @@ public sealed class PasswordRotationConcurrencyPostgresTests
         var finalUser = await verifyDb.Users.FirstAsync(u => u.Id == _seededUserId);
         Assert.Equal(2, finalUser.SaltVersion);
 
-        // The barrier actually fired on BOTH controllers' Serializable BEGIN.
-        // If it didn't, the test would be falling back to the stale-
-        // SaltVersion 409 path instead of exercising the retry loop.
-        Assert.True(interceptorA.Fired,
-            "Controller A's Serializable transaction barrier did not fire — test is not exercising the in-transaction race.");
-        Assert.True(interceptorB.Fired,
-            "Controller B's Serializable transaction barrier did not fire — test is not exercising the in-transaction race.");
+        // Both barriers actually fired on BOTH controllers. If they didn't,
+        // the test would be falling back to the stale-SaltVersion 409 path
+        // instead of exercising the SSI retry loop.
+        Assert.True(interceptorA.BeginFired,
+            "Controller A's Serializable BEGIN barrier did not fire — test is not exercising the in-transaction race.");
+        Assert.True(interceptorB.BeginFired,
+            "Controller B's Serializable BEGIN barrier did not fire — test is not exercising the in-transaction race.");
+        Assert.True(interceptorA.AfterSelectFired,
+            "Controller A's post-SELECT barrier did not fire — test is not synchronizing reads before writes.");
+        Assert.True(interceptorB.AfterSelectFired,
+            "Controller B's post-SELECT barrier did not fire — test is not synchronizing reads before writes.");
 
         // The retry-loop warning ("serialization/deadlock conflict ... retrying"
         // or "exhausted ... retries") must have fired on the loser, proving
@@ -360,23 +387,26 @@ public sealed class PasswordRotationConcurrencyPostgresTests
 
     // ---------- Interceptors ----------
 
-    private sealed class BarrierOnSerializableTransactionInterceptor : IDbTransactionInterceptor
+    private sealed class BarrierOnSerializableTransactionInterceptor : IDbTransactionInterceptor, IDbCommandInterceptor
     {
-        private readonly Barrier _barrier;
-        private int _firedFlag;
+        private readonly Barrier _beginBarrier;
+        private readonly Barrier _afterSelectBarrier;
+        private int _beginFiredFlag;
+        private int _afterSelectFiredFlag;
+        private System.Data.Common.DbTransaction? _serializableTx;
 
-        public BarrierOnSerializableTransactionInterceptor(Barrier barrier)
+        public BarrierOnSerializableTransactionInterceptor(Barrier beginBarrier, Barrier afterSelectBarrier)
         {
-            _barrier = barrier;
+            _beginBarrier = beginBarrier;
+            _afterSelectBarrier = afterSelectBarrier;
         }
 
-        public bool Fired => Volatile.Read(ref _firedFlag) != 0;
+        public bool BeginFired => Volatile.Read(ref _beginFiredFlag) != 0;
+        public bool AfterSelectFired => Volatile.Read(ref _afterSelectFiredFlag) != 0;
 
-        // Fires AFTER `BEGIN ISOLATION LEVEL SERIALIZABLE` has actually been
-        // issued to Postgres — i.e. the transaction is open on the server
-        // before either controller proceeds to read the user row or execute
-        // its UPDATE. This is the true synchronization point for forcing a
-        // Postgres SSI conflict (security-review-2026-05-19-10).
+        // ---- Barrier 1: BEGIN ISOLATION LEVEL SERIALIZABLE ----
+        // Guarantees both transactions are open on the server before either
+        // reads the user row.
         public ValueTask<System.Data.Common.DbTransaction> TransactionStartedAsync(
             System.Data.Common.DbConnection connection,
             TransactionEndEventData eventData,
@@ -384,9 +414,10 @@ public sealed class PasswordRotationConcurrencyPostgresTests
             CancellationToken cancellationToken = default)
         {
             if (result.IsolationLevel == System.Data.IsolationLevel.Serializable &&
-                Interlocked.Exchange(ref _firedFlag, 1) == 0)
+                Interlocked.Exchange(ref _beginFiredFlag, 1) == 0)
             {
-                _barrier.SignalAndWait(TimeSpan.FromSeconds(30));
+                _serializableTx = result;
+                _beginBarrier.SignalAndWait(TimeSpan.FromSeconds(30));
             }
             return new ValueTask<System.Data.Common.DbTransaction>(result);
         }
@@ -397,11 +428,72 @@ public sealed class PasswordRotationConcurrencyPostgresTests
             System.Data.Common.DbTransaction result)
         {
             if (result.IsolationLevel == System.Data.IsolationLevel.Serializable &&
-                Interlocked.Exchange(ref _firedFlag, 1) == 0)
+                Interlocked.Exchange(ref _beginFiredFlag, 1) == 0)
             {
-                _barrier.SignalAndWait(TimeSpan.FromSeconds(30));
+                _serializableTx = result;
+                _beginBarrier.SignalAndWait(TimeSpan.FromSeconds(30));
             }
             return result;
+        }
+
+        // ---- Barrier 2: after the first SELECT inside the Serializable tx,
+        // before the UPDATE. ----
+        //
+        // The SELECT executes the reload of the user row; the next data-
+        // modifying command will be the UPDATE issued by SaveChangesAsync.
+        // Holding both transactions here guarantees both have completed
+        // their read of the user row (acquiring SSI predicate locks) before
+        // either attempts its UPDATE. Once both pass the barrier, they race
+        // to acquire the row's exclusive lock. The first wins, COMMITs, and
+        // releases the lock; the second's UPDATE/COMMIT then fails with
+        // Postgres 40001 (serialization_failure), forcing it through the
+        // bounded retry loop the test is meant to verify
+        // (security-review-2026-05-19-14).
+        //
+        // We do NOT barrier at COMMIT because the second transaction will be
+        // blocked on the row's X-lock and never reach TransactionCommitting,
+        // which would deadlock against a commit-time barrier.
+        public ValueTask<System.Data.Common.DbDataReader> ReaderExecutedAsync(
+            System.Data.Common.DbCommand command,
+            CommandExecutedEventData eventData,
+            System.Data.Common.DbDataReader result,
+            CancellationToken cancellationToken = default)
+        {
+            MaybeFireAfterSelect(command);
+            return new ValueTask<System.Data.Common.DbDataReader>(result);
+        }
+
+        public System.Data.Common.DbDataReader ReaderExecuted(
+            System.Data.Common.DbCommand command,
+            CommandExecutedEventData eventData,
+            System.Data.Common.DbDataReader result)
+        {
+            MaybeFireAfterSelect(command);
+            return result;
+        }
+
+        private void MaybeFireAfterSelect(System.Data.Common.DbCommand command)
+        {
+            if (!ReferenceEquals(command.Transaction, _serializableTx))
+            {
+                return;
+            }
+            // Only fire on a SELECT — never on an UPDATE/INSERT/DELETE, since
+            // by definition we want to barrier AFTER reads, BEFORE writes.
+            var sql = command.CommandText;
+            if (sql is null)
+            {
+                return;
+            }
+            var trimmed = sql.AsSpan().TrimStart();
+            if (!trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+            if (Interlocked.Exchange(ref _afterSelectFiredFlag, 1) == 0)
+            {
+                _afterSelectBarrier.SignalAndWait(TimeSpan.FromSeconds(30));
+            }
         }
     }
 
