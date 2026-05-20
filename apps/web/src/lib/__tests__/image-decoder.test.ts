@@ -141,4 +141,145 @@ describe('safeCreateImageBitmap', () => {
     });
     expect(close).not.toHaveBeenCalled();
   });
+
+  describe('AVIF <img>-element fallback', () => {
+    type ImageCtor = typeof globalThis.Image;
+    let originalImage: ImageCtor | undefined;
+    let originalCreateObjectURL: typeof URL.createObjectURL | undefined;
+    let originalRevokeObjectURL: typeof URL.revokeObjectURL | undefined;
+
+    beforeEach(() => {
+      originalImage = globalThis.Image;
+      originalCreateObjectURL = URL.createObjectURL;
+      originalRevokeObjectURL = URL.revokeObjectURL;
+      URL.createObjectURL = vi.fn(() => 'blob:mock');
+      URL.revokeObjectURL = vi.fn();
+    });
+
+    afterEach(() => {
+      if (originalImage) {
+        globalThis.Image = originalImage;
+      }
+      if (originalCreateObjectURL) {
+        URL.createObjectURL = originalCreateObjectURL;
+      }
+      if (originalRevokeObjectURL) {
+        URL.revokeObjectURL = originalRevokeObjectURL;
+      }
+    });
+
+    it('falls back to <img>-element decode when createImageBitmap rejects an AVIF blob', async () => {
+      // First call (the AVIF blob) fails like real Chromium does on some
+      // valid AVIF fixtures; second call (the canvas-based path) succeeds.
+      const close = vi.fn();
+      const successBitmap = { width: 2, height: 2, close };
+      const createImageBitmapMock = vi
+        .fn()
+        .mockImplementationOnce(() =>
+          Promise.reject(
+            Object.assign(new Error('The source image could not be decoded.'), {
+              name: 'InvalidStateError',
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(successBitmap);
+      globalThis.createImageBitmap =
+        createImageBitmapMock as unknown as CreateImageBitmapFn;
+
+      // happy-dom's canvas getContext('2d') returns null; stub a minimal ctx.
+      const originalCreateElement = document.createElement.bind(document);
+      const createElementSpy = vi
+        .spyOn(document, 'createElement')
+        .mockImplementation((tag: string) => {
+          const el = originalCreateElement(tag);
+          if (tag === 'canvas') {
+            (el as HTMLCanvasElement).getContext = vi
+              .fn()
+              .mockReturnValue({ drawImage: vi.fn() }) as unknown as HTMLCanvasElement['getContext'];
+          }
+          return el;
+        });
+
+      // Stub HTMLImageElement so onload fires synchronously with a valid size.
+      globalThis.Image = vi.fn().mockImplementation(function (
+        this: HTMLImageElement,
+      ) {
+        const self = this as unknown as {
+          naturalWidth: number;
+          naturalHeight: number;
+          onload: (() => void) | null;
+          onerror: (() => void) | null;
+          src: string;
+        };
+        self.naturalWidth = 2;
+        self.naturalHeight = 2;
+        self.onload = null;
+        self.onerror = null;
+        Object.defineProperty(self, 'src', {
+          set(_value: string) {
+            queueMicrotask(() => self.onload?.());
+          },
+          get() {
+            return '';
+          },
+        });
+        return self as unknown as HTMLImageElement;
+      }) as unknown as ImageCtor;
+
+      const blob = new Blob([new Uint8Array([0, 0, 0, 32])], {
+        type: 'image/avif',
+      });
+
+      const result = await safeCreateImageBitmap(blob);
+      expect(result).toBe(successBitmap);
+      expect(createImageBitmapMock).toHaveBeenCalledTimes(2);
+      // First call was on the blob; second call was on the canvas element.
+      expect(createImageBitmapMock.mock.calls[0]?.[0]).toBe(blob);
+      expect(createImageBitmapMock.mock.calls[1]?.[0]).not.toBe(blob);
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock');
+
+      createElementSpy.mockRestore();
+    });
+
+    it('does not invoke the <img> fallback for non-AVIF blobs', async () => {
+      const createImageBitmapMock = vi
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('boom'), { name: 'InvalidStateError' }),
+        );
+      globalThis.createImageBitmap =
+        createImageBitmapMock as unknown as CreateImageBitmapFn;
+
+      const blob = new Blob([new Uint8Array([0, 0, 0, 1])], {
+        type: 'image/png',
+      });
+
+      await expect(safeCreateImageBitmap(blob)).rejects.toThrow('boom');
+      expect(createImageBitmapMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('propagates ImageDecodeTimeoutError without attempting fallback', async () => {
+      vi.useFakeTimers();
+      globalThis.createImageBitmap = vi
+        .fn()
+        .mockReturnValue(new Promise<never>(() => {})) as unknown as CreateImageBitmapFn;
+      // Spy on Image to prove it's never constructed.
+      const ImageSpy = vi.fn();
+      globalThis.Image = ImageSpy as unknown as ImageCtor;
+
+      const blob = new Blob([new Uint8Array([0, 0, 0, 1])], {
+        type: 'image/avif',
+      });
+
+      let caught: unknown;
+      const pending = safeCreateImageBitmap(blob).catch((err) => {
+        caught = err;
+      });
+      await vi.advanceTimersByTimeAsync(DECODE_TIMEOUT_MS + 100);
+      await pending;
+
+      expect(caught).toBeInstanceOf(ImageDecodeTimeoutError);
+      expect(ImageSpy).not.toHaveBeenCalled();
+    });
+  });
 });
