@@ -883,6 +883,53 @@ public class AuthControllerTests
     }
 
     [Fact]
+    public async Task Register_InTestingEnv_AllowsUnauthenticatedPostBootstrap()
+    {
+        // Regression: v1.0.x register-403-post-bootstrap.
+        // In the Testing environment, every E2E test registers a fresh user
+        // via the LocalAuth UI flow (no admin auth header). The bootstrap user
+        // already exists once any worker setup has run, so the AuthController
+        // MUST treat Testing as an open-registration env and skip the
+        // post-bootstrap admin gate — otherwise format-conversion, identity
+        // stress, and any other multi-user spec falls over with 403 Forbidden.
+        using var db = TestDbContextFactory.Create();
+
+        // Bootstrap admin already present (simulates global-setup pool seed).
+        db.Users.Add(new User
+        {
+            Id = Guid.CreateVersion7(),
+            AuthSub = "bootstrap-admin",
+            IdentityPubkey = "pubkey",
+            IsAdmin = true
+        });
+        await db.SaveChangesAsync();
+
+        var controller = CreateControllerWithEnvironmentPolicy(db, "Testing");
+        // No AuthSub set in HttpContext.Items — request is unauthenticated.
+
+        var userSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+        var accountSalt = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+
+        // Act
+        var result = await controller.Register(new AuthRegisterRequest(
+            "post-bootstrap-user",
+            "auth-pubkey",
+            "identity-pubkey",
+            userSalt,
+            accountSalt,
+            KdfMemoryKib: 8_192,
+            KdfIterations: 1,
+            KdfParallelism: 1,
+            KdfAlgVersion: 0x13
+        ));
+
+        // Assert: must be 201 Created, not 401 Unauthorized or 403 Forbidden.
+        Assert.IsType<CreatedResult>(result);
+        Assert.Equal(2, db.Users.Count());
+        Assert.Contains(db.Users, u => u.AuthSub == "post-bootstrap-user");
+    }
+
+    [Fact]
     public async Task Register_AllowsAdminToCreateUserAfterFirstUser()
     {
         // Arrange - authenticated as admin
