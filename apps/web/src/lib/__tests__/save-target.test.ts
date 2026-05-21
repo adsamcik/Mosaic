@@ -25,6 +25,7 @@ describe('save-target', () => {
   let originalShare: unknown;
   let originalCreateObjectUrl: typeof URL.createObjectURL | undefined;
   let originalRevokeObjectUrl: typeof URL.revokeObjectURL | undefined;
+  let originalWebdriver: PropertyDescriptor | undefined;
 
   beforeEach(() => {
     originalShowSaveFilePicker = (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker;
@@ -33,6 +34,13 @@ describe('save-target', () => {
     originalShare = (navigator as unknown as { share?: unknown }).share;
     originalCreateObjectUrl = URL.createObjectURL;
     originalRevokeObjectUrl = URL.revokeObjectURL;
+    // happy-dom defaults `navigator.webdriver` to true, which would now
+    // make every File-System-Access path resolve as automation-blocked
+    // (see v1.0.1 isolated-v3-10-finalizer fix). Default each test to a
+    // non-automation context; tests that exercise the automation guard
+    // override this explicitly.
+    originalWebdriver = Object.getOwnPropertyDescriptor(navigator, 'webdriver');
+    Object.defineProperty(navigator, 'webdriver', { value: false, configurable: true });
     setBlobAnchorSupport(true);
   });
 
@@ -43,6 +51,11 @@ describe('save-target', () => {
     restoreProperty(navigator as unknown as Record<string, unknown>, 'share', originalShare);
     restoreProperty(URL as unknown as Record<string, unknown>, 'createObjectURL', originalCreateObjectUrl);
     restoreProperty(URL as unknown as Record<string, unknown>, 'revokeObjectURL', originalRevokeObjectUrl);
+    if (originalWebdriver) {
+      Object.defineProperty(navigator, 'webdriver', originalWebdriver);
+    } else {
+      delete (navigator as unknown as { webdriver?: boolean }).webdriver;
+    }
     vi.restoreAllMocks();
     document.body.replaceChildren();
   });
@@ -80,6 +93,30 @@ describe('save-target', () => {
       (window as unknown as { showSaveFilePicker: ShowSaveFilePicker }).showSaveFilePicker = showSpy;
       const { openZipSaveTarget } = await import('../save-target');
       await expect(openZipSaveTarget('a.zip')).rejects.toMatchObject({ name: 'AbortError' });
+    });
+
+    // v1.0.1 isolated-v3-10-finalizer (W-A6-6): under WebDriver-driven
+    // automation Chromium defines `showSaveFilePicker` but rejects every
+    // call with AbortError. The ZIP finalizer therefore propagated the
+    // abort up to the coordinator, which emitted ErrorEncountered and no
+    // `<a>.click()` was ever issued — leaving Playwright's
+    // `waitForEvent('download')` to time out. The fix bypasses the picker
+    // entirely under automation and lets the blob-anchor sink fire its
+    // synthetic download click.
+    it('bypasses showSaveFilePicker under WebDriver automation', async () => {
+      const showSpy: ShowSaveFilePicker = vi.fn(async () => {
+        throw new DOMException('No UI in headless', 'AbortError');
+      });
+      (window as unknown as { showSaveFilePicker: ShowSaveFilePicker }).showSaveFilePicker = showSpy;
+      Object.defineProperty(navigator, 'webdriver', { value: true, configurable: true });
+      const clickSpy = mockAnchorClicks();
+      const { openZipSaveTarget } = await import('../save-target');
+      const stream = await openZipSaveTarget('a.zip');
+      const writer = stream.getWriter();
+      await writer.write(new Uint8Array([1, 2, 3]));
+      await writer.close();
+      expect(showSpy).not.toHaveBeenCalled();
+      expect(clickSpy).toHaveBeenCalled();
     });
   });
 

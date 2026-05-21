@@ -60,7 +60,19 @@ export async function openZipSaveTarget(fileName: string): Promise<WritableStrea
     throw new Error('openZipSaveTarget requires a browser window');
   }
   const fsAware = window as unknown as Partial<SaveFilePickerWindow>;
-  if (typeof fsAware.showSaveFilePicker === 'function') {
+  // v1.0.1 isolated-v3-10-finalizer (W-A6-6): in automation contexts
+  // (Playwright / WebDriver) Chromium *defines* `showSaveFilePicker` but
+  // rejects every call with `AbortError` because the picker UI cannot be
+  // displayed. The error was propagating through the ZIP finalizer and
+  // surfacing as `CoordinatorWorker Finalizer failed {errorName: AbortError}`
+  // → job phase `Errored` → no `<a>.click()` ever fires → the test's
+  // `waitForEvent('download')` times out. We mirror the precedent set in
+  // `db-client.ts` (which also gates an opt-in browser API on
+  // `navigator.webdriver`) and skip the picker entirely under automation,
+  // routing the ZIP through the blob-anchor sink so the synthetic
+  // `download` event fires as expected. Real users are unaffected:
+  // `navigator.webdriver` is only true under WebDriver-driven automation.
+  if (!isAutomationContext() && typeof fsAware.showSaveFilePicker === 'function') {
     try {
       const handle = await fsAware.showSaveFilePicker({
         suggestedName: fileName,
@@ -163,13 +175,28 @@ function isWebShareAvailable(): boolean {
 
 function isFsAccessDirectoryAvailable(): boolean {
   if (typeof window === 'undefined') return false;
+  if (isAutomationContext()) return false;
   const fsAware = window as unknown as Partial<DirectoryPickerWindow>;
   // Runtime detection only: Edge passed the spike; Chrome desktop/Android still need manual UX verification.
   return typeof fsAware.showDirectoryPicker === 'function';
 }
 
 function isFsAccessAvailable(): boolean {
-  return typeof window !== 'undefined' && 'showSaveFilePicker' in window;
+  return typeof window !== 'undefined' && 'showSaveFilePicker' in window && !isAutomationContext();
+}
+
+/**
+ * Returns true when the page is being driven by a WebDriver-based
+ * automation harness (Playwright / Selenium / Cypress).
+ *
+ * v1.0.1 isolated-v3-10-finalizer (W-A6-6): used to short-circuit
+ * `showSaveFilePicker` / `showDirectoryPicker` calls that would otherwise
+ * reject with `AbortError` under headless automation and fail the ZIP
+ * finalizer. Mirrors the precedent in `db-client.ts`.
+ */
+function isAutomationContext(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return (navigator as unknown as { webdriver?: boolean }).webdriver === true;
 }
 
 function isBlobAnchorAvailable(): boolean {
