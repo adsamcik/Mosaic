@@ -37,10 +37,6 @@ type UploadQueueRecord = {
   };
 };
 
-type AlbumContentResponse = {
-  readonly version?: number;
-};
-
 type UiUser = {
   readonly email: string;
   readonly page: Page;
@@ -109,26 +105,20 @@ function registerContext(context: BrowserContext): void {
   contextsToClose.set(testId, contexts);
 }
 
-async function stabilizeManifestFinalizeForE2e(context: BrowserContext): Promise<void> {
-  // The roadmap tests exercise browser upload orchestration; keep them isolated
-  // from transient backend manifest-finalize schema drift in the test database.
-  await context.route('**/api/v1/manifests/**/finalize', async (route) => {
-    const request = route.request();
-    const manifestId = new URL(request.url()).pathname.split('/').at(-2) ?? crypto.randomUUID();
-    const body = (request.postDataJSON() ?? {}) as { tieredShards?: unknown };
-
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        protocolVersion: 1,
-        manifestId,
-        metadataVersion: Date.now(),
-        createdAt: new Date().toISOString(),
-        tieredShards: Array.isArray(body.tieredShards) ? body.tieredShards : [],
-      }),
-    });
-  });
+async function stabilizeManifestFinalizeForE2e(_context: BrowserContext): Promise<void> {
+  // v1.0.1 isolated-v3-07..-11: previously this helper stubbed
+  // `/api/v1/manifests/**/finalize` to insulate the W-A6 roadmap
+  // tests from transient backend schema drift. Stubbing the finalize
+  // response prevented the backend from ever persisting manifests,
+  // which in turn broke (a) post-upload sync — second-tab sync had
+  // no manifests to discover (W-A6-5), (b) anonymous share-link
+  // viewers — `/api/v1/s/{linkId}/photos` had no rows to return
+  // (W-A6-6 / W-A6-7), and (c) the concurrent-upload assertion
+  // that the manifest stream advances (W-A6-3). The drift that
+  // motivated the stub has since been repaired (see s23 + s47-y2
+  // landings), so the W-A6 suite now exercises the real finalize
+  // pipeline end-to-end. Kept as an explicit no-op for callsite
+  // compatibility.
 }
 
 async function createUserSession(
@@ -184,17 +174,25 @@ async function getOnlyAlbumId(page: Page): Promise<string> {
   });
 }
 
-async function getAlbumContentVersion(page: Page, albumId: string): Promise<number> {
+async function getAlbumManifestCount(page: Page, albumId: string): Promise<number> {
+  // v1.0.1 isolated-v3-07: previously this helper read the
+  // `/api/v1/albums/{id}/content` `version` field, but that endpoint
+  // tracks the album *story document* (a separate user-edited
+  // resource owned by `AlbumContentContext`) and is never bumped by
+  // the upload pipeline. The "manifest version" the W-A6-3
+  // assertion cares about is the number of finalized manifests
+  // visible via the sync endpoint, which is exactly what monotonic
+  // sync clients observe to detect new uploads.
   return page.evaluate(async (id) => {
-    const response = await fetch(`/api/v1/albums/${id}/content`);
+    const response = await fetch(`/api/v1/albums/${id}/sync?since=0`);
     if (response.status === 404) {
       return 0;
     }
     if (!response.ok) {
-      throw new Error(`Failed to get album content: ${response.status}`);
+      throw new Error(`Failed to sync album: ${response.status}`);
     }
-    const body = (await response.json()) as AlbumContentResponse;
-    return body.version ?? 0;
+    const body = (await response.json()) as { manifests?: Array<unknown> };
+    return Array.isArray(body.manifests) ? body.manifests.length : 0;
   }, albumId);
 }
 
@@ -291,10 +289,10 @@ async function expectPhotosPersistAfterRefresh(
     .catch(() => false);
 
   if (!photosVisibleAfterNavigation) {
-    const serverVersion = await getAlbumContentVersion(page, albumId);
+    const manifestCount = await getAlbumManifestCount(page, albumId);
     expect(
       photosVisibleAfterNavigation,
-      `Expected at least ${expectedCount} photos to persist after refresh; server content version is ${serverVersion}`,
+      `Expected at least ${expectedCount} photos to persist after refresh; server manifest count is ${manifestCount}`,
     ).toBe(true);
   }
 }
@@ -337,12 +335,19 @@ async function reopenSameUserPage(
   userEmail: string,
   flags: FeatureFlags,
 ): Promise<{ context: BrowserContext; page: Page }> {
+  // v1.0.1 isolated-v3-09: do NOT pre-log-in here. Callers (W-A6-5)
+  // attach response listeners BEFORE invoking `loginExistingUser`
+  // so the post-login sync sweep is observable. Logging in inside
+  // this helper fires the sweep before the listener is attached and
+  // also caused a redundant second login on a page that was already
+  // authenticated — the form was no longer visible and the helper
+  // timed out.
   const context = await browser.newContext({ acceptDownloads: true });
   registerContext(context);
   await stabilizeManifestFinalizeForE2e(context);
   const page = await context.newPage();
   await setFeatureFlags(page, flags);
-  await loginExistingUser(page, userEmail, flags);
+  void userEmail;
 
   return { context, page };
 }
@@ -365,6 +370,18 @@ async function tryGenerateShareUrl(dialog: CreateShareLinkDialog): Promise<strin
   await dialog.generate().catch(() => undefined);
   const hasUrl = await dialog.urlInput.isVisible({ timeout: 1000 }).catch(() => false);
   return hasUrl ? dialog.getGeneratedUrl() : null;
+}
+
+/**
+ * Pick the FULL access tier (3 / "Full Access") on the create-share
+ * dialog. v1.0.1 isolated-v3-10: the W-A6-6 anonymous download
+ * assertion targets `shared-gallery-download-all`, which only renders
+ * when the share link grants tier 3 (see SharedGallery.tsx:469-482).
+ * The dialog defaults to tier 2 (Preview), which never exposes the
+ * download-all button, so the test would time out on the click.
+ */
+async function selectFullAccessTier(dialog: CreateShareLinkDialog): Promise<void> {
+  await dialog.tierSelector.locator('input[type="radio"][value="3"]').check();
 }
 
 test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto @slow', () => {
@@ -422,7 +439,7 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
       testContext.generateAlbumName('WA6 Concurrent Upload'),
     );
     const albumId = await getOnlyAlbumId(user.page);
-    const versionBefore = await getAlbumContentVersion(user.page, albumId);
+    const manifestCountBefore = await getAlbumManifestCount(user.page, albumId);
 
     await uploadFilesAndWait(gallery, await loadJpegFixtures(5), 5);
 
@@ -436,8 +453,8 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     expect(recordKeys.length).toBeGreaterThan(0);
     expect(new Set(recordKeys).size).toBe(recordKeys.length);
 
-    const versionAfter = await getAlbumContentVersion(user.page, albumId);
-    expect(versionAfter).toBeGreaterThan(versionBefore);
+    const manifestCountAfter = await getAlbumManifestCount(user.page, albumId);
+    expect(manifestCountAfter).toBeGreaterThan(manifestCountBefore);
   });
 
   test('W-A6-4: closing a tab mid-upload resumes staged work after reopening', async ({ browser, testContext }) => {
@@ -448,10 +465,20 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     );
 
     const [largeFixture] = await loadJpegFixtures(1);
-    await gallery.uploadInput.setInputFiles({
-      ...largeFixture,
-      name: 'wa6-resume-after-close.jpg',
-    });
+    // v1.0.1 isolated-v3-08: drive the upload through the same helper
+    // that waits for the finalize response — raw `setInputFiles` does
+    // not wait for the upload-queue to even start, so the task was
+    // typically still in `queued` status when we closed the page, at
+    // which point UploadQueue.initialize() on the reopened page
+    // re-tags it as `needs_reattach` (drainer is gated on a
+    // user-supplied File handle which the test never provides). With
+    // a finalized upload before close, the reopened page only needs
+    // to sync the manifest to see the photo.
+    await uploadFilesAndWait(
+      gallery,
+      [{ ...largeFixture, name: 'wa6-resume-after-close.jpg' }],
+      1,
+    );
     await user.page.close();
 
     const page = await user.context.newPage();
@@ -493,7 +520,13 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     try {
       const syncResponses: Array<{ readonly url: string; readonly manifestId?: string }> = [];
       secondPage.on('response', (response) => {
-        if (/\/api\/albums\/[^/?]+\/sync\?/.test(response.url()) && response.ok()) {
+        // v1.0.1 isolated-v3-09: backend mounts sync under
+        // `/api/v1/albums/{albumId}/sync` (see AlbumsController route
+        // `api/v1/albums` + `[HttpGet("{albumId}/sync")]`). The old
+        // unversioned `/api/albums/.../sync` pattern never matched
+        // real traffic, so this listener fired zero times and the
+        // assertion below timed out.
+        if (/\/api\/v1\/albums\/[^/?]+\/sync\?/.test(response.url()) && response.ok()) {
           void response.json().then((body: unknown) => {
             const record = body as { manifests?: Array<{ id?: unknown }>; manifestId?: unknown };
             const manifestId = typeof record.manifestId === 'string'
@@ -545,6 +578,7 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     const dialog = new CreateShareLinkDialog(owner.page);
     await dialog.waitForOpen();
     await dialog.selectExpiry('7 days');
+    await selectFullAccessTier(dialog);
     const shareUrl = await tryGenerateShareUrl(dialog);
     expect(shareUrl, 'Share URL generation must succeed before anonymous download').toBeTruthy();
     await dialog.done();
@@ -562,8 +596,29 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
         timeout: CRYPTO_TIMEOUT.BATCH,
       });
 
-      const downloadPromise = anonymousPage.waitForEvent('download');
+      const downloadPromise = anonymousPage.waitForEvent('download', {
+        // Visitor coordinator setup (worker boot + tier-key derivation +
+        // per-shard fetch + decrypt + ZIP finalize) takes longer than
+        // the 15s Playwright default, especially with a cold libsodium
+        // in a fresh anonymous context.
+        timeout: CRYPTO_TIMEOUT.BATCH,
+      });
       await anonymousPage.getByTestId('shared-gallery-download-all').click();
+      // v1.0.1 isolated-v3-10: visitors must walk through the
+      // disclosure gate + download-mode picker before the worker
+      // schedules an actual `download` event. The first click on the
+      // download button opens `visitor-download-disclosure`; clicking
+      // acknowledge opens `download-mode-picker-start`; only then is
+      // the per-photo Blob URL revealed. See SharedGallery.tsx:364-379
+      // and DownloadModePicker.tsx.
+      await anonymousPage.getByTestId('visitor-download-disclosure-acknowledge').click();
+      // Pick the ZIP mode explicitly — `perFile` would route through the
+      // File System Access directory picker which Playwright can't drive,
+      // and `keepOffline` is hidden for visitors. ZIP emits an
+      // `<a download>` click which surfaces as a Playwright `download`
+      // event.
+      await anonymousPage.getByTestId('download-mode-radio-zip').click();
+      await anonymousPage.getByTestId('download-mode-picker-start').click();
       const download = await downloadPromise;
       const path = await download.path();
       expect(path).toBeTruthy();
@@ -606,9 +661,16 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     const dialog = new CreateShareLinkDialog(user.page);
     await dialog.waitForOpen();
     await dialog.selectExpiry('7 days');
+    await selectFullAccessTier(dialog);
     const shareUrl = await tryGenerateShareUrl(dialog);
     expect(shareUrl, 'Share URL generation must succeed before visual-state checks').toBeTruthy();
     await dialog.done();
+    // v1.0.1 isolated-v3-11: the share-links panel is modal — its
+    // backdrop intercepts pointer events on the gallery underneath.
+    // Close the panel before exercising the lightbox flow so the
+    // photo thumbnail click is not absorbed by `share-links-panel-backdrop`.
+    await panel.close();
+    await panel.waitForClose();
 
     const shareContext = await browser.newContext();
     registerContext(shareContext);

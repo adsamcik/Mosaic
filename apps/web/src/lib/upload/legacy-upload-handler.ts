@@ -35,11 +35,33 @@ export async function processLegacyUpload(
   const shardIds: string[] = new Array(totalChunks);
 
   for (let i = 0; i < totalChunks; i++) {
-    // Check if this shard was already uploaded (resume support)
+    // Check if this shard was already uploaded (resume support).
+    //
+    // v1.0.1 isolated-v3-08 / security-review-2026-05-21 MED: a stale
+    // resume record from before commit 773e7d95 may be missing the
+    // encrypted-envelope `contentLength` / `envelopeVersion`. The
+    // manifest finalize builder falls back to `task.file.size`
+    // (plaintext size) for missing contentLength, which the backend
+    // rejects with HTTP 400 ("tieredShards contentLength does not
+    // match stored shard length"). Re-uploading the shard captures
+    // the correct length fresh and unblocks finalize.
     const existing = task.completedShards.find((s) => s.index === i);
-    if (existing) {
+    const hasFinalizableMetadata =
+      existing !== undefined &&
+      typeof existing.contentLength === 'number' &&
+      existing.contentLength > 0 &&
+      typeof existing.envelopeVersion === 'number';
+    if (existing && hasFinalizableMetadata) {
       shardIds[i] = existing.shardId;
       continue;
+    }
+    if (existing && !hasFinalizableMetadata) {
+      // Drop the stale record before re-uploading so the fresh shard
+      // is persisted with full envelope metadata.
+      task.completedShards = task.completedShards.filter((s) => s.index !== i);
+      await ctx.updatePersistedTask(task.id, {
+        completedShards: task.completedShards,
+      });
     }
 
     // Read chunk from file
