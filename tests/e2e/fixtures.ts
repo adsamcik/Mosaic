@@ -318,7 +318,18 @@ export class ApiHelper {
       throw new Error(`Failed to get albums: ${response.status}`);
     }
 
-    return response.json();
+    // Backend returns PagedResult<Album> = { items, nextSkip }.
+    // Be defensive: accept bare array, { items }, or { albums } shapes.
+    const payload: unknown = await response.json();
+    if (Array.isArray(payload)) {
+      return payload as { id: string }[];
+    }
+    if (payload && typeof payload === 'object') {
+      const obj = payload as { items?: unknown; albums?: unknown };
+      if (Array.isArray(obj.items)) return obj.items as { id: string }[];
+      if (Array.isArray(obj.albums)) return obj.albums as { id: string }[];
+    }
+    return [];
   }
 
   async deleteAlbum(user: string, albumId: string): Promise<void> {
