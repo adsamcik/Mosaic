@@ -70,12 +70,22 @@ export async function processLegacyUpload(
     );
     shardIds[i] = shardId;
 
-    // Persist progress for resume (including hash for integrity verification)
+    // Persist progress for resume (including hash for integrity verification).
+    // contentLength / envelopeVersion are required for finalize: the backend
+    // compares them against the stored shard's stored byte length. Defaulting
+    // to task.file.size in the finalize builder yields the *plaintext* size,
+    // which mismatches the encrypted envelope (header + ciphertext + AEAD tag)
+    // and triggers a 400 ("tieredShards contentLength does not match stored
+    // shard length"). This path is also the video frame-extraction fallback
+    // (see processVideoUpload), so videos that fail container inspection
+    // would otherwise fail to finalize. (v1.0.1 isolated-v2-05)
     task.completedShards.push({
       index: i,
       shardId,
       sha256: encrypted.sha256,
       tier: 3,
+      contentLength: encrypted.envelopeBytes.byteLength,
+      envelopeVersion: 3,
     });
     await ctx.updatePersistedTask(task.id, {
       completedShards: task.completedShards,
