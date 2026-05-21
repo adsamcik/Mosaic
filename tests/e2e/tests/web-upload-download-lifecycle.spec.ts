@@ -174,7 +174,9 @@ async function getOnlyAlbumId(page: Page): Promise<string> {
     if (!response.ok) {
       throw new Error(`Failed to list albums: ${response.status}`);
     }
-    const albums = (await response.json()) as Array<{ id: string }>;
+    // Backend returns PagedResult<Album> = { items: [...], nextSkip: ... }.
+    const body = (await response.json()) as { items?: Array<{ id: string }> };
+    const albums = Array.isArray(body) ? body : (body.items ?? []);
     if (albums.length === 0) {
       throw new Error('Expected at least one album');
     }
