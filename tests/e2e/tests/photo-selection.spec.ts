@@ -29,9 +29,12 @@ async function setupAlbumWithPhotos(
   await createAlbumViaUI(user.page, albumName);
 
   const gallery = new GalleryPage(user.page);
-  const testImage = generateTestImage('tiny');
 
   for (let i = 1; i <= photoCount; i++) {
+    // Vary color per upload so each image is byte-distinct; otherwise the backend
+    // content-hash dedup folds subsequent uploads into the first stored shard and
+    // pending overlays never resolve (same root cause as commit c276d201).
+    const testImage = generateTestImage('tiny', [i * 50, 100, 200]);
     await gallery.uploadPhoto(testImage, testContext.generatePhotoName(i));
   }
 
