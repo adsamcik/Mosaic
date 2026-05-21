@@ -94,10 +94,28 @@ function isTusUnauthorizedError(error: Error | tus.DetailedError): boolean {
   return status === 401 || /\b401\b|unauthori[sz]ed/i.test(error.message);
 }
 
-function isTusRetryableError(error: Error | tus.DetailedError): boolean {
+/**
+ * Max retries for 5xx server errors. Server errors are usually persistent
+ * (bug, mis-configured storage, persistent quota issue) — retrying through
+ * the full 110-second budget delays user feedback to ~2 minutes when the
+ * upload is doomed to fail anyway. Network errors (status === undefined)
+ * still consume the full retry budget because they are typically transient.
+ *
+ * Keep this aligned with the test expectation in `toast-feedback.spec.ts`:
+ * the "upload error toast appears on upload failure" test fulfills every
+ * TUS request with 500 and waits 30s for the error toast. With this cap
+ * the upload gives up after attempt 3 at t ~= 2s (delays 0 + 500 + 1500),
+ * well inside the test window.
+ */
+const MAX_SERVER_ERROR_RETRIES = 2;
+
+function isTusRetryableError(
+  error: Error | tus.DetailedError,
+  retryAttempt: number,
+): boolean {
   const status = getTusResponseStatus(error);
   if (status === undefined) return true;
-  if (status >= 500) return true;
+  if (status >= 500) return retryAttempt < MAX_SERVER_ERROR_RETRIES;
   return status === 408 || status === 409 || status === 423 || status === 429;
 }
 
@@ -145,7 +163,7 @@ export async function tusUpload(
           `TUS progress: ${bytesUploaded}/${bytesTotal} (${percentage}%)`,
         );
       },
-      onShouldRetry: (error) => isTusRetryableError(error),
+      onShouldRetry: (error, retryAttempt) => isTusRetryableError(error, retryAttempt),
       onError: (error) => {
         log.error(
           `TUS upload failed: albumId=${albumId}, shardIndex=${shardIndex}, error=${error.message}`,

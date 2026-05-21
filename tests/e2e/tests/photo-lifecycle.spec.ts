@@ -148,9 +148,12 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
 
       const gallery = new GalleryPage(user.page);
 
-      // Upload 3 photos
+      // Upload 3 photos. Vary color per upload so each image is byte-distinct;
+      // otherwise the backend content-hash dedup folds subsequent uploads into
+      // the first stored shard and pending overlays never resolve (same root
+      // cause as commits c276d201 / 7d5f67b1).
       for (let i = 1; i <= 3; i++) {
-        const testImage = generateTestImage('tiny');
+        const testImage = generateTestImage('tiny', [i * 50, 100, 200]);
         await gallery.uploadPhoto(testImage, testContext.generatePhotoName(i));
       }
       await gallery.expectPhotoCount(3);
