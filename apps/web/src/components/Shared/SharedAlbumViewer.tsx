@@ -142,14 +142,23 @@ export function SharedAlbumViewer({
           availableEpochs: Array.from(tierKeys.keys()),
         });
 
-        // Get the highest tier key from any epoch
-        // In share link context, these are already unwrapped tier keys (not epoch seeds)
+        // Album names are encrypted at `tier=1` (Thumbnail) by the worker's
+        // `encryptAlbumName` helper, which pins `(shardIndex=0,
+        // tier=ShardTier::Thumbnail)`. The Rust link-tier handle pins a
+        // specific tier and rejects envelopes whose header.tier differs
+        // (`ClientErrorCode::LinkTierMismatch` == rust code 215). We must
+        // therefore prefer the Thumbnail (tier 1) handle, not the highest
+        // available tier. Any share link (view/preview/thumb) always wraps
+        // tier 1 keys (see useShareLinks: tier 1 is wrapped first,
+        // unconditionally), so this is always available for a live link.
+        //
+        // Regression: validation-final-gate-v3-10-rust-215-album-name.
         let tierKey: LinkDecryptionKey | undefined;
         let usedTier: AccessTierType | undefined;
         let usedEpoch: number | undefined;
 
         for (const [epochId, epochTiers] of tierKeys) {
-          for (const tier of [3, 2, 1] as AccessTierType[]) {
+          for (const tier of [1, 2, 3] as AccessTierType[]) {
             const key = epochTiers.get(tier);
             if (key) {
               tierKey = key.linkTierHandleId;
