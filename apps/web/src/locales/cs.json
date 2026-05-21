@@ -554,7 +554,8 @@
       "authRequired": "Pro pokračování nahrávání je vyžadováno přihlášení. Přihlaste se prosím znovu.",
       "failed": "Nahrávání selhalo. Zkontrolujte připojení a zkuste to znovu.",
       "noUrl": "Nahrávání selhalo: server nevrátil URL nahrávání.",
-      "invalidSha256": "Nahrávání selhalo kvůli interní chybě kontroly integrity."
+      "invalidSha256": "Nahrávání selhalo kvůli interní chybě kontroly integrity.",
+      "quotaExceeded": "Nahrávání selhalo: úložná kvóta byla vyčerpána. Uvolněte místo nebo kontaktujte správce."
     }
   },
   "member": {

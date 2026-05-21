@@ -154,6 +154,20 @@ export async function tusUpload(
           reject(new UploadAuthRequiredError());
           return;
         }
+        const status = getTusResponseStatus(error);
+        // 413 Payload Too Large is used by the backend to signal storage quota
+        // exceeded for a tenant/user. Surface a localized message so users
+        // understand the upload failed because of quota — not a transient
+        // network blip.
+        if (status === 413 || /\b413\b|quota|too large/i.test(error.message)) {
+          reject(
+            new TusUploadError(
+              `Upload failed: ${error.message}`,
+              'upload.errors.quotaExceeded',
+            ),
+          );
+          return;
+        }
         reject(new TusUploadError(`Upload failed: ${error.message}`, 'upload.errors.failed'));
       },
       onSuccess: () => {

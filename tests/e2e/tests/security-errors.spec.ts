@@ -544,7 +544,8 @@ test.describe('Error Handling: Quota & Limits @p2 @security', () => {
     await gallery.waitForLoad();
 
     // Mock quota exceeded response for both fresh and resumed TUS requests.
-    await page.route(/\/api\/files(?:\/.*)?$/, (route) => {
+    // Endpoint is /api/v1/files — match the version prefix.
+    await page.route(/\/api\/v\d+\/files(?:\/.*)?$/, (route) => {
       route.fulfill({
         status: 413,
         contentType: 'text/plain',
