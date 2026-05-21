@@ -637,7 +637,17 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     return job ? toJobSummary(job, this.lastEvaluations.get(jobId) ?? null, this.jobOutputModes.get(jobId)?.kind) : null;
   }
 
-  /** Subscribe to progress events for one job. Caller must unsubscribe. */
+  /** Subscribe to progress events for one job. Caller must unsubscribe.
+   *
+   * v1.0.1 isolated-v3-10-subscribe-unserializable: the return value MUST
+   * itself be wrapped in `Comlink.proxy(...)`. Comlink only consults transfer
+   * handlers on the top-level return value — a plain object containing a
+   * proxy-marked function still flows through `structuredClone`, which
+   * cannot clone the inner function and surfaces as
+   * `TypeError: Unserializable return value` on the main thread.
+   * Wrapping the whole object emits a single MessagePort for the
+   * subscription, and `subscription.unsubscribe()` becomes a remote call.
+   */
   async subscribe(
     jobId: string,
     callback: SubscriptionCallback,
@@ -653,14 +663,14 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     if (job) {
       callback(summaryToProgress(job));
     }
-    return {
-      unsubscribe: Comlink.proxy((): void => {
+    return Comlink.proxy({
+      unsubscribe: (): void => {
         callbacks?.delete(callback);
         if (callbacks?.size === 0) {
           this.subscribers.delete(jobId);
         }
-      }),
-    };
+      },
+    });
   }
 
   /**
@@ -678,11 +688,14 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     this.assertInitialized();
     const streamer = this.thumbnailStreamer();
     const unsubscribe = streamer.subscribe(jobId, callback);
-    return {
-      unsubscribe: Comlink.proxy((): void => {
+    // v1.0.1 isolated-v3-10-subscribe-unserializable: proxy the whole
+    // return object so the function members survive the Comlink boundary
+    // (see `subscribe` above for the full rationale).
+    return Comlink.proxy({
+      unsubscribe: (): void => {
         try { unsubscribe(); } catch { /* best-effort */ }
-      }),
-    };
+      },
+    });
   }
 
   /**

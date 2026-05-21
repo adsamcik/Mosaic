@@ -100,6 +100,22 @@ export async function waitForTerminal(
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     let activeSubscription: { unsubscribe: () => void | Promise<void> } | null = null;
+    // v1.0.1 isolated-v3-10-subscribe-unserializable: the worker now returns
+    // the subscription as a whole-object Comlink proxy. Calling
+    // `subscription.unsubscribe()` is a remote round-trip, and the proxy
+    // itself owns a worker-side MessagePort handle that must be released
+    // after the unsubscribe round-trip completes — otherwise the handle
+    // leaks for every job and the worker accretes ports across the session.
+    const releaseSubscription = (): void => {
+      if (activeSubscription === null) return;
+      try {
+        (activeSubscription as unknown as { [Comlink.releaseProxy]?: () => void })[
+          Comlink.releaseProxy
+        ]?.();
+      } catch {
+        // Best-effort release; never throw from cleanup paths.
+      }
+    };
     const callUnsubscribe = (): void => {
       void activeSubscription?.unsubscribe();
     };
@@ -119,7 +135,10 @@ export async function waitForTerminal(
         // dispose-guard, not a released proxy slot.
         void Promise.resolve(activeSubscription?.unsubscribe())
           .catch(() => undefined)
-          .finally(() => guarded.releaseProxy());
+          .finally(() => {
+            releaseSubscription();
+            guarded.releaseProxy();
+          });
         if (event.phase === 'Done') resolve();
         else if (event.phase === 'Cancelled') reject(new DOMException('Download cancelled', 'AbortError'));
         else reject(new Error(`Download failed: ${event.phase}`));
@@ -130,7 +149,10 @@ export async function waitForTerminal(
       guarded.dispose();
       void Promise.resolve(activeSubscription?.unsubscribe())
         .catch(() => undefined)
-        .finally(() => guarded.releaseProxy());
+        .finally(() => {
+          releaseSubscription();
+          guarded.releaseProxy();
+        });
       reject(new DOMException('Download aborted', 'AbortError'));
     };
     if (signal.aborted) {
