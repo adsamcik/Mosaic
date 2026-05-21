@@ -48,6 +48,9 @@ export async function runCoordinatorDownload(args: RunCoordinatorDownloadArgs): 
   const baseInput: StartJobInput = args.mode.kind === 'zip'
     ? { ...planInput, outputMode: { kind: 'zip', fileName: suggestedFileName } }
     : { ...planInput, outputMode: args.mode };
+  const startInput: StartJobInput = args.schedule
+    ? { ...baseInput, schedule: args.schedule }
+    : baseInput;
   // Comlink-proxy the source so its async methods are callable from the
   // coordinator worker (the strategy holds React-state callbacks). The
   // proxy registers a worker-side handle that survives until we release
@@ -55,19 +58,21 @@ export async function runCoordinatorDownload(args: RunCoordinatorDownloadArgs): 
   // "perf-slo H1" found that without this every cancel/restart leaked
   // worker memory. We release in a finally so the cleanup runs on success,
   // failure, AND abort.
+  //
+  // v1.0.1 isolated-v3-10 (W-A6-6): the strategy is passed as a SEPARATE
+  // top-level argument to `startJob`. Comlink only honors the proxy marker
+  // on top-level args; a strategy nested in `StartJobInput.source` would
+  // be structured-cloned and crash with `DataCloneError` on its function
+  // members. See `visitor-strategy-postmessage.test.ts`.
   let sourceProxy: SourceStrategy | null = null;
   if (args.source) {
     sourceProxy = Comlink.proxy(args.source) as unknown as SourceStrategy;
   }
-  const withSource: StartJobInput = sourceProxy
-    ? { ...baseInput, source: sourceProxy }
-    : baseInput;
-  const startInput: StartJobInput = args.schedule
-    ? { ...withSource, schedule: args.schedule }
-    : withSource;
 
   try {
-    const { jobId } = await args.api.startJob(startInput);
+    const { jobId } = sourceProxy
+      ? await args.api.startJob(startInput, sourceProxy)
+      : await args.api.startJob(startInput);
     args.activeJobIdRef.current = jobId;
     await waitForTerminal(args.api, jobId, args.signal, args.onJobProgress);
   } finally {

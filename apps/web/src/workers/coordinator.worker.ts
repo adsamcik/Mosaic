@@ -241,7 +241,22 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   }
 
   /** Build a Rust download plan and create a new persisted job. */
-  async startJob(input: StartJobInput): Promise<{ jobId: string }> {
+  /**
+   * Build a Rust download plan and create a new persisted job.
+   *
+   * The `sourceArg` parameter is the canonical place to pass a
+   * `SourceStrategy` when this method is invoked across a real Worker
+   * boundary (Comlink): the caller wraps it in `Comlink.proxy(...)` so
+   * Comlink emits a MessagePort instead of attempting to structured-clone
+   * the strategy's function members. Nesting the strategy inside
+   * `input.source` would defeat that path (Comlink only checks the proxy
+   * marker on top-level args) — see `visitor-strategy-postmessage.test.ts`.
+   *
+   * For in-process unit tests that exercise this class directly,
+   * `input.source` is still honored as a fallback when `sourceArg` is
+   * omitted.
+   */
+  async startJob(input: StartJobInput, sourceArg?: SourceStrategy): Promise<{ jobId: string }> {
     this.assertInitialized();
     const outputMode: DownloadOutputMode = input.outputMode ?? { kind: 'keepOffline' };
     const schedule = input.schedule ?? null;
@@ -254,8 +269,15 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     // Resolve the tray scope key from the per-job source (when supplied) or
     // from the default authenticated source. Persisted in the v2 snapshot so
     // the tray can filter jobs by identity across worker restarts.
-    const sourceForScope = input.source ?? this.getDefaultAuthSource();
-    const scopeKey = sourceForScope.getScopeKey();
+    //
+    // `getScopeKey()` is declared sync on `SourceStrategy`, but when the
+    // caller passes a Comlink-proxied strategy across the worker boundary
+    // (v1.0.1 isolated-v3-10 / W-A6-6) every call returns `Promise<string>`.
+    // `await` is a no-op on a plain string, so this works for both in-process
+    // and Comlink-proxied strategies.
+    const effectiveSource = sourceArg ?? input.source;
+    const sourceForScope = effectiveSource ?? this.getDefaultAuthSource();
+    const scopeKey = await sourceForScope.getScopeKey();
     const initialized = await rustInitDownloadSnapshot({
       jobId: jobIdBytes,
       albumId: input.albumId,
@@ -274,8 +296,8 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
     if (outputMode.kind === 'sidecar') {
       this.attachSidecarDisconnectHandler(jobId, outputMode);
     }
-    if (input.source) {
-      this.jobSources.set(jobId, input.source);
+    if (effectiveSource) {
+      this.jobSources.set(jobId, effectiveSource);
     }
     if (input.thumbnails && input.thumbnails.length > 0) {
       this.jobThumbnailManifests.set(jobId, input.thumbnails);
@@ -521,10 +543,14 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
         'Job is not paused-no-source; rebind is a no-op',
       );
     }
-    if (source.getScopeKey() !== job.scopeKey) {
+    // Same Comlink-proxy consideration as `startJob`: when the caller is
+    // on the main thread, `source` is a remote proxy and method calls
+    // resolve asynchronously. `await` over a plain sync string is safe.
+    const sourceScopeKey = await source.getScopeKey();
+    if (sourceScopeKey !== job.scopeKey) {
       log.warn('Rebind rejected: scope mismatch', {
         jobId: shortId(jobId),
-        sourcePrefix: scopeKeyPrefix(source.getScopeKey()),
+        sourcePrefix: scopeKeyPrefix(sourceScopeKey),
         jobPrefix: scopeKeyPrefix(job.scopeKey),
       });
       throw new WorkerCryptoError(

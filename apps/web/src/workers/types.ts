@@ -1577,8 +1577,21 @@ export type DownloadJobsBroadcastMessage = {
 export interface CoordinatorWorkerApi {
   /** Initialize WASM and reconstruct persisted OPFS jobs. Idempotent. */
   initialize(opts: { readonly nowMs: number }): Promise<{ reconstructedJobs: number }>;
-  /** Build a Rust download plan and create a new persisted job. */
-  startJob(input: StartJobInput): Promise<{ jobId: string }>;
+  /**
+   * Build a Rust download plan and create a new persisted job.
+   *
+   * `source` is accepted as a SEPARATE top-level argument so that callers
+   * crossing a real Worker boundary can wrap it in `Comlink.proxy(...)` and
+   * have Comlink replace it with a MessagePort. Comlink's proxy marker is
+   * only honored on top-level arguments — a strategy nested inside
+   * `StartJobInput.source` would be structured-cloned and crash with
+   * `DataCloneError` on its function members (v1.0.1 isolated-v3-10).
+   *
+   * `StartJobInput.source` is retained for in-process callers (direct unit
+   * tests that drive the worker class without Comlink) and is used as a
+   * fallback when no top-level `source` is supplied.
+   */
+  startJob(input: StartJobInput, source?: SourceStrategy): Promise<{ jobId: string }>;
   /** Clear coordinator-local state and terminate cached crypto workers (logout/teardown). */
   clear(): Promise<void>;
   /** Apply a Rust download event, persist the updated snapshot, and emit progress. */

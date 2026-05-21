@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as Comlink from 'comlink';
 import { createLogger } from '../lib/logger';
 import { supportsFileSystemAccess } from '../lib/album-download-service';
 import { useDownloadManager } from './useDownloadManager';
@@ -106,8 +107,17 @@ export function useVisitorAlbumDownload(
         (job) => job.pausedNoSource && job.scopeKey === scopeKey,
       );
       for (const job of resumable) {
+        // v1.0.1 isolated-v3-10 (W-A6-6): the strategy carries function
+        // members (`fetchShard`, etc.) and CANNOT be structured-cloned
+        // across the coordinator-worker postMessage boundary. Wrap it in
+        // `Comlink.proxy(...)` so Comlink emits a MessagePort for the
+        // top-level argument instead. We release the proxy after the
+        // rebind call resolves so the worker-side handle doesn't leak.
+        const rebindSource = Comlink.proxy(sourceFactory()) as unknown as Parameters<
+          typeof api.rebindJobSource
+        >[1];
         try {
-          await api.rebindJobSource(job.jobId, sourceFactory());
+          await api.rebindJobSource(job.jobId, rebindSource);
         } catch (err) {
           // ZK-safe: log only the error name and the scope prefix; never the
           // link id, grant token, or hex tail of the scope key.
@@ -115,6 +125,14 @@ export function useVisitorAlbumDownload(
             errorName: err instanceof Error ? err.name : 'Unknown',
             scopePrefix: scopeKeyPrefix(scopeKey),
           });
+        } finally {
+          try {
+            (rebindSource as unknown as { [Comlink.releaseProxy]?: () => void })[
+              Comlink.releaseProxy
+            ]?.();
+          } catch {
+            // Best-effort release; never block rebind completion on cleanup.
+          }
         }
       }
     })();
@@ -174,8 +192,19 @@ export function useVisitorAlbumDownload(
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));
-      // ZK-safe: log only error name, not link id or grant token.
-      log.error('Visitor album download failed', { errorName: e.name });
+      // ZK-safe: log only error name + code + message (message is a constant
+      // string from the worker, contains no caller-supplied PII). Include
+      // the WorkerCryptoError code when present so v1.0.1 isolated-v3-10
+      // visitor-download failures can be triaged via E2E traces.
+      const code =
+        typeof (err as { code?: unknown }).code === 'number'
+          ? (err as { code: number }).code
+          : undefined;
+      log.error('Visitor album download failed', {
+        errorName: e.name,
+        errorCode: code,
+        errorMessage: e.message,
+      });
       setError(e);
     } finally {
       setIsDownloading(false);

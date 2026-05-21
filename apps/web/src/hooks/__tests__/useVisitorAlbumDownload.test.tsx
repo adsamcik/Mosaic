@@ -17,7 +17,11 @@ vi.mock('../../lib/epoch-key-service', () => ({
 vi.mock('../useWakeLock', () => ({
   useWakeLock: () => ({ acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) }),
 }));
-vi.mock('comlink', () => ({ proxy: <T,>(value: T): T => value }));
+vi.mock('comlink', () => ({
+  proxy: <T,>(value: T): T => value,
+  releaseProxy: Symbol.for('Comlink.releaseProxy'),
+  transferHandlers: new Map(),
+}));
 
 const shareLinkSrc = vi.hoisted(() => ({
   downloadShardViaShareLink: vi.fn(async () => new Uint8Array()),
@@ -118,17 +122,23 @@ describe('useVisitorAlbumDownload', () => {
     });
 
     expect(stub.startJob).toHaveBeenCalledTimes(1);
-    const args = stub.startJob.mock.calls[0]?.[0] as {
-      albumId: string;
-      outputMode: { kind: string; fileName?: string };
-      source?: { kind: string; resolveKey: (a: string, e: number) => Promise<unknown> };
-    };
-    expect(args.albumId).toBe('alb');
-    expect(args.outputMode).toEqual({ kind: 'zip', fileName: 'a.zip' });
-    expect(args.source).toBeDefined();
-    expect(args.source!.kind).toBe('share-link');
+    const callArgs = stub.startJob.mock.calls[0] as [
+      { albumId: string; outputMode: { kind: string; fileName?: string }; source?: unknown },
+      { kind: string; resolveKey: (a: string, e: number) => Promise<unknown> } | undefined,
+    ];
+    const input = callArgs[0];
+    const source = callArgs[1];
+    expect(input.albumId).toBe('alb');
+    expect(input.outputMode).toEqual({ kind: 'zip', fileName: 'a.zip' });
+    // v1.0.1 isolated-v3-10: source MUST be passed as a separate top-level
+    // argument (not nested in the input) so Comlink can replace it with a
+    // MessagePort across the worker boundary. The input itself must NOT
+    // carry the strategy.
+    expect(input.source).toBeUndefined();
+    expect(source).toBeDefined();
+    expect(source!.kind).toBe('share-link');
     // The strategy resolves the tier-3 key for the photo's epoch.
-    const resolved = await args.source!.resolveKey('alb', 7);
+    const resolved = await source!.resolveKey('alb', 7);
     expect(resolved).toEqual({ kind: 'link-tier-handle', handleId: tier3 });
 
     await act(async () => {

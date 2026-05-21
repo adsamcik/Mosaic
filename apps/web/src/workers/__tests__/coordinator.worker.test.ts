@@ -82,7 +82,12 @@ class TestBroadcastChannel {
   }
 }
 
-vi.mock('comlink', () => ({ expose: vi.fn(), proxy: <T>(value: T): T => value }));
+vi.mock('comlink', () => ({
+  expose: vi.fn(),
+  proxy: <T>(value: T): T => value,
+  releaseProxy: Symbol.for('Comlink.releaseProxy'),
+  transferHandlers: new Map(),
+}));
 vi.mock('../../lib/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
