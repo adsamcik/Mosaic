@@ -238,8 +238,20 @@ export function usePhotoList(
   }, [albumId, fetchFromDb]);
 
   // Merge pending photos with DB photos
-  // Pending photos appear first, sorted by createdAt descending
+  // Pending photos appear first, sorted by createdAt descending.
+  // When a search query is active we suppress pending items: they have no
+  // FTS5 entries yet (their content has not been encrypted/indexed) and
+  // their display filename is a placeholder ("Uploading..."), so they
+  // cannot legitimately match any user query. Including them would leak
+  // unmatched items into a filtered view (and breaks the "search shows
+  // zero matches then clear restores everything" UX contract).
+  const hasActiveSearch = Boolean(searchQuery && searchQuery.trim().length > 0);
   const mergedPhotos = useMemo(() => {
+    if (hasActiveSearch) {
+      // Search filters operate on indexed DB photos only.
+      return dbPhotos;
+    }
+
     // Convert pending items to PhotoMeta format
     const pendingPhotos = pendingItems.map(pendingToPhotoMeta);
 
@@ -257,7 +269,7 @@ export function usePhotoList(
 
     // Return pending first, then stable photos
     return [...pendingPhotos, ...filteredDbPhotos];
-  }, [pendingItems, dbPhotos]);
+  }, [hasActiveSearch, pendingItems, dbPhotos]);
 
   return {
     photos: mergedPhotos,
