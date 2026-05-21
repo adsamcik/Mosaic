@@ -159,11 +159,13 @@ function withDecodeTimeout<T>(
  * AVIF fallback: Chromium's `createImageBitmap` AVIF path rejects some valid
  * AVIF files (typically tiny libavif-encoded fixtures) with
  * `InvalidStateError: "The source image could not be decoded."` even though
- * the same browser's `<img>` element decodes the file correctly. When the
- * input blob is `image/avif` and an `HTMLImageElement` is available (main
- * thread), we transparently retry via an image-element → canvas path so the
- * upload pipeline doesn't reject otherwise-valid AVIF input. The size and
- * dimension guards still apply to the result.
+ * the same browser's `<img>` element decodes the file correctly. The same
+ * class of bug surfaces for tiny lossless WebP (VP8L) and 24-bpp BMP fixtures
+ * uploaded through the format-conversion pipeline. When the input blob is one
+ * of those formats and an `HTMLImageElement` is available (main thread), we
+ * transparently retry via an image-element → canvas path so the upload
+ * pipeline doesn't reject otherwise-valid input. The size and dimension
+ * guards still apply to the result.
  *
  * Use this in place of `createImageBitmap` at every decode entry point.
  */
@@ -177,12 +179,15 @@ export async function safeCreateImageBitmap(blob: Blob): Promise<ImageBitmap> {
       'createImageBitmap',
     );
   } catch (err) {
-    if (shouldAttemptAvifImageElementFallback(blob, err)) {
+    if (shouldAttemptImageElementFallback(blob, err)) {
       log.warn(
-        'createImageBitmap rejected an AVIF blob; retrying via <img>-element fallback',
-        { error: err instanceof Error ? err.message : String(err) },
+        'createImageBitmap rejected blob; retrying via <img>-element fallback',
+        {
+          mimeType: blob.type,
+          error: err instanceof Error ? err.message : String(err),
+        },
       );
-      bitmap = await decodeAvifViaImageElement(blob);
+      bitmap = await decodeViaImageElement(blob);
     } else {
       throw err;
     }
@@ -204,17 +209,31 @@ export async function safeCreateImageBitmap(blob: Blob): Promise<ImageBitmap> {
 }
 
 /**
+ * MIME types for which Chromium's `createImageBitmap` is known to spuriously
+ * reject otherwise-valid blobs (typically tiny test fixtures) where the same
+ * blob decodes fine via an `HTMLImageElement`. Falling back through `<img>`
+ * keeps the upload pipeline robust to these encoder quirks.
+ */
+const IMAGE_ELEMENT_FALLBACK_MIME_TYPES = new Set<string>([
+  'image/avif',
+  'image/webp',
+  'image/bmp',
+  'image/x-ms-bmp',
+]);
+
+/**
  * Decide whether a failed `createImageBitmap` call should be retried via the
- * `<img>`-element fallback. Only AVIF inputs are eligible, and only when an
+ * `<img>`-element fallback. Only inputs whose MIME type is in
+ * {@link IMAGE_ELEMENT_FALLBACK_MIME_TYPES} are eligible, and only when an
  * `HTMLImageElement` is available (i.e. main thread, not a worker). The
  * decompression-bomb guards must not be bypassed, so size/timeout errors are
  * never retried.
  */
-function shouldAttemptAvifImageElementFallback(
+function shouldAttemptImageElementFallback(
   blob: Blob,
   err: unknown,
 ): boolean {
-  if (blob.type !== 'image/avif') return false;
+  if (!IMAGE_ELEMENT_FALLBACK_MIME_TYPES.has(blob.type)) return false;
   if (err instanceof ImageTooLargeError) return false;
   if (err instanceof ImageDimensionsExceededError) return false;
   if (err instanceof ImageDecodeTimeoutError) return false;
@@ -228,14 +247,15 @@ function shouldAttemptAvifImageElementFallback(
 
 /**
  * Decode a blob via an `HTMLImageElement` and rasterise the result to an
- * `ImageBitmap` through a 2D canvas. Used as an AVIF fallback when
- * `createImageBitmap` rejects an otherwise-valid AVIF file.
+ * `ImageBitmap` through a 2D canvas. Used as a fallback when
+ * `createImageBitmap` rejects an otherwise-valid image (currently AVIF, WebP,
+ * and BMP — see {@link IMAGE_ELEMENT_FALLBACK_MIME_TYPES}).
  *
  * The image-element load is raced against {@link DECODE_TIMEOUT_MS} so a
  * stuck decode cannot stall the upload pipeline. The intermediate object URL
  * is revoked in all paths.
  */
-async function decodeAvifViaImageElement(blob: Blob): Promise<ImageBitmap> {
+async function decodeViaImageElement(blob: Blob): Promise<ImageBitmap> {
   const url = URL.createObjectURL(blob);
   try {
     const img = await withDecodeTimeout(
@@ -243,16 +263,22 @@ async function decodeAvifViaImageElement(blob: Blob): Promise<ImageBitmap> {
         const el = new Image();
         el.onload = () => resolve(el);
         el.onerror = () =>
-          reject(new Error('HTMLImageElement failed to decode AVIF blob'));
+          reject(
+            new Error(
+              `HTMLImageElement failed to decode ${blob.type || 'image'} blob`,
+            ),
+          );
         el.src = url;
       }),
-      'avif-img-element',
+      'img-element',
     );
 
     const width = img.naturalWidth;
     const height = img.naturalHeight;
     if (width === 0 || height === 0) {
-      throw new Error('AVIF <img> decode produced zero-sized image');
+      throw new Error(
+        `<img>-element decode produced zero-sized image for ${blob.type || 'image'} blob`,
+      );
     }
     if (width * height > MAX_DECODED_PIXELS) {
       throw new ImageDimensionsExceededError(width, height);
@@ -263,13 +289,15 @@ async function decodeAvifViaImageElement(blob: Blob): Promise<ImageBitmap> {
     canvas.height = height;
     const ctx = canvas.getContext('2d');
     if (!ctx) {
-      throw new Error('Failed to acquire 2D canvas context for AVIF fallback');
+      throw new Error(
+        '<img>-element fallback could not acquire 2D canvas context',
+      );
     }
     ctx.drawImage(img, 0, 0);
 
     return await withDecodeTimeout(
       createImageBitmap(canvas, { imageOrientation: 'none' }),
-      'avif-canvas-bitmap',
+      'img-element-canvas-bitmap',
     );
   } finally {
     URL.revokeObjectURL(url);
