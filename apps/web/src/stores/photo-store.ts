@@ -37,8 +37,29 @@ export interface PhotoItem {
 
 export type FetchStatus = 'idle' | 'loading' | 'success' | 'error';
 
+/**
+ * Promotion data buffered for an asset whose `promoteToStable` arrived
+ * before `addPending`. When a late `addPending` lands for the same asset,
+ * the intent is consumed and the item is inserted directly as 'stable',
+ * preventing an orphan pending entry that would otherwise stay forever.
+ *
+ * See v1.0.x release blocker `validation-final-gate-isolated-v3-04`.
+ */
+export interface LatePromoteIntent {
+  promotionData: Pick<
+    PhotoItem,
+    'encryptedMetadata' | 'thumbnailUrl' | 'createdAt'
+  >;
+  expiresAt: number;
+}
+
+/** Time-to-live for a buffered late-promote intent. */
+export const LATE_PROMOTE_TTL_MS = 30_000;
+
 export interface AlbumPhotoState {
   items: Map<string, PhotoItem>;
+  /** Promotions awaiting a late-arriving `addPending`. Keyed by assetId. */
+  latePromoteIntents: Map<string, LatePromoteIntent>;
   fetchStatus: FetchStatus;
   fetchError: string | undefined;
   hasMore: boolean;
@@ -120,11 +141,24 @@ export type PhotoStore = PhotoStoreState & PhotoStoreActions;
 
 const createInitialAlbumState = (): AlbumPhotoState => ({
   items: new Map(),
+  latePromoteIntents: new Map(),
   fetchStatus: 'idle',
   hasMore: true,
   cursor: undefined,
   fetchError: undefined,
 });
+
+/** Drop any intents whose TTL has elapsed. */
+function pruneStaleIntents(
+  intents: Map<string, LatePromoteIntent>,
+  now: number,
+): void {
+  for (const [id, intent] of intents) {
+    if (intent.expiresAt <= now) {
+      intents.delete(id);
+    }
+  }
+}
 
 const initialState: PhotoStoreState = {
   albums: new Map(),
@@ -167,6 +201,7 @@ export const usePhotoStore = create<PhotoStore>()(
             URL.revokeObjectURL(item.localBlobUrl);
           }
         }
+        album.latePromoteIntents.clear();
 
         state.albums.delete(albumId);
         if (state.activeAlbumId === albumId) {
@@ -244,6 +279,48 @@ export const usePhotoStore = create<PhotoStore>()(
         const album = state.albums.get(albumId);
         if (!album) return;
 
+        // Safety net (option c): if the asset is already known stable
+        // (e.g., addStableFromServer or a previous late-promote landed first),
+        // do not regress it back to 'pending'. Revoke the unused blob URL.
+        const existing = album.items.get(assetId);
+        if (existing && existing.status === 'stable') {
+          URL.revokeObjectURL(localBlobUrl);
+          return;
+        }
+
+        // Late-promote intent path (option b): a sync-engine promotion
+        // arrived BEFORE this addPending. Consume the intent and insert
+        // directly as 'stable' instead of creating an orphan pending entry.
+        const now = Date.now();
+        const intent = album.latePromoteIntents.get(assetId);
+        if (intent) {
+          album.latePromoteIntents.delete(assetId);
+          if (intent.expiresAt > now) {
+            URL.revokeObjectURL(localBlobUrl);
+            const newItem: PhotoItem = {
+              assetId,
+              albumId,
+              status: 'stable',
+            };
+            if (intent.promotionData.encryptedMetadata !== undefined) {
+              newItem.encryptedMetadata =
+                intent.promotionData.encryptedMetadata;
+            }
+            if (intent.promotionData.thumbnailUrl !== undefined) {
+              newItem.thumbnailUrl = intent.promotionData.thumbnailUrl;
+            }
+            if (intent.promotionData.createdAt !== undefined) {
+              newItem.createdAt = intent.promotionData.createdAt;
+            }
+            album.items.set(assetId, newItem);
+            return;
+          }
+          // Intent was stale — fall through to normal pending insert.
+        }
+
+        // Opportunistic cleanup of other stale intents.
+        pruneStaleIntents(album.latePromoteIntents, now);
+
         album.items.set(assetId, {
           assetId,
           albumId,
@@ -294,7 +371,9 @@ export const usePhotoStore = create<PhotoStore>()(
     ) => {
       set((state) => {
         const album = state.albums.get(albumId);
-        const item = album?.items.get(assetId);
+        if (!album) return;
+
+        const item = album.items.get(assetId);
         if (item && (item.status === 'syncing' || item.status === 'pending')) {
           // Keep the same assetId - no ID change!
           item.status = 'stable';
@@ -312,6 +391,24 @@ export const usePhotoStore = create<PhotoStore>()(
           delete item.localBlobUrl;
           delete item.uploadProgress;
           delete item.error;
+          return;
+        }
+
+        // Existing stable item — nothing to do (sync may re-emit promotion).
+        if (item && item.status === 'stable') return;
+
+        // No item exists yet — race: promoteToStable arrived before
+        // addPending. Buffer a late-promote intent so the upcoming
+        // addPending inserts the photo directly as 'stable'.
+        // Also handles the 'deleting' edge case: a delete in flight
+        // should not be reverted by a stale promotion.
+        if (!item) {
+          const now = Date.now();
+          pruneStaleIntents(album.latePromoteIntents, now);
+          album.latePromoteIntents.set(assetId, {
+            promotionData: metadata,
+            expiresAt: now + LATE_PROMOTE_TTL_MS,
+          });
         }
       });
     },
