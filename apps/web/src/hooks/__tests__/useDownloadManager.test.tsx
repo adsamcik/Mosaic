@@ -287,5 +287,53 @@ describe('useDownloadManager', () => {
     expect(api.listResumableJobs).toHaveBeenCalledTimes(2);
   });
 
+  // Regression: validation-final-gate-isolated-v2-01.
+  // Comlink wraps remote endpoints as `new Proxy(function () {}, {...})` so
+  // `typeof remote === 'function'` is TRUE. React's `setState(action)`
+  // treats any function-typed argument as a functional updater and invokes
+  // `action(prevState)` from inside `basicStateReducer`. For a Comlink
+  // proxy that means an APPLY message with `path=[]` and arg0=prevState
+  // gets shipped to the worker, where the underlying object (the
+  // coordinator class instance) is NOT callable — surfacing as a hot loop
+  // of `TypeError: rawValue.apply is not a function` unhandled rejections
+  // that cascades into 29 upload/sync E2E failures.
+  //
+  // The hook MUST therefore wrap the proxy in a functional-updater
+  // (`setApi(() => manager)`) so React's reducer calls the wrapper, not
+  // the proxy. This test exposes the bug by making the mock API a
+  // function-targeted Proxy that throws on `apply` — the way the live
+  // Comlink boundary behaves.
+  it('does not invoke the manager proxy as a function when storing it in state', async () => {
+    const callerLog: Array<{ argCount: number; arg0Type: string }> = [];
+    const fnTarget = function (): void {
+      /* sentinel */
+    };
+    const trappingProxy = new Proxy(fnTarget, {
+      apply(_target, _thisArg, argList): never {
+        callerLog.push({
+          argCount: argList.length,
+          arg0Type: argList[0] === null ? 'null' : typeof argList[0],
+        });
+        throw new TypeError('rawValue.apply is not a function');
+      },
+      get(_target, prop, receiver): unknown {
+        return Reflect.get(api as unknown as object, prop, receiver);
+      },
+    }) as unknown as CoordinatorWorkerApi;
+
+    managerMocks.getDownloadManager.mockReset();
+    managerMocks.getDownloadManager.mockResolvedValue(trappingProxy);
+
+    const hook = await renderHook();
+    // Allow any microtask-deferred setState calls to settle.
+    await act(async () => {
+      await flushMicrotasks();
+      await flushMicrotasks();
+    });
+    expect(callerLog).toEqual([]);
+    expect(hook.result().api).toBe(trappingProxy);
+    expect(hook.result().ready).toBe(true);
+  });
+
 });
 

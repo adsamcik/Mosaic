@@ -103,7 +103,20 @@ export function useDownloadManager(): UseDownloadManagerResult {
             errorName: caught instanceof Error ? caught.name : 'Unknown',
           });
         }
-        setApi(manager);
+        // Wrap the Comlink proxy in a functional-updater so React's
+        // `basicStateReducer` does NOT call it. Comlink proxies wrap a
+        // `function () {}` target, so `typeof manager === 'function'` is
+        // true and React would otherwise treat `setApi(manager)` as
+        // `setApi((prev) => manager(prev))` — shipping an APPLY message
+        // with `path=[]` and `arg0=prev` to the worker, where the
+        // coordinator class instance is not callable. The result was a
+        // hot loop of `TypeError: rawValue.apply is not a function`
+        // unhandled rejections that cascaded into 29 upload/sync E2E
+        // failures (validation-final-gate-isolated-v2-01). See the
+        // companion regression test in
+        // `useDownloadManager.test.tsx > does not invoke the manager
+        //  proxy as a function when storing it in state`.
+        setApi(() => manager);
         const [initialJobs, initialResumableJobs] = await Promise.all([
           manager.listJobs(),
           manager.listResumableJobs(),
