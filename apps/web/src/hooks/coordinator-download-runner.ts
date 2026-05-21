@@ -198,10 +198,10 @@ export async function photosToPlanInput(albumId: string, photos: ReadonlyArray<P
       photoId: photo.id,
       filename: photo.filename || `photo-${photo.id.slice(0, 8)}.jpg`,
       shards: shardIds.map((id, i) => ({
-        shardId: hexToBytes(id),
+        shardId: decodeShardId(id),
         epochId: photo.epochId,
         tier: 3,
-        expectedHash: hashes[i] !== undefined ? hexToBytes(hashes[i]!) : new Uint8Array(32),
+        expectedHash: hashes[i] !== undefined ? decodeShardHash(hashes[i]!) : new Uint8Array(32),
         declaredSize: 0,
       })),
     });
@@ -216,4 +216,51 @@ function hexToBytes(hex: string): Uint8Array {
     out[i] = Number.parseInt(clean.slice(i * 2, i * 2 + 2), 16);
   }
   return out;
+}
+
+const HEX_RE = /^[0-9a-fA-F]+$/;
+const BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
+
+function base64UrlToBytes(value: string): Uint8Array {
+  const padLen = (4 - (value.length % 4)) % 4;
+  const padded =
+    value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat(padLen);
+  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+}
+
+// Shard IDs are produced by tusdotnet's GuidFileIdProvider as 32 hex chars
+// (no dashes). Keep a base64url fallback for forward-compatibility with any
+// alternate provider that emits 22-char base64url IDs.
+function decodeShardId(value: string): Uint8Array {
+  const clean = value.startsWith('0x') ? value.slice(2) : value;
+  if (clean.length === 32 && HEX_RE.test(clean)) {
+    return hexToBytes(clean);
+  }
+  if (BASE64URL_RE.test(clean)) {
+    const decoded = base64UrlToBytes(clean);
+    if (decoded.length === 16) return decoded;
+  }
+  // Last-resort: legacy hex path (still 16 bytes when input is 32 hex chars).
+  return hexToBytes(clean);
+}
+
+// `originalShardHashes` / `shardHashes` are base64url-encoded SHA-256 digests
+// produced by the upload pipeline (`encryptUploadShardWithEpochHandle` calls
+// `sha256Base64Url`). Older test fixtures / legacy manifests may store hex,
+// so accept both — but always emit a 32-byte buffer so the rust
+// download-plan decoder (`bytes_32_from_value`) doesn't reject the input
+// with `DownloadSnapshotCorrupt` (rust code 723).
+function decodeShardHash(value: string): Uint8Array {
+  const clean = value.startsWith('0x') ? value.slice(2) : value;
+  if (clean.length === 64 && HEX_RE.test(clean)) {
+    return hexToBytes(clean);
+  }
+  if (BASE64URL_RE.test(clean)) {
+    const decoded = base64UrlToBytes(clean);
+    if (decoded.length === 32) return decoded;
+  }
+  // Malformed hash — return zeros so the rust decoder still gets 32 bytes;
+  // shard-integrity verification later will catch the mismatch with a
+  // clearer error than a CBOR-shape failure.
+  return new Uint8Array(32);
 }
