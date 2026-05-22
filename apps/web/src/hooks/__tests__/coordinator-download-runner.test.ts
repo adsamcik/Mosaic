@@ -4,7 +4,7 @@ vi.mock('../../lib/epoch-key-service', () => ({
   getOrFetchEpochKey: vi.fn().mockRejectedValue(new Error('no epoch service')),
 }));
 
-import { photosToPlanInput } from '../coordinator-download-runner';
+import { CorruptShardHashError, photosToPlanInput } from '../coordinator-download-runner';
 import type { PhotoMeta } from '../../workers/types';
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -75,7 +75,7 @@ describe('photosToPlanInput — shard-hash format', () => {
     expect(Array.from(shard.expectedHash)).toEqual(Array.from(hashBytes));
   });
 
-  it('returns 32 zero-bytes when hash is missing or malformed', async () => {
+  it('returns 32 zero-bytes when hash is missing (legacy path)', async () => {
     const photo = makePhoto({
       originalShardIds: ['c'.repeat(32)],
       // no originalShardHashes / shardHashes
@@ -84,6 +84,78 @@ describe('photosToPlanInput — shard-hash format', () => {
     const shard = result.photos[0]!.shards[0]!;
     expect(shard.expectedHash.byteLength).toBe(32);
     expect(shard.expectedHash.every((b) => b === 0)).toBe(true);
+  });
+
+  // Regression for HIGH `security-review-2026-05-22-01`: malformed shard
+  // hashes used to be silently substituted with 32 zero bytes, which would
+  // mask server-side data corruption or supply-chain tampering as a
+  // generic decrypt failure downstream. The decoder MUST fail closed
+  // instead — only the explicit "missing hash" path is allowed to emit
+  // a zero digest.
+  describe('fails closed on malformed shard hashes', () => {
+    it('rejects non-hex garbage in a hex-shaped slot', async () => {
+      const photo = makePhoto({
+        originalShardIds: ['c'.repeat(32)],
+        // 64 chars but contains non-hex/non-base64url char ('#')
+        originalShardHashes: ['#'.repeat(64)],
+      });
+      await expect(photosToPlanInput('album-1', [photo])).rejects.toBeInstanceOf(
+        CorruptShardHashError,
+      );
+    });
+
+    it('rejects base64url charset that decodes to wrong length', async () => {
+      // Valid base64url charset but decodes to 4 bytes, not 32.
+      const photo = makePhoto({
+        originalShardIds: ['d'.repeat(32)],
+        originalShardHashes: ['zzzzzz'],
+      });
+      await expect(photosToPlanInput('album-1', [photo])).rejects.toBeInstanceOf(
+        CorruptShardHashError,
+      );
+    });
+
+    it('rejects too-short hex (16 hex chars = 8 bytes)', async () => {
+      const photo = makePhoto({
+        originalShardIds: ['e'.repeat(32)],
+        originalShardHashes: ['a'.repeat(16)],
+      });
+      await expect(photosToPlanInput('album-1', [photo])).rejects.toBeInstanceOf(
+        CorruptShardHashError,
+      );
+    });
+
+    it('rejects too-long hex (128 hex chars = 64 bytes)', async () => {
+      const photo = makePhoto({
+        originalShardIds: ['f'.repeat(32)],
+        originalShardHashes: ['a'.repeat(128)],
+      });
+      await expect(photosToPlanInput('album-1', [photo])).rejects.toBeInstanceOf(
+        CorruptShardHashError,
+      );
+    });
+
+    it('rejects entirely-illegal characters ("###")', async () => {
+      const photo = makePhoto({
+        originalShardIds: ['1'.repeat(32)],
+        originalShardHashes: ['###'],
+      });
+      await expect(photosToPlanInput('album-1', [photo])).rejects.toBeInstanceOf(
+        CorruptShardHashError,
+      );
+    });
+
+    it('accepts the 64-char hex boundary (exactly 32 bytes when decoded)', async () => {
+      // Boundary: 64 hex chars is the *valid* length. This ensures the
+      // length check stays inclusive of the legitimate format and the
+      // throw only fires on truly malformed input.
+      const photo = makePhoto({
+        originalShardIds: ['2'.repeat(32)],
+        originalShardHashes: ['a'.repeat(64)],
+      });
+      const result = await photosToPlanInput('album-1', [photo]);
+      expect(result.photos[0]!.shards[0]!.expectedHash.byteLength).toBe(32);
+    });
   });
 
   // Regression for v3-10 W-A6-6: rust snapshot validator rejects any commit

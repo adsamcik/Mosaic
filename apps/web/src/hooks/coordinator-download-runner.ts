@@ -99,26 +99,55 @@ export async function waitForTerminal(
   onJobProgress: (event: JobProgressEvent) => void,
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    let activeSubscription: { unsubscribe: () => void | Promise<void> } | null = null;
+    type Subscription = { unsubscribe: () => void | Promise<void> };
     // v1.0.1 isolated-v3-10-subscribe-unserializable: the worker now returns
     // the subscription as a whole-object Comlink proxy. Calling
     // `subscription.unsubscribe()` is a remote round-trip, and the proxy
     // itself owns a worker-side MessagePort handle that must be released
     // after the unsubscribe round-trip completes — otherwise the handle
     // leaks for every job and the worker accretes ports across the session.
-    const releaseSubscription = (): void => {
-      if (activeSubscription === null) return;
+    //
+    // v1.0.1 security-review-2026-05-22-02 (HIGH): release MUST be
+    // idempotent and MUST cover the abort-before-subscribe-resolves race.
+    // Previously, if `signal.aborted` was observed in the `.then` AFTER
+    // the cleanup path (`onAbort`) had already run, only `unsubscribe()`
+    // was called and the subscription proxy itself leaked across the
+    // worker boundary. Repeated abort/restart cycles accreted Comlink
+    // ports until the worker thread DoS'd.
+    let activeSubscription: Subscription | null = null;
+    let cleanedUp = false;
+
+    const releaseSubscriptionProxy = (sub: Subscription | null): void => {
+      if (sub === null) return;
       try {
-        (activeSubscription as unknown as { [Comlink.releaseProxy]?: () => void })[
+        (sub as unknown as { [Comlink.releaseProxy]?: () => void })[
           Comlink.releaseProxy
         ]?.();
       } catch {
         // Best-effort release; never throw from cleanup paths.
       }
     };
-    const callUnsubscribe = (): void => {
-      void activeSubscription?.unsubscribe();
+
+    // Idempotent, all-paths cleanup. Removes the abort listener (so the
+    // success path doesn't leak an event listener), disposes the
+    // callback guard, then awaits the worker-side unsubscribe round-trip
+    // before releasing both proxies — callback AND subscription. Safe to
+    // call repeatedly; only the first invocation does work.
+    const cleanup = (): void => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      signal.removeEventListener('abort', onAbort);
+      guarded.dispose();
+      const sub = activeSubscription;
+      activeSubscription = null;
+      void Promise.resolve(sub?.unsubscribe())
+        .catch(() => undefined)
+        .finally(() => {
+          releaseSubscriptionProxy(sub);
+          guarded.releaseProxy();
+        });
     };
+
     // Guard the progress callback so any worker→main message arriving
     // after we tear down (terminal phase, abort, subscribe error) lands
     // on a typed `WorkerCryptoError(ClosedHandle)` instead of producing
@@ -127,34 +156,18 @@ export async function waitForTerminal(
     const guarded = guardComlinkProxy((event: JobProgressEvent) => {
       onJobProgress(event);
       if (isTerminalPhase(event.phase)) {
-        signal.removeEventListener('abort', onAbort);
-        callUnsubscribe();
-        guarded.dispose();
-        // Defer release until after the worker has acknowledged the
-        // unsubscribe so in-flight progress messages land on the
-        // dispose-guard, not a released proxy slot.
-        void Promise.resolve(activeSubscription?.unsubscribe())
-          .catch(() => undefined)
-          .finally(() => {
-            releaseSubscription();
-            guarded.releaseProxy();
-          });
+        cleanup();
         if (event.phase === 'Done') resolve();
         else if (event.phase === 'Cancelled') reject(new DOMException('Download cancelled', 'AbortError'));
         else reject(new Error(`Download failed: ${event.phase}`));
       }
     }, 'waitForTerminal.progress');
-    const onAbort = (): void => {
-      callUnsubscribe();
-      guarded.dispose();
-      void Promise.resolve(activeSubscription?.unsubscribe())
-        .catch(() => undefined)
-        .finally(() => {
-          releaseSubscription();
-          guarded.releaseProxy();
-        });
+
+    function onAbort(): void {
+      cleanup();
       reject(new DOMException('Download aborted', 'AbortError'));
-    };
+    }
+
     if (signal.aborted) {
       onAbort();
       return;
@@ -162,15 +175,21 @@ export async function waitForTerminal(
     signal.addEventListener('abort', onAbort, { once: true });
 
     api.subscribe(jobId, guarded.proxy).then((subscription) => {
-      activeSubscription = subscription;
-      if (signal.aborted) {
-        callUnsubscribe();
-        // onAbort already rejected.
+      if (cleanedUp) {
+        // Abort-before-resolve race (security-review-2026-05-22-02): the
+        // signal aborted BEFORE this `.then` ran, so `cleanup()` already
+        // released the callback proxy but `activeSubscription` was still
+        // null at that point. The subscription that just resolved is a
+        // late-arriving worker MessagePort with no other reference — we
+        // MUST unsubscribe AND release its proxy here or it leaks.
+        void Promise.resolve(subscription.unsubscribe())
+          .catch(() => undefined)
+          .finally(() => releaseSubscriptionProxy(subscription));
+        return;
       }
+      activeSubscription = subscription;
     }).catch((err) => {
-      signal.removeEventListener('abort', onAbort);
-      guarded.dispose();
-      guarded.releaseProxy();
+      cleanup();
       reject(err instanceof Error ? err : new Error(String(err)));
     });
   });
@@ -223,7 +242,7 @@ export async function photosToPlanInput(albumId: string, photos: ReadonlyArray<P
         shardId: decodeShardId(id),
         epochId: photo.epochId,
         tier: 3,
-        expectedHash: hashes[i] !== undefined ? decodeShardHash(hashes[i]!) : new Uint8Array(32),
+        expectedHash: decodeShardHash(hashes[i]),
         // PhotoMeta does not carry per-shard encrypted sizes, so we pass a
         // generous upper bound (1 TiB) instead of 0. The rust snapshot
         // validator rejects any snapshot where `photo.bytes_written` exceeds
@@ -273,13 +292,49 @@ function decodeShardId(value: string): Uint8Array {
   return hexToBytes(clean);
 }
 
+/**
+ * Thrown when a manifest carries a shard-hash value that is present but
+ * cannot be decoded to a 32-byte SHA-256 digest (wrong length, invalid
+ * charset, or otherwise malformed). The download plan MUST fail closed
+ * in this case rather than silently substituting a zero digest — a zero
+ * substitute would mask server-side data corruption or supply-chain
+ * tampering as a generic decrypt failure, hiding the integrity signal.
+ *
+ * Remediates HIGH `security-review-2026-05-22-01` (GPT-5.5 review on
+ * commit 7d112149).
+ */
+export class CorruptShardHashError extends Error {
+  public readonly value: string;
+  constructor(value: string) {
+    // Truncate the offending value in the message so we never echo a
+    // potentially attacker-controlled large blob into logs, and never
+    // log key/PII-sized payloads.
+    super(`Shard hash is corrupt or malformed: ${value.slice(0, 32)}`);
+    this.name = 'CorruptShardHashError';
+    this.value = value;
+  }
+}
+
 // `originalShardHashes` / `shardHashes` are base64url-encoded SHA-256 digests
 // produced by the upload pipeline (`encryptUploadShardWithEpochHandle` calls
 // `sha256Base64Url`). Older test fixtures / legacy manifests may store hex,
 // so accept both — but always emit a 32-byte buffer so the rust
 // download-plan decoder (`bytes_32_from_value`) doesn't reject the input
 // with `DownloadSnapshotCorrupt` (rust code 723).
-function decodeShardHash(value: string): Uint8Array {
+//
+// Behaviour for `value`:
+//   - `null` / `undefined` / empty string → 32 zero bytes (explicit legacy
+//     "missing hash" path; the integrity check downstream will still
+//     reject any real shard against a zero digest because its SHA-256
+//     will never equal zero).
+//   - Valid 64-char hex or 32-byte base64url → decoded digest.
+//   - Anything else → throw `CorruptShardHashError`. Fail closed so that
+//     malformed metadata cannot be silently coerced into a zero digest
+//     and masked as a generic decrypt failure later.
+function decodeShardHash(value: string | null | undefined): Uint8Array {
+  if (value === null || value === undefined || value === '') {
+    return new Uint8Array(32);
+  }
   const clean = value.startsWith('0x') ? value.slice(2) : value;
   if (clean.length === 64 && HEX_RE.test(clean)) {
     return hexToBytes(clean);
@@ -288,8 +343,5 @@ function decodeShardHash(value: string): Uint8Array {
     const decoded = base64UrlToBytes(clean);
     if (decoded.length === 32) return decoded;
   }
-  // Malformed hash — return zeros so the rust decoder still gets 32 bytes;
-  // shard-integrity verification later will catch the mismatch with a
-  // clearer error than a CBOR-shape failure.
-  return new Uint8Array(32);
+  throw new CorruptShardHashError(value);
 }
