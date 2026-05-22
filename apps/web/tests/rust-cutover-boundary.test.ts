@@ -301,6 +301,7 @@ describe('web Rust crypto cutover boundaries', () => {
       'lib/scope-key.ts',
       'lib/session-salt.ts',
       'lib/session.ts',
+      'lib/shard-integrity.ts',
       'lib/sidecar/signaling.ts',
       'lib/upload/encrypt-upload-shard.ts',
       'workers/coordinator/shard-mirror.ts',

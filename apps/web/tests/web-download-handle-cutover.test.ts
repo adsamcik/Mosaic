@@ -31,6 +31,17 @@ vi.mock('../src/lib/image-decoder', () => ({
   createDisplayableUrl: mocks.createDisplayableUrl,
 }));
 
+vi.mock('../src/lib/shard-integrity', async () => {
+  const actual = await vi.importActual<
+    typeof import('../src/lib/shard-integrity')
+  >('../src/lib/shard-integrity');
+  return {
+    ...actual,
+    verifyShardListIntegrity: vi.fn().mockResolvedValue(undefined),
+    verifyShardIntegrity: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
 vi.mock('../src/lib/thumbnail-generator', () => ({
   base64ToUint8Array: (value: string) =>
     Uint8Array.from(atob(value), (c) => c.charCodeAt(0)),
@@ -49,6 +60,7 @@ import { downloadAlbumAsZip } from '../src/lib/album-download-service';
 import { decryptAlbumNameWithTierKey } from '../src/lib/album-metadata-service';
 import { loadPhoto } from '../src/lib/photo-service';
 import { createShareLinkOriginalResolver } from '../src/lib/shared-album-download';
+import { verifyShardListIntegrity } from '../src/lib/shard-integrity';
 
 const VALID_SHA256 = 'A'.repeat(43);
 
@@ -130,9 +142,10 @@ describe('W-S2 web download handle API cutover', () => {
       [VALID_SHA256],
     );
 
-    expect(crypto.verifyShardIntegrity).toHaveBeenCalledWith(
-      encrypted,
-      new Uint8Array(32),
+    expect(verifyShardListIntegrity).toHaveBeenCalledWith(
+      [encrypted],
+      [VALID_SHA256],
+      expect.stringContaining('photo-handle'),
     );
     expect(crypto.decryptShardWithEpochHandle).toHaveBeenCalledWith(
       'epch_photo_7',
@@ -256,9 +269,10 @@ describe('W-S2 web download handle API cutover', () => {
       ),
     ).resolves.toEqual(new Uint8Array([42]));
 
-    expect(crypto.verifyShardIntegrity).toHaveBeenCalledWith(
-      envelope,
-      new Uint8Array(32),
+    expect(verifyShardListIntegrity).toHaveBeenCalledWith(
+      [envelope],
+      [VALID_SHA256],
+      expect.any(String),
     );
     expect(crypto.peekEnvelopeHeader).toHaveBeenCalledWith(envelope);
     expect(crypto.decryptShardWithLinkTierHandle).toHaveBeenCalledWith(

@@ -29,6 +29,7 @@ vi.mock('../src/lib/crypto-client', () => ({
     getAuthPublicKey: vi.fn().mockResolvedValue(new Uint8Array(32)),
     getIdentityPublicKey: vi.fn().mockResolvedValue(new Uint8Array(32)),
     getWrappedAccountKey: vi.fn().mockResolvedValue(new Uint8Array(72)), // 24 nonce + 48 ciphertext
+    getWrappedIdentitySeed: vi.fn().mockResolvedValue(new Uint8Array(72)),
   })),
 }));
 
