@@ -1,4 +1,25 @@
+import initRustWasm, { sha256OfBytes } from '../generated/mosaic-wasm/mosaic_wasm.js';
 import { CorruptShardHashError, decodeShardHash } from '../hooks/coordinator-download-runner';
+
+// Mirrors the init pattern used by `apps/web/src/lib/upload/encrypt-upload-shard.ts`.
+// Protocol-class SHA-256 must route through the Rust core / WASM helper
+// (enforced by `tests/architecture/web-rust-core-protocol-completeness.ps1`);
+// direct WebCrypto SHA-256 digests are forbidden in protocol-class paths.
+let rustWasmInitPromise: Promise<void> | null = null;
+
+function ensureRustWasmInitialized(): Promise<void> {
+  rustWasmInitPromise ??= initRustWasm()
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      throw error;
+    });
+  return rustWasmInitPromise;
+}
+
+async function rustSha256(bytes: Uint8Array): Promise<Uint8Array> {
+  await ensureRustWasmInitialized();
+  return sha256OfBytes(bytes);
+}
 
 // Re-export so callers handling fail-closed semantics can catch the
 // manifest-corruption error without reaching back into hook-layer
@@ -54,11 +75,7 @@ export async function verifyShardIntegrity(
   }
   // Throws CorruptShardHashError for empty / whitespace / malformed.
   const expected = decodeShardHash(expectedHashValue);
-  const actualBuffer = await crypto.subtle.digest(
-    'SHA-256',
-    shardBytes as BufferSource,
-  );
-  const actual = new Uint8Array(actualBuffer);
+  const actual = await rustSha256(shardBytes);
   if (!constantTimeEquals(expected, actual)) {
     throw new ShardIntegrityMismatchError(context);
   }

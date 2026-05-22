@@ -1,4 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
+
+// Protocol-class SHA-256 routes through the generated Rust/WASM helper.
+// In unit tests we mock the WASM module with a node:crypto-backed SHA-256
+// so the integrity comparison still exercises real SHA-256 semantics
+// without requiring the WASM binary to load under happy-dom.
+const wasmMocks = vi.hoisted(() => {
+  const nodeSha256 = (bytes: Uint8Array): Uint8Array => {
+    const h = createHash('sha256');
+    h.update(bytes);
+    return new Uint8Array(h.digest());
+  };
+  return {
+    initRustWasm: vi.fn().mockResolvedValue(undefined),
+    sha256OfBytes: vi.fn(nodeSha256),
+  };
+});
+
+vi.mock('../../generated/mosaic-wasm/mosaic_wasm.js', () => ({
+  default: wasmMocks.initRustWasm,
+  sha256OfBytes: wasmMocks.sha256OfBytes,
+}));
 
 import { CorruptShardHashError } from '../../hooks/coordinator-download-runner';
 import {
@@ -20,8 +42,7 @@ function bytesToBase64Url(bytes: Uint8Array): string {
 }
 
 async function sha256(data: Uint8Array): Promise<Uint8Array> {
-  const buf = await crypto.subtle.digest('SHA-256', data as BufferSource);
-  return new Uint8Array(buf);
+  return wasmMocks.sha256OfBytes(data);
 }
 
 describe('verifyShardIntegrity — fail-closed semantics', () => {
