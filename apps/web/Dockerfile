@@ -27,8 +27,10 @@ COPY apps/web/package*.json ./
 COPY apps/web/ ./
 
 # Frontend build checks generated worker crypto error codes against Rust source.
+# Frontend prebuild also runs the production WASM weak-kdf guard from scripts/.
 WORKDIR /app
 COPY scripts/generate-worker-crypto-error-codes.mjs ./scripts/generate-worker-crypto-error-codes.mjs
+COPY scripts/verify-production-wasm-no-weak-kdf.mjs ./scripts/verify-production-wasm-no-weak-kdf.mjs
 COPY crates/mosaic-client/src/lib.rs ./crates/mosaic-client/src/lib.rs
 
 # Install dependencies (postinstall copies sql.js files to public/)
