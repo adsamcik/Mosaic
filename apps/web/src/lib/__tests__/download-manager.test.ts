@@ -4,6 +4,7 @@ import type { CoordinatorWorkerApi, DownloadPhase } from '../../workers/types';
 const comlinkMocks = vi.hoisted(() => ({
   wrap: vi.fn(),
   releaseProxy: Symbol('releaseProxy'),
+  transferHandlers: new Map(),
 }));
 const releaseProxy = comlinkMocks.releaseProxy;
 

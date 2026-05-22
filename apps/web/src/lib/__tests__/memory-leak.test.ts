@@ -26,7 +26,7 @@ const facadeMocks = vi.hoisted(() => {
   return { facade, closed, reset: () => { nextHandle = 100n; closed.account = []; closed.epoch = []; closed.linkTier = []; } };
 });
 
-vi.mock('comlink', () => ({ expose: vi.fn() }));
+vi.mock('comlink', () => ({ expose: vi.fn(), transferHandlers: new Map() }));
 vi.mock('libsodium-wrappers-sumo', () => ({
   default: {
     ready: Promise.resolve(),

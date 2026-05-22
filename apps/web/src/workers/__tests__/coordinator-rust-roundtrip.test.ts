@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('comlink', () => ({ expose: vi.fn(), proxy: <T>(value: T): T => value }));
+vi.mock('comlink', () => ({ expose: vi.fn(), proxy: <T>(value: T): T => value, transferHandlers: new Map() }));
 vi.mock('../../lib/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),

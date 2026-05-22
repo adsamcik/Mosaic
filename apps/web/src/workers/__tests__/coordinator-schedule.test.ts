@@ -57,7 +57,7 @@ const scheduleContextMock = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('comlink', () => ({ expose: vi.fn(), proxy: <T>(value: T): T => value }));
+vi.mock('comlink', () => ({ expose: vi.fn(), proxy: <T>(value: T): T => value, transferHandlers: new Map() }));
 vi.mock('../../lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), startTimer: () => ({ end: vi.fn(), elapsed: () => 0 }), child: vi.fn(), scope: 'test' }),
 }));

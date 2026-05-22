@@ -34,6 +34,7 @@ const apis: FakeApi[] = [];
 
 vi.mock('comlink', () => ({
   wrap: (worker: FakeWorker): FakeApi => worker.api,
+  transferHandlers: new Map(),
 }));
 
 import { __cryptoPoolTestUtils, autoSizePool, DownloadError, getCryptoPool } from '../crypto-pool';

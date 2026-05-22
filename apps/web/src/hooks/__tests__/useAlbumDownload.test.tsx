@@ -25,7 +25,7 @@ vi.mock('../../lib/epoch-key-service', () => ({
 vi.mock('../useWakeLock', () => ({
   useWakeLock: () => ({ acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) }),
 }));
-vi.mock('comlink', () => ({ proxy: <T,>(value: T): T => value }));
+vi.mock('comlink', () => ({ proxy: <T,>(value: T): T => value, transferHandlers: new Map() }));
 
 interface ManagerStub {
   api: CoordinatorWorkerApi | null;

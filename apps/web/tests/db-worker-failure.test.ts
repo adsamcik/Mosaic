@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('comlink', () => ({
   expose: vi.fn(),
+  transferHandlers: new Map(),
 }));
 
 // The DbWorker now verifies the SHA-384 of the fetched /sql-wasm.js script

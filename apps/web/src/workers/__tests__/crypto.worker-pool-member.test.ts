@@ -9,7 +9,7 @@ const cryptoClientMocks = vi.hoisted(() => ({
   decryptShardWithLinkTierHandle: vi.fn<(handleId: LinkTierHandleId, envelopeBytes: Uint8Array) => Promise<Uint8Array>>(),
 }));
 
-vi.mock('comlink', () => ({ expose: vi.fn() }));
+vi.mock('comlink', () => ({ expose: vi.fn(), transferHandlers: new Map() }));
 vi.mock('../rust-crypto-core', () => rustMocks);
 vi.mock('../../lib/crypto-client', () => ({
   getCryptoClient: vi.fn(async () => cryptoClientMocks),

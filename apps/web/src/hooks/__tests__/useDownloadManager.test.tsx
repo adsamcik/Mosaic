@@ -12,7 +12,7 @@ vi.mock('../../lib/download-manager', () => managerMocks);
 vi.mock('../useDownloadScopeKey', () => ({
   useDownloadScopeKey: () => 'auth:00000000000000000000000000000000',
 }));
-vi.mock('comlink', () => ({ proxy: (value: unknown): unknown => value }));
+vi.mock('comlink', () => ({ proxy: (value: unknown): unknown => value, transferHandlers: new Map() }));
 vi.mock('../../lib/logger', () => ({
   createLogger: () => ({
     debug: vi.fn(),

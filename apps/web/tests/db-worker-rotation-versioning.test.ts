@@ -4,6 +4,7 @@ import type { DecryptedManifest, PhotoMeta } from '../src/workers/types';
 
 vi.mock('comlink', () => ({
   expose: vi.fn(),
+  transferHandlers: new Map(),
 }));
 
 import { DbWorker } from '../src/workers/db.worker';

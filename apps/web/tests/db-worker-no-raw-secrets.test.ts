@@ -36,6 +36,7 @@ import type {
 
 vi.mock('comlink', () => ({
   expose: vi.fn(),
+  transferHandlers: new Map(),
 }));
 
 import { DbWorker, SNAPSHOT_VERSION } from '../src/workers/db.worker';

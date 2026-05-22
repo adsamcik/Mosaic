@@ -32,6 +32,7 @@ vi.mock('../../lib/download-manager', () => ({
 // Comlink.proxy is identity for our purposes here.
 vi.mock('comlink', () => ({
   proxy: <T,>(x: T): T => x,
+  transferHandlers: new Map(),
 }));
 
 interface Captured { current: UseJobThumbnailsResult | null }

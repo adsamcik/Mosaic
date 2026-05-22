@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('comlink', () => ({
   expose: vi.fn(),
+  transferHandlers: new Map(),
 }));
 
 const { sqlBootstrap } = vi.hoisted(() => ({
