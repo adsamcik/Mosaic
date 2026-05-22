@@ -248,14 +248,22 @@ function cachePhoto(photoId: string, blob: Blob, blobUrl: string): CacheEntry {
 const pendingLoads = new Map<string, Promise<PhotoLoadResult>>();
 
 /**
- * Error thrown when shard integrity verification fails
+ * Error thrown when shard integrity verification fails.
+ *
+ * Intentionally carries ONLY the shard id and a generic mismatch message.
+ * Hash bytes (expected or actual) MUST NOT be stored as own properties —
+ * generic error logging / serialization (`JSON.stringify`, telemetry,
+ * Sentry, etc.) would otherwise leak full shard-hash manifest metadata
+ * even when individual log call sites avoid it.
+ *
+ * Remediates HIGH `security-review-2026-05-22-07`.
  */
 export class ShardIntegrityError extends Error {
   constructor(
     public readonly shardId: string,
-    public readonly expectedHash: string,
+    message: string = `Shard integrity check failed for ${shardId}: hash mismatch`,
   ) {
-    super(`Shard integrity check failed for ${shardId}: hash mismatch`);
+    super(message);
     this.name = 'ShardIntegrityError';
   }
 }
@@ -330,17 +338,15 @@ export async function loadPhoto(
         if (err instanceof ShardIntegrityMismatchError) {
           // Extract per-shard index from the helper's context suffix
           // ("...[i]") so the legacy ShardIntegrityError can report the
-          // exact shard id and expected hash. The list helper appends
-          // "[i]" to the caller-provided context.
+          // exact shard id. The list helper appends "[i]" to the
+          // caller-provided context. Hash bytes are intentionally NOT
+          // forwarded onto the error (HIGH security-review-2026-05-22-07):
+          // generic error logging/serialization would otherwise leak
+          // full SHA-256 manifest values.
           const match = err.context.match(/\[(\d+)\]$/);
           const idx = match ? Number(match[1]) : -1;
           const shardId = idx >= 0 ? shardIds[idx] : undefined;
-          const expectedHash =
-            idx >= 0 && shardHashes ? shardHashes[idx] : undefined;
-          throw new ShardIntegrityError(
-            shardId ?? shardIds[0] ?? 'unknown',
-            expectedHash ?? '',
-          );
+          throw new ShardIntegrityError(shardId ?? shardIds[0] ?? 'unknown');
         }
         if (err instanceof CorruptShardManifest) {
           throw err;
