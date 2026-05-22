@@ -47,11 +47,23 @@ export default defineConfig(({ mode }) => {
   // Refuse to build a production bundle if the weak-kdf redirect is on,
   // and refuse to build at all if the canonical WASM has been overwritten
   // with the test-only weak-kdf bytes.
-  if (mode === 'production') {
+  //
+  // Gate semantics (aligned with scripts/verify-production-wasm-no-weak-kdf.mjs,
+  // ci-fail-2026-05-22-vite-prod-guard-weak-kdf): we gate on the actual
+  // production deployment signal — NODE_ENV=production OR
+  // MOSAIC_PRODUCTION_BUILD=1 — NOT on vite's `mode`. `vite build` defaults
+  // mode='production' even for legitimate E2E images that need weak-kdf
+  // for fast Argon2; gating on `mode` produced false positives in CI.
+  // The two guards (this one + the prebuild verifier) MUST stay in sync.
+  const isProductionBuild =
+    process.env.NODE_ENV === 'production' || process.env.MOSAIC_PRODUCTION_BUILD === '1';
+  if (isProductionBuild) {
     if (process.env.VITE_E2E_WEAK_KEYS === 'true') {
       throw new Error(
-        'VITE_E2E_WEAK_KEYS=true is set during a production build. ' +
-          'Weak KDF must never reach production bundles ' +
+        'VITE_E2E_WEAK_KEYS=true is set during a production build ' +
+          '(NODE_ENV=production OR MOSAIC_PRODUCTION_BUILD=1). ' +
+          'This would bundle weak-kdf WASM into a production artifact. ' +
+          'Unset VITE_E2E_WEAK_KEYS or use the E2E build target ' +
           '(security-review-2026-05-20-02).',
       );
     }
