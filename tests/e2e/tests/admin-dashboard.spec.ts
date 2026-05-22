@@ -32,8 +32,12 @@ async function promoteToAdmin(email: string): Promise<void> {
  * Only `/api/v1/admin/quota-defaults` hits the real backend (lightweight call).
  */
 async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
-  const userId = '00000000-0000-0000-0000-000000000001';
-  const albumId = '00000000-0000-0000-0000-000000000002';
+  // RFC 4122 v4 UUIDs (version nibble = 4, variant nibble = 8/9/a/b).
+  // The frontend's Zod schemas use `z.string().uuid()` which rejects
+  // nil UUIDs (00000000-...) — those have version=0 and would surface
+  // as a 500 "Invalid response shape" in the admin page error state.
+  const userId = '11111111-1111-4111-8111-111111111111';
+  const albumId = '22222222-2222-4222-8222-222222222222';
   const now = new Date().toISOString();
 
   // Register near-limits BEFORE stats — Playwright matches routes in order,
@@ -69,61 +73,75 @@ async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
     });
   });
 
-  await page.route('**/api/v1/admin/users', async (route) => {
+  // Backend wraps list responses in a PagedResult envelope:
+  //   { items: [...], nextSkip: number | null }
+  // The frontend's Zod schemas (AdminUserListEnvelopeSchema /
+  // AdminAlbumListEnvelopeSchema) require this shape — returning a bare
+  // array causes schema validation to fail and the admin page lands in
+  // the error state with empty tables. Keep mocks aligned with the real
+  // contract introduced in commit 3dab0b22 (feat(api): wrap list responses
+  // in PagedResult envelope).
+  await page.route('**/api/v1/admin/users**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([
-        {
-          id: userId,
-          authSub: userEmail,
-          isAdmin: true,
-          createdAt: now,
-          albumCount: 2,
-          totalStorageBytes: 1024 * 1024 * 50,
-          quota: {
-            currentStorageBytes: 1024 * 1024 * 50,
-            currentAlbumCount: 2,
+      body: JSON.stringify({
+        items: [
+          {
+            id: userId,
+            authSub: userEmail,
+            isAdmin: true,
+            createdAt: now,
+            albumCount: 2,
+            totalStorageBytes: 1024 * 1024 * 50,
+            quota: {
+              currentStorageBytes: 1024 * 1024 * 50,
+              currentAlbumCount: 2,
+            },
           },
-        },
-        {
-          id: '00000000-0000-0000-0000-000000000099',
-          authSub: 'other-user@test.local',
-          isAdmin: false,
-          createdAt: now,
-          albumCount: 1,
-          totalStorageBytes: 1024 * 1024 * 10,
-          quota: {
-            currentStorageBytes: 1024 * 1024 * 10,
-            currentAlbumCount: 1,
+          {
+            id: '99999999-9999-4999-8999-999999999999',
+            authSub: 'other-user@test.local',
+            isAdmin: false,
+            createdAt: now,
+            albumCount: 1,
+            totalStorageBytes: 1024 * 1024 * 10,
+            quota: {
+              currentStorageBytes: 1024 * 1024 * 10,
+              currentAlbumCount: 1,
+            },
           },
-        },
-      ]),
+        ],
+        nextSkip: null,
+      }),
     });
   });
 
-  await page.route('**/api/v1/admin/albums', async (route) => {
+  await page.route('**/api/v1/admin/albums**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([
-        {
-          id: albumId,
-          ownerId: userId,
-          ownerAuthSub: userEmail,
-          createdAt: now,
-          photoCount: 10,
-          totalSizeBytes: 1024 * 1024 * 25,
-        },
-        {
-          id: '00000000-0000-0000-0000-000000000003',
-          ownerId: userId,
-          ownerAuthSub: userEmail,
-          createdAt: now,
-          photoCount: 5,
-          totalSizeBytes: 1024 * 1024 * 12,
-        },
-      ]),
+      body: JSON.stringify({
+        items: [
+          {
+            id: albumId,
+            ownerId: userId,
+            ownerAuthSub: userEmail,
+            createdAt: now,
+            photoCount: 10,
+            totalSizeBytes: 1024 * 1024 * 25,
+          },
+          {
+            id: '33333333-3333-4333-8333-333333333333',
+            ownerId: userId,
+            ownerAuthSub: userEmail,
+            createdAt: now,
+            photoCount: 5,
+            totalSizeBytes: 1024 * 1024 * 12,
+          },
+        ],
+        nextSkip: null,
+      }),
     });
   });
 
