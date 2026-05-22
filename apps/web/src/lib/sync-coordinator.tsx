@@ -243,6 +243,51 @@ class SyncCoordinator {
       this.debounceTimers.delete(albumId);
     }
     await this.handleSyncComplete(albumId);
+
+    // validation-final-gate-v101-cert-02: For sequential uploads, the
+    // first photo's manifest INSERT into the local DB occasionally is not
+    // visible to the subsequent `loadAllAlbumPhotos` read inside
+    // `handleSyncComplete` (manifest-finalization → syncEngine.sync →
+    // db.insertManifests → flushSyncCompleteNow → loadAllAlbumPhotos
+    // is a tight chain across worker boundaries and the DB worker queues
+    // writes). When that happens, no promotion match runs for the
+    // pending item, the 30s sync timeout fires, and the overlay sticks
+    // on "Uploading… / Failed".
+    //
+    // If items remain registered as pending after the first pass, retry
+    // sync+delta a small bounded number of times before falling back to
+    // the long timeout. This converts the 30s flake into a sub-second
+    // recovery.
+    const MAX_RETRIES = 4;
+    const RETRY_DELAY_MS = 150;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const stillPending: string[] = [];
+      for (const pending of this.pendingSyncs.values()) {
+        if (pending.albumId === albumId) {
+          stillPending.push(pending.assetId);
+        }
+      }
+      if (stillPending.length === 0) return;
+
+      log.warn(
+        `flushSyncCompleteNow: ${stillPending.length} pending items remain ` +
+          `for album ${albumId} after attempt ${attempt}/${MAX_RETRIES + 1}; ` +
+          `retrying sync+delta`,
+      );
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, RETRY_DELAY_MS),
+      );
+      try {
+        await syncEngine.sync(albumId);
+      } catch (err) {
+        log.warn(`flushSyncCompleteNow retry sync failed`, {
+          attempt,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
+      await this.handleSyncComplete(albumId);
+    }
   }
 
   /**

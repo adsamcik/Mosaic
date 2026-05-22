@@ -277,7 +277,9 @@ export const usePhotoStore = create<PhotoStore>()(
     addPending: (albumId: string, assetId: string, localBlobUrl: string) => {
       set((state) => {
         const album = state.albums.get(albumId);
-        if (!album) return;
+        if (!album) {
+          return;
+        }
 
         // Safety net (option c): if the asset is already known stable
         // (e.g., addStableFromServer or a previous late-promote landed first),
@@ -371,7 +373,9 @@ export const usePhotoStore = create<PhotoStore>()(
     ) => {
       set((state) => {
         const album = state.albums.get(albumId);
-        if (!album) return;
+        if (!album) {
+          return;
+        }
 
         const item = album.items.get(assetId);
         if (item && (item.status === 'syncing' || item.status === 'pending')) {
