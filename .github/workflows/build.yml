@@ -51,6 +51,8 @@ jobs:
           file: ./apps/web/Dockerfile
           push: false
           tags: mosaic-frontend:pr-${{ github.event.number }}
+          build-args: |
+            MOSAIC_PRODUCTION_BUILD=1
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64

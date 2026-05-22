@@ -41,6 +41,14 @@ RUN npm ci
 ARG VITE_E2E_WEAK_KEYS
 ENV VITE_E2E_WEAK_KEYS=${VITE_E2E_WEAK_KEYS}
 
+# Explicit production-build opt-in signal (HIGH security-review-2026-05-20-02,
+# ci-fail-2026-05-22-vite-prod-guard-weak-kdf). When set to "1", the vite
+# config rejects VITE_E2E_WEAK_KEYS=true to prevent weak-kdf WASM from
+# being bundled into a production artifact. Production publish workflows
+# set this to "1"; E2E test image builds leave it unset.
+ARG MOSAIC_PRODUCTION_BUILD
+ENV MOSAIC_PRODUCTION_BUILD=${MOSAIC_PRODUCTION_BUILD}
+
 # Build frontend
 RUN npm run build
 

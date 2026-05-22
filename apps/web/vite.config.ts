@@ -48,20 +48,30 @@ export default defineConfig(({ mode }) => {
   // and refuse to build at all if the canonical WASM has been overwritten
   // with the test-only weak-kdf bytes.
   //
-  // Gate semantics (aligned with scripts/verify-production-wasm-no-weak-kdf.mjs,
-  // ci-fail-2026-05-22-vite-prod-guard-weak-kdf): we gate on the actual
-  // production deployment signal — NODE_ENV=production OR
-  // MOSAIC_PRODUCTION_BUILD=1 — NOT on vite's `mode`. `vite build` defaults
-  // mode='production' even for legitimate E2E images that need weak-kdf
-  // for fast Argon2; gating on `mode` produced false positives in CI.
-  // The two guards (this one + the prebuild verifier) MUST stay in sync.
-  const isProductionBuild =
-    process.env.NODE_ENV === 'production' || process.env.MOSAIC_PRODUCTION_BUILD === '1';
+  // Gate semantics (ci-fail-2026-05-22-vite-prod-guard-weak-kdf):
+  // we gate on the EXPLICIT production opt-in signal MOSAIC_PRODUCTION_BUILD=1
+  // ONLY. We deliberately do NOT consult `mode` or `process.env.NODE_ENV`
+  // here:
+  //   - `mode` defaults to 'production' for any `vite build` (including
+  //     legitimate E2E images that bundle weak-kdf for fast Argon2).
+  //   - `process.env.NODE_ENV` is auto-set to 'production' by vite itself
+  //     before this config evaluates whenever the user has not set it
+  //     explicitly, so it cannot distinguish prod-publish from e2e-test
+  //     builds inside the config.
+  // The sibling prebuild verifier (scripts/verify-production-wasm-no-weak-kdf.mjs)
+  // runs in a separate node process BEFORE vite mutates NODE_ENV, so it
+  // safely keeps its `NODE_ENV === 'production' || MOSAIC_PRODUCTION_BUILD=1`
+  // check. The two guards together still enforce the same invariant: any
+  // build context that opts into production (via either signal at its
+  // respective layer) rejects VITE_E2E_WEAK_KEYS=true.
+  // Production image builds (publish.yml, build.yml frontend image)
+  // set MOSAIC_PRODUCTION_BUILD=1 as a build arg; E2E test images do not.
+  const isProductionBuild = process.env.MOSAIC_PRODUCTION_BUILD === '1';
   if (isProductionBuild) {
     if (process.env.VITE_E2E_WEAK_KEYS === 'true') {
       throw new Error(
         'VITE_E2E_WEAK_KEYS=true is set during a production build ' +
-          '(NODE_ENV=production OR MOSAIC_PRODUCTION_BUILD=1). ' +
+          '(MOSAIC_PRODUCTION_BUILD=1). ' +
           'This would bundle weak-kdf WASM into a production artifact. ' +
           'Unset VITE_E2E_WEAK_KEYS or use the E2E build target ' +
           '(security-review-2026-05-20-02).',
