@@ -119,9 +119,6 @@ function handleComplete(task: UploadTask, _shardIds: string[]): void {
 function handleError(task: UploadTask, error: Error): void {
   const store = usePhotoStore.getState();
 
-  // Check if this is a permanent failure (max retries exceeded)
-  const isPermanentFailure = task.status === 'permanently_failed';
-
   if (!registeredTasks.has(task.id)) {
     // Task was never added to store (error before first progress)
     log.debug(
@@ -129,6 +126,27 @@ function handleError(task: UploadTask, error: Error): void {
     );
     return;
   }
+
+  // Content-hash dedup: the upload was rejected because an identical photo
+  // already exists in this album. The duplicate task is NOT a "failure" from
+  // the user's perspective - the photo is already present as the original
+  // stable entry. Remove the leaked pending overlay (which was added by the
+  // onProgress fired by upload-queue before throwing DuplicateUploadError)
+  // so the gallery shows only the original photo and any waitForSync()-style
+  // observers see pending drop to zero.
+  if (task.status === 'duplicate') {
+    store.removePending(task.albumId, task.id);
+    registeredTasks.delete(task.id);
+    syncCoordinator.cancelPendingSync(task.albumId, task.id);
+    log.info(
+      `Duplicate upload skipped: albumId=${task.albumId}, assetId=${task.id}, ` +
+        `existing=${task.duplicateOfPhotoId ?? 'unknown'}`,
+    );
+    return;
+  }
+
+  // Check if this is a permanent failure (max retries exceeded)
+  const isPermanentFailure = task.status === 'permanently_failed';
 
   if (isPermanentFailure) {
     // Permanent failure - mark as failed but keep visible for user action

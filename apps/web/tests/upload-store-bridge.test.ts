@@ -245,6 +245,45 @@ describe('Upload Store Bridge', () => {
 
       expect(photo?.error).toBe('Max retries exceeded');
     });
+
+    // Regression: validation-final-gate-v101-final-01
+    // When the upload queue detects a content-hash duplicate it fires
+    // onProgress (adding a pending overlay) then onError with the task
+    // marked as `status: 'duplicate'`. The bridge must remove the pending
+    // overlay entirely - the original photo is already in the album as a
+    // stable entry, and leaving the duplicate as `pending` would leak it
+    // forever and cause waitForSync()-style observers to time out.
+    it('removes pending entry when upload is rejected as a duplicate', async () => {
+      const { syncCoordinator } = await import('../src/lib/sync-coordinator');
+      cleanup = initUploadStoreBridge();
+
+      const task = createMockTask({
+        progress: 1,
+        currentAction: 'finalizing',
+      });
+
+      // onProgress adds a pending overlay (matches upload-queue duplicate path)
+      uploadQueue.onProgress?.(task);
+
+      let photo = usePhotoStore.getState().getPhoto(task.albumId, task.id);
+      expect(photo).toBeDefined();
+      expect(photo?.status).toBe('pending');
+
+      // Now the duplicate error arrives with task.status === 'duplicate'
+      task.status = 'duplicate';
+      task.duplicateOfPhotoId = 'existing-photo-789';
+      uploadQueue.onError?.(
+        task,
+        new Error('Duplicate upload (content hash matches existing photo)'),
+      );
+
+      photo = usePhotoStore.getState().getPhoto(task.albumId, task.id);
+      expect(photo).toBeUndefined();
+      expect(syncCoordinator.cancelPendingSync).toHaveBeenCalledWith(
+        task.albumId,
+        task.id,
+      );
+    });
   });
 
   describe('cancelUploadInStore', () => {

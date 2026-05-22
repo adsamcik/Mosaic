@@ -325,9 +325,16 @@ test.describe('Photo Download - ZK Round-Trip Verification @p1 @photo @crypto @s
 
       const gallery = new GalleryPage(user.page);
 
-      // Upload 2 photos
+      // Upload 2 photos with distinct content. Each photo must hash differently
+      // so the client-side content-hash dedup does not collapse them into a
+      // single stable entry (which would leave the second upload as a
+      // "duplicate" with no new gallery item).
+      const colors: [number, number, number][] = [
+        [255, 64, 64],
+        [64, 64, 255],
+      ];
       for (let i = 1; i <= 2; i++) {
-        const testImage = generateTestImage('tiny');
+        const testImage = generateTestImage('tiny', colors[i - 1]);
         await gallery.uploadPhoto(testImage, testContext.generatePhotoName(i));
       }
       await gallery.expectPhotoCount(2);
