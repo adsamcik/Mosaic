@@ -232,9 +232,16 @@ test.describe('UI Interactions @p2 @ui @fast', () => {
 
       const gallery = new GalleryPage(user.page);
 
-      // Upload photos
+      // Upload photos with distinct byte content so the client-side
+      // content-hash dedup does not collapse them into a single entry.
+      const colors: [number, number, number][] = [
+        [255, 64, 64],
+        [64, 255, 64],
+        [64, 64, 255],
+        [255, 255, 64],
+      ];
       for (let i = 1; i <= 4; i++) {
-        const testImage = generateTestImage('tiny');
+        const testImage = generateTestImage('tiny', colors[i - 1]);
         await gallery.uploadPhoto(testImage, `grid-photo-${i}.png`);
       }
 

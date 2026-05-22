@@ -79,18 +79,18 @@ test.describe('Photo Workflow: Upload & Display @p1 @photo @crypto @slow', () =>
     page,
   }) => {
     const gallery = new GalleryPage(page);
-    const testImage = generateTestImage();
 
-    // Upload 3 photos
-    await gallery.uploadPhoto(testImage, 'photo1.png');
+    // Upload 3 photos with distinct byte content so the client-side
+    // content-hash dedup does not collapse them into a single entry.
+    await gallery.uploadPhoto(generateTestImage('tiny', [255, 64, 64]), 'photo1.png');
     await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
 
-    await gallery.uploadPhoto(testImage, 'photo2.png');
+    await gallery.uploadPhoto(generateTestImage('tiny', [64, 255, 64]), 'photo2.png');
     await expect(async () => {
       expect(await gallery.photos.count()).toBeGreaterThanOrEqual(2);
     }).toPass({ timeout: 60000 });
 
-    await gallery.uploadPhoto(testImage, 'photo3.png');
+    await gallery.uploadPhoto(generateTestImage('tiny', [64, 64, 255]), 'photo3.png');
     await expect(async () => {
       expect(await gallery.photos.count()).toBeGreaterThanOrEqual(3);
     }).toPass({ timeout: 60000 });
@@ -279,12 +279,12 @@ test.describe('Photo Workflow: Lightbox/Full View @p1 @photo @gallery', () => {
     const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
-    // Upload multiple photos
-    const testImage = generateTestImage();
-    await gallery.uploadPhoto(testImage, 'nav-photo1.png');
+    // Upload multiple photos with distinct byte content so the client-side
+    // content-hash dedup does not collapse them into a single entry.
+    await gallery.uploadPhoto(generateTestImage('tiny', [255, 64, 64]), 'nav-photo1.png');
     await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
 
-    await gallery.uploadPhoto(testImage, 'nav-photo2.png');
+    await gallery.uploadPhoto(generateTestImage('tiny', [64, 64, 255]), 'nav-photo2.png');
     await expect(async () => {
       expect(await gallery.photos.count()).toBeGreaterThanOrEqual(2);
     }).toPass({ timeout: 60000 });
@@ -415,12 +415,12 @@ test.describe('Photo Workflow: Deletion @p1 @photo', () => {
       const gallery = new GalleryPage(page);
       await gallery.waitForLoad();
 
-      // Upload two photos
-      const testImage = generateTestImage();
-      await gallery.uploadPhoto(testImage, 'persist-photo1.png');
+      // Upload two photos with distinct byte content so the client-side
+      // content-hash dedup does not collapse them into a single entry.
+      await gallery.uploadPhoto(generateTestImage('tiny', [255, 64, 64]), 'persist-photo1.png');
       await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
 
-      await gallery.uploadPhoto(testImage, 'persist-photo2.png');
+      await gallery.uploadPhoto(generateTestImage('tiny', [64, 64, 255]), 'persist-photo2.png');
       await expect(async () => {
         expect(await gallery.photos.count()).toBeGreaterThanOrEqual(2);
       }).toPass({ timeout: 60000 });
@@ -500,11 +500,11 @@ test.describe('Photo Workflow: Keyboard Navigation @p2 @photo @a11y', () => {
     const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
-    // Upload photos
-    const testImage = generateTestImage();
-    await gallery.uploadPhoto(testImage, 'key-nav1.png');
-    await gallery.uploadPhoto(testImage, 'key-nav2.png');
-    await gallery.uploadPhoto(testImage, 'key-nav3.png');
+    // Upload photos with distinct byte content so the client-side
+    // content-hash dedup does not collapse them into a single entry.
+    await gallery.uploadPhoto(generateTestImage('tiny', [255, 64, 64]), 'key-nav1.png');
+    await gallery.uploadPhoto(generateTestImage('tiny', [64, 255, 64]), 'key-nav2.png');
+    await gallery.uploadPhoto(generateTestImage('tiny', [64, 64, 255]), 'key-nav3.png');
 
     await expect(async () => {
       expect(await gallery.photos.count()).toBeGreaterThanOrEqual(3);

@@ -178,12 +178,18 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
       await gallery.waitForLoad();
 
       // Upload photos (identical buffer is intentional: this test verifies
-      // reload persistence, not multi-photo dedup behavior).
+      // reload persistence and content-hash dedup behavior).
       const testImage = generateTestImage();
       await gallery.uploadPhoto(testImage, 'reload-photo-1.png');
       await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
 
-      await gallery.uploadPhoto(testImage, 'reload-photo-2.png');
+      // Second upload of the identical buffer is intentionally deduped by the
+      // client-side content-hash check. We use the low-level setFileInput
+      // because uploadPhoto() asserts the visible photo count increases, which
+      // (correctly) does not happen for a content-hash duplicate.
+      await gallery.setFileInput(testImage, 'reload-photo-2.png');
+      // Allow the dedup short-circuit to settle (worker dispatch + onError).
+      await page.waitForTimeout(500);
       // After reload only finalized server photos appear. With identical image
       // content (intentional for this test), the upload pipeline dedupes the
       // second upload by content hash, so the server has exactly 1 photo.
@@ -449,20 +455,21 @@ test.describe('Sync: Incremental Updates @p1 @sync', () => {
     const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
-    // Upload first photo
-    const testImage = generateTestImage();
-    await gallery.uploadPhoto(testImage, 'incremental-1.png');
+    // Upload first photo. Each photo must have distinct byte content so
+    // the client-side content-hash dedup does not collapse them into a
+    // single entry.
+    await gallery.uploadPhoto(generateTestImage('tiny', [255, 64, 64]), 'incremental-1.png');
     await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
     expect(await gallery.photos.count()).toBe(1);
 
     // Upload second photo - should appear without reload
-    await gallery.uploadPhoto(testImage, 'incremental-2.png');
+    await gallery.uploadPhoto(generateTestImage('tiny', [64, 255, 64]), 'incremental-2.png');
     await expect(async () => {
       expect(await gallery.photos.count()).toBe(2);
     }).toPass({ timeout: 60000 });
 
     // Upload third photo
-    await gallery.uploadPhoto(testImage, 'incremental-3.png');
+    await gallery.uploadPhoto(generateTestImage('tiny', [64, 64, 255]), 'incremental-3.png');
     await expect(async () => {
       expect(await gallery.photos.count()).toBe(3);
     }).toPass({ timeout: 60000 });
@@ -492,12 +499,12 @@ test.describe('Sync: Incremental Updates @p1 @sync', () => {
     const gallery = new GalleryPage(page);
     await gallery.waitForLoad();
 
-    // Upload photos
-    const testImage = generateTestImage();
-    await gallery.uploadPhoto(testImage, 'delete-sync-1.png');
+    // Upload photos with distinct byte content so the client-side
+    // content-hash dedup does not collapse them into a single entry.
+    await gallery.uploadPhoto(generateTestImage('tiny', [255, 64, 64]), 'delete-sync-1.png');
     await expect(gallery.photos.first()).toBeVisible({ timeout: 60000 });
 
-    await gallery.uploadPhoto(testImage, 'delete-sync-2.png');
+    await gallery.uploadPhoto(generateTestImage('tiny', [64, 64, 255]), 'delete-sync-2.png');
     await expect(async () => {
       expect(await gallery.photos.count()).toBeGreaterThanOrEqual(2);
     }).toPass({ timeout: 60000 });

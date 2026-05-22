@@ -89,9 +89,10 @@ test.describe('Gallery Search @p1 @gallery @ui', () => {
     await createAlbumViaUI(user.page, `Search Clear ${testContext.testId}`);
     const gallery = new GalleryPage(user.page);
 
-    const testImage = generateTestImage('tiny');
-    await gallery.uploadPhoto(testImage, 'alpha.png');
-    await gallery.uploadPhoto(testImage, 'bravo.png');
+    // Each photo must have distinct byte content so the client-side
+    // content-hash dedup does not collapse them into a single entry.
+    await gallery.uploadPhoto(generateTestImage('tiny', [255, 64, 64]), 'alpha.png');
+    await gallery.uploadPhoto(generateTestImage('tiny', [64, 64, 255]), 'bravo.png');
 
     // Confirm both photos are visible
     await gallery.expectPhotoCount(2, 30000);

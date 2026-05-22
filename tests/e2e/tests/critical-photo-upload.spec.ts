@@ -206,23 +206,29 @@ test.describe('Critical Flow: Photo Upload Round-Trip @p0 @critical @photo @cryp
     const initialCount = await gallery.photos.count();
     expect(initialCount).toBe(0);
 
-    // Upload multiple photos using the proven uploadPhoto method
-    const testImage = generateTestImage();
+    // Upload multiple photos using the proven uploadPhoto method.
+    // Each photo must have distinct byte content so the client-side
+    // content-hash dedup does not collapse them into a single stable entry.
+    const colors: [number, number, number][] = [
+      [255, 64, 64],
+      [64, 255, 64],
+      [64, 64, 255],
+    ];
 
     // Upload photo 1
-    await gallery.uploadPhoto(testImage, 'photo1.png');
+    await gallery.uploadPhoto(generateTestImage('tiny', colors[0]), 'photo1.png');
     await expect(gallery.photos.first()).toBeVisible({ timeout: 30000 });
     expect(await gallery.photos.count()).toBeGreaterThanOrEqual(1);
 
     // Upload photo 2
-    await gallery.uploadPhoto(testImage, 'photo2.png');
+    await gallery.uploadPhoto(generateTestImage('tiny', colors[1]), 'photo2.png');
     await expect(async () => {
       const count = await gallery.photos.count();
       expect(count).toBeGreaterThanOrEqual(2);
     }).toPass({ timeout: 30000 });
 
     // Upload photo 3
-    await gallery.uploadPhoto(testImage, 'photo3.png');
+    await gallery.uploadPhoto(generateTestImage('tiny', colors[2]), 'photo3.png');
     await expect(async () => {
       const count = await gallery.photos.count();
       expect(count).toBeGreaterThanOrEqual(3);

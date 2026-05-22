@@ -126,11 +126,12 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
       // INTENTIONAL: Wait for gallery's animation system initialization before uploading
       await user.page.waitForTimeout(200);
 
-      // Upload multiple photos
+      // Upload multiple photos with distinct byte content so the client-side
+      // content-hash dedup does not collapse them into a single entry.
       const images = [
-        { buffer: generateTestImage('tiny'), filename: 'stagger-1.png' },
-        { buffer: generateTestImage('tiny'), filename: 'stagger-2.png' },
-        { buffer: generateTestImage('tiny'), filename: 'stagger-3.png' },
+        { buffer: generateTestImage('tiny', [255, 64, 64]), filename: 'stagger-1.png' },
+        { buffer: generateTestImage('tiny', [64, 255, 64]), filename: 'stagger-2.png' },
+        { buffer: generateTestImage('tiny', [64, 64, 255]), filename: 'stagger-3.png' },
       ];
       await gallery.uploadMultiplePhotos(images);
 
@@ -268,10 +269,16 @@ test.describe('Gallery Animations @p2 @gallery @ui', () => {
 
       const gallery = new GalleryPage(user.page);
 
-      // Upload enough photos to require scrolling
+      // Upload enough photos to require scrolling. Each photo must have
+      // distinct byte content so the client-side content-hash dedup does
+      // not collapse them into a single entry.
       const images: Array<{ buffer: Buffer; filename: string }> = [];
       for (let i = 0; i < 12; i++) {
-        images.push({ buffer: generateTestImage('tiny'), filename: `scroll-${i}.png` });
+        // Distribute hues across the 12 photos for guaranteed-distinct content.
+        const r = (i * 37) & 0xff;
+        const g = (i * 73 + 80) & 0xff;
+        const b = (i * 113 + 160) & 0xff;
+        images.push({ buffer: generateTestImage('tiny', [r, g, b]), filename: `scroll-${i}.png` });
       }
       await gallery.uploadMultiplePhotos(images);
 

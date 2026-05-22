@@ -56,12 +56,12 @@ test.describe('Sharing: Two-User Collaboration @p1 @sharing @multi-user @slow', 
     const aliceGallery = new GalleryPage(alice);
     await aliceGallery.waitForLoad();
 
-    // Upload photos
-    const testImage = generateTestImage();
-    await aliceGallery.uploadPhoto(testImage, 'shared-photo-1.png');
+    // Upload photos with distinct byte content so the client-side
+    // content-hash dedup does not collapse them into a single entry.
+    await aliceGallery.uploadPhoto(generateTestImage('tiny', [255, 64, 64]), 'shared-photo-1.png');
     await expect(aliceGallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
 
-    await aliceGallery.uploadPhoto(testImage, 'shared-photo-2.png');
+    await aliceGallery.uploadPhoto(generateTestImage('tiny', [64, 64, 255]), 'shared-photo-2.png');
     await expect(async () => {
       expect(await aliceGallery.photos.count()).toBeGreaterThanOrEqual(2);
     }).toPass({ timeout: CRYPTO_TIMEOUT.BATCH });

@@ -48,9 +48,15 @@ test.describe('Photo Lifecycle @p1 @photo @crypto', () => {
 
       const gallery = new GalleryPage(user.page);
 
-      // Upload 3 photos
+      // Upload 3 photos with distinct byte content so the client-side
+      // content-hash dedup does not collapse them into a single entry.
+      const colors: [number, number, number][] = [
+        [255, 64, 64],
+        [64, 255, 64],
+        [64, 64, 255],
+      ];
       for (let i = 1; i <= 3; i++) {
-        const testImage = generateTestImage('tiny');
+        const testImage = generateTestImage('tiny', colors[i - 1]);
         await gallery.uploadPhoto(testImage, testContext.generatePhotoName(i));
       }
 
