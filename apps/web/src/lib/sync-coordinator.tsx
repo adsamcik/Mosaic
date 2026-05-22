@@ -315,9 +315,8 @@ class SyncCoordinator {
 
       this.totalRetryAttempts++;
       if (import.meta.env.DEV) {
-        // eslint-disable-next-line no-console
-        console.info(
-          `[sync-coordinator] flushSyncCompleteNow retry attempt ` +
+        log.info(
+          `flushSyncCompleteNow retry attempt ` +
             `${attempt}/${MAX_RETRIES} for album ${albumId} ` +
             `(total retries so far: ${this.totalRetryAttempts})`,
         );
