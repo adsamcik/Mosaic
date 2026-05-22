@@ -4,7 +4,7 @@
 # Multi-stage build for optimized production image
 
 # Build stage
-FROM node:22-alpine@sha256:4d64b49e6c891c8fc821007cb1cdc6c0db7773110ac2c34bf2e6960adef62ed3 AS build
+FROM node:26-alpine@sha256:7c6af15abe4e3de859690e7db171d0d711bf37d27528eddfe625b2fe89e097f8 AS build
 WORKDIR /app
 
 # Copy workspace root files for monorepo support
