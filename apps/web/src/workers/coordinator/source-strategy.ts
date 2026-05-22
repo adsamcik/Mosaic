@@ -29,15 +29,19 @@ export interface SourceStrategy {
   readonly kind: SourceStrategyKind;
 
   /** Fetch one encrypted shard's bytes by ID. Aborts honored. */
-  fetchShard(shardId: string, signal: AbortSignal): Promise<Uint8Array>;
+  fetchShard(shardId: string, signal: AbortSignal | undefined): Promise<Uint8Array>;
 
   /**
    * Fetch many shards. Implementations choose concurrency. Order of the
    * returned array MUST match `shardIds`.
+   *
+   * `signal` is `undefined` when the strategy is invoked across a Comlink
+   * proxy boundary (AbortSignal is not structured-cloneable); callers race
+   * the signal on their side instead.
    */
   fetchShards(
     shardIds: ReadonlyArray<string>,
-    signal: AbortSignal,
+    signal: AbortSignal | undefined,
   ): Promise<Uint8Array[]>;
 
   /**

@@ -224,7 +224,14 @@ export async function photosToPlanInput(albumId: string, photos: ReadonlyArray<P
         epochId: photo.epochId,
         tier: 3,
         expectedHash: hashes[i] !== undefined ? decodeShardHash(hashes[i]!) : new Uint8Array(32),
-        declaredSize: 0,
+        // PhotoMeta does not carry per-shard encrypted sizes, so we pass a
+        // generous upper bound (1 TiB) instead of 0. The rust snapshot
+        // validator rejects any snapshot where `photo.bytes_written` exceeds
+        // the plan's total declared size, so a 0 here makes the very first
+        // commit-after-write fail with rust code 723 (DownloadSnapshotCorrupt).
+        // 1 TiB per shard keeps the sum well within u64 even for thousands
+        // of shards while never being undershot by a real photo.
+        declaredSize: 2 ** 40,
       })),
     });
   }

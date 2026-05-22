@@ -85,4 +85,29 @@ describe('photosToPlanInput — shard-hash format', () => {
     expect(shard.expectedHash.byteLength).toBe(32);
     expect(shard.expectedHash.every((b) => b === 0)).toBe(true);
   });
+
+  // Regression for v3-10 W-A6-6: rust snapshot validator rejects any commit
+  // where `photo.bytes_written > plan_entry.total_bytes`. The plan entry's
+  // `total_bytes` is the sum of each shard's `declaredSize`. When the visitor
+  // flow set declaredSize: 0 (because PhotoMeta does not carry per-shard
+  // encrypted sizes), the very first commit-after-write failed with rust
+  // code 723 (DownloadSnapshotCorrupt) and the ZIP was finalized empty
+  // (22-byte EOCD only). The fix uses a generous per-shard upper bound so
+  // the rust check can never be undershot by a real photo.
+  it('sets declaredSize to a non-zero upper bound large enough for any real photo', async () => {
+    const photo = makePhoto({
+      originalShardIds: ['d'.repeat(32), 'e'.repeat(32)],
+      originalShardHashes: ['0'.repeat(64), '1'.repeat(64)],
+    });
+    const result = await photosToPlanInput('album-1', [photo]);
+    const planPhoto = result.photos[0]!;
+    expect(planPhoto.shards).toHaveLength(2);
+    for (const shard of planPhoto.shards) {
+      // Must be strictly greater than any plausible bytes_written value
+      // (typical real photos are 1-50 MB, hard ceiling ~5 GB).
+      expect(shard.declaredSize).toBeGreaterThan(5 * 1024 * 1024 * 1024);
+      // Stay safely below u64 max so per-photo sums cannot overflow.
+      expect(shard.declaredSize).toBeLessThan(Number.MAX_SAFE_INTEGER);
+    }
+  });
 });

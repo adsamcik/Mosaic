@@ -21,7 +21,7 @@ export function createAuthenticatedSourceStrategy(accountId: string): SourceStra
     getScopeKey(): string {
       return scopeKey;
     },
-    async fetchShard(shardId: string, signal: AbortSignal): Promise<Uint8Array> {
+    async fetchShard(shardId: string, signal: AbortSignal | undefined): Promise<Uint8Array> {
       throwIfAborted(signal);
       const bytes = await downloadShard(shardId);
       throwIfAborted(signal);
@@ -29,7 +29,7 @@ export function createAuthenticatedSourceStrategy(accountId: string): SourceStra
     },
     async fetchShards(
       shardIds: ReadonlyArray<string>,
-      signal: AbortSignal,
+      signal: AbortSignal | undefined,
     ): Promise<Uint8Array[]> {
       throwIfAborted(signal);
       if (shardIds.length === 0) return [];
@@ -44,8 +44,8 @@ export function createAuthenticatedSourceStrategy(accountId: string): SourceStra
   };
 }
 
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) {
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
     throw new DOMException('Download aborted', 'AbortError');
   }
 }

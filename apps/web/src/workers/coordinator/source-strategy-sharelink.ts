@@ -44,7 +44,7 @@ export function createShareLinkSourceStrategy(
    * Other failures keep their current behavior — propagate as ShardDownloadError
    * so the photo-pipeline retry / classification stays unchanged.
    */
-  const fetchOne = async (shardId: string, signal: AbortSignal): Promise<Uint8Array> => {
+  const fetchOne = async (shardId: string, signal: AbortSignal | undefined): Promise<Uint8Array> => {
     throwIfAborted(signal);
     try {
       const bytes = await downloadShardViaShareLink(linkId, shardId, grant);
@@ -79,7 +79,7 @@ export function createShareLinkSourceStrategy(
     fetchShard: fetchOne,
     async fetchShards(
       shardIds: ReadonlyArray<string>,
-      signal: AbortSignal,
+      signal: AbortSignal | undefined,
     ): Promise<Uint8Array[]> {
       throwIfAborted(signal);
       if (shardIds.length === 0) return [];
@@ -137,8 +137,8 @@ export function createShareLinkSourceStrategy(
   };
 }
 
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) {
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
     throw new DOMException('Download aborted', 'AbortError');
   }
 }

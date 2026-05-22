@@ -149,6 +149,37 @@ async function shutdownCryptoPoolForCoordinator(): Promise<void> {
 
 
 /** Singleton worker implementation hosting all Phase 1 download jobs. */
+
+/**
+ * Race a promise against an AbortSignal. Used when the underlying source
+ * strategy lives across a Comlink proxy boundary and cannot receive the
+ * signal directly (AbortSignal is not structured-cloneable). If the signal
+ * aborts, the returned promise rejects with the signal's reason; the
+ * underlying work may continue in the background but its result is discarded.
+ */
+function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => {
+      signal.removeEventListener('abort', onAbort);
+      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (err) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
 export class CoordinatorWorker implements CoordinatorWorkerApi {
   private initialized = false;
   private initializePromise: Promise<{ reconstructedJobs: number }> | null = null;
@@ -733,7 +764,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
         for (const entry of manifest) {
           yield {
             ...entry,
-            fetchShard: (shardId, signal) => source.fetchShard(shardId, signal),
+            fetchShard: (shardId, signal) => raceWithAbort(source.fetchShard(shardId, undefined), signal),
             resolveThumbKey: (_photoId, epochId) => {
               const epoch = Number.parseInt(epochId, 10);
               return source.resolveKey(albumId, Number.isFinite(epoch) ? epoch : 0);
@@ -997,6 +1028,7 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
         log.warn('Download driver stopped unexpectedly', {
           jobId: shortId(jobId),
           errorName: error instanceof Error ? error.name : 'Unknown',
+          errorMessage: error instanceof Error ? error.message : String(error),
         });
       })
       .finally(() => {
@@ -1083,9 +1115,17 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   }
 
   private pipelineDeps(pool: CryptoPool, source: SourceStrategy): Parameters<typeof executePhotoTask>[1] {
+    // AbortSignal is NOT structured-cloneable across Comlink proxies. When the
+    // source strategy lives on the main thread (visitor share-link case),
+    // passing `signal` directly throws DataCloneError on postMessage. We race
+    // the signal on the worker side and never pass it across the strategy
+    // call. For in-worker strategies (auth) this trades early request-level
+    // abort for caller-level abort, which is acceptable; the strategy itself
+    // tolerates an undefined signal.
     return {
       pool,
-      fetchShards: (shardIds: string[], signal: AbortSignal): Promise<Uint8Array[]> => source.fetchShards(shardIds, signal),
+      fetchShards: (shardIds: string[], signal: AbortSignal): Promise<Uint8Array[]> =>
+        raceWithAbort(source.fetchShards(shardIds, undefined), signal),
       getEpochSeed: (albumId: string, epochId: number) => source.resolveKey(albumId, epochId),
       writePhotoChunk: opfsStaging.writePhotoChunk,
       truncatePhoto: opfsStaging.truncatePhotoTo,

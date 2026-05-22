@@ -1071,7 +1071,10 @@ describe('CoordinatorWorker', () => {
     await cbor.awaitScheduledDriver(worker, jobId);
 
     expect(cbor.getJobSource(worker, jobId)).toBe(customSource);
-    expect(fetchSpy).toHaveBeenCalledWith(['shard-x'], expect.any(AbortSignal));
+    // After v3-10 fix: signal is consumed worker-side via raceWithAbort and
+    // never crosses the SourceStrategy boundary (AbortSignal is not
+    // structured-cloneable across Comlink proxies for visitor flows).
+    expect(fetchSpy).toHaveBeenCalledWith(['shard-x'], undefined);
     expect(resolveSpy).toHaveBeenCalledWith(albumId, 7);
     expect((await worker.getJob(jobId))?.phase).toBe('Done');
   });
