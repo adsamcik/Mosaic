@@ -76,6 +76,23 @@ class SyncCoordinator {
   private contentConflictListeners = new Set<ContentConflictListener>();
 
   /**
+   * Per-album in-flight flush promises. Concurrent calls to
+   * `flushSyncCompleteNow(albumId)` while a previous flush is still
+   * executing its bounded retry sequence share the same promise instead
+   * of each spawning their own 1 + MAX_RETRIES sync passes
+   * (HIGH security-review-2026-05-22-05).
+   */
+  private flushInFlight = new Map<string, Promise<void>>();
+
+  /**
+   * Monotonic counter for retry attempts inside `performFlushWithRetry`.
+   * Exposed via DEV-only telemetry to make the v101-cert-02 mitigation
+   * visible without polluting production logs
+   * (MED security-review-2026-05-22-05 follow-up).
+   */
+  private totalRetryAttempts = 0;
+
+  /**
    * Initialize the coordinator.
    * Call once at app startup.
    */
@@ -237,6 +254,33 @@ class SyncCoordinator {
    * single-photo uploads where only one sync-complete event fires).
    */
   async flushSyncCompleteNow(albumId: string): Promise<void> {
+    // HIGH security-review-2026-05-22-05: coalesce concurrent flushes
+    // for the same album so N parallel callers share a single bounded
+    // retry sequence (1 + MAX_RETRIES syncs) instead of spawning N
+    // independent sequences (N * (1 + MAX_RETRIES) syncs).
+    const existing = this.flushInFlight.get(albumId);
+    if (existing) {
+      return existing;
+    }
+
+    const flushPromise = (async () => {
+      try {
+        await this.performFlushWithRetry(albumId);
+      } finally {
+        this.flushInFlight.delete(albumId);
+      }
+    })();
+
+    this.flushInFlight.set(albumId, flushPromise);
+    return flushPromise;
+  }
+
+  /**
+   * Internal retry-loop body for `flushSyncCompleteNow`. Always invoked
+   * through the `flushInFlight` coalescing wrapper above so concurrent
+   * flushes for the same album share one bounded retry sequence.
+   */
+  private async performFlushWithRetry(albumId: string): Promise<void> {
     const existing = this.debounceTimers.get(albumId);
     if (existing) {
       clearTimeout(existing);
@@ -268,6 +312,16 @@ class SyncCoordinator {
         }
       }
       if (stillPending.length === 0) return;
+
+      this.totalRetryAttempts++;
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.info(
+          `[sync-coordinator] flushSyncCompleteNow retry attempt ` +
+            `${attempt}/${MAX_RETRIES} for album ${albumId} ` +
+            `(total retries so far: ${this.totalRetryAttempts})`,
+        );
+      }
 
       log.warn(
         `flushSyncCompleteNow: ${stillPending.length} pending items remain ` +
