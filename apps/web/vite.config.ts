@@ -193,9 +193,17 @@ export default defineConfig(({ mode }) => {
       },
     },
 
-    // Worker configuration
+    // Worker configuration.
+    //
+    // CRITICAL (ci-fail-2026-05-23-01-e2e-rust-208): Vite does NOT apply the
+    // main `plugins` array to worker sub-builds by default. We must re-register
+    // the weak-kdf redirect plugin here, otherwise `crypto.worker` and
+    // `coordinator.worker` import the production WASM (strong Argon2 params)
+    // even when VITE_E2E_WEAK_KEYS=true is set, which makes the workers reject
+    // the weak E2E password derivations with rust code 208 (KdfProfileTooWeak).
     worker: {
       format: 'es',
+      plugins: () => [mosaicWeakKdfRedirectPlugin()],
     },
 
     build: {
