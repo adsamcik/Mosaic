@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   decryptShardWithLinkTierHandle: vi.fn(),
   peekEnvelopeHeader: vi.fn(),
   verifyShardIntegrity: vi.fn(),
+  verifyShardIntegrityHelper: vi.fn(),
 }));
 
 vi.mock('../crypto-client', () => ({
@@ -33,6 +34,16 @@ vi.mock('../shard-service', () => ({
   downloadShardViaShareLink: mocks.downloadShardViaShareLink,
 }));
 
+vi.mock('../shard-integrity', () => ({
+  verifyShardIntegrity: mocks.verifyShardIntegrityHelper,
+  ShardIntegrityMismatchError: class ShardIntegrityMismatchError extends Error {
+    constructor(context: string) {
+      super(`Shard integrity check failed: ${context}`);
+      this.name = 'ShardIntegrityMismatchError';
+    }
+  },
+}));
+
 import { createShareLinkOriginalResolver } from '../shared-album-download';
 
 function createPhoto(overrides: Partial<PhotoMeta> = {}): PhotoMeta {
@@ -57,6 +68,7 @@ describe('createShareLinkOriginalResolver', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.verifyShardIntegrity.mockResolvedValue(true);
+    mocks.verifyShardIntegrityHelper.mockResolvedValue(undefined);
   });
 
   it('downloads, verifies, decrypts, and concatenates explicit original shards', async () => {
@@ -98,15 +110,17 @@ describe('createShareLinkOriginalResolver', () => {
       'original-b',
       'grant-token',
     );
-    expect(mocks.verifyShardIntegrity).toHaveBeenNthCalledWith(
+    expect(mocks.verifyShardIntegrityHelper).toHaveBeenNthCalledWith(
       1,
       encryptedA,
-      new Uint8Array(32),
+      'A'.repeat(43),
+      expect.stringContaining('shared-album'),
     );
-    expect(mocks.verifyShardIntegrity).toHaveBeenNthCalledWith(
+    expect(mocks.verifyShardIntegrityHelper).toHaveBeenNthCalledWith(
       2,
       encryptedB,
-      new Uint8Array(32),
+      'A'.repeat(43),
+      expect.stringContaining('shared-album'),
     );
     expect(mocks.decryptShardWithLinkTierHandle).toHaveBeenNthCalledWith(
       1,
@@ -153,7 +167,7 @@ describe('createShareLinkOriginalResolver', () => {
     );
 
     expect(mocks.downloadShardViaShareLink).toHaveBeenCalledTimes(3);
-    expect(mocks.verifyShardIntegrity).toHaveBeenCalledTimes(3);
+    expect(mocks.verifyShardIntegrityHelper).toHaveBeenCalledTimes(3);
     expect(mocks.decryptShardWithLinkTierHandle).toHaveBeenNthCalledWith(
       1,
       tierKey,

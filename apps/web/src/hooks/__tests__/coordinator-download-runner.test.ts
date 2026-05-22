@@ -157,6 +157,43 @@ describe('photosToPlanInput — shard-hash format', () => {
       const result = await photosToPlanInput('album-1', [photo]);
       expect(result.photos[0]!.shards[0]!.expectedHash.byteLength).toBe(32);
     });
+
+    // Regression for HIGH `security-review-2026-05-22-03`: empty-string
+    // hash entries used to be treated as legacy "missing hash" and
+    // returned 32 zero bytes. A server supplying `originalShardHashes:
+    // ['']` could thereby bypass the fail-closed path. Empty / whitespace
+    // entries must now throw.
+    it('rejects empty-string hash entry in originalShardHashes', async () => {
+      const photo = makePhoto({
+        originalShardIds: ['3'.repeat(32)],
+        originalShardHashes: [''],
+      });
+      await expect(photosToPlanInput('album-1', [photo])).rejects.toBeInstanceOf(
+        CorruptShardHashError,
+      );
+    });
+
+    it('rejects whitespace-only hash entry in originalShardHashes', async () => {
+      const photo = makePhoto({
+        originalShardIds: ['4'.repeat(32)],
+        originalShardHashes: ['   '],
+      });
+      await expect(photosToPlanInput('album-1', [photo])).rejects.toBeInstanceOf(
+        CorruptShardHashError,
+      );
+    });
+
+    it('still returns zero digest when neither originalShardHashes nor shardHashes is present (legacy missing path)', async () => {
+      // Truly missing — both fields undefined. This is the only branch
+      // that may emit a zero digest.
+      const photo = makePhoto({
+        originalShardIds: ['5'.repeat(32)],
+        // explicitly no shardHashes, no originalShardHashes
+      });
+      const result = await photosToPlanInput('album-1', [photo]);
+      expect(result.photos[0]!.shards[0]!.expectedHash.byteLength).toBe(32);
+      expect(result.photos[0]!.shards[0]!.expectedHash.every((b) => b === 0)).toBe(true);
+    });
   });
 
   // Regression for v3-10 W-A6-6: rust snapshot validator rejects any commit

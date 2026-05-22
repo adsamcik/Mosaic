@@ -28,6 +28,18 @@ vi.mock('../shard-service', () => ({
   downloadShards: vi.fn(),
 }));
 
+vi.mock('../shard-integrity', () => ({
+  verifyShardIntegrity: vi.fn().mockResolvedValue(undefined),
+  ShardIntegrityMismatchError: class ShardIntegrityMismatchError extends Error {
+    public readonly context: string;
+    constructor(context: string) {
+      super(`Shard integrity check failed: ${context}`);
+      this.name = 'ShardIntegrityMismatchError';
+      this.context = context;
+    }
+  },
+}));
+
 vi.mock('../logger', () => ({
   createLogger: () => ({
     info: vi.fn(),
@@ -42,6 +54,7 @@ import { downloadZip } from 'client-zip';
 import { getCryptoClient } from '../crypto-client';
 import { getOrFetchEpochKey } from '../epoch-key-service';
 import { downloadShards } from '../shard-service';
+import { verifyShardIntegrity } from '../shard-integrity';
 import {
   downloadAlbumAsZip,
   supportsFileSystemAccess,
@@ -52,6 +65,7 @@ const mockDownloadZip = vi.mocked(downloadZip);
 const mockGetCryptoClient = vi.mocked(getCryptoClient);
 const mockGetOrFetchEpochKey = vi.mocked(getOrFetchEpochKey);
 const mockDownloadShards = vi.mocked(downloadShards);
+const mockVerifyShardIntegrity = vi.mocked(verifyShardIntegrity);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -314,9 +328,10 @@ describe('album-download-service', () => {
         albumId: 'album-1',
       });
 
-      expect(mockCryptoClient.verifyShardIntegrity).toHaveBeenCalledWith(
+      expect(mockVerifyShardIntegrity).toHaveBeenCalledWith(
         expect.any(Uint8Array),
-        new Uint8Array(32),
+        VALID_SHA256,
+        expect.stringContaining('album-download'),
       );
     });
 
@@ -333,9 +348,10 @@ describe('album-download-service', () => {
         albumId: 'album-1',
       });
 
-      expect(mockCryptoClient.verifyShardIntegrity).toHaveBeenCalledWith(
+      expect(mockVerifyShardIntegrity).toHaveBeenCalledWith(
         expect.any(Uint8Array),
-        new Uint8Array(32),
+        VALID_SHA256,
+        expect.stringContaining('album-download'),
       );
     });
 

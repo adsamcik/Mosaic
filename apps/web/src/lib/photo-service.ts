@@ -20,8 +20,8 @@ import { createLogger } from './logger';
 import {
   assertValidEpochHandle,
   type EpochReadHandleId,
-  verifyDownloadedShard,
 } from './read-path-crypto';
+import { verifyShardIntegrity } from './shard-integrity';
 
 const log = createLogger('PhotoService');
 
@@ -316,16 +316,25 @@ export async function loadPhoto(
         const shard = encryptedShards[i]!;
         const expectedHash = shardHashes?.[i];
 
-        // Verify integrity if hash is available
-        if (expectedHash) {
-          const isValid = await verifyDownloadedShard(
-            crypto,
+        // Verify integrity. Fails closed on empty/whitespace/malformed
+        // (HIGH security-review-2026-05-22-04); skips only when hash is
+        // genuinely absent (null/undefined). On mismatch, surface as the
+        // existing ShardIntegrityError so callers can distinguish from
+        // generic decrypt failures.
+        try {
+          await verifyShardIntegrity(
             shard,
             expectedHash,
+            `photo-service photo=${shardIds[i]} shard=${i}`,
           );
-          if (!isValid) {
-            throw new ShardIntegrityError(shardIds[i]!, expectedHash);
+        } catch (err) {
+          if (
+            err instanceof Error &&
+            err.name === 'ShardIntegrityMismatchError'
+          ) {
+            throw new ShardIntegrityError(shardIds[i]!, expectedHash ?? '');
           }
+          throw err;
         }
 
         const plaintext =

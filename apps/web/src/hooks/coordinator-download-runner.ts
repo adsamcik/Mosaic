@@ -323,17 +323,27 @@ export class CorruptShardHashError extends Error {
 // with `DownloadSnapshotCorrupt` (rust code 723).
 //
 // Behaviour for `value`:
-//   - `null` / `undefined` / empty string → 32 zero bytes (explicit legacy
-//     "missing hash" path; the integrity check downstream will still
-//     reject any real shard against a zero digest because its SHA-256
-//     will never equal zero).
+//   - `null` / `undefined` → 32 zero bytes (explicit legacy "missing hash"
+//     path; the integrity check downstream will still reject any real
+//     shard against a zero digest because its SHA-256 will never equal
+//     zero). This branch is reserved for the case where the manifest
+//     genuinely has no per-shard hash field at all.
+//   - Empty string `''` or whitespace-only → throw `CorruptShardHashError`.
+//     A server-supplied empty string is *not* the same as a missing
+//     field: it indicates manifest corruption or tampering, and must
+//     fail closed (HIGH `security-review-2026-05-22-03`).
 //   - Valid 64-char hex or 32-byte base64url → decoded digest.
 //   - Anything else → throw `CorruptShardHashError`. Fail closed so that
 //     malformed metadata cannot be silently coerced into a zero digest
 //     and masked as a generic decrypt failure later.
-function decodeShardHash(value: string | null | undefined): Uint8Array {
-  if (value === null || value === undefined || value === '') {
+export function decodeShardHash(value: string | null | undefined): Uint8Array {
+  if (value === null || value === undefined) {
     return new Uint8Array(32);
+  }
+  if (value === '' || /^\s*$/.test(value)) {
+    // Explicit empty/whitespace → FAIL CLOSED. A blank string from the
+    // server is a corruption signal, never a "missing hash" signal.
+    throw new CorruptShardHashError('(empty)');
   }
   const clean = value.startsWith('0x') ? value.slice(2) : value;
   if (clean.length === 64 && HEX_RE.test(clean)) {

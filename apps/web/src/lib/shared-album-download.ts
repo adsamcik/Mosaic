@@ -2,8 +2,8 @@ import type { AccessTier as AccessTierType } from './api-types';
 import type { AlbumDownloadResolver } from './album-download-service';
 import { getCryptoClient } from './crypto-client';
 import { createLogger } from './logger';
-import { verifyDownloadedShard } from './read-path-crypto';
 import { downloadShardViaShareLink } from './shard-service';
+import { verifyShardIntegrity } from './shard-integrity';
 import type { LinkTierHandleId, PhotoMeta } from '../workers/types';
 
 const log = createLogger('SharedAlbumDownload');
@@ -55,17 +55,12 @@ export function createShareLinkOriginalResolver(
           ? await downloadShardViaShareLink(linkId, id, grant)
           : await downloadShardViaShareLink(linkId, id);
         const expectedHash = photo.shardHashes?.[i];
-        if (expectedHash) {
-          const isValid = await verifyDownloadedShard(
-            crypto,
+        if (expectedHash !== undefined) {
+          await verifyShardIntegrity(
             data,
             expectedHash,
+            `shared-album legacy photo=${photo.id} shard=${i}`,
           );
-          if (!isValid) {
-            log.warn(
-              `Shard integrity check failed for photo ${photo.id}, shard ${i}`,
-            );
-          }
         }
         const header = await crypto.peekEnvelopeHeader(data);
         downloaded.push({ id, data, tier: header.tier });
@@ -108,17 +103,12 @@ export function createShareLinkOriginalResolver(
         ? await downloadShardViaShareLink(linkId, id, grant)
         : await downloadShardViaShareLink(linkId, id);
       const expectedHash = photo.originalShardHashes?.[i];
-      if (expectedHash) {
-        const isValid = await verifyDownloadedShard(
-          crypto,
+      if (expectedHash !== undefined) {
+        await verifyShardIntegrity(
           data,
           expectedHash,
+          `shared-album original photo=${photo.id} shard=${i}`,
         );
-        if (!isValid) {
-          log.warn(
-            `Shard integrity check failed for photo ${photo.id}, shard ${i}`,
-          );
-        }
       }
       try {
         chunks.push(
