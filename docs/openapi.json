@@ -3026,6 +3026,7 @@
           "currentSignature",
           "timestamp",
           "newUserSalt",
+          "newAccountSalt",
           "newAuthPubkey",
           "newWrappedAccountKey"
         ],
@@ -3044,6 +3045,9 @@
             "nullable": true
           },
           "newUserSalt": {
+            "type": "string"
+          },
+          "newAccountSalt": {
             "type": "string"
           },
           "newAuthPubkey": {
