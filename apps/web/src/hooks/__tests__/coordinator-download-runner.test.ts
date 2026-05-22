@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as Comlink from 'comlink';
 
 vi.mock('../../lib/epoch-key-service', () => ({
   getOrFetchEpochKey: vi.fn().mockRejectedValue(new Error('no epoch service')),
 }));
 
-import { CorruptShardHashError, photosToPlanInput } from '../coordinator-download-runner';
-import type { PhotoMeta } from '../../workers/types';
+import { CorruptShardHashError, photosToPlanInput, waitForTerminal } from '../coordinator-download-runner';
+import type { CoordinatorWorkerApi, JobProgressEvent, PhotoMeta } from '../../workers/types';
 
 function bytesToBase64Url(bytes: Uint8Array): string {
   let binary = '';
@@ -181,5 +182,167 @@ describe('photosToPlanInput — shard-hash format', () => {
       // Stay safely below u64 max so per-photo sums cannot overflow.
       expect(shard.declaredSize).toBeLessThan(Number.MAX_SAFE_INTEGER);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression suite for `security-review-2026-05-22-02` (HIGH):
+// `waitForTerminal` MUST release the subscription proxy
+// (`[Comlink.releaseProxy]()`) on every termination path — including the
+// abort-before-subscribe-resolves race that previously leaked the worker
+// MessagePort across repeated cancel/restart cycles.
+// ---------------------------------------------------------------------------
+
+interface MockSubscription {
+  unsubscribe: ReturnType<typeof vi.fn>;
+  [Comlink.releaseProxy]: ReturnType<typeof vi.fn>;
+}
+
+function makeMockSubscription(): MockSubscription {
+  return {
+    unsubscribe: vi.fn(),
+    [Comlink.releaseProxy]: vi.fn(),
+  };
+}
+
+interface DeferredApi {
+  api: CoordinatorWorkerApi;
+  resolveSubscribe: (sub: MockSubscription) => void;
+  rejectSubscribe: (err: unknown) => void;
+  capturedCallback: () => ((event: JobProgressEvent) => void) | null;
+}
+
+function makeDeferredApi(): DeferredApi {
+  let resolveFn: (sub: MockSubscription) => void = () => undefined;
+  let rejectFn: (err: unknown) => void = () => undefined;
+  let captured: ((event: JobProgressEvent) => void) | null = null;
+  const subscribe = vi.fn((_jobId: string, cb: (event: JobProgressEvent) => void) => {
+    captured = cb;
+    return new Promise<MockSubscription>((res, rej) => {
+      resolveFn = res;
+      rejectFn = rej;
+    });
+  });
+  const api = { subscribe } as unknown as CoordinatorWorkerApi;
+  return {
+    api,
+    resolveSubscribe: (sub): void => resolveFn(sub),
+    rejectSubscribe: (err): void => rejectFn(err),
+    capturedCallback: (): ((event: JobProgressEvent) => void) | null => captured,
+  };
+}
+
+// Yield to the microtask queue so deferred `Promise.resolve(...).finally(...)`
+// chains in the cleanup path have a chance to run before assertions.
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 5; i += 1) {
+    await Promise.resolve();
+  }
+}
+
+describe('waitForTerminal — idempotent subscription cleanup (security-review-22-02)', () => {
+  it('releases subscription proxy when abort fires BEFORE subscribe resolves', async () => {
+    const deferred = makeDeferredApi();
+    const ctrl = new AbortController();
+    const sub = makeMockSubscription();
+
+    const waiting = waitForTerminal(
+      deferred.api,
+      'job-abort-before-resolve',
+      ctrl.signal,
+      vi.fn(),
+    );
+    // Abort while subscribe() is still pending.
+    ctrl.abort();
+
+    // Now the worker (slow side) finally resolves with a subscription
+    // handle. Even though no one is listening for it, the runner MUST
+    // drain it: unsubscribe + releaseProxy.
+    deferred.resolveSubscribe(sub);
+
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+    await flushMicrotasks();
+
+    expect(sub.unsubscribe).toHaveBeenCalledTimes(1);
+    // CRITICAL: this is the assertion the original code failed. The
+    // late-arriving subscription proxy was never released, leaking a
+    // MessagePort per abort-race cycle.
+    expect(sub[Comlink.releaseProxy]).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases subscription proxy when abort fires AFTER subscribe resolves', async () => {
+    const deferred = makeDeferredApi();
+    const ctrl = new AbortController();
+    const sub = makeMockSubscription();
+
+    const waiting = waitForTerminal(
+      deferred.api,
+      'job-abort-after-resolve',
+      ctrl.signal,
+      vi.fn(),
+    );
+    deferred.resolveSubscribe(sub);
+    await flushMicrotasks();
+    ctrl.abort();
+
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+    await flushMicrotasks();
+
+    expect(sub.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(sub[Comlink.releaseProxy]).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases subscription proxy on normal terminal Done', async () => {
+    const deferred = makeDeferredApi();
+    const ctrl = new AbortController();
+    const sub = makeMockSubscription();
+    const onProgress = vi.fn();
+
+    const waiting = waitForTerminal(
+      deferred.api,
+      'job-done',
+      ctrl.signal,
+      onProgress,
+    );
+    deferred.resolveSubscribe(sub);
+    await flushMicrotasks();
+
+    // Emit a terminal Done event via the captured callback.
+    const cb = deferred.capturedCallback();
+    expect(cb).not.toBeNull();
+    cb!({ jobId: 'job-done', phase: 'Done' } as unknown as JobProgressEvent);
+
+    await expect(waiting).resolves.toBeUndefined();
+    await flushMicrotasks();
+
+    expect(sub.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(sub[Comlink.releaseProxy]).toHaveBeenCalledTimes(1);
+  });
+
+  it('cleanup is idempotent: subsequent abort after Done does not double-release', async () => {
+    const deferred = makeDeferredApi();
+    const ctrl = new AbortController();
+    const sub = makeMockSubscription();
+
+    const waiting = waitForTerminal(
+      deferred.api,
+      'job-double-cleanup',
+      ctrl.signal,
+      vi.fn(),
+    );
+    deferred.resolveSubscribe(sub);
+    await flushMicrotasks();
+
+    const cb = deferred.capturedCallback()!;
+    cb({ jobId: 'job-double-cleanup', phase: 'Done' } as unknown as JobProgressEvent);
+    await expect(waiting).resolves.toBeUndefined();
+    await flushMicrotasks();
+
+    // Abort after the promise already settled — must NOT re-release.
+    ctrl.abort();
+    await flushMicrotasks();
+
+    expect(sub.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(sub[Comlink.releaseProxy]).toHaveBeenCalledTimes(1);
   });
 });

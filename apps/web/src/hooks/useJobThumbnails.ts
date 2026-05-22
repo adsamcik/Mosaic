@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import * as Comlink from 'comlink';
 import { getDownloadManager } from '../lib/download-manager';
 import { guardComlinkProxy } from '../lib/comlink-proxy-guard';
 import { createLogger } from '../lib/logger';
@@ -44,7 +45,24 @@ export function useJobThumbnails(jobId: string | null): UseJobThumbnailsResult {
 
   useEffect(() => {
     if (!jobId) return undefined;
-    let subscription: { unsubscribe: () => void | Promise<void> } | null = null;
+    type ThumbSub = { unsubscribe: () => void | Promise<void> };
+    let subscription: ThumbSub | null = null;
+
+    // v1.0.1 security-review-2026-05-22-02 (HIGH): `subscribeToThumbnails`
+    // (coordinator.worker.ts:715) returns a `Comlink.proxy({...})` whose
+    // backing MessagePort MUST be released via `[Comlink.releaseProxy]()`
+    // after the worker-side `unsubscribe()` round-trip — otherwise every
+    // job mount/unmount leaks a port and the worker eventually DoS's.
+    const releaseSubscriptionProxy = (sub: ThumbSub | null): void => {
+      if (sub === null) return;
+      try {
+        (sub as unknown as { [Comlink.releaseProxy]?: () => void })[
+          Comlink.releaseProxy
+        ]?.();
+      } catch {
+        // best-effort
+      }
+    };
 
     // Guard the thumbnail callback so any worker-side emission that races
     // with React effect cleanup lands on a typed ClosedHandle error
@@ -70,9 +88,14 @@ export function useJobThumbnails(jobId: string | null): UseJobThumbnailsResult {
         if (guarded.isDisposed()) return;
         const sub = await api.subscribeToThumbnails(jobId, guarded.proxy);
         if (guarded.isDisposed()) {
+          // Abort-before-resolve race: effect already unmounted. Drain
+          // the late subscription — unsubscribe AND release its proxy.
           void Promise.resolve(sub.unsubscribe())
             .catch(() => undefined)
-            .finally(() => guarded.releaseProxy());
+            .finally(() => {
+              releaseSubscriptionProxy(sub);
+              guarded.releaseProxy();
+            });
           return;
         }
         subscription = sub;
@@ -85,15 +108,21 @@ export function useJobThumbnails(jobId: string | null): UseJobThumbnailsResult {
 
     return (): void => {
       guarded.dispose();
+      const sub = subscription;
+      subscription = null;
       // Defer proxy release until the worker has acknowledged the
       // unsubscribe — releasing too early lets in-flight thumbnail
       // emissions land on a released proxy slot inside Comlink.
       try {
-        void Promise.resolve(subscription?.unsubscribe())
+        void Promise.resolve(sub?.unsubscribe())
           .catch(() => undefined)
-          .finally(() => guarded.releaseProxy());
+          .finally(() => {
+            releaseSubscriptionProxy(sub);
+            guarded.releaseProxy();
+          });
       } catch {
         // best-effort
+        releaseSubscriptionProxy(sub);
         guarded.releaseProxy();
       }
       // Dev-mode leak diagnostic: at unmount we expect the worker-side stop
