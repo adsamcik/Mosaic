@@ -4,7 +4,7 @@ import { getCryptoClient } from './crypto-client';
 import { getOrFetchEpochKey } from './epoch-key-service';
 import { createLogger } from './logger';
 import { assertValidEpochHandle } from './read-path-crypto';
-import { verifyShardIntegrity } from './shard-integrity';
+import { verifyShardListIntegrity } from './shard-integrity';
 import { downloadShards } from './shard-service';
 import type { PhotoMeta } from '../workers/types';
 
@@ -204,17 +204,18 @@ export async function downloadAlbumAsZip(options: AlbumDownloadOptions): Promise
 
     const encryptedShards = await downloadShards(shardIds);
 
+    // HIGH security-review-2026-05-22-06: fail closed when the hash
+    // array is present but length-mismatched, instead of silently
+    // skipping verification on the unmatched tail.
+    await verifyShardListIntegrity(
+      encryptedShards,
+      shardHashes,
+      `album-download photo=${photo.id}`,
+    );
+
     const decryptedChunks: Uint8Array[] = [];
     for (let i = 0; i < encryptedShards.length; i++) {
       const shard = encryptedShards[i]!;
-
-      if (shardHashes?.[i] !== undefined) {
-        await verifyShardIntegrity(
-          shard,
-          shardHashes[i]!,
-          `album-download photo=${photo.id} shard=${i}`,
-        );
-      }
 
       const plaintext = await crypto.decryptShardWithEpochHandle(
         bundle.epochHandleId,

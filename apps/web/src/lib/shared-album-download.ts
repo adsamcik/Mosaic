@@ -3,7 +3,7 @@ import type { AlbumDownloadResolver } from './album-download-service';
 import { getCryptoClient } from './crypto-client';
 import { createLogger } from './logger';
 import { downloadShardViaShareLink } from './shard-service';
-import { verifyShardIntegrity } from './shard-integrity';
+import { verifyShardListIntegrity } from './shard-integrity';
 import type { LinkTierHandleId, PhotoMeta } from '../workers/types';
 
 const log = createLogger('SharedAlbumDownload');
@@ -49,22 +49,25 @@ export function createShareLinkOriginalResolver(
     } else {
       // Legacy fallback: download every shard, peek headers, keep tier-3.
       const downloaded: { id: string; data: Uint8Array; tier: number }[] = [];
+      const allBytes: Uint8Array[] = [];
       for (let i = 0; i < photo.shardIds.length; i++) {
         const id = photo.shardIds[i]!;
         const data = grant
           ? await downloadShardViaShareLink(linkId, id, grant)
           : await downloadShardViaShareLink(linkId, id);
-        const expectedHash = photo.shardHashes?.[i];
-        if (expectedHash !== undefined) {
-          await verifyShardIntegrity(
-            data,
-            expectedHash,
-            `shared-album legacy photo=${photo.id} shard=${i}`,
-          );
-        }
+        allBytes.push(data);
         const header = await crypto.peekEnvelopeHeader(data);
         downloaded.push({ id, data, tier: header.tier });
       }
+
+      // HIGH security-review-2026-05-22-06: verify the full list against
+      // photo.shardHashes when present. Length-mismatch fails closed
+      // instead of silently skipping unmatched indices.
+      await verifyShardListIntegrity(
+        allBytes,
+        photo.shardHashes,
+        `shared-album legacy photo=${photo.id}`,
+      );
 
       const originals = downloaded.filter((s) => s.tier === 3);
       if (originals.length === 0) {
@@ -97,19 +100,28 @@ export function createShareLinkOriginalResolver(
     }
 
     const chunks: Uint8Array[] = [];
+    const originalBytes: Uint8Array[] = [];
     for (let i = 0; i < shardIds.length; i++) {
       const id = shardIds[i]!;
       const data = grant
         ? await downloadShardViaShareLink(linkId, id, grant)
         : await downloadShardViaShareLink(linkId, id);
-      const expectedHash = photo.originalShardHashes?.[i];
-      if (expectedHash !== undefined) {
-        await verifyShardIntegrity(
-          data,
-          expectedHash,
-          `shared-album original photo=${photo.id} shard=${i}`,
-        );
-      }
+      originalBytes.push(data);
+    }
+
+    // HIGH security-review-2026-05-22-06: verify the entire original-tier
+    // shard list against photo.originalShardHashes when present. A
+    // present-but-shorter array now throws instead of silently skipping
+    // verification on selected shards.
+    await verifyShardListIntegrity(
+      originalBytes,
+      photo.originalShardHashes,
+      `shared-album original photo=${photo.id}`,
+    );
+
+    for (let i = 0; i < shardIds.length; i++) {
+      const id = shardIds[i]!;
+      const data = originalBytes[i]!;
       try {
         chunks.push(
           await crypto.decryptShardWithLinkTierHandle(tierKeyHandle, data),

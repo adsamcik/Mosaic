@@ -21,7 +21,11 @@ import {
   assertValidEpochHandle,
   type EpochReadHandleId,
 } from './read-path-crypto';
-import { verifyShardIntegrity } from './shard-integrity';
+import {
+  CorruptShardManifest,
+  ShardIntegrityMismatchError,
+  verifyShardListIntegrity,
+} from './shard-integrity';
 
 const log = createLogger('PhotoService');
 
@@ -310,32 +314,44 @@ export async function loadPhoto(
       // Get crypto client
       const crypto = await getCryptoClient();
 
-      // Verify and decrypt each shard
+      // Verify integrity of all shards up-front. Fails closed on
+      // empty/whitespace/malformed entries (HIGH security-review-2026-05-22-04)
+      // and on present-but-length-mismatched hash arrays
+      // (HIGH security-review-2026-05-22-06). Skips only when the entire
+      // hash array is genuinely absent (null/undefined) — the legacy
+      // pre-hash manifest path.
+      try {
+        await verifyShardListIntegrity(
+          encryptedShards,
+          shardHashes,
+          `photo-service photo=${photoId}`,
+        );
+      } catch (err) {
+        if (err instanceof ShardIntegrityMismatchError) {
+          // Extract per-shard index from the helper's context suffix
+          // ("...[i]") so the legacy ShardIntegrityError can report the
+          // exact shard id and expected hash. The list helper appends
+          // "[i]" to the caller-provided context.
+          const match = err.context.match(/\[(\d+)\]$/);
+          const idx = match ? Number(match[1]) : -1;
+          const shardId = idx >= 0 ? shardIds[idx] : undefined;
+          const expectedHash =
+            idx >= 0 && shardHashes ? shardHashes[idx] : undefined;
+          throw new ShardIntegrityError(
+            shardId ?? shardIds[0] ?? 'unknown',
+            expectedHash ?? '',
+          );
+        }
+        if (err instanceof CorruptShardManifest) {
+          throw err;
+        }
+        throw err;
+      }
+
+      // Decrypt each shard
       const decryptedChunks: Uint8Array[] = [];
       for (let i = 0; i < encryptedShards.length; i++) {
         const shard = encryptedShards[i]!;
-        const expectedHash = shardHashes?.[i];
-
-        // Verify integrity. Fails closed on empty/whitespace/malformed
-        // (HIGH security-review-2026-05-22-04); skips only when hash is
-        // genuinely absent (null/undefined). On mismatch, surface as the
-        // existing ShardIntegrityError so callers can distinguish from
-        // generic decrypt failures.
-        try {
-          await verifyShardIntegrity(
-            shard,
-            expectedHash,
-            `photo-service photo=${shardIds[i]} shard=${i}`,
-          );
-        } catch (err) {
-          if (
-            err instanceof Error &&
-            err.name === 'ShardIntegrityMismatchError'
-          ) {
-            throw new ShardIntegrityError(shardIds[i]!, expectedHash ?? '');
-          }
-          throw err;
-        }
 
         const plaintext =
           typeof epochReadKey === 'bigint'

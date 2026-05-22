@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   peekEnvelopeHeader: vi.fn(),
   verifyShardIntegrity: vi.fn(),
   verifyShardIntegrityHelper: vi.fn(),
+  verifyShardListIntegrityHelper: vi.fn(),
 }));
 
 vi.mock('../crypto-client', () => ({
@@ -36,10 +37,17 @@ vi.mock('../shard-service', () => ({
 
 vi.mock('../shard-integrity', () => ({
   verifyShardIntegrity: mocks.verifyShardIntegrityHelper,
+  verifyShardListIntegrity: mocks.verifyShardListIntegrityHelper,
   ShardIntegrityMismatchError: class ShardIntegrityMismatchError extends Error {
     constructor(context: string) {
       super(`Shard integrity check failed: ${context}`);
       this.name = 'ShardIntegrityMismatchError';
+    }
+  },
+  CorruptShardManifest: class CorruptShardManifest extends Error {
+    constructor(context: string, detail: string) {
+      super(`Corrupt shard manifest: ${context}: ${detail}`);
+      this.name = 'CorruptShardManifest';
     }
   },
 }));
@@ -69,6 +77,7 @@ describe('createShareLinkOriginalResolver', () => {
     vi.clearAllMocks();
     mocks.verifyShardIntegrity.mockResolvedValue(true);
     mocks.verifyShardIntegrityHelper.mockResolvedValue(undefined);
+    mocks.verifyShardListIntegrityHelper.mockResolvedValue(undefined);
   });
 
   it('downloads, verifies, decrypts, and concatenates explicit original shards', async () => {
@@ -110,16 +119,10 @@ describe('createShareLinkOriginalResolver', () => {
       'original-b',
       'grant-token',
     );
-    expect(mocks.verifyShardIntegrityHelper).toHaveBeenNthCalledWith(
-      1,
-      encryptedA,
-      'A'.repeat(43),
-      expect.stringContaining('shared-album'),
-    );
-    expect(mocks.verifyShardIntegrityHelper).toHaveBeenNthCalledWith(
-      2,
-      encryptedB,
-      'A'.repeat(43),
+    expect(mocks.verifyShardListIntegrityHelper).toHaveBeenCalledTimes(1);
+    expect(mocks.verifyShardListIntegrityHelper).toHaveBeenCalledWith(
+      [encryptedA, encryptedB],
+      ['A'.repeat(43), 'A'.repeat(43)],
       expect.stringContaining('shared-album'),
     );
     expect(mocks.decryptShardWithLinkTierHandle).toHaveBeenNthCalledWith(
@@ -167,7 +170,12 @@ describe('createShareLinkOriginalResolver', () => {
     );
 
     expect(mocks.downloadShardViaShareLink).toHaveBeenCalledTimes(3);
-    expect(mocks.verifyShardIntegrityHelper).toHaveBeenCalledTimes(3);
+    expect(mocks.verifyShardListIntegrityHelper).toHaveBeenCalledTimes(1);
+    expect(mocks.verifyShardListIntegrityHelper).toHaveBeenCalledWith(
+      [encryptedThumb, encryptedOriginalA, encryptedOriginalB],
+      ['A'.repeat(43), 'A'.repeat(43), 'A'.repeat(43)],
+      expect.stringContaining('shared-album'),
+    );
     expect(mocks.decryptShardWithLinkTierHandle).toHaveBeenNthCalledWith(
       1,
       tierKey,

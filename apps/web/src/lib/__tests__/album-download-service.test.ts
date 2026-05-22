@@ -30,11 +30,20 @@ vi.mock('../shard-service', () => ({
 
 vi.mock('../shard-integrity', () => ({
   verifyShardIntegrity: vi.fn().mockResolvedValue(undefined),
+  verifyShardListIntegrity: vi.fn().mockResolvedValue(undefined),
   ShardIntegrityMismatchError: class ShardIntegrityMismatchError extends Error {
     public readonly context: string;
     constructor(context: string) {
       super(`Shard integrity check failed: ${context}`);
       this.name = 'ShardIntegrityMismatchError';
+      this.context = context;
+    }
+  },
+  CorruptShardManifest: class CorruptShardManifest extends Error {
+    public readonly context: string;
+    constructor(context: string, detail: string) {
+      super(`Corrupt shard manifest: ${context}: ${detail}`);
+      this.name = 'CorruptShardManifest';
       this.context = context;
     }
   },
@@ -54,7 +63,7 @@ import { downloadZip } from 'client-zip';
 import { getCryptoClient } from '../crypto-client';
 import { getOrFetchEpochKey } from '../epoch-key-service';
 import { downloadShards } from '../shard-service';
-import { verifyShardIntegrity } from '../shard-integrity';
+import { verifyShardListIntegrity } from '../shard-integrity';
 import {
   downloadAlbumAsZip,
   supportsFileSystemAccess,
@@ -65,7 +74,7 @@ const mockDownloadZip = vi.mocked(downloadZip);
 const mockGetCryptoClient = vi.mocked(getCryptoClient);
 const mockGetOrFetchEpochKey = vi.mocked(getOrFetchEpochKey);
 const mockDownloadShards = vi.mocked(downloadShards);
-const mockVerifyShardIntegrity = vi.mocked(verifyShardIntegrity);
+const mockVerifyShardListIntegrity = vi.mocked(verifyShardListIntegrity);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -328,9 +337,9 @@ describe('album-download-service', () => {
         albumId: 'album-1',
       });
 
-      expect(mockVerifyShardIntegrity).toHaveBeenCalledWith(
-        expect.any(Uint8Array),
-        VALID_SHA256,
+      expect(mockVerifyShardListIntegrity).toHaveBeenCalledWith(
+        expect.any(Array),
+        [VALID_SHA256],
         expect.stringContaining('album-download'),
       );
     });
@@ -348,9 +357,9 @@ describe('album-download-service', () => {
         albumId: 'album-1',
       });
 
-      expect(mockVerifyShardIntegrity).toHaveBeenCalledWith(
-        expect.any(Uint8Array),
-        VALID_SHA256,
+      expect(mockVerifyShardListIntegrity).toHaveBeenCalledWith(
+        expect.any(Array),
+        [VALID_SHA256],
         expect.stringContaining('album-download'),
       );
     });

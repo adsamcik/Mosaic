@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { CorruptShardHashError } from '../../hooks/coordinator-download-runner';
 import {
+  CorruptShardManifest,
   ShardIntegrityMismatchError,
   verifyShardIntegrity,
+  verifyShardListIntegrity,
 } from '../shard-integrity';
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -107,6 +109,99 @@ describe('verifyShardIntegrity — fail-closed semantics', () => {
     ).rejects.toMatchObject({
       name: 'ShardIntegrityMismatchError',
       context: 'photo=abc shard=7',
+    });
+  });
+});
+
+describe('verifyShardListIntegrity — presence-aware semantics', () => {
+  // HIGH security-review-2026-05-22-06: present-but-shorter hash arrays
+  // must fail closed instead of silently skipping verification on the
+  // unmatched tail.
+
+  function makeShard(seed: number): Uint8Array {
+    return new Uint8Array([seed, seed + 1, seed + 2, seed + 3]);
+  }
+  async function hashFor(bytes: Uint8Array): Promise<string> {
+    return bytesToBase64Url(await sha256(bytes));
+  }
+
+  it('skips verification when expectedHashes is null (legacy)', async () => {
+    const shards = [makeShard(1), makeShard(2), makeShard(3)];
+    await expect(
+      verifyShardListIntegrity(shards, null, 'ctx'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('skips verification when expectedHashes is undefined (legacy)', async () => {
+    const shards = [makeShard(1), makeShard(2)];
+    await expect(
+      verifyShardListIntegrity(shards, undefined, 'ctx'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('throws CorruptShardManifest on empty array with shards present', async () => {
+    const shards = [makeShard(1), makeShard(2)];
+    await expect(
+      verifyShardListIntegrity(shards, [], 'photo=p1'),
+    ).rejects.toBeInstanceOf(CorruptShardManifest);
+  });
+
+  it('throws CorruptShardManifest when hash array is shorter than shards', async () => {
+    const shards = [makeShard(1), makeShard(2), makeShard(3)];
+    const hashes = [await hashFor(shards[0]!), await hashFor(shards[1]!)];
+    await expect(
+      verifyShardListIntegrity(shards, hashes, 'photo=p1'),
+    ).rejects.toBeInstanceOf(CorruptShardManifest);
+  });
+
+  it('throws CorruptShardManifest when hash array is longer than shards', async () => {
+    const shards = [makeShard(1)];
+    const hashes = [await hashFor(shards[0]!), 'A'.repeat(43)];
+    await expect(
+      verifyShardListIntegrity(shards, hashes, 'photo=p1'),
+    ).rejects.toBeInstanceOf(CorruptShardManifest);
+  });
+
+  it('resolves silently with correct count and matching hashes', async () => {
+    const shards = [makeShard(1), makeShard(2), makeShard(3)];
+    const hashes = await Promise.all(shards.map(hashFor));
+    await expect(
+      verifyShardListIntegrity(shards, hashes, 'photo=p1'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('throws CorruptShardHashError when one entry is empty string', async () => {
+    const shards = [makeShard(1), makeShard(2), makeShard(3)];
+    const hashes = [
+      await hashFor(shards[0]!),
+      await hashFor(shards[1]!),
+      '',
+    ];
+    await expect(
+      verifyShardListIntegrity(shards, hashes, 'photo=p1'),
+    ).rejects.toBeInstanceOf(CorruptShardHashError);
+  });
+
+  it('throws ShardIntegrityMismatchError when one hash does not match', async () => {
+    const shards = [makeShard(1), makeShard(2), makeShard(3)];
+    const hashes = [
+      await hashFor(shards[0]!),
+      await hashFor(makeShard(99)), // wrong hash for shard 1
+      await hashFor(shards[2]!),
+    ];
+    await expect(
+      verifyShardListIntegrity(shards, hashes, 'photo=p1'),
+    ).rejects.toBeInstanceOf(ShardIntegrityMismatchError);
+  });
+
+  it('CorruptShardManifest message includes the context and counts', async () => {
+    const shards = [makeShard(1), makeShard(2), makeShard(3)];
+    await expect(
+      verifyShardListIntegrity(shards, [], 'photo=abc'),
+    ).rejects.toMatchObject({
+      name: 'CorruptShardManifest',
+      context: 'photo=abc',
+      message: expect.stringContaining('hash array length 0 != shard count 3'),
     });
   });
 });
