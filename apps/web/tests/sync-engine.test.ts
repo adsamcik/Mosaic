@@ -35,8 +35,19 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
+class MockApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 vi.mock('../src/lib/api', () => ({
   getApi: () => mocks.api,
+  ApiError: MockApiError,
   fromBase64: (value: string) =>
     Uint8Array.from(atob(value), (char) => char.charCodeAt(0)),
 }));

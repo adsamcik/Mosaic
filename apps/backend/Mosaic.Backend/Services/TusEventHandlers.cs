@@ -17,6 +17,23 @@ public static class TusEventHandlers
     private const string ReservationUserIdItemKey = "TusReservationUserId";
     private const string ReservationAlbumIdItemKey = "TusReservationAlbumId";
     private const string ContentSha256MetadataKey = "content-sha256";
+    /// <summary>
+    /// Tus metadata key carrying the client-supplied blob storage-format
+    /// version. Required since v1.0.2 so that future format changes can be
+    /// detected at upload time and stored blobs cannot be silently
+    /// reinterpreted under a new envelope layout. The backend never parses
+    /// blob contents (zero-knowledge); this marker is the only on-wire
+    /// signal that the client and server agree on the encoding.
+    /// </summary>
+    private const string BlobFormatVersionMetadataKey = "blob-format-version";
+    /// <summary>
+    /// Currently the only accepted blob storage-format version. Listed
+    /// under <see cref="docs/ARCHITECTURE.md"/> "Storage Format Versions".
+    /// Adding a new version means: (a) appending it to this set, (b)
+    /// documenting the change in the storage-format register, and (c)
+    /// shipping a coordinated client update.
+    /// </summary>
+    private static readonly HashSet<int> SupportedBlobFormatVersions = new() { 1 };
     private static readonly TimeSpan ReservationLifetime = TimeSpan.FromHours(24);
     private static readonly Regex ContentSha256Regex = new("^[0-9a-f]{64}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
@@ -42,6 +59,12 @@ public static class TusEventHandlers
         if (!TryReadContentSha256Metadata(context.Metadata, out _, out var hashError))
         {
             context.FailRequest(hashError);
+            return;
+        }
+
+        if (!TryReadBlobFormatVersionMetadata(context.Metadata, out _, out var versionError))
+        {
+            context.FailRequest(versionError);
             return;
         }
 
@@ -376,6 +399,43 @@ public static class TusEventHandlers
         }
 
         contentSha256 = candidate;
+        error = string.Empty;
+        return true;
+    }
+
+    /// <summary>
+    /// Validates the <c>blob-format-version</c> Tus metadata key. Required
+    /// since v1.0.2 (see docs/ARCHITECTURE.md "Storage Format Versions").
+    /// Fails closed when the key is missing or carries an unrecognised
+    /// value so that future format changes are surfaced at upload time
+    /// rather than corrupting the shard cache silently.
+    /// </summary>
+    private static bool TryReadBlobFormatVersionMetadata(
+        Dictionary<string, tusdotnet.Models.Metadata>? metadata,
+        out int version,
+        out string error)
+    {
+        version = 0;
+        if (metadata == null || !metadata.TryGetValue(BlobFormatVersionMetadataKey, out var versionMetadata))
+        {
+            error = $"Missing Tus metadata '{BlobFormatVersionMetadataKey}'";
+            return false;
+        }
+
+        var raw = versionMetadata.GetString(Encoding.UTF8);
+        if (!int.TryParse(raw, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed) || parsed <= 0)
+        {
+            error = $"Tus metadata '{BlobFormatVersionMetadataKey}' must be a positive integer";
+            return false;
+        }
+
+        if (!SupportedBlobFormatVersions.Contains(parsed))
+        {
+            error = $"Tus metadata '{BlobFormatVersionMetadataKey}' version {parsed} is not supported by this server";
+            return false;
+        }
+
+        version = parsed;
         error = string.Empty;
         return true;
     }

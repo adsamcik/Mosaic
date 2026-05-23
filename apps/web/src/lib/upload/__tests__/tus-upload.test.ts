@@ -59,7 +59,20 @@ describe('tusUpload metadata', () => {
       albumId: 'album-001',
       shardIndex: '7',
       'content-sha256': '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
+      'blob-format-version': '1',
     });
+  });
+
+  it('always stamps the current blob storage-format version', async () => {
+    await tusUpload(
+      'album-002',
+      new Uint8Array([9]),
+      'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
+      0,
+    );
+    expect(tusMock.uploads).toHaveLength(1);
+    const meta = tusMock.uploads[0]!.options.metadata as Record<string, string>;
+    expect(meta['blob-format-version']).toBe('1');
   });
 });
 

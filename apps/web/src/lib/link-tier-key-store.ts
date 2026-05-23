@@ -30,6 +30,20 @@ import type { LinkTierHandleId } from '../workers/types';
 
 const log = createLogger('LinkTierKeyStore');
 
+/**
+ * User-facing error raised when the IndexedDB open request is rejected
+ * with a `VersionError` — almost always caused by another tab on this
+ * origin having opened the database with a newer schema. The caller should
+ * surface a clear "close other tabs and reload" message rather than a
+ * generic IDB failure.
+ */
+export class IDBVersionMismatchError extends Error {
+  constructor(message = 'Link key store version conflict — close other tabs and reload') {
+    super(message);
+    this.name = 'IDBVersionMismatchError';
+  }
+}
+
 /** Storage key for legacy persisted link encryption key (cleared on logout). */
 const LINK_KEY_STORAGE_KEY = 'mosaic:linkKeyEncryption';
 
@@ -192,7 +206,23 @@ async function openLinkKeysDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onerror = () => reject(request.error);
+    request.onerror = (event) => {
+      const err = (event.target as IDBOpenDBRequest | null)?.error ?? request.error;
+      if (err && err.name === 'VersionError') {
+        log.warn('IndexedDB VersionError opening link key store', {
+          dbName: DB_NAME,
+          requestedVersion: DB_VERSION,
+        });
+        reject(new IDBVersionMismatchError());
+        return;
+      }
+      reject(err ?? new Error('Failed to open link key store'));
+    };
+    request.onblocked = () => {
+      log.warn('IndexedDB open blocked — another tab holds an older version', {
+        dbName: DB_NAME,
+      });
+    };
     request.onsuccess = () => resolve(request.result);
 
     request.onupgradeneeded = (event) => {
@@ -416,6 +446,21 @@ export async function getTierKeys(
       }
     };
   });
+}
+
+/**
+ * Eviction hook invoked when sync (or the link-revocation flow) reports
+ * that a link has been revoked. Drops the cached tier keys for that link
+ * so the `mosaic-link-keys` IDB cannot grow unbounded with handles for
+ * links the server no longer honours.
+ *
+ * Implemented as a thin alias around `removeTierKeys` to keep call-sites
+ * semantically clear ("evict a revoked link") and to give the eviction
+ * surface a stable name independent of the underlying storage helper.
+ */
+export async function evictLink(linkId: string): Promise<void> {
+  log.debug('Evicting link tier keys on revocation', { linkId });
+  await removeTierKeys(linkId);
 }
 
 /**

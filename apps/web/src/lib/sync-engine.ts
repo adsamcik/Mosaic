@@ -4,7 +4,7 @@ import {
   type EpochHandleId,
   type PhotoMeta,
 } from '../workers/types';
-import { fromBase64, getApi } from './api';
+import { ApiError, fromBase64, getApi } from './api';
 import { getCryptoClient } from './crypto-client';
 import { getDbClient } from './db-client';
 import {
@@ -14,6 +14,7 @@ import {
 import {
   clearAllEpochKeys,
   getEpochKey,
+  invalidateAlbum as invalidateAlbumEpochKeys,
   setEpochKey as storeEpochKey,
 } from './epoch-key-store';
 import { createLogger } from './logger';
@@ -568,6 +569,20 @@ class SyncEngine extends EventTarget {
       log.info(`Dispatching sync-complete event for album ${albumId}`);
       this.dispatchSyncEvent('sync-complete', { albumId });
     } catch (error) {
+      // If the server reports we've lost access to the album (membership
+      // revoked / soft-deleted), drop every cached epoch handle for it so
+      // we cannot serve decrypts off stale keys and so the cache cannot
+      // grow unbounded with handles for albums we can no longer touch.
+      if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+        try {
+          invalidateAlbumEpochKeys(albumId);
+        } catch (invalidateErr) {
+          log.warn('invalidateAlbum (post-403/404) threw', {
+            albumId,
+            error: invalidateErr instanceof Error ? invalidateErr.message : String(invalidateErr),
+          });
+        }
+      }
       this.dispatchSyncEvent('sync-error', {
         albumId,
         error: error instanceof Error ? error : new Error(String(error)),

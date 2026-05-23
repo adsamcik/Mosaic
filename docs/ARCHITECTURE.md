@@ -504,6 +504,32 @@ Total = Header (64) + Ciphertext + Tag (16)
    attacks. The set of contexts and the late-v1 envelope header are locked
    in `crates/mosaic-domain` (see [Rust Client Core](#rust-client-core)).
 
+### Storage Format Versions
+
+Every persistent storage location in Mosaic carries an explicit format
+version so that future layout changes can be detected — at the load site
+for client-side stores, and at upload time for server-stored blobs.
+Mismatches **fail closed** (no silent re-interpretation of bytes under a
+new layout).
+
+| Storage                                | Format Version | First shipped | Marker                                          | Notes                                                                                                                                       |
+|----------------------------------------|----------------|---------------|-------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| Shard envelope (uploaded ciphertext)   | `0x03`         | v0.1          | Byte at offset 4 (`Version` field)              | See "Shard Envelope Format" above. Validated on decrypt; reserved bytes must be zero.                                                       |
+| Tus blob (upload-time format marker)   | `1`            | v1.0.2        | Tus metadata `blob-format-version`              | Required since v1.0.2. Validated in `OnBeforeCreateAsync`; fail-closed for missing/unsupported values. Coordinated with client `BLOB_FORMAT_VERSION` constant. |
+| IndexedDB `mosaic-link-keys`           | `1`            | v0.1          | `version: 1` field inside each stored record + IDB `DB_VERSION` | Encrypted envelope with `wrapVersion: 2`; pre-v0.4 WebCrypto-wrapped entries are discarded as cache misses. `VersionError` on open surfaces a clear user-facing message. |
+| OPFS SQLite snapshot (account metadata)| `1`            | v0.1          | Schema migration applied by `db.worker`         | Wrapped by the L2 account key; rotation invalidates the snapshot.                                                                            |
+| Epoch-key cache (in-memory)            | n/a            | v0.1          | None — process-local map of opaque Rust handles | Cleared via `clearAlbumKeys` (rotation) or `invalidateAlbum` (sync-detected member removed). Not persisted.                                  |
+| SW background-fetch cache              | `1`            | v0.6          | `x-mosaic-cached-at` response header (stamped at put-time) | TTL-evicted on SW `activate`; entries older than `BG_FETCH_MAX_AGE_MS` (7 days) are deleted. Entries without the stamp are evicted on first upgrade. |
+
+**Bump procedure.** Adding a new format version to any row above
+requires, in this order:
+
+1. Update the marker constant in code (client + server where applicable).
+2. Add the new version to the register row in this table.
+3. Decide whether the change is backward-compatible. If not, ship a
+   one-time migration or fail-closed path; never silently reinterpret
+   existing bytes under the new layout.
+
 ---
 
 ## Database Schema

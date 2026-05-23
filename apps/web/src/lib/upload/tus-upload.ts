@@ -8,6 +8,17 @@ const LOWERCASE_SHA256_HEX = /^[0-9a-f]{64}$/;
 const SHA256_HEX = /^[0-9a-fA-F]{64}$/;
 
 /**
+ * Current blob storage-format version. Sent as the `blob-format-version`
+ * Tus metadata key so the server can refuse uploads that disagree with
+ * the active envelope layout, and so future format changes are detected
+ * at upload time rather than silently corrupting stored shards.
+ *
+ * Bump in lockstep with backend `SupportedBlobFormatVersions` and the
+ * "Storage Format Versions" register in `docs/ARCHITECTURE.md`.
+ */
+export const BLOB_FORMAT_VERSION = 1;
+
+/**
  * Default Tus retry budget (~1.5 minutes total across 8 attempts).
  *
  * Previously `[0, 1000, 3000, 5000]` (4 attempts, ~9s total) — too tight
@@ -149,6 +160,7 @@ export async function tusUpload(
         albumId,
         shardIndex: String(shardIndex),
         'content-sha256': sha256ToTusMetadataHex(sha256),
+        'blob-format-version': String(BLOB_FORMAT_VERSION),
       },
       // Send credentials (cookies) with requests for authentication
       // In tus-js-client v2+, withCredentials is set via onBeforeRequest

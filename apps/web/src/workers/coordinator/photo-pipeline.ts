@@ -395,7 +395,7 @@ async function resolveKeyMaterial(input: PhotoTaskInput, deps: PhotoPipelineDeps
   const hit = cache.get(cacheKey);
   if (hit) return hit.epochKey;
   const material = await deps.getEpochSeed(input.albumId, input.entry.epochId);
-  cache.put({ epochId: cacheKey, epochKey: material });
+  cache.put({ scopeKey: cacheKey, epochKey: material });
   return material;
 }
 

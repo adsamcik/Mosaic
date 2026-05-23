@@ -28,8 +28,19 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
+class MockApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 vi.mock('../api', () => ({
   getApi: () => mocks.api,
+  ApiError: MockApiError,
   fromBase64: (value: string) =>
     value === 'signer-pubkey'
       ? new Uint8Array(32).fill(7)

@@ -18,6 +18,7 @@
  */
 import {
   BG_FETCH_CACHE_NAME,
+  evictStaleCacheEntries,
   handleBackgroundFetchFail,
   handleBackgroundFetchSuccess,
 } from './sw-handlers';
@@ -42,6 +43,9 @@ self.addEventListener('activate', (event) => {
         .filter((name) => name.startsWith('mosaic-bgfetch') && name !== BG_FETCH_CACHE_NAME)
         .map((name) => self.caches.delete(name)),
     );
+    // Evict per-entry stale items from the current cache (TTL-based).
+    // Without this the bgfetch cache grew unbounded for long-lived SWs.
+    await evictStaleCacheEntries({ caches: self.caches });
   })());
 });
 

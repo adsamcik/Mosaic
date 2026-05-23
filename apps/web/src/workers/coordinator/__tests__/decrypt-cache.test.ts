@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createDecryptCache, type DecryptContext } from '../decrypt-cache';
 import type { EpochHandleId } from '../../types';
 
-function ctx(epochId: string, handleId: string = `epch_${epochId}`): DecryptContext {
-  return { epochId, epochKey: { kind: 'epoch-handle', handleId: handleId as EpochHandleId } };
+function ctx(scopeKey: string, handleId: string = `epch_${scopeKey}`): DecryptContext {
+  return { scopeKey, epochKey: { kind: 'epoch-handle', handleId: handleId as EpochHandleId } };
 }
 
 describe('DecryptCache', () => {

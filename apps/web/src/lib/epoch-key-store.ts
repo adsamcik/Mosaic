@@ -186,6 +186,25 @@ export function clearAlbumKeys(albumId: string): void {
 }
 
 /**
+ * Invalidate every cached epoch handle for `albumId`.
+ *
+ * Eviction hook called by the sync engine when it observes that the
+ * current viewer was removed from an album (membership tombstone, 403 on
+ * resync, or an explicit member-removed event). Drops all per-album epoch
+ * handles so a subsequent re-add does not silently reuse stale keys, and
+ * so the cache cannot grow unbounded with handles for albums the viewer
+ * no longer has access to.
+ *
+ * Semantic alias around `clearAlbumKeys` so callers reading the code can
+ * tell at a glance that this is the invalidation path, not a regular
+ * cache-clear during rotation.
+ */
+export function invalidateAlbum(albumId: string): void {
+  log.debug('Invalidating epoch keys for album (member-removed/access-revoked)', { albumId });
+  clearAlbumKeys(albumId);
+}
+
+/**
  * Clear all cached epoch keys. Call on logout to ensure every Rust handle
  * is released.
  */

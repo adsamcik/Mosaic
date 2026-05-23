@@ -183,6 +183,67 @@ public sealed class TusUploadFlowTests : IDisposable
     }
 
     [Fact]
+    public async Task OnBeforeCreate_FailsRequest_WhenBlobFormatVersionMissing()
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync($"missing-blob-ver-{Guid.NewGuid()}");
+        var album = await builder.CreateAlbumAsync(user);
+        var httpContext = TestHttpContext.Create(user.AuthSub);
+        var beforeCreate = CreateContext<BeforeCreateContext>(httpContext, ctx =>
+        {
+            ctx.UploadLength = 1024;
+            ctx.Metadata = CreateMetadata(album.Id, blobFormatVersion: null);
+        });
+
+        await TusEventHandlers.OnBeforeCreateAsync(beforeCreate, _provider);
+
+        Assert.True(beforeCreate.HasFailed);
+        Assert.Equal("Missing Tus metadata 'blob-format-version'", beforeCreate.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("99")]
+    [InlineData("not-a-number")]
+    [InlineData("1.0")]
+    public async Task OnBeforeCreate_FailsRequest_WhenBlobFormatVersionUnsupportedOrMalformed(string value)
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync($"bad-blob-ver-{Guid.NewGuid()}");
+        var album = await builder.CreateAlbumAsync(user);
+        var httpContext = TestHttpContext.Create(user.AuthSub);
+        var beforeCreate = CreateContext<BeforeCreateContext>(httpContext, ctx =>
+        {
+            ctx.UploadLength = 1024;
+            ctx.Metadata = CreateMetadata(album.Id, blobFormatVersion: value);
+        });
+
+        await TusEventHandlers.OnBeforeCreateAsync(beforeCreate, _provider);
+
+        Assert.True(beforeCreate.HasFailed);
+        Assert.Contains("blob-format-version", beforeCreate.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task OnBeforeCreate_Succeeds_WhenBlobFormatVersionIsCurrent()
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync($"ok-blob-ver-{Guid.NewGuid()}");
+        var album = await builder.CreateAlbumAsync(user);
+        var httpContext = TestHttpContext.Create(user.AuthSub);
+        var beforeCreate = CreateContext<BeforeCreateContext>(httpContext, ctx =>
+        {
+            ctx.UploadLength = 1024;
+            ctx.Metadata = CreateMetadata(album.Id, blobFormatVersion: "1");
+        });
+
+        await TusEventHandlers.OnBeforeCreateAsync(beforeCreate, _provider);
+
+        Assert.False(beforeCreate.HasFailed);
+    }
+
+    [Fact]
     public async Task OnFileComplete_PersistsAndroidOpaqueShard_WhenMimeMetadataDoesNotMatchCiphertext()
     {
         var builder = new TestDataBuilder(_db);
@@ -369,12 +430,17 @@ public sealed class TusUploadFlowTests : IDisposable
     private static Dictionary<string, tusdotnet.Models.Metadata> CreateMetadata(
         Guid albumId,
         string? contentSha256 = ValidContentSha256,
-        IReadOnlyDictionary<string, string>? extraMetadata = null)
+        IReadOnlyDictionary<string, string>? extraMetadata = null,
+        string? blobFormatVersion = "1")
     {
         var header = $"albumId {Convert.ToBase64String(Encoding.UTF8.GetBytes(albumId.ToString()))}";
         if (contentSha256 != null)
         {
             header += $",content-sha256 {Convert.ToBase64String(Encoding.UTF8.GetBytes(contentSha256))}";
+        }
+        if (blobFormatVersion != null)
+        {
+            header += $",blob-format-version {Convert.ToBase64String(Encoding.UTF8.GetBytes(blobFormatVersion))}";
         }
         if (extraMetadata != null)
         {
