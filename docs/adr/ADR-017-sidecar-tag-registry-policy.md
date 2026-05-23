@@ -159,3 +159,64 @@ Deprecating a tag requires:
 ## Reversibility
 
 The registry policy itself is reversible (this ADR can be amended). The numeric allocations made under it are **not reversible**: tag numbers are forever reserved once allocated. For active tags, the (tag → layout) tuple is forever frozen by the lock test; for `ReservedNumberPending<TicketId>` tags, the byte layout becomes irreversible only when the corresponding R-M ticket merges with its golden vector. Deprecation preserves the numeric value; outright reuse is forbidden.
+
+## Appendix A — `MAX_SIDECAR_TOTAL_BYTES = 65_536` rationale (v1.0.2 docs-cluster s27)
+
+The hard cap on the total TLV body size of an encrypted sidecar is **65 536 bytes
+(64 KiB exactly)**. This appendix records the rationale for the specific value so
+that future maintainers do not relax or tighten the cap without understanding
+its tradeoffs. The cap is enforced by `crates/mosaic-crypto` decoders and
+mirrored by web/Android parity tests.
+
+### Why a cap exists at all
+
+The sidecar is an attacker-controlled, server-relayed blob that a decoder must
+allocate to validate. Without a cap, a hostile server (or a hostile peer
+through a share-link) could send an arbitrarily large blob to force the client
+into a DoS allocation. The cap is the single allocation upper bound the
+decoder commits to before reading a single TLV.
+
+### Why exactly 65 536 (= `2^16`)
+
+1. **Fits in a `u16` length count.** Although individual TLV lengths use larger
+   width fields per-tag, framing total-length comparisons against a `u16` ceiling
+   keeps the boundary check cheap on 32-bit WASM and Android NDK targets, with
+   no risk of width-confusion bugs (compare-with-`usize` casts are explicit).
+2. **Round binary number, large headroom over real worst case.** The current
+   active-tag worst-case computed in §"Decision" §7 is **340 bytes**. 64 KiB
+   leaves a `~192×` headroom — enough that several future video / camera-meta
+   tags can be promoted from `ReservedNumberPending` without re-opening the
+   cap, but far below a megabyte-class DoS surface.
+3. **Materially smaller than the prior provisional value (1.5 MB).** R-M5.2.1
+   shipped a provisional `MAX_SIDECAR_TOTAL_BYTES = 1_500_000`. The
+   3-reviewer pass observed that this allowed a single sidecar to dominate the
+   manifest finalisation memory profile on low-end Android devices (1.5 MB is
+   larger than a typical preview-tier shard) for no measurable feature
+   benefit. R-M5.2.2 tightened the cap to 64 KiB once the worst-case active-tag
+   total was computed and verified.
+4. **One AEAD chunk in the streaming envelope (ADR-013).** A 64 KiB cap means
+   an entire sidecar fits inside a single `v0x04` streaming frame (which uses
+   a 64 KiB plaintext chunk size), keeping the encryption side single-shot
+   even when sidecar transport is consolidated with shard transport in a
+   future v1.x. No protocol design depends on this property today, but it
+   removes a future incompatibility hazard at zero cost.
+5. **Not 32 KiB.** A tighter cap (e.g. 32 KiB = `2^15`) was considered and
+   rejected: it eliminates roughly half the headroom for future active tags
+   while saving negligible memory on any realistic deployment. The
+   marginal DoS hardening benefit is below the threshold worth a freeze.
+
+### Why the cap is protocol-visible
+
+Relaxing the cap after v1 freeze means an old v1 client receiving a v1.x
+sidecar may reject a valid blob with `MalformedSidecar` even though the
+producer considered it valid. That is a wire-visible behaviour change and
+therefore requires a new envelope version + a new ADR amending the
+`SPEC-LateV1ProtocolFreeze.md` §"Frozen now" item 5. Tightening the cap is
+also protocol-visible (a v1 sidecar at 64 KiB exactly would be rejected by a
+v1.x client that lowered the cap). Both directions are treated as breaking
+changes.
+
+References: `crates/mosaic-crypto/src/metadata_sidecar.rs`,
+`crates/mosaic-domain/src/lib.rs::MAX_SIDECAR_TOTAL_BYTES`,
+`docs/specs/SPEC-CanonicalSidecarTags.md`,
+`docs/specs/SPEC-RustEncryptedMetadataSidecar.md`.

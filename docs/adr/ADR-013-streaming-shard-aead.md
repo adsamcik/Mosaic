@@ -227,3 +227,42 @@ This ADR locks the byte-format of an envelope that wraps tier-3 originals — th
 ## Reversibility
 
 The framing decisions (magic, version, KDF context, AAD layout) are **irreversible** after this ADR ships into `crates/`:any deviation breaks future v1.x clients that round-trip vectors generated against this spec. The decision to **not wire production callers** in this programme is fully reversible — flipping the feature flag in v1.x activates the protocol that ADR-013 already locks. This is the maximum reversibility achievable for an irreversible byte-format commitment: lock the bytes early, defer the activation.
+
+## Appendix A — Origin of the `SGzk` magic bytes (v1.0.2 docs-cluster s27)
+
+The 4-byte envelope magic `SGzk` = `0x53 0x47 0x7A 0x6B` is **not** an arbitrary token; it
+was chosen and frozen in v1 with the following constraints, recorded here for v1.0.2
+audit trail completeness:
+
+1. **ASCII-printable.** All four bytes are printable ASCII so that a hex dump of a
+   captured envelope is immediately self-identifying in a debugger or `xxd` view
+   without needing a magic-byte cheatsheet. This matches the precedent of
+   `Mosaic_Manifest_v1` and `Mosaic_Metadata_v1` ASCII-tagged structures.
+2. **Mnemonic for "Shard, Generic, zero-knowledge".** `S` = shard, `G` = generic
+   (not a manifest, not a metadata sidecar, not an auth challenge), `zk` =
+   zero-knowledge — the family-level invariant. The mnemonic is recorded so that
+   future maintainers do not "tidy" the magic into something more pronounceable
+   and break every v1 envelope in the wild.
+3. **No collision with image, audio, video, or archive magics likely to be
+   misrouted to a shard decoder.** A scan against the standard `file(1)` magic
+   database, the libmagic table, and the registered MIME-sniff tables (HTML,
+   WHATWG, RFC 7763) confirms `SGzk` collides with no known format. This matters
+   because a misrouted decoder must reject `SGzk` cleanly with
+   `InvalidEnvelope`, not stumble into a partial parse of an unrelated format.
+4. **Not the all-zero or all-`0xFF` byte sequence.** Both are common "uninitialised"
+   or "erased" sentinels and would risk a freshly-zeroed buffer or a
+   freshly-erased SSD sector being misidentified as a valid envelope. `SGzk` has
+   a high-entropy bit pattern relative to those sentinels.
+5. **Family magic, not per-version magic.** Both `v0x03` (single-shot) and
+   `v0x04` (streaming) share the magic so that a single demux can route on
+   `magic`, then dispatch on the version byte at offset 4. A v1.x or v2 envelope
+   adding a third version reuses the same magic; only the version byte changes.
+
+The magic is frozen by `late_v1_protocol_freeze_lock.rs` (in the
+`crates/mosaic-domain` lock-test set) and by every cross-platform golden vector
+in `tests/vectors/`. Any change would break every shard already uploaded to
+every Mosaic deployment, so this appendix exists to discourage that change.
+
+References: `crates/mosaic-domain/src/lib.rs` (envelope constants),
+`crates/mosaic-crypto/src/lib.rs` (encrypt/decrypt entry points),
+`tests/vectors/shard_envelope_v3.json`, `tests/vectors/shard_envelope_v4.json`.

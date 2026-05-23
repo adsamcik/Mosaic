@@ -878,3 +878,119 @@ Searching the output for any of `protobuf-java`, `commons-io`, `netty-*`,
 `jose4j`, `bcprov-jdk18on`, `bcpkix-jdk18on`, `jdom2`, or `commons-compress`
 will return zero matches in the four runtime/test classpath reports and matches
 only inside the buildscript / UTP listings.
+
+---
+
+## Documented threat-model surfaces (v1.0.2)
+
+This section documents two surfaces that v1.0.2 review flagged as
+**intentional, accepted, and operator-visible**: the pubkey-existence
+lookup endpoint and the non-ASCII surrogate-pair handling in cross-facade
+text fields. Both are noted here so future security reviews do not flag
+them as latent issues — they are known and accepted within the
+zero-knowledge model.
+
+### Pubkey-existence oracle — `GET /api/v1/users/by-pubkey/{pubkey}`
+
+**Endpoint:** `apps/backend/Mosaic.Backend/Controllers/UsersController.cs::GetUserByPubkey`
+(`apps/backend/Mosaic.Backend/Controllers/UsersController.cs:407`).
+
+**Behaviour.** Given a base64-encoded Ed25519 identity pubkey, the
+endpoint returns the user record (or `404`) for the holder of that
+pubkey. An authenticated caller can therefore probe whether an arbitrary
+pubkey is registered on this deployment.
+
+**Why this is intentional.**
+
+- **Albums are shared by pubkey.** When the owner of an album shares it
+  with another user, the owner needs to discover the recipient's pubkey
+  to seal the epoch-key bundle to it (see "Epoch Key Lifecycle" above).
+  Without a pubkey-to-user resolution endpoint, the owner cannot
+  complete the share flow.
+- **The endpoint is authenticated.** It is gated by the reverse-proxy
+  auth integration; unauthenticated network observers cannot enumerate
+  pubkeys.
+- **Pubkey enumeration is bounded by deployment size.** Mosaic deploys
+  to ≤50-user populations (`docs/RELEASE.md`). The maximum exposure of
+  the oracle is "an authenticated user can learn the ≤50 other
+  pubkeys"; in practice an album-shared user already learns them
+  through the normal share workflow.
+- **The oracle does not link to plaintext identity.** It returns the
+  user row (account id, display name) but never returns L2 / epoch
+  key material, manifest contents, or any plaintext. The server has
+  none of that.
+
+**What the oracle does leak.**
+
+- Existence of an account for a given pubkey (binary signal).
+- The account id, display name, and creation timestamp for that
+  account (the same fields visible through the share-with-user UI).
+
+**What the oracle does not leak.**
+
+- Plaintext or encrypted album contents.
+- L0/L1/L2 key material (the server never has these).
+- Cross-deployment information (each deployment has an independent
+  pubkey set; one deployment's oracle says nothing about another).
+
+**Mitigations in place.**
+
+- Authentication required (reverse-proxy enforced).
+- Rate limiting at the reverse-proxy layer (operator-configurable).
+- The endpoint is excluded from anonymous projections — see
+  `docs/AUDIT-anonymous-projections-2026-05-19.md`.
+
+**Why we don't blind it.** A blinded "pubkey commitment" endpoint
+(e.g. PIR over the user table) is technically possible but
+disproportionate for a ≤50-user deployment scale where the oracle's
+attack value is already bounded. Revisit if a future deployment scale
+demands it (out of scope for v1).
+
+### Non-ASCII surrogate-pair handling
+
+**Surface.** Cross-platform text inputs (camera make, camera model,
+display name, etc.) that flow through the Rust core `mosaic-crypto`
+TS-canonical primitives and the parity vectors in
+`crates/mosaic-parity-tests/`.
+
+**Behaviour.** Unicode surrogate-pair sequences (UTF-16 code units in
+the range `0xD800..=0xDFFF` that pair to encode supplementary-plane
+codepoints, e.g. emoji and rare CJK) are normalised to NFC by the
+canonicalisation step before AEAD encryption. The Rust canonical form
+uses UTF-8 throughout; the TypeScript and Kotlin facades convert from
+their native UTF-16 representations at the boundary.
+
+**Known limitation (v1.0.0 → v1.0.2).** Some cross-facade
+round-trips through invalid or lone-surrogate code units (i.e. a
+high-surrogate without its low-surrogate pair, or vice versa) are
+**rejected with a typed canonicalisation error** rather than silently
+re-encoded. This is documented behaviour, covered by deviation
+manifests in `tests/vectors/`, and is the intentional choice over
+"silent best-effort transcoding" because:
+
+- Lone surrogates are not valid UTF-8 and not valid Unicode; accepting
+  them would mean accepting different byte sequences for the same
+  apparent input across facades, breaking the byte-equality guarantee
+  that the cross-platform parity tests assert.
+- A user-facing label or filename containing a lone surrogate is
+  almost always the result of a data-corruption upstream (filesystem
+  with unpaired UTF-16, a corrupted clipboard paste). Rejecting it at
+  the boundary surfaces the corruption to the user where they can fix
+  it, rather than fossilising it into encrypted bytes.
+
+**Affected fields.** Any field whose canonical form is UTF-8 NFC:
+camera make, camera model, MIME override, display name, filename
+(where filenames are accepted at all — see ADR-017 §"Forbidden
+payloads"), share-link descriptive labels.
+
+**User-visible effect.** A photo whose source metadata contains a
+lone-surrogate string will fail upload at the canonicalisation step
+with a typed error rather than uploading silently and producing a
+mis-decoded label on another device. Operators see this in
+client-side error reporting (no key material in the error path).
+
+**Tracking.** Cross-facade byte-risk areas are enumerated in the
+parity-tests deviation manifest at
+`crates/mosaic-parity-tests/tests/cross_platform_parity.rs`. The
+RELEASE_NOTES known-limitation entry has been refined in v1.0.2 to
+match this precise framing.

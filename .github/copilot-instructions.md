@@ -81,7 +81,7 @@ c:\Users\adam-\.copilot\skills\
 - Tus protocol for resumable uploads
 - Authentication via trusted reverse proxy (Remote-User header)
 
-### Frontend (React 19 + Vite 7)
+### Frontend (React 19 + Vite 8)
 - TypeScript strict mode
 - Web Workers for crypto and database operations
 - SQLite-WASM (fts5-sql-bundle) with OPFS for local storage + full-text search

@@ -12,6 +12,13 @@ export const supportedLanguages = [
 
 export type SupportedLanguage = (typeof supportedLanguages)[number]['code'];
 
+// BCP-47 RTL language subtags (preparation for future v1.1 RTL locales).
+// Until a code from this set is added to supportedLanguages above, all
+// runtime behaviour is unchanged (every shipped locale is LTR).
+const RTL_LANGUAGE_CODES = new Set([
+  'ar', 'arc', 'dv', 'fa', 'ha', 'he', 'khw', 'ks', 'ku', 'ps', 'ur', 'yi',
+]);
+
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
@@ -44,7 +51,9 @@ function syncDocumentLanguage(lang: string | undefined): void {
     return;
   }
 
-  document.documentElement.lang = lang.split('-')[0] || 'en';
+  const base = lang.split('-')[0] || 'en';
+  document.documentElement.lang = base;
+  document.documentElement.dir = RTL_LANGUAGE_CODES.has(base) ? 'rtl' : 'ltr';
 }
 
 i18n.on('languageChanged', syncDocumentLanguage);

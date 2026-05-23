@@ -410,8 +410,14 @@ These are known and explicit at v1.0.0:
   v1 ships web and Android protocol surfaces.
 - Android `MediaTierGenerator` per-tier transforms are not wired into production
   upload generation at this tag.
-- Some non-ASCII surrogate-pair edge cases are documented by parity tests as
-  cross-facade byte-risk areas rather than hidden assumptions.
+- Some non-ASCII surrogate-pair edge cases (lone / unpaired UTF-16 surrogates
+  in user-facing text fields such as camera make/model, display name, MIME
+  override) are **rejected at the cross-facade canonicalisation boundary**
+  with a typed error, rather than silently best-effort transcoded. This is
+  intentional — see `docs/SECURITY.md` §"Non-ASCII surrogate-pair handling"
+  for the full rationale and the parity-tests deviation manifest at
+  `crates/mosaic-parity-tests/tests/cross_platform_parity.rs` for the
+  enumerated cases.
 - `cargo doc` warnings remain non-blocking for this tag.
 - A small number of clippy findings remain non-blocking for this tag.
 - Metadata sidecar decoder hardening tracked after R-M5.2 remains outside the
