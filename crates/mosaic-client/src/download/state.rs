@@ -19,6 +19,8 @@ use crate::download::DownloadErrorCode;
 /// | `Cancelled { soft: true }` | `CancelRequested { soft: false }` | `Cancelled { soft: false }` | escalation to hard cancel is allowed. |
 /// | `Cancelled { soft: false }` | `CancelRequested { soft: true }` | illegal | cannot un-purge staged files. |
 /// | `Done`/`Errored`/`Cancelled` | `CancelRequested` | unchanged | terminal cancel replay is idempotent except soft-after-hard cancel. |
+/// | `Errored { reason: prev }` | `ErrorEncountered { reason: next }` | `Errored { reason: next }` | latest-wins: replay/duplicate `ErrorEncountered` overwrites the prior reason so the most recent failure is preserved. |
+/// | `Done` | `FinalizationDone` | `Done` | idempotent no-op for replayed finalization. |
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DownloadJobState {
     Idle,
@@ -134,9 +136,8 @@ pub fn apply(
         (S::Preparing | S::Running | S::Paused | S::Finalizing, E::ErrorEncountered { reason }) => {
             S::Errored { reason: *reason }
         }
-        (S::Errored { .. }, E::ErrorEncountered { .. }) | (S::Done, E::FinalizationDone) => {
-            state.clone()
-        }
+        (S::Errored { .. }, E::ErrorEncountered { reason }) => S::Errored { reason: *reason },
+        (S::Done, E::FinalizationDone) => state.clone(),
         _ => {
             return Err(TransitionError {
                 from: state.clone(),

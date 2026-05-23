@@ -227,3 +227,71 @@ fn resume_when_already_running_is_noop() {
         DownloadJobState::Running
     );
 }
+
+#[test]
+fn duplicate_error_encountered_in_errored_preserves_latest_reason() {
+    // Regression: v1.0.2 — Download FSM previously dropped the new
+    // `ErrorEncountered.reason` when already `Errored`, silently retaining the
+    // stale prior reason. The transition is now latest-wins so observers see
+    // the most recent failure code.
+    let first = apply(
+        &DownloadJobState::Running,
+        &DownloadJobEvent::ErrorEncountered {
+            reason: DownloadErrorCode::Quota,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        first,
+        DownloadJobState::Errored {
+            reason: DownloadErrorCode::Quota
+        }
+    );
+    let second = apply(
+        &first,
+        &DownloadJobEvent::ErrorEncountered {
+            reason: DownloadErrorCode::AccessRevoked,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        second,
+        DownloadJobState::Errored {
+            reason: DownloadErrorCode::AccessRevoked
+        }
+    );
+    // Same-reason replay still works (true no-op).
+    let third = apply(
+        &second,
+        &DownloadJobEvent::ErrorEncountered {
+            reason: DownloadErrorCode::AccessRevoked,
+        },
+    )
+    .unwrap();
+    assert_eq!(third, second);
+}
+
+#[test]
+fn done_finalization_done_is_idempotent_noop() {
+    assert_eq!(
+        apply(&DownloadJobState::Done, &DownloadJobEvent::FinalizationDone).unwrap(),
+        DownloadJobState::Done
+    );
+}
+
+#[test]
+fn pause_resume_in_terminal_states_are_rejected() {
+    // Idempotency for `PauseRequested`/`ResumeRequested` is limited to the
+    // running pipeline. Terminal states must still reject these events so
+    // callers cannot accidentally "revive" a finished job.
+    let errored = DownloadJobState::Errored {
+        reason: DownloadErrorCode::Quota,
+    };
+    assert!(apply(&errored, &DownloadJobEvent::PauseRequested).is_err());
+    assert!(apply(&errored, &DownloadJobEvent::ResumeRequested).is_err());
+    assert!(apply(&DownloadJobState::Done, &DownloadJobEvent::PauseRequested).is_err());
+    assert!(apply(&DownloadJobState::Done, &DownloadJobEvent::ResumeRequested).is_err());
+    let cancelled = DownloadJobState::Cancelled { soft: true };
+    assert!(apply(&cancelled, &DownloadJobEvent::PauseRequested).is_err());
+    assert!(apply(&cancelled, &DownloadJobEvent::ResumeRequested).is_err());
+}
