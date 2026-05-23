@@ -99,11 +99,24 @@ export async function getCryptoPool(opts?: CryptoPoolOptions): Promise<CryptoPoo
   return new CryptoWorkerPool(opts?.size ?? autoSizePool());
 }
 
+/** Maximum number of pending acquire() callers permitted to queue behind the
+ *  semaphore. Tuned for the shard-decryption pipeline: the pool size is
+ *  typically 2-6 workers and one-decrypt-per-shard upstream concurrency is
+ *  already gated by the download pipeline's parallelism budget. A queue
+ *  ceiling of 100 absorbs short bursts (e.g. a virtualized list scrolling
+ *  rapidly across decrypted thumbnails) while preventing a runaway producer
+ *  from accumulating unbounded promises that pin shard bytes in memory.
+ *
+ *  Exposed for tests and for telemetry that wants to surface "rejection
+ *  imminent" warnings before the limit is reached.
+ */
+export const CRYPTO_POOL_MAX_WAITERS = 100;
+
 class Semaphore {
   private active = 0;
   private readonly waiters: Array<() => void> = [];
 
-  constructor(private readonly permits: number) {}
+  constructor(private readonly permits: number, private readonly maxWaiters: number) {}
 
   get queued(): number {
     return this.waiters.length;
@@ -111,6 +124,12 @@ class Semaphore {
 
   async acquire(): Promise<() => void> {
     if (this.active >= this.permits) {
+      if (this.waiters.length >= this.maxWaiters) {
+        throw new DownloadError(
+          'IllegalState',
+          `Crypto pool queue is full (${this.waiters.length}/${this.maxWaiters} waiters). Slow down upstream concurrency or retry after in-flight work drains.`,
+        );
+      }
       await new Promise<void>((resolve) => {
         this.waiters.push(resolve);
       });
@@ -138,7 +157,7 @@ class CryptoWorkerPool implements CryptoPool {
 
   constructor(size: number) {
     this.size = Math.max(1, Math.floor(size));
-    this.semaphore = new Semaphore(this.size);
+    this.semaphore = new Semaphore(this.size, CRYPTO_POOL_MAX_WAITERS);
   }
 
   async verifyShard(shardBytes: Uint8Array, expectedHash: Uint8Array): Promise<void> {
@@ -311,5 +330,17 @@ export const __cryptoPoolTestUtils = {
   },
   isWorkerDiedError(error: unknown): boolean {
     return isWorkerDiedError(error);
+  },
+  /**
+   * v1.0.2 crypto-pool-cap: expose the bounded semaphore for unit testing
+   * the queue-full backpressure path. Production code MUST NOT consume this
+   * — it exists solely so tests can drive `permits`/`maxWaiters` directly
+   * without spinning up 100+ hung in-flight dispatches.
+   */
+  createSemaphoreForTesting(permits: number, maxWaiters: number): {
+    acquire(): Promise<() => void>;
+    readonly queued: number;
+  } {
+    return new Semaphore(permits, maxWaiters);
   },
 };

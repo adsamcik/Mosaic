@@ -37,7 +37,7 @@ vi.mock('comlink', () => ({
   transferHandlers: new Map(),
 }));
 
-import { __cryptoPoolTestUtils, autoSizePool, DownloadError, getCryptoPool } from '../crypto-pool';
+import { __cryptoPoolTestUtils, autoSizePool, CRYPTO_POOL_MAX_WAITERS, DownloadError, getCryptoPool } from '../crypto-pool';
 import type { LinkDecryptionKey } from '../types';
 
 function nav(opts: { readonly hardwareConcurrency: number; readonly mobile?: boolean; readonly userAgent?: string; readonly effectiveType?: string }): Navigator {
@@ -182,5 +182,41 @@ describe('crypto pool', () => {
     await expect(inFlight).rejects.toMatchObject({ code: 'IllegalState' });
     expect(workerRecords).toHaveLength(1);
     expect(workerRecords[0]?.terminated).toBe(true);
+  });
+
+  it('Semaphore rejects with IllegalState when queue is full (v1.0.2 backpressure cap)', async () => {
+    // Drive the Semaphore directly with tiny limits so we don't have to
+    // hang 100 fake crypto dispatches. The behaviour we care about — and
+    // that v1.0.2 introduced — is queue overflow rejection, not throughput.
+    const sem = __cryptoPoolTestUtils.createSemaphoreForTesting(1, 2);
+
+    // Fill the only permit + both waiter slots.
+    const releaseActive = await sem.acquire();
+    const queued1 = sem.acquire();
+    const queued2 = sem.acquire();
+    expect(sem.queued).toBe(2);
+
+    // Third waiter trips the cap → synchronous async rejection.
+    await expect(sem.acquire()).rejects.toMatchObject({
+      code: 'IllegalState',
+      message: expect.stringContaining('queue is full'),
+    });
+    expect(sem.queued).toBe(2);
+
+    // Draining the active permit re-admits queued waiters in FIFO order.
+    releaseActive();
+    const releaseQ1 = await queued1;
+    expect(sem.queued).toBe(1);
+    releaseQ1();
+    const releaseQ2 = await queued2;
+    expect(sem.queued).toBe(0);
+    releaseQ2();
+  });
+
+  it('exports a non-zero CRYPTO_POOL_MAX_WAITERS ceiling (v1.0.2 backpressure cap)', () => {
+    // Guards against accidental regressions that disable the cap by setting
+    // it to 0 (which the Semaphore would interpret as "reject everything").
+    expect(CRYPTO_POOL_MAX_WAITERS).toBeGreaterThan(0);
+    expect(Number.isInteger(CRYPTO_POOL_MAX_WAITERS)).toBe(true);
   });
 });

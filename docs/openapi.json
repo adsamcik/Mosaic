@@ -2471,6 +2471,7 @@
         "type": "object",
         "properties": {
           "username": {
+            "maxLength": 256,
             "type": "string"
           }
         }
@@ -2486,39 +2487,52 @@
         "type": "object",
         "properties": {
           "username": {
+            "maxLength": 256,
             "type": "string"
           },
           "authPubkey": {
+            "maxLength": 128,
             "type": "string"
           },
           "identityPubkey": {
+            "maxLength": 128,
             "type": "string"
           },
           "userSalt": {
+            "maxLength": 128,
             "type": "string"
           },
           "accountSalt": {
+            "maxLength": 128,
             "type": "string"
           },
           "wrappedAccountKey": {
+            "maxLength": 2048,
             "type": "string",
             "nullable": true
           },
           "wrappedIdentitySeed": {
+            "maxLength": 2048,
             "type": "string",
             "nullable": true
           },
           "kdfMemoryKib": {
+            "maximum": 1048576,
+            "minimum": 8192,
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "format": "int64",
             "default": 65536
           },
           "kdfIterations": {
+            "maximum": 32,
+            "minimum": 1,
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "format": "int32",
             "default": 3
           },
           "kdfParallelism": {
+            "maximum": 16,
+            "minimum": 1,
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "format": "int32",
             "default": 1
@@ -2539,6 +2553,7 @@
         "type": "object",
         "properties": {
           "username": {
+            "maxLength": 256,
             "type": "string"
           },
           "challengeId": {
@@ -2546,6 +2561,7 @@
             "format": "uuid"
           },
           "signature": {
+            "maxLength": 256,
             "type": "string"
           },
           "timestamp": {
@@ -2606,18 +2622,22 @@
             "format": "int32"
           },
           "encryptedKeyBundle": {
+            "maxLength": 4096,
             "type": "string",
             "format": "byte"
           },
           "ownerSignature": {
+            "maxLength": 128,
             "type": "string",
             "format": "byte"
           },
           "sharerPubkey": {
+            "maxLength": 64,
             "type": "string",
             "format": "byte"
           },
           "signPubkey": {
+            "maxLength": 64,
             "type": "string",
             "format": "byte"
           }
@@ -2642,9 +2662,11 @@
             "format": "uuid"
           },
           "assetType": {
+            "maxLength": 16,
             "type": "string"
           },
           "encryptedMeta": {
+            "maxLength": 1048576,
             "type": "string",
             "format": "byte"
           },
@@ -2655,12 +2677,15 @@
             "nullable": true
           },
           "signature": {
+            "maxLength": 256,
             "type": "string"
           },
           "signerPubkey": {
+            "maxLength": 128,
             "type": "string"
           },
           "shardIds": {
+            "maxItems": 1000,
             "type": "array",
             "items": {
               "type": "string"
@@ -2672,6 +2697,7 @@
             "nullable": true
           },
           "tieredShards": {
+            "maxItems": 1000,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TieredShardInfo"
@@ -2745,6 +2771,7 @@
         "type": "object",
         "properties": {
           "tombstoneSignature": {
+            "maxLength": 128,
             "type": "string",
             "nullable": true
           },
@@ -2762,6 +2789,7 @@
         "type": "object",
         "properties": {
           "confirmationText": {
+            "maxLength": 256,
             "type": "string"
           },
           "challengeId": {
@@ -2770,6 +2798,7 @@
             "nullable": true
           },
           "confirmationSignature": {
+            "maxLength": 8192,
             "type": "string",
             "nullable": true
           },
@@ -2795,15 +2824,19 @@
             "format": "int32"
           },
           "encryptedKeyBundle": {
+            "maxLength": 8192,
             "type": "string"
           },
           "ownerSignature": {
+            "maxLength": 256,
             "type": "string"
           },
           "sharerPubkey": {
+            "maxLength": 128,
             "type": "string"
           },
           "signPubkey": {
+            "maxLength": 128,
             "type": "string"
           }
         }
@@ -2930,9 +2963,11 @@
             "format": "uuid"
           },
           "role": {
+            "maxLength": 32,
             "type": "string"
           },
           "epochKeys": {
+            "maxItems": 100,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EpochKeyCreate"
@@ -3037,6 +3072,7 @@
             "format": "uuid"
           },
           "currentSignature": {
+            "maxLength": 256,
             "type": "string"
           },
           "timestamp": {
@@ -3045,15 +3081,21 @@
             "nullable": true
           },
           "newUserSalt": {
+            "maxLength": 128,
             "type": "string"
           },
           "newAccountSalt": {
-            "type": "string"
+            "maxLength": 24,
+            "minLength": 24,
+            "type": "string",
+            "format": "byte"
           },
           "newAuthPubkey": {
+            "maxLength": 128,
             "type": "string"
           },
           "newWrappedAccountKey": {
+            "maxLength": 2048,
             "type": "string"
           }
         }
@@ -3206,9 +3248,11 @@
             "format": "int32"
           },
           "signature": {
+            "maxLength": 128,
             "type": "string"
           },
           "members": {
+            "maxItems": 100,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/SignedRosterMember"
@@ -3228,12 +3272,14 @@
             "format": "int32"
           },
           "epochKeys": {
+            "maxItems": 100,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/CreateEpochKeyRequest"
             }
           },
           "shareLinkKeys": {
+            "maxItems": 100,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ShareLinkKeyUpdateRequest"
@@ -3249,6 +3295,7 @@
         "type": "object",
         "properties": {
           "encryptedName": {
+            "maxLength": 2048,
             "type": "string"
           }
         }
@@ -3465,6 +3512,7 @@
         "type": "object",
         "properties": {
           "shardId": {
+            "maxLength": 64,
             "type": "string"
           },
           "tier": {
@@ -3477,6 +3525,7 @@
             "default": 0
           },
           "sha256": {
+            "maxLength": 64,
             "type": "string",
             "nullable": true
           },
@@ -3558,6 +3607,7 @@
         "type": "object",
         "properties": {
           "encryptedDescription": {
+            "maxLength": 8192,
             "type": "string",
             "nullable": true
           }
@@ -3595,6 +3645,8 @@
             "nullable": true
           },
           "maxUses": {
+            "maximum": 2147483647,
+            "minimum": 1,
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "format": "int32",
             "nullable": true
@@ -3623,12 +3675,15 @@
         "type": "object",
         "properties": {
           "encryptedMeta": {
+            "maxLength": 1048576,
             "type": "string"
           },
           "signature": {
+            "maxLength": 256,
             "type": "string"
           },
           "signerPubkey": {
+            "maxLength": 128,
             "type": "string"
           }
         }
@@ -3637,14 +3692,17 @@
         "type": "object",
         "properties": {
           "identityPubkey": {
+            "maxLength": 128,
             "type": "string",
             "nullable": true
           },
           "encryptedSalt": {
+            "maxLength": 256,
             "type": "string",
             "nullable": true
           },
           "saltNonce": {
+            "maxLength": 256,
             "type": "string",
             "nullable": true
           }
@@ -3657,6 +3715,7 @@
         "type": "object",
         "properties": {
           "wrappedAccountKey": {
+            "maxLength": 2048,
             "type": "string"
           }
         }

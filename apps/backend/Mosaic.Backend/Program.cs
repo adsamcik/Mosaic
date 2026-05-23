@@ -100,6 +100,7 @@ builder.Services.Configure<SidecarSignalingOptions>(
 builder.Services.AddSingleton<RoomManager>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RoomManager>());
 builder.Services.AddSingleton<SidecarRateLimiter>();
+builder.Services.AddSingleton<Mosaic.Backend.Services.ShareLinkAttemptTracker>();
 
 // Controllers with camelCase JSON to match JavaScript conventions
 builder.Services.AddControllers(options =>
@@ -157,7 +158,14 @@ builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options 
     };
 });
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    // v1.0.2 openapi-newaccountsalt-shape: pipe DataAnnotations on DTO
+    // properties (Required/MinLength/MaxLength/StringLength/Base64String/...)
+    // into the generated JSON Schema so generated clients and contract tests
+    // can validate payloads before they hit the controller runtime checks.
+    options.AddSchemaTransformer<global::Mosaic.Backend.OpenApi.DataAnnotationsSchemaTransformer>();
+});
 
 // Global rate limiting - relaxed in E2E Testing because Playwright runs many
 // isolated users in parallel from localhost.

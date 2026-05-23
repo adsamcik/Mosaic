@@ -1043,6 +1043,15 @@ pub struct EpochKeyMaterial {
 /// the username. The domain is passed by callers so web and native wrappers can
 /// lock the exact protocol string at their own boundary tests.
 ///
+/// # Security note (v1 — DEPRECATED for new flows)
+/// Because `domain` and `username` are concatenated without a length prefix or
+/// separator, the function cannot prove a single-domain invariant in protocol
+/// audits: `derive_session_salt("alice.example.com", "bob")` collides with
+/// `derive_session_salt("alice.example.comb", "ob")`. The v1 encoding is
+/// preserved for byte-for-byte compatibility with already-derived account
+/// salts; new code paths (v1.0.2+) MUST call
+/// [`derive_session_salt_v2`] instead.
+///
 /// # Errors
 /// - `EmptyContext` if `domain` is empty.
 pub fn derive_session_salt(
@@ -1056,6 +1065,63 @@ pub fn derive_session_salt(
     let mut hasher = <Blake2b<U16> as Digest>::new();
     Digest::update(&mut hasher, domain.as_bytes());
     Digest::update(&mut hasher, username.as_bytes());
+    let bytes = hasher.finalize();
+    let mut out = [0_u8; SESSION_SALT_BYTES];
+    out.copy_from_slice(&bytes);
+    Ok(out)
+}
+
+/// Length-prefixed v2 of [`derive_session_salt`] that enforces the
+/// single-domain invariant required by the v1.0.2 protocol audit.
+///
+/// The hash input is the length-prefixed concatenation:
+///
+/// ```text
+/// v2_salt_input = BE32(len(domain)) || domain
+///              || BE32(len(username)) || username
+/// ```
+///
+/// where `BE32(n)` is the 4-byte big-endian encoding of `n` as a `u32`. The
+/// hash function is the same unkeyed BLAKE2b-128 used by v1 so the output
+/// width is unchanged (`SESSION_SALT_BYTES` == 16 bytes).
+///
+/// # Why length-prefix
+/// The v1 encoding `utf8(domain || username)` is ambiguous: an attacker who
+/// controls *part* of either field can produce a collision by shifting bytes
+/// across the boundary. The length-prefix makes the boundary explicit so the
+/// resulting salt is bound to the exact `(domain, username)` pair and the
+/// single-domain invariant is recoverable from the wire format.
+///
+/// # Migration
+/// New accounts and new key-derivation flows MUST use this function. Existing
+/// accounts whose salts were derived under v1 keep their derived salt for
+/// compatibility; a separate migration record is tracked under the v1.0.2
+/// salt-rotation TODO.
+///
+/// # Errors
+/// - `EmptyContext` if `domain` is empty.
+pub fn derive_session_salt_v2(
+    domain: &str,
+    username: &str,
+) -> Result<[u8; SESSION_SALT_BYTES], MosaicCryptoError> {
+    if domain.is_empty() {
+        return Err(MosaicCryptoError::EmptyContext);
+    }
+
+    let domain_bytes = domain.as_bytes();
+    let username_bytes = username.as_bytes();
+
+    // u32::MAX bytes per field is far beyond any realistic domain or username
+    // length, but reject overflow defensively rather than wrap on cast.
+    if domain_bytes.len() > u32::MAX as usize || username_bytes.len() > u32::MAX as usize {
+        return Err(MosaicCryptoError::EmptyContext);
+    }
+
+    let mut hasher = <Blake2b<U16> as Digest>::new();
+    Digest::update(&mut hasher, &(domain_bytes.len() as u32).to_be_bytes());
+    Digest::update(&mut hasher, domain_bytes);
+    Digest::update(&mut hasher, &(username_bytes.len() as u32).to_be_bytes());
+    Digest::update(&mut hasher, username_bytes);
     let bytes = hasher.finalize();
     let mut out = [0_u8; SESSION_SALT_BYTES];
     out.copy_from_slice(&bytes);
