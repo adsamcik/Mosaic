@@ -1118,9 +1118,9 @@ pub fn derive_session_salt_v2(
     }
 
     let mut hasher = <Blake2b<U16> as Digest>::new();
-    Digest::update(&mut hasher, &(domain_bytes.len() as u32).to_be_bytes());
+    Digest::update(&mut hasher, (domain_bytes.len() as u32).to_be_bytes());
     Digest::update(&mut hasher, domain_bytes);
-    Digest::update(&mut hasher, &(username_bytes.len() as u32).to_be_bytes());
+    Digest::update(&mut hasher, (username_bytes.len() as u32).to_be_bytes());
     Digest::update(&mut hasher, username_bytes);
     let bytes = hasher.finalize();
     let mut out = [0_u8; SESSION_SALT_BYTES];

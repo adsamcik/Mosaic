@@ -84,8 +84,8 @@ fn derive_session_salt_v2_produces_16_bytes() {
 
 #[test]
 fn derive_session_salt_v2_is_deterministic() {
-    let a = derive_session_salt_v2(DOMAIN, USERNAME).expect("v2 derive ok");
-    let b = derive_session_salt_v2(DOMAIN, USERNAME).expect("v2 derive ok");
+    let a = derive_session_salt_v2(DOMAIN, USERNAME).unwrap_or_else(|e| panic!("v2 derive failed: {e:?}"));
+    let b = derive_session_salt_v2(DOMAIN, USERNAME).unwrap_or_else(|e| panic!("v2 derive failed: {e:?}"));
     assert_eq!(a, b);
 }
 
@@ -94,15 +94,15 @@ fn derive_session_salt_v2_distinguishes_boundary_shifts() {
     // The whole point of length-prefix encoding: a byte shifted between
     // domain and username must NOT produce the same salt. Under v1 these
     // two inputs hash identically.
-    let v1_left = derive_session_salt("alice.example.com", "bob").expect("v1");
-    let v1_right = derive_session_salt("alice.example.comb", "ob").expect("v1");
+    let v1_left = derive_session_salt("alice.example.com", "bob").unwrap_or_else(|e| panic!("v1 derive failed: {e:?}"));
+    let v1_right = derive_session_salt("alice.example.comb", "ob").unwrap_or_else(|e| panic!("v1 derive failed: {e:?}"));
     assert_eq!(
         v1_left, v1_right,
         "v1 baseline: boundary shift collides (the bug the v2 fix targets)"
     );
 
-    let v2_left = derive_session_salt_v2("alice.example.com", "bob").expect("v2");
-    let v2_right = derive_session_salt_v2("alice.example.comb", "ob").expect("v2");
+    let v2_left = derive_session_salt_v2("alice.example.com", "bob").unwrap_or_else(|e| panic!("v2 derive failed: {e:?}"));
+    let v2_right = derive_session_salt_v2("alice.example.comb", "ob").unwrap_or_else(|e| panic!("v2 derive failed: {e:?}"));
     assert_ne!(
         v2_left, v2_right,
         "v2 length-prefix must break the boundary-shift collision"
@@ -114,18 +114,18 @@ fn derive_session_salt_v2_differs_from_v1_for_same_input() {
     // The encoding is intentionally different — v1 vs v2 callers must
     // never accidentally produce the same salt for the same (domain,
     // username) pair, otherwise the version bump is meaningless.
-    let v1 = derive_session_salt(DOMAIN, USERNAME).expect("v1");
-    let v2 = derive_session_salt_v2(DOMAIN, USERNAME).expect("v2");
+    let v1 = derive_session_salt(DOMAIN, USERNAME).unwrap_or_else(|e| panic!("v1 derive failed: {e:?}"));
+    let v2 = derive_session_salt_v2(DOMAIN, USERNAME).unwrap_or_else(|e| panic!("v2 derive failed: {e:?}"));
     assert_ne!(v1, v2);
 }
 
 #[test]
 fn derive_session_salt_v2_accepts_empty_username() {
-    let salt = derive_session_salt_v2(DOMAIN, "").expect("empty username ok");
+    let salt = derive_session_salt_v2(DOMAIN, "").unwrap_or_else(|e| panic!("v2 empty username failed: {e:?}"));
     assert_eq!(salt.len(), 16);
     // Length-prefixed empty username must still differ from the
     // single-field case (which is impossible to express in v2, but we
     // can at least verify it isn't equal to the v1 derivation).
-    let v1 = derive_session_salt(DOMAIN, "").expect("v1 empty username");
+    let v1 = derive_session_salt(DOMAIN, "").unwrap_or_else(|e| panic!("v1 empty username failed: {e:?}"));
     assert_ne!(salt, v1);
 }
