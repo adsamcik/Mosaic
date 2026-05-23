@@ -27,7 +27,15 @@ $AllowedFiles = @{
 $Patterns = @(
   @{
     Name = 'primitive_crate_import'
-    Regex = '\buse\s+(sha2|sha1|blake2|hkdf|hmac|chacha20(poly1305)?|aes_gcm|xchacha20poly1305|ed25519(_dalek)?|x25519(_dalek)?|argon2|crypto_secretbox|pbkdf2|generic_array|hybrid_array)\s*(::|\{)'
+    Regex = '\buse\s+(sha2|sha1|blake2|hkdf|hmac|chacha20(poly1305)?|aes_gcm|xchacha20poly1305|ed25519(_dalek)?|x25519(_dalek)?|argon2|crypto_secretbox|pbkdf2|generic_array|hybrid_array)\s*(::|\{|as\b|;)'
+  },
+  @{
+    Name = 'primitive_crate_qualified_path'
+    # Matches fully-qualified or top-level paths like `::sha2::Sha256`,
+    # `sha2::Digest`, or `crate::sha2::Foo` that reach into a banned primitive
+    # crate without going through `mosaic_crypto::`. Negative lookbehind for
+    # `mosaic_crypto::` skips our own facade's re-exports.
+    Regex = '(?<!\w)(?<!mosaic_crypto::)(?:::)?(sha2|sha1|blake2|hkdf|hmac|chacha20poly1305|chacha20|aes_gcm|xchacha20poly1305|ed25519_dalek|ed25519|x25519_dalek|x25519|argon2|crypto_secretbox|pbkdf2|generic_array|hybrid_array)::\w'
   }
 )
 
@@ -56,6 +64,20 @@ function Assert-PatternFixtureCaught([string]$Name, [string]$Source, [string]$Ex
 Assert-PatternFixtureCaught 'sha2-import' 'use sha2::{Digest, Sha256};' 'primitive_crate_import'
 Assert-PatternFixtureCaught 'hkdf-import' 'use hkdf::Hkdf;' 'primitive_crate_import'
 Assert-PatternFixtureCaught 'ed25519-import' 'use ed25519_dalek::SigningKey;' 'primitive_crate_import'
+Assert-PatternFixtureCaught 'sha2-aliased-import' 'use sha2 as primitive_sha;' 'primitive_crate_import'
+Assert-PatternFixtureCaught 'sha2-qualified-absolute' 'let h = ::sha2::Sha256::new();' 'primitive_crate_qualified_path'
+Assert-PatternFixtureCaught 'hkdf-qualified-bare' 'let kdf = hkdf::Hkdf::<sha2::Sha256>::new(None, &ikm);' 'primitive_crate_qualified_path'
+Assert-PatternFixtureCaught 'ed25519-qualified-crate' 'let sk = crate::ed25519_dalek::SigningKey::from_bytes(&b);' 'primitive_crate_qualified_path'
+Assert-PatternFixtureCaught 'argon2-qualified-absolute' 'let a = ::argon2::Argon2::default();' 'primitive_crate_qualified_path'
+
+# Allowlist proof: paths through our facade `mosaic_crypto::` must NOT trip the
+# qualified-path pattern (verifies the negative-lookbehind allowlist works).
+$mosaicFacadeLine = 'let h = mosaic_crypto::sha2::Sha256::new();'
+foreach ($pattern in $Patterns) {
+  if ($pattern.Name -eq 'primitive_crate_qualified_path' -and $mosaicFacadeLine -match $pattern.Regex) {
+    throw "rust-crypto-primitive-boundary allowlist regression: '$mosaicFacadeLine' must not match 'primitive_crate_qualified_path'"
+  }
+}
 
 $violations = New-Object System.Collections.Generic.List[string]
 

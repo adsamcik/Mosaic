@@ -202,7 +202,10 @@ impl TunnelKeyMaterial {
     /// Constructs tunnel material from fixed bytes for cross-facade parity vectors.
     ///
     /// SECURITY: gated behind test/introspection builds only. Production callers
-    /// must derive tunnel material from the PAKE handshake.
+    /// must derive tunnel material from the PAKE handshake. The body is
+    /// `#[cfg]`-gated on `test` or the `__test-introspection` feature so that
+    /// release builds without that feature cannot reach this constructor.
+    #[cfg(any(test, feature = "__test-introspection"))]
     #[must_use]
     pub fn from_seed_for_tests(seed: [u8; TUNNEL_KEY_BYTES], role: TunnelRoleTag) -> Self {
         Self { seed, role }
@@ -531,5 +534,19 @@ mod tests {
     #[should_panic(expected = "OS CSPRNG failed while generating SPAKE2 scalar")]
     fn getrandom_failure_panics_before_scalar_generation() {
         require_getrandom_success(Err(getrandom::Error::new_custom(7)));
+    }
+
+    /// Confirms `TunnelKeyMaterial::from_seed_for_tests` is reachable under
+    /// `cfg(test)` (and by extension under the `__test-introspection` feature),
+    /// matching its doc claim of being test-only. A release build of
+    /// `mosaic-crypto` without `__test-introspection` will not have this symbol
+    /// in the binary at all — a `cargo build --release -p mosaic-crypto`
+    /// passing is the production-unreachability proof for the gated body.
+    #[test]
+    fn from_seed_for_tests_is_reachable_under_cfg_test() {
+        let seed = [0x11u8; TUNNEL_KEY_BYTES];
+        let material = TunnelKeyMaterial::from_seed_for_tests(seed, TunnelRoleTag::Initiator);
+        assert_eq!(material.role(), TunnelRoleTag::Initiator);
+        assert_eq!(material.seed_for_tests(), &seed);
     }
 }

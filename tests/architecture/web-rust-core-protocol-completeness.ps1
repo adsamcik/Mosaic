@@ -157,8 +157,13 @@ $BannedPatterns = @(
   },
   @{
     Name = 'libsodium bracket primitive access'
-    Pattern = '\bsodium\s*\[\s*[''"](crypto_pwhash|crypto_secretbox|crypto_box|crypto_sign|crypto_aead|crypto_auth|crypto_hash|crypto_generichash|crypto_kdf|crypto_kx|crypto_scalarmult|crypto_stream)'
+    Pattern = '\b(?:globalThis\.|window\.|self\.)?sodium\s*\[\s*[''"`](crypto_pwhash|crypto_secretbox|crypto_box|crypto_sign|crypto_aead|crypto_auth|crypto_hash|crypto_generichash|crypto_kdf|crypto_kx|crypto_scalarmult|crypto_stream)'
     Message = 'protocol-class libsodium primitives must not be accessed through bracket notation'
+  },
+  @{
+    Name = 'libsodium global/cast primitive access'
+    Pattern = '(?:\(\s*sodium\s+as\s+\w+\s*\)|\bglobalThis\.sodium|\bwindow\.sodium|\bself\.sodium)\s*(?:\.\s*|\[\s*[''"`])(crypto_pwhash|crypto_secretbox|crypto_box|crypto_sign|crypto_aead|crypto_auth|crypto_hash|crypto_generichash|crypto_kdf|crypto_kx|crypto_scalarmult|crypto_stream)'
+    Message = 'protocol-class libsodium primitives must not be accessed through global or type-cast indirection'
   },
   @{
     Name = 'libsodium primitive destructure'
@@ -238,6 +243,12 @@ Assert-NegativeFixtureCaught 'libsodium-kdf' 'sodium.crypto_kdf_derive_from_key(
 Assert-NegativeFixtureCaught 'libsodium-bracket-box' "// FIXTURE: sodium['crypto_box_open_easy']" 'libsodium bracket primitive access'
 Assert-NegativeFixtureCaught 'libsodium-bracket-auth' "// FIXTURE: sodium['crypto_auth'](message, key)" 'libsodium bracket primitive access'
 Assert-NegativeFixtureCaught 'libsodium-bracket-hash' "// FIXTURE: sodium['crypto_hash_sha256'](message)" 'libsodium bracket primitive access'
+Assert-NegativeFixtureCaught 'libsodium-bracket-backtick-scalarmult' "// FIXTURE: sodium[``crypto_scalarmult``](sk, pk)" 'libsodium bracket primitive access'
+Assert-NegativeFixtureCaught 'libsodium-bracket-globalthis' "// FIXTURE: globalThis.sodium['crypto_box_seal'](msg, pk)" 'libsodium bracket primitive access'
+Assert-NegativeFixtureCaught 'libsodium-global-dot-access' "// FIXTURE: globalThis.sodium.crypto_pwhash(32, p, s, 2, 65536, 2)" 'libsodium global/cast primitive access'
+Assert-NegativeFixtureCaught 'libsodium-window-dot-access' "// FIXTURE: window.sodium.crypto_secretbox_easy(m, n, k)" 'libsodium global/cast primitive access'
+Assert-NegativeFixtureCaught 'libsodium-cast-any-dot-access' "// FIXTURE: (sodium as any).crypto_sign(message, sk)" 'libsodium global/cast primitive access'
+Assert-NegativeFixtureCaught 'libsodium-cast-any-bracket-access' "// FIXTURE: (sodium as any)['crypto_aead_xchacha20poly1305_ietf_encrypt'](m, aad, null, n, k)" 'libsodium global/cast primitive access'
 Assert-NegativeFixtureCaught 'libsodium-destructure-default' "import sodium from 'libsodium-wrappers-sumo'; const { crypto_pwhash } = sodium;" 'libsodium primitive destructure'
 Assert-NegativeFixtureCaught 'libsodium-aliased-bare-call' "import sodium from 'libsodium-wrappers-sumo'; const s2: typeof sodium = sodium; await s2.crypto_pwhash(32, password, salt, 2, 65536, 2);" 'libsodium bare primitive call'
 
