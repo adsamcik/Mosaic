@@ -72,6 +72,13 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        # Explicit production opt-in signal. Mirrors publish.yml / build.yml.
+        # The vite.config.ts redirect plugin REJECTS VITE_E2E_WEAK_KEYS=true when
+        # MOSAIC_PRODUCTION_BUILD=1 is set, preventing weak-kdf WASM substitution
+        # in production images. docker-compose.test.yml intentionally omits this
+        # so the E2E build target can still substitute the weak-kdf WASM.
+        MOSAIC_PRODUCTION_BUILD: "1"
     container_name: mosaic-frontend
     restart: unless-stopped
     ports:

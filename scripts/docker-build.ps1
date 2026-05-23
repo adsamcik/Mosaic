@@ -247,6 +247,14 @@ try {
                 $buildxArgs += "."
             }
             else {
+                # Frontend: pass the explicit production opt-in signal so the
+                # vite.config.ts redirect plugin REJECTS any VITE_E2E_WEAK_KEYS=true
+                # leakage. Mirrors publish.yml / build.yml / docker-compose.yml.
+                # The buildx path is only used for multi-platform release builds;
+                # E2E test images are built via docker-compose.test.yml, which
+                # intentionally omits this flag.
+                $buildxArgs += "--build-arg"
+                $buildxArgs += "MOSAIC_PRODUCTION_BUILD=1"
                 $buildxArgs += "-f"
                 $buildxArgs += "apps/web/Dockerfile"
                 $buildxArgs += "."
