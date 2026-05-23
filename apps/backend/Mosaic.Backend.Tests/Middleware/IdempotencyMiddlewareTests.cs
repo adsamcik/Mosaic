@@ -290,6 +290,93 @@ public class IdempotencyMiddlewareTests
         Assert.Equal("""{"id":"manifest-1"}""", ReadResponse(ctx));
     }
 
+    [Fact]
+    public async Task IdempotencyKey_OverLength_Returns400()
+    {
+        using var db = TestDbContextFactory.Create();
+        var calls = 0;
+        var middleware = CreateMiddleware(ctx =>
+        {
+            calls++;
+            return Task.CompletedTask;
+        });
+
+        var ctx = CreateContext("/api/v1/manifests", "POST", "{}", new string('k', 256));
+
+        await middleware.InvokeAsync(ctx, db, new MockCurrentUserService(db));
+
+        Assert.Equal(StatusCodes.Status400BadRequest, ctx.Response.StatusCode);
+        Assert.Equal(0, calls);
+        Assert.Contains("Idempotency-Key", ReadResponse(ctx), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task IdempotencyKey_AtMaxLength_IsAccepted()
+    {
+        using var db = TestDbContextFactory.Create();
+        var calls = 0;
+        var middleware = CreateMiddleware(ctx =>
+        {
+            calls++;
+            ctx.Response.StatusCode = StatusCodes.Status201Created;
+            return Task.CompletedTask;
+        });
+
+        var ctx = CreateContext("/api/v1/manifests", "POST", "{}", new string('k', 255));
+
+        await middleware.InvokeAsync(ctx, db, new MockCurrentUserService(db));
+
+        Assert.Equal(StatusCodes.Status201Created, ctx.Response.StatusCode);
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public async Task Body_ExceedsCapViaContentLength_Returns413()
+    {
+        using var db = TestDbContextFactory.Create();
+        var calls = 0;
+        var middleware = CreateMiddleware(ctx =>
+        {
+            calls++;
+            return Task.CompletedTask;
+        });
+
+        var ctx = CreateContext("/api/v1/manifests", "POST", "{}", "size-key");
+        ctx.Request.ContentLength = IdempotencyMiddleware.MaxBodyBytes + 1;
+
+        await middleware.InvokeAsync(ctx, db, new MockCurrentUserService(db));
+
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, ctx.Response.StatusCode);
+        Assert.Equal(0, calls);
+    }
+
+    [Fact]
+    public async Task Body_ExceedsCapWithoutContentLength_Returns413()
+    {
+        using var db = TestDbContextFactory.Create();
+        var calls = 0;
+        var middleware = CreateMiddleware(ctx =>
+        {
+            calls++;
+            return Task.CompletedTask;
+        });
+
+        // Chunked-style: no Content-Length, but body is too big.
+        var oversized = new byte[IdempotencyMiddleware.MaxBodyBytes + 1024];
+        var ctx = new DefaultHttpContext();
+        ctx.Items["AuthSub"] = AuthSub;
+        ctx.Request.Path = "/api/v1/manifests";
+        ctx.Request.Method = "POST";
+        ctx.Request.Headers[IdempotencyMiddleware.HeaderName] = "chunked-key";
+        ctx.Request.Body = new MemoryStream(oversized);
+        ctx.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(ctx, db, new MockCurrentUserService(db));
+
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, ctx.Response.StatusCode);
+        Assert.Equal(0, calls);
+    }
+
     private static IdempotencyMiddleware CreateMiddleware(RequestDelegate next, TimeProvider? timeProvider = null)
         => new(
             next,

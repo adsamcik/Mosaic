@@ -244,8 +244,8 @@ public class ShardsControllerTests
         // Act
         var result = await controller.Download(shard.Id);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert (v1.0.2 s21: 404 instead of 403 to avoid existence disclosure)
+        Assert.IsType<NotFoundResult>(result);
     }
 
     [Fact]
@@ -419,8 +419,8 @@ public class ShardsControllerTests
         // Act
         var result = await controller.GetMeta(shard.Id);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert (v1.0.2 s21: 404 instead of 403 to avoid existence disclosure)
+        Assert.IsType<NotFoundResult>(result);
     }
 
     [Fact]

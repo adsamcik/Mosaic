@@ -55,7 +55,11 @@ public class ShardsController : ControllerBase
         var access = await GetMemberAccessAsync(shardId, user.Id);
         if (!access.HasMemberReference)
         {
-            return Forbid();
+            // v1.0.2 s21: return 404 instead of 403 to avoid leaking shard
+            // existence to users with no read access. From the caller's
+            // perspective, "this shard exists but you can't read it" and
+            // "no such shard" should be indistinguishable.
+            return NotFound();
         }
 
         if (!access.HasUnexpiredMemberAccess)
@@ -111,7 +115,9 @@ public class ShardsController : ControllerBase
             var access = await GetMemberAccessAsync(shardId, user.Id);
             if (!access.HasMemberReference)
             {
-                return Forbid();
+                // v1.0.2 s21: see Download() above — collapse 403→404 to remove
+                // existence-disclosure on shard-id GET routes.
+                return NotFound();
             }
 
             if (!access.HasUnexpiredMemberAccess)
@@ -121,7 +127,9 @@ public class ShardsController : ControllerBase
         }
         else if (shard.UploaderId != user.Id)
         {
-            return Forbid();
+            // v1.0.2 s21: non-ACTIVE shard not owned by caller — same
+            // existence-disclosure concern as the ACTIVE branch.
+            return NotFound();
         }
 
         return Ok(new ShardMetadataResponse(

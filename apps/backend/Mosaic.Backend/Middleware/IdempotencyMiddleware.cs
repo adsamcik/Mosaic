@@ -14,6 +14,17 @@ namespace Mosaic.Backend.Middleware;
 public sealed class IdempotencyMiddleware
 {
     public const string HeaderName = "Idempotency-Key";
+    // v1.0.2 s36: explicit length cap on Idempotency-Key. Previously silently
+    // truncated to 255 chars, which could cause two distinct keys to collide
+    // on the first 255 chars and erroneously share a replay record. Now we
+    // reject with 400 so clients see misconfigured clients explicitly.
+    public const int MaxKeyLength = 255;
+    // v1.0.2 s20: cap on the request body that idempotency will buffer when
+    // computing the request hash. Prevents an unauthenticated/authenticated
+    // client from forcing the server to read an unbounded body into memory
+    // before any downstream limit kicks in. 4 MiB comfortably covers the
+    // largest controller payload (manifest create) with headroom.
+    public const long MaxBodyBytes = 4L * 1024 * 1024;
     private static readonly TimeSpan DefaultTtl = TimeSpan.FromHours(24);
     private static readonly HashSet<string> CachedResponseHeaders = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -53,8 +64,43 @@ public sealed class IdempotencyMiddleware
             return;
         }
 
+        // v1.0.2 s36: reject over-length Idempotency-Key explicitly (was silently truncated).
+        if (idempotencyKey.Length > MaxKeyLength)
+        {
+            await WriteProblemAsync(
+                context,
+                StatusCodes.Status400BadRequest,
+                "Invalid Idempotency-Key",
+                $"Idempotency-Key must be at most {MaxKeyLength} characters.");
+            return;
+        }
+
+        // v1.0.2 s20: short-circuit oversize bodies before buffering.
+        if (context.Request.ContentLength.HasValue && context.Request.ContentLength.Value > MaxBodyBytes)
+        {
+            await WriteProblemAsync(
+                context,
+                StatusCodes.Status413PayloadTooLarge,
+                "Request body too large",
+                $"Request body exceeds idempotency buffering limit of {MaxBodyBytes} bytes.");
+            return;
+        }
+
         var user = await currentUserService.GetOrCreateAsync(context);
-        var requestHash = await ComputeRequestHashAsync(context.Request);
+        byte[] requestHash;
+        try
+        {
+            requestHash = await ComputeRequestHashAsync(context.Request);
+        }
+        catch (PayloadTooLargeException)
+        {
+            await WriteProblemAsync(
+                context,
+                StatusCodes.Status413PayloadTooLarge,
+                "Request body too large",
+                $"Request body exceeds idempotency buffering limit of {MaxBodyBytes} bytes.");
+            return;
+        }
         var now = _timeProvider.GetUtcNow();
         var expiresBefore = now.Subtract(_ttl);
 
@@ -213,10 +259,8 @@ public sealed class IdempotencyMiddleware
             return false;
         }
 
-        if (idempotencyKey.Length > 255)
-        {
-            idempotencyKey = idempotencyKey[..255];
-        }
+        // v1.0.2 s36: do NOT silently truncate over-length keys here; the caller
+        // checks `idempotencyKey.Length > MaxKeyLength` and returns 400.
 
         if (HttpMethods.IsPatch(request.Method)
             && request.Path.StartsWithSegments("/api/v1/files", StringComparison.OrdinalIgnoreCase))
@@ -232,10 +276,28 @@ public sealed class IdempotencyMiddleware
 
     private static async Task<byte[]> ComputeRequestHashAsync(HttpRequest request)
     {
-        request.EnableBuffering();
+        // v1.0.2 s20: bounded buffering. EnableBuffering with the explicit cap so
+        // ASP.NET Core's request-body buffer also tops out at MaxBodyBytes, and
+        // we explicitly verify after the copy in case ContentLength was missing
+        // or lied (chunked transfer encoding).
+        request.EnableBuffering(bufferThreshold: 64 * 1024, bufferLimit: MaxBodyBytes + 1);
         request.Body.Position = 0;
         await using var payload = new MemoryStream();
-        await request.Body.CopyToAsync(payload, request.HttpContext.RequestAborted);
+        // CopyToAsync with explicit bufferSize; we read at most MaxBodyBytes+1 bytes
+        // so we can detect overflow without buffering an unbounded payload.
+        var buffer = new byte[81920];
+        long total = 0;
+        while (true)
+        {
+            var read = await request.Body.ReadAsync(buffer.AsMemory(), request.HttpContext.RequestAborted);
+            if (read == 0) break;
+            total += read;
+            if (total > MaxBodyBytes)
+            {
+                throw new PayloadTooLargeException();
+            }
+            await payload.WriteAsync(buffer.AsMemory(0, read), request.HttpContext.RequestAborted);
+        }
         request.Body.Position = 0;
 
         using var sha = SHA256.Create();
@@ -250,6 +312,21 @@ public sealed class IdempotencyMiddleware
         sha.TransformFinalBlock([], 0, 0);
         return sha.Hash!;
     }
+
+    private static async Task WriteProblemAsync(HttpContext context, int statusCode, string title, string detail)
+    {
+        context.Response.StatusCode = statusCode;
+        context.Response.ContentType = "application/problem+json";
+        await context.Response.WriteAsJsonAsync(new
+        {
+            type = "about:blank",
+            title,
+            status = statusCode,
+            detail
+        }, context.RequestAborted);
+    }
+
+    private sealed class PayloadTooLargeException : Exception { }
 
     private static Task AppendHeaderAsync(HashAlgorithm sha, IHeaderDictionary headers, string name)
         => AppendAsync(sha, $"{name}:{headers[name].ToString()}");

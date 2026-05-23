@@ -2060,8 +2060,8 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.DownloadShard(linkIdBase64, shard.Id);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert (v1.0.2 s21: 404 instead of 403 to avoid existence disclosure)
+        Assert.IsType<NotFoundResult>(result);
     }
 
     [Fact]
@@ -2094,7 +2094,8 @@ public class ShareLinksControllerTests
 
         var result = await controller.DownloadShard(ToBase64Url(shareLink.LinkId), shard.Id);
 
-        Assert.IsType<ForbidResult>(result);
+        // v1.0.2 s21: 404 instead of 403 to avoid existence disclosure
+        Assert.IsType<NotFoundResult>(result);
     }
 
     [Fact]
@@ -2236,8 +2237,8 @@ public class ShareLinksControllerTests
         // Act
         var result = await controller.DownloadShard(linkIdBase64, shard.Id);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert (v1.0.2 s21: 404 instead of 403 to avoid existence disclosure)
+        Assert.IsType<NotFoundResult>(result);
     }
 
     [Fact]

@@ -189,7 +189,10 @@ public class EpochKeysController : ControllerBase
         // Only recipient can view
         if (key.RecipientId != user.Id)
         {
-            return Forbid();
+            // v1.0.2 s21: return 404 to avoid disclosing existence of an epoch
+            // key whose recipient is a different user. Indistinguishable from
+            // "no such key" for non-recipients.
+            return NotFound();
         }
 
         return Ok(new EpochKeyResponse(

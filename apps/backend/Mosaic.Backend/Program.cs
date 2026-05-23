@@ -113,6 +113,11 @@ builder.Services.AddControllers(options =>
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        // v1.0.2 s36: explicit MaxDepth lowered from the System.Text.Json default
+        // of 64 to 32. Caps nested-object depth on every controller-bound JSON
+        // payload so a malicious client can't drive O(N) recursion stack growth
+        // (or downstream model-binder/validator work) with deeply nested input.
+        options.JsonSerializerOptions.MaxDepth = 32;
         // Strict deserialization: unknown JSON properties become 400s rather than
         // being silently dropped. Matches the SidecarTelemetryEndpoint policy so
         // the whole API has one consistent contract-drift detection story
@@ -121,6 +126,15 @@ builder.Services.AddControllers(options =>
         options.JsonSerializerOptions.UnmappedMemberHandling =
             System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow;
     });
+
+// v1.0.2 s36: also cap MaxDepth on minimal-API JSON serialization (e.g. /metrics,
+// SignalR-adjacent endpoints, custom Results.Json). MVC controllers use the
+// AddJsonOptions block above; ConfigureHttpJsonOptions covers everything else
+// that goes through Microsoft.AspNetCore.Http.Json.
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.MaxDepth = 32;
+});
 
 // Configure model validation to log errors (helpful for debugging)
 builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options =>

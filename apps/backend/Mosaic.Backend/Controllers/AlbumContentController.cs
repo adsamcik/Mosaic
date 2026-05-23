@@ -48,10 +48,13 @@ public class AlbumContentController : ControllerBase
         }
 
         // Check user is a member
+        // v1.0.2 s21: override the helper's default ForbidResult with NotFound
+        // so a non-member cannot distinguish "album exists, no access" from
+        // "no such album" on this GET route.
         var accessError = await _db.RequireAlbumMemberAsync(albumId, user.Id);
         if (accessError != null)
         {
-            return accessError;
+            return NotFound();
         }
 
         // Get content

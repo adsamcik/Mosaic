@@ -142,8 +142,8 @@ public class AlbumContentControllerTests
         // Act
         var result = await controller.GetContent(album.Id);
 
-        // Assert
-        Assert.IsType<ForbidResult>(result);
+        // Assert (v1.0.2 s21: 404 instead of 403 to avoid existence disclosure)
+        Assert.IsType<NotFoundResult>(result);
     }
 
     [Fact]
