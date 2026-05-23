@@ -457,7 +457,7 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     expect(manifestCountAfter).toBeGreaterThan(manifestCountBefore);
   });
 
-  test('W-A6-4: closing a tab mid-upload resumes staged work after reopening', async ({ browser, testContext }) => {
+  test('W-A6-4: photo persists after tab close once finalize completes', async ({ browser, testContext }) => {
     const user = await createUserSession(browser, 'resume-uploader', LEGACY_FLAGS);
     const gallery = await openAlbumWithFreshUser(
       user,
@@ -474,6 +474,13 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
     // user-supplied File handle which the test never provides). With
     // a finalized upload before close, the reopened page only needs
     // to sync the manifest to see the photo.
+    //
+    // v1.0.2 wa6-4-rename: this test was previously titled "closing
+    // a tab mid-upload resumes staged work after reopening" but it
+    // *waits* for finalize before close, so it exercises post-finalize
+    // manifest sync rather than a true mid-upload resume. See
+    // W-A6-4b for the (currently un-implemented) true mid-upload
+    // resume path.
     await uploadFilesAndWait(
       gallery,
       [{ ...largeFixture, name: 'wa6-resume-after-close.jpg' }],
@@ -501,6 +508,81 @@ test.describe('W-A6 upload/download lifecycle @p1 @photo @sync @sharing @crypto 
       .catch(() => false);
     expect(resumed).toBe(true);
   });
+
+  // W-A6-4b: true mid-upload resume — close the tab BEFORE the finalize
+  // request completes (i.e. while shards are still in-flight to the TUS
+  // endpoint), then re-open and assert that the upload completes and the
+  // photo appears in the album.
+  //
+  // v1.0.2 wa6-4-true-mid-upload-resume: this test is currently `.fixme()`
+  // because the production upload-queue cannot resume an interrupted upload
+  // without a user-supplied File handle on the reopened page — see the
+  // W-A6-4 inline comment about UploadQueue.initialize() re-tagging tasks
+  // as `needs_reattach`. The test is committed (rather than left as a
+  // TODO) so the resume path is enumerated in the test suite and will
+  // light up automatically once the drainer learns to re-derive the
+  // staged shard stream from IndexedDB / OPFS without prompting the user.
+  test.fixme(
+    'W-A6-4b: true mid-upload resume picks up where the closed tab left off',
+    async ({ browser, testContext }) => {
+      const user = await createUserSession(browser, 'true-resume', LEGACY_FLAGS);
+      const gallery = await openAlbumWithFreshUser(
+        user,
+        testContext.generateAlbumName('WA6 True Resume'),
+      );
+
+      // Slow finalize so we can close BEFORE it succeeds. Shards keep
+      // uploading to TUS at full speed; we only delay the manifest
+      // finalize POST that marks the upload as "done".
+      let finalizeSeen = false;
+      await user.context.route('**/api/v1/manifests/**/finalize', async (route) => {
+        finalizeSeen = true;
+        // Block indefinitely — the page will be closed before this resolves.
+        await new Promise(() => {});
+        await route.continue();
+      });
+
+      const [fixture] = await loadJpegFixtures(1);
+
+      // Kick off the upload but do NOT await finalize.
+      await expect(gallery.uploadInput).toBeAttached({
+        timeout: NETWORK_TIMEOUT.NAVIGATION,
+      });
+      await gallery.uploadInput.setInputFiles({
+        name: 'wa6-true-resume.jpg',
+        mimeType: fixture.mimeType,
+        buffer: fixture.buffer,
+      });
+
+      // Wait until at least the first TUS bytes-upload PATCH has gone out
+      // (so we know the shard pipeline started) but finalize has been
+      // held by our route handler.
+      await user.page.waitForRequest(
+        (req) => /\/api\/v1\/files\//.test(req.url()) && req.method() === 'PATCH',
+        { timeout: NETWORK_TIMEOUT.NAVIGATION },
+      );
+      expect(finalizeSeen).toBe(false);
+
+      // Hard-close the tab mid-upload.
+      await user.page.close();
+
+      // Reopen in a fresh page (same context, so OPFS + IndexedDB
+      // persist) and let the upload-queue drain.
+      const page = await user.context.newPage();
+      await setFeatureFlags(page, LEGACY_FLAGS);
+      await loginExistingUser(page, user.email, LEGACY_FLAGS);
+      const appShell = new AppShell(page);
+      await appShell.waitForLoad();
+      await appShell.clickAlbum(0);
+
+      const reopenedGallery = new GalleryPage(page);
+      await reopenedGallery.waitForLoad();
+
+      // The photo MUST appear without any user re-attachment. If this
+      // assertion ever passes, drop the `.fixme()` wrapper above.
+      await reopenedGallery.waitForStablePhotoCountAtLeast(1, CRYPTO_TIMEOUT.BATCH);
+    },
+  );
 
   test('W-A6-5: album sync detects a new manifest in a second browser context', async ({
     browser,

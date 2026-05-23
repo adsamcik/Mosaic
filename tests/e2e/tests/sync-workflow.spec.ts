@@ -187,9 +187,19 @@ test.describe('Sync: Multi-Session @p1 @sync @multi-user @slow', () => {
       // client-side content-hash check. We use the low-level setFileInput
       // because uploadPhoto() asserts the visible photo count increases, which
       // (correctly) does not happen for a content-hash duplicate.
+      //
+      // v1.0.2 dedup-fixed-sleep: replace the previous fixed 500 ms sleep
+      // with a deterministic wait on the `Duplicate upload skipped:` log
+      // line emitted by upload-store-bridge when the worker dispatches
+      // DuplicateUploadError. This is the same signal that drives the
+      // in-app dedup UX, so settling on it guarantees the worker has run
+      // before the page reload happens.
+      const dedupSettled = page.waitForEvent('console', {
+        predicate: (msg) => /Duplicate upload skipped/i.test(msg.text()),
+        timeout: NETWORK_TIMEOUT.FORM_SUBMIT,
+      });
       await gallery.setFileInput(testImage, 'reload-photo-2.png');
-      // Allow the dedup short-circuit to settle (worker dispatch + onError).
-      await page.waitForTimeout(500);
+      await dedupSettled;
       // After reload only finalized server photos appear. With identical image
       // content (intentional for this test), the upload pipeline dedupes the
       // second upload by content hash, so the server has exactly 1 photo.

@@ -25,6 +25,15 @@ const tusMock = vi.hoisted(() => ({
   /** When set, start() invokes onError(detailedError(triggerStatus)) instead of onSuccess. */
   triggerStatus: null as number | null,
   triggerMessage: '',
+  /**
+   * When true, start() invokes onError with a plain Error that has NO
+   * `originalResponse` — modelling network-style failures (DNS / TCP
+   * reset / aborted upload) where tus-js-client surfaces only an error
+   * message. Used to verify the message-substring fallback in
+   * tus-upload.ts (`/\b413\b|quota|too large/i`) still maps to
+   * `upload.errors.quotaExceeded`.
+   */
+  emitMessageOnlyError: false,
 }));
 
 vi.mock('../../logger', () => ({
@@ -36,6 +45,14 @@ vi.mock('tus-js-client', () => ({
     const instance = {
       url: 'http://localhost:5000/api/v1/files/018f0000-0000-7000-8000-000000000201',
       start: vi.fn(() => {
+        if (tusMock.emitMessageOnlyError) {
+          // Plain Error: no `originalResponse`, so getTusResponseStatus()
+          // returns undefined and the regex branch is the only path that
+          // can map to a quota error.
+          const err = new Error(tusMock.triggerMessage || 'Upload aborted');
+          options.onError?.(err);
+          return;
+        }
         if (tusMock.triggerStatus !== null) {
           const err = new Error(tusMock.triggerMessage || `HTTP ${tusMock.triggerStatus}`) as TusTestError;
           err.name = 'DetailedError';
@@ -58,6 +75,7 @@ describe('tusUpload quota error mapping', () => {
     tusMock.uploads.length = 0;
     tusMock.triggerStatus = null;
     tusMock.triggerMessage = '';
+    tusMock.emitMessageOnlyError = false;
   });
 
   it('maps HTTP 413 responses to upload.errors.quotaExceeded messageKey', async () => {
@@ -97,18 +115,66 @@ describe('tusUpload quota error mapping', () => {
   });
 
   it('detects "quota" substring in error message even without a status code', async () => {
-    tusMock.triggerStatus = 0; // truthy 0 — but we set undefined-ish path via message
-    // Use a workaround: drop originalResponse via custom path.
-    tusMock.triggerStatus = null;
+    // v1.0.2 tus-upload-quota-coverage: previously this case only
+    // asserted the regex *literal* — it never exercised tusUpload at
+    // all, so a refactor that dropped the message-substring branch
+    // from tus-upload.ts would have silently regressed without
+    // failing the test. Now we drive the actual upload path through
+    // a message-only error (no `originalResponse`) and assert
+    // tusUpload maps it to the localized quotaExceeded key.
+    tusMock.emitMessageOnlyError = true;
+    tusMock.triggerMessage = 'storage quota exceeded';
 
-    // Instead invoke through a custom error case using the existing tusUpload onError.
-    // Easiest: set triggerStatus to a non-existent code and put 'quota' in message.
-    // We rely on the regex /\b413\b|quota|too large/i in tus-upload to match.
-    // Force a network-style error path: triggerStatus null means onSuccess fires,
-    // so instead route through 0 by using a different harness — skip if not supported.
-    // For coverage we rely on the regex test below directly.
-    expect(/\b413\b|quota|too large/i.test('Storage quota exceeded')).toBe(true);
-    expect(/\b413\b|quota|too large/i.test('Payload Too Large')).toBe(true);
-    expect(/\b413\b|quota|too large/i.test('Network error')).toBe(false);
+    const err = await tusUpload(
+      'album-001',
+      new Uint8Array([1, 2, 3]),
+      'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
+      7,
+    ).then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(TusUploadError);
+    expect((err as TusUploadError).messageKey).toBe('upload.errors.quotaExceeded');
+    // `originalResponse` was never set on this error, so the only way
+    // the branch can fire is via the message-substring regex.
+    expect((err as Error).message).toContain('storage quota exceeded');
+  });
+
+  it('maps "too large" message-only errors to quotaExceeded', async () => {
+    tusMock.emitMessageOnlyError = true;
+    tusMock.triggerMessage = 'Payload Too Large';
+
+    const err = await tusUpload(
+      'album-001',
+      new Uint8Array([1, 2, 3]),
+      'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
+      7,
+    ).then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(TusUploadError);
+    expect((err as TusUploadError).messageKey).toBe('upload.errors.quotaExceeded');
+  });
+
+  it('falls back to upload.errors.failed for unrelated message-only errors', async () => {
+    tusMock.emitMessageOnlyError = true;
+    tusMock.triggerMessage = 'Network error: socket hang up';
+
+    const err = await tusUpload(
+      'album-001',
+      new Uint8Array([1, 2, 3]),
+      'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
+      7,
+    ).then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(TusUploadError);
+    expect((err as TusUploadError).messageKey).toBe('upload.errors.failed');
   });
 });

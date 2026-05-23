@@ -21,7 +21,13 @@ vi.mock('../logger', () => ({
   }),
 }));
 
-import { safeCreateImageBitmap } from '../image-decoder';
+import {
+  DECODE_TIMEOUT_MS,
+  ImageDecodeTimeoutError,
+  ImageDimensionsExceededError,
+  MAX_DECODED_PIXELS,
+  safeCreateImageBitmap,
+} from '../image-decoder';
 
 type CreateImageBitmapFn = typeof globalThis.createImageBitmap;
 type ImageCtor = typeof globalThis.Image;
@@ -159,4 +165,114 @@ describe('safeCreateImageBitmap <img>-element fallback (WebP/BMP)', () => {
       expect(createImageBitmapMock).toHaveBeenCalledTimes(1);
     },
   );
+
+  // ===========================================================================
+  // v1.0.2 image-decoder-fallback-coverage: regression tests for the
+  // pixel-cap and timeout guards inside the <img>-element fallback path.
+  // These previously had no unit coverage despite being the primary
+  // decompression-bomb safety net for WebP/BMP/AVIF inputs.
+  // ===========================================================================
+
+  it('rejects an oversized <img>-fallback decode with ImageDimensionsExceededError', async () => {
+    // Override the Image stub installed by beforeEach to return naturalWidth
+    // and naturalHeight whose product exceeds MAX_DECODED_PIXELS, simulating
+    // a decompression bomb that slips past createImageBitmap and only
+    // reveals its true size once decoded via <img>.
+    const oversizedSide = 20_000; // 20k * 20k = 4e8 > MAX_DECODED_PIXELS (2e8)
+    expect(oversizedSide * oversizedSide).toBeGreaterThan(MAX_DECODED_PIXELS);
+
+    globalThis.Image = vi.fn().mockImplementation(function (this: MockImage) {
+      const self = this;
+      self.naturalWidth = oversizedSide;
+      self.naturalHeight = oversizedSide;
+      self.onload = null;
+      self.onerror = null;
+      Object.defineProperty(self, 'src', {
+        set(_value: string) {
+          queueMicrotask(() => self.onload?.());
+        },
+        get() {
+          return '';
+        },
+      });
+      return self as unknown as HTMLImageElement;
+    }) as unknown as ImageCtor;
+
+    const createImageBitmapMock = vi.fn().mockRejectedValueOnce(
+      Object.assign(new Error('createImageBitmap rejected'), {
+        name: 'InvalidStateError',
+      }),
+    );
+    globalThis.createImageBitmap =
+      createImageBitmapMock as unknown as CreateImageBitmapFn;
+
+    const blob = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/webp' });
+
+    await expect(safeCreateImageBitmap(blob)).rejects.toBeInstanceOf(
+      ImageDimensionsExceededError,
+    );
+    // The fallback must never reach the canvas-rasterise step for an
+    // oversized image (we'd otherwise burn ~1.6 GB allocating it).
+    expect(createImageBitmapMock).toHaveBeenCalledTimes(1);
+    // The intermediate object URL is still revoked even on the reject path.
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock');
+  });
+
+  it('rejects a hanging <img>-fallback load with ImageDecodeTimeoutError', async () => {
+    // Image stub whose `src` setter never fires onload or onerror —
+    // models a stuck decoder (corrupt header, libvpx hang, etc.) that
+    // would otherwise stall the upload pipeline indefinitely.
+    globalThis.Image = vi.fn().mockImplementation(function (this: MockImage) {
+      const self = this;
+      self.naturalWidth = 0;
+      self.naturalHeight = 0;
+      self.onload = null;
+      self.onerror = null;
+      Object.defineProperty(self, 'src', {
+        set(_value: string) {
+          /* deliberately no-op: simulate a stuck decode */
+        },
+        get() {
+          return '';
+        },
+      });
+      return self as unknown as HTMLImageElement;
+    }) as unknown as ImageCtor;
+
+    const createImageBitmapMock = vi.fn().mockRejectedValueOnce(
+      Object.assign(new Error('createImageBitmap rejected'), {
+        name: 'InvalidStateError',
+      }),
+    );
+    globalThis.createImageBitmap =
+      createImageBitmapMock as unknown as CreateImageBitmapFn;
+
+    const blob = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/webp' });
+
+    vi.useFakeTimers();
+    try {
+      const pending = safeCreateImageBitmap(blob);
+      // Attach a rejection handler synchronously so vitest does not
+      // surface an unhandled-rejection warning while we advance timers.
+      const settled = pending.then(
+        () => ({ ok: true as const }),
+        (err: unknown) => ({ ok: false as const, err }),
+      );
+
+      // Trip the withDecodeTimeout race for the `img-element` stage.
+      await vi.advanceTimersByTimeAsync(DECODE_TIMEOUT_MS + 1);
+
+      const outcome = await settled;
+      expect(outcome.ok).toBe(false);
+      if (!outcome.ok) {
+        expect(outcome.err).toBeInstanceOf(ImageDecodeTimeoutError);
+        expect((outcome.err as ImageDecodeTimeoutError).stage).toBe('img-element');
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+    // The object URL must still be revoked in the timeout path so we
+    // don't leak the blob: URL into the browser's URL registry.
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock');
+  });
 });
