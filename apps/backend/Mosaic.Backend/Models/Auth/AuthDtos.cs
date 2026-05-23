@@ -84,7 +84,12 @@ public record PasswordRotationRequest(
     [Required, MaxLength(256)] string CurrentSignature,
     long? Timestamp,
     [Required, MaxLength(128)] string NewUserSalt,
-    [Required, MaxLength(128)] string NewAccountSalt,
+    // 16 raw bytes → exactly 24 base64 characters (incl. padding). Tightening
+    // the OpenAPI shape from "any string" to a fixed-length base64 token lets
+    // generated clients and contract tests catch malformed payloads before
+    // they hit the runtime `Convert.FromBase64String` + 16-byte-length gate
+    // in AuthController.RotatePassword (v1.0.2 openapi-shape).
+    [Required, Base64String, StringLength(24, MinimumLength = 24)] string NewAccountSalt,
     [Required, MaxLength(128)] string NewAuthPubkey,
     [Required, MaxLength(2048)] string NewWrappedAccountKey
 );
