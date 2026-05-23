@@ -204,7 +204,14 @@ describe('photosToPlanInput — shard-hash format', () => {
   // code 723 (DownloadSnapshotCorrupt) and the ZIP was finalized empty
   // (22-byte EOCD only). The fix uses a generous per-shard upper bound so
   // the rust check can never be undershot by a real photo.
-  it('sets declaredSize to a non-zero upper bound large enough for any real photo', async () => {
+  // v1.0.2 `v102-declared-size-weak-bound`: the previous bound was
+  // 2**40 (~1 TiB), which effectively disabled the rust snapshot
+  // validator's `bytes_written <= total_declared_size` guard. We now use
+  // a sane 10 GiB-per-shard ceiling — still far above any realistic
+  // encrypted-shard size, but small enough that a bogus server snapshot
+  // cannot abuse the bound to disguise an implausibly large
+  // `bytes_written` value as legitimate.
+  it('sets declaredSize to a sane per-shard ceiling (≤ 10 GiB, > 5 GiB)', async () => {
     const photo = makePhoto({
       originalShardIds: ['d'.repeat(32), 'e'.repeat(32)],
       originalShardHashes: ['0'.repeat(64), '1'.repeat(64)],
@@ -212,11 +219,15 @@ describe('photosToPlanInput — shard-hash format', () => {
     const result = await photosToPlanInput('album-1', [photo]);
     const planPhoto = result.photos[0]!;
     expect(planPhoto.shards).toHaveLength(2);
+    const TEN_GIB = 10 * 1024 * 1024 * 1024;
+    const FIVE_GIB = 5 * 1024 * 1024 * 1024;
     for (const shard of planPhoto.shards) {
-      // Must be strictly greater than any plausible bytes_written value
-      // (typical real photos are 1-50 MB, hard ceiling ~5 GB).
-      expect(shard.declaredSize).toBeGreaterThan(5 * 1024 * 1024 * 1024);
-      // Stay safely below u64 max so per-photo sums cannot overflow.
+      // Must remain strictly greater than any plausible bytes_written
+      // value for a real photo (typical 1-50 MB, hard ceiling ~5 GB).
+      expect(shard.declaredSize).toBeGreaterThan(FIVE_GIB);
+      // But must NOT exceed the 10 GiB sane ceiling — the previous
+      // ~1 TiB bound is what this guard fences off.
+      expect(shard.declaredSize).toBeLessThanOrEqual(TEN_GIB);
       expect(shard.declaredSize).toBeLessThan(Number.MAX_SAFE_INTEGER);
     }
   });

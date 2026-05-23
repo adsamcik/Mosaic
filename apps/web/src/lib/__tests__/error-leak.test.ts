@@ -44,6 +44,12 @@ const LEAKY_PROP_NAMES = new Set([
   'expected',
   'actual',
   'shardHashes',
+  // v1.0.2 `v102-corrupt-shard-hash-value-leak`: the original
+  // `CorruptShardHashError` exposed the entire malformed manifest string
+  // as a `public readonly value`. `JSON.stringify(err)` therefore echoed
+  // the full attacker-controlled blob into telemetry / logs. The field
+  // must NOT reappear on any of these error classes.
+  'value',
 ]);
 
 function assertNoLeakyOwnProps(err: Error): void {
@@ -135,6 +141,30 @@ describe('CorruptShardHashError', () => {
     // threshold we screen for.
     expect(err.message.length).toBeLessThan(80);
     expect(HEX_DIGEST_RE.test(err.message)).toBe(false);
+  });
+
+  // v1.0.2 `v102-corrupt-shard-hash-value-leak`: the previous shape
+  // attached the entire malformed input as `public readonly value`, so a
+  // generic `JSON.stringify(err)` or telemetry serializer would echo the
+  // full attacker-controlled blob into logs. Assert the field is gone
+  // from every relevant surface.
+  it('does not expose the raw malformed value as an own property', () => {
+    // Use '#' so the value cannot match the base64url/hex screening regex.
+    // We are validating the SHAPE of the error here (no `value` field), not
+    // the leak-free hash regression that the other test already covers.
+    const ugly = '#'.repeat(2048);
+    const err = new CorruptShardHashError(ugly);
+    const own = new Set([
+      ...Object.keys(err),
+      ...Object.getOwnPropertyNames(err),
+    ]);
+    expect(own.has('value')).toBe(false);
+    // Generic JSON serialization must not resurrect the field either.
+    const json = JSON.stringify(err);
+    expect(json).not.toMatch(/"value"/);
+    expect(json).not.toContain(ugly.slice(0, 64));
+    // And the full leak-free audit must pass.
+    assertErrorLeakFree(err);
   });
 });
 

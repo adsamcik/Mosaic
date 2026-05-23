@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const shardServiceMocks = vi.hoisted(() => ({
-  downloadShard: vi.fn<(shardId: string) => Promise<Uint8Array>>(),
-  downloadShards: vi.fn<(ids: string[], onProgress?: unknown, max?: number) => Promise<Uint8Array[]>>(),
+  downloadShard: vi.fn<(shardId: string, onProgress?: unknown, signal?: AbortSignal) => Promise<Uint8Array>>(),
+  downloadShards: vi.fn<(ids: string[], onProgress?: unknown, max?: number, signal?: AbortSignal) => Promise<Uint8Array[]>>(),
   downloadShardViaShareLink: vi.fn<(linkId: string, shardId: string, grant?: string) => Promise<Uint8Array>>(),
 }));
 
@@ -58,20 +58,29 @@ describe('createAuthenticatedSourceStrategy', () => {
     expect(createAuthenticatedSourceStrategy('11111111-2222-3333-4444-555555555555').kind).toBe('authenticated');
   });
 
-  it('fetchShard delegates to downloadShard', async () => {
+  it('fetchShard delegates to downloadShard and forwards the AbortSignal', async () => {
     const s = createAuthenticatedSourceStrategy('11111111-2222-3333-4444-555555555555');
     shardServiceMocks.downloadShard.mockResolvedValue(new Uint8Array([1, 2, 3]));
-    const result = await s.fetchShard('shard-a', new AbortController().signal);
+    const ctl = new AbortController();
+    const result = await s.fetchShard('shard-a', ctl.signal);
     expect(result).toEqual(new Uint8Array([1, 2, 3]));
-    expect(shardServiceMocks.downloadShard).toHaveBeenCalledWith('shard-a');
+    // v1.0.2 `v102-coordinator-abort-cancel-fetch`: signal MUST reach the
+    // underlying fetch so it can be cancelled at the network layer
+    // rather than merely having its result discarded by raceWithAbort.
+    expect(shardServiceMocks.downloadShard).toHaveBeenCalledWith('shard-a', undefined, ctl.signal);
   });
 
-  it('fetchShards delegates to downloadShards with concurrency=4', async () => {
+  it('fetchShards delegates to downloadShards with concurrency=4 and forwards the AbortSignal', async () => {
     const s = createAuthenticatedSourceStrategy('11111111-2222-3333-4444-555555555555');
     shardServiceMocks.downloadShards.mockResolvedValue([new Uint8Array([1]), new Uint8Array([2])]);
-    const result = await s.fetchShards(['a', 'b'], new AbortController().signal);
+    const ctl = new AbortController();
+    const result = await s.fetchShards(['a', 'b'], ctl.signal);
     expect(result.map((r) => Array.from(r))).toEqual([[1], [2]]);
-    expect(shardServiceMocks.downloadShards).toHaveBeenCalledWith(['a', 'b'], undefined, 4);
+    // v1.0.2 `v102-coordinator-abort-cancel-fetch`: propagate the signal
+    // all the way to `downloadShards` (and thereby to the per-batch
+    // fetch calls) so a coordinator abort actually cancels the network
+    // request rather than discarding its result.
+    expect(shardServiceMocks.downloadShards).toHaveBeenCalledWith(['a', 'b'], undefined, 4, ctl.signal);
   });
 
   it('fetchShards short-circuits empty input', async () => {

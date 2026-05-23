@@ -20,6 +20,12 @@ vi.mock('../../lib/epoch-key-service', () => ({
     DECRYPTION_FAILED: 'DECRYPTION_FAILED',
     CONTEXT_MISMATCH: 'CONTEXT_MISMATCH',
   },
+  EpochKeyError: class EpochKeyError extends Error {
+    constructor(public readonly code: string, message?: string) {
+      super(message ?? code);
+      this.name = 'EpochKeyError';
+    }
+  },
   getOrFetchEpochKey: vi.fn(async () => ({ epochSeed: new Uint8Array(32), epochHandleId: 'h1' })),
 }));
 vi.mock('../useWakeLock', () => ({
@@ -145,5 +151,84 @@ describe('useAlbumDownload', () => {
     });
     expect(cancelJob).toHaveBeenCalledWith('job-1', { soft: false });
     await r.unmount();
+  });
+
+  // v1.0.2 `v102-corrupt-shard-hash-error-message`: manifest-corruption
+  // signals from the integrity check (`CorruptShardHashError`,
+  // `CorruptShardManifest`, `ShardIntegrityMismatchError`) used to be
+  // flattened into the generic "Failed to download album" string by
+  // `toSafeErrorMessage`, hiding the actionable distinction. Surface a
+  // specific category-level message instead.
+  describe('manifest-corruption error mapping', () => {
+    async function arrangeRunningJob(): Promise<{
+      latest: () => ReturnType<typeof useAlbumDownload>;
+      stub: ReturnType<typeof makeApi>;
+      cleanup: () => Promise<void>;
+    }> {
+      const stub = makeApi();
+      managerStub = { api: stub.api, cancelJob: vi.fn() };
+      let captured: ReturnType<typeof useAlbumDownload> | null = null;
+      const r = await render(<Harness onResult={(res) => { captured = res; }} />);
+      return {
+        latest: () => captured!,
+        stub,
+        cleanup: () => r.unmount(),
+      };
+    }
+
+    it('maps CorruptShardHashError thrown from the coordinator to the corrupt-metadata message', async () => {
+      const { CorruptShardHashError } = await import('../coordinator-download-runner');
+      const { stub, latest, cleanup } = await arrangeRunningJob();
+      stub.startJob.mockImplementationOnce(async () => {
+        throw new CorruptShardHashError('ZZZZmalformed-base64url-blob-XXXX');
+      });
+      await act(async () => {
+        await latest().startDownload('alb', 'My Album', photos, { mode: { kind: 'keepOffline' } });
+      });
+      expect(latest().error).not.toBeNull();
+      expect(latest().error!.message).toBe('Download failed: album metadata is corrupt');
+      // ZK-safety: the raw malformed value MUST NOT bleed into the UI surface.
+      expect(latest().error!.message).not.toContain('ZZZZmalformed');
+      await cleanup();
+    });
+
+    it('maps CorruptShardManifest to the corrupt-metadata message', async () => {
+      const { CorruptShardManifest } = await import('../../lib/shard-integrity');
+      const { stub, latest, cleanup } = await arrangeRunningJob();
+      stub.startJob.mockImplementationOnce(async () => {
+        throw new CorruptShardManifest('ctx', 'hash array length 0 != shard count 1');
+      });
+      await act(async () => {
+        await latest().startDownload('alb', 'My Album', photos, { mode: { kind: 'keepOffline' } });
+      });
+      expect(latest().error!.message).toBe('Download failed: album metadata is corrupt');
+      await cleanup();
+    });
+
+    it('maps ShardIntegrityMismatchError to the corrupt-metadata message', async () => {
+      const { ShardIntegrityMismatchError } = await import('../../lib/shard-integrity');
+      const { stub, latest, cleanup } = await arrangeRunningJob();
+      stub.startJob.mockImplementationOnce(async () => {
+        throw new ShardIntegrityMismatchError('photo=p1 shard=0');
+      });
+      await act(async () => {
+        await latest().startDownload('alb', 'My Album', photos, { mode: { kind: 'keepOffline' } });
+      });
+      expect(latest().error!.message).toBe('Download failed: album metadata is corrupt');
+      await cleanup();
+    });
+
+    it('leaves the generic message in place for unrelated errors', async () => {
+      const { stub, latest, cleanup } = await arrangeRunningJob();
+      stub.startJob.mockImplementationOnce(async () => {
+        throw new Error('boom');
+      });
+      await act(async () => {
+        await latest().startDownload('alb', 'My Album', photos, { mode: { kind: 'keepOffline' } });
+      });
+      expect(latest().error).not.toBeNull();
+      expect(latest().error!.message).not.toBe('Download failed: album metadata is corrupt');
+      await cleanup();
+    });
   });
 });

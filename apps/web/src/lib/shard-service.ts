@@ -51,8 +51,12 @@ export function buildShareLinkShardUrl(linkId: string, shardId: string): string 
 export async function downloadShard(
   shardId: string,
   onProgress?: ProgressCallback,
+  signal?: AbortSignal,
 ): Promise<Uint8Array> {
   try {
+    if (signal?.aborted) {
+      throw new DOMException('Shard download aborted', 'AbortError');
+    }
     // Background-Fetch cache peek: if the SW already pulled this shard
     // (e.g. while the tab was closed on Android), reuse the encrypted bytes.
     const cached = await lookupCachedShardBytes(buildAuthShardUrl(shardId));
@@ -62,15 +66,18 @@ export async function downloadShard(
       void evictCachedShard(buildAuthShardUrl(shardId));
       return cached;
     }
-    // Use the API client for simple downloads
-    if (!onProgress) {
+    // Use the API client for simple downloads (no signal supported there;
+    // fall through to the fetch path when a signal is provided).
+    if (!onProgress && !signal) {
       const api = getApi();
       return await api.downloadShard(shardId);
     }
 
-    // For progress tracking, use fetch directly with ReadableStream
+    // For progress tracking or cancellation, use fetch directly so we can
+    // attach the AbortSignal to the underlying request.
     const response = await fetch(`/api/v1/shards/${shardId}`, {
       credentials: 'same-origin',
+      ...(signal ? { signal } : {}),
     });
 
     if (!response.ok) {
@@ -87,7 +94,7 @@ export async function downloadShard(
     // If no body or streaming not supported, fall back to simple read
     if (!response.body) {
       const buffer = await response.arrayBuffer();
-      onProgress(buffer.byteLength, buffer.byteLength);
+      onProgress?.(buffer.byteLength, buffer.byteLength);
       return new Uint8Array(buffer);
     }
 
@@ -103,7 +110,7 @@ export async function downloadShard(
 
       chunks.push(value);
       loaded += value.length;
-      onProgress(loaded, total);
+      onProgress?.(loaded, total);
     }
 
     // Combine chunks into single array
@@ -116,6 +123,12 @@ export async function downloadShard(
 
     return result;
   } catch (error) {
+    // Preserve AbortError so callers can distinguish user/coordinator
+    // cancellation from a true download failure
+    // (v1.0.2 `v102-coordinator-abort-cancel-fetch`).
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
     if (error instanceof ShardDownloadError) {
       throw error;
     }
@@ -132,6 +145,7 @@ export async function downloadShard(
  * @param shardIds - Array of shard IDs to download
  * @param onProgress - Optional progress callback for total progress
  * @param maxConcurrent - Maximum concurrent downloads (default: 4)
+ * @param signal - Optional AbortSignal to cancel in-flight fetches
  * @returns Array of encrypted shard data in the same order as shardIds
  * @throws ShardDownloadError if any download fails
  */
@@ -139,9 +153,13 @@ export async function downloadShards(
   shardIds: string[],
   onProgress?: ProgressCallback,
   maxConcurrent = 4,
+  signal?: AbortSignal,
 ): Promise<Uint8Array[]> {
   if (shardIds.length === 0) {
     return [];
+  }
+  if (signal?.aborted) {
+    throw new DOMException('Shard download aborted', 'AbortError');
   }
 
   // Track progress for each shard
@@ -161,16 +179,23 @@ export async function downloadShards(
   // Download a single shard with progress tracking
   const downloadWithProgress = async (shardId: string): Promise<Uint8Array> => {
     shardProgress.set(shardId, { loaded: 0, total: 0 });
-    return downloadShard(shardId, (loaded, total) => {
-      shardProgress.set(shardId, { loaded, total });
-      updateProgress();
-    });
+    return downloadShard(
+      shardId,
+      (loaded, total) => {
+        shardProgress.set(shardId, { loaded, total });
+        updateProgress();
+      },
+      signal,
+    );
   };
 
   // Process shards in batches with concurrency limit
   const results: Uint8Array[] = [];
 
   for (let i = 0; i < shardIds.length; i += maxConcurrent) {
+    if (signal?.aborted) {
+      throw new DOMException('Shard download aborted', 'AbortError');
+    }
     const batch = shardIds.slice(i, i + maxConcurrent);
     const batchResults = await Promise.all(
       batch.map((shardId) => downloadWithProgress(shardId)),

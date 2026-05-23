@@ -23,7 +23,7 @@ export function createAuthenticatedSourceStrategy(accountId: string): SourceStra
     },
     async fetchShard(shardId: string, signal: AbortSignal | undefined): Promise<Uint8Array> {
       throwIfAborted(signal);
-      const bytes = await downloadShard(shardId);
+      const bytes = await downloadShard(shardId, undefined, signal);
       throwIfAborted(signal);
       return bytes;
     },
@@ -33,7 +33,7 @@ export function createAuthenticatedSourceStrategy(accountId: string): SourceStra
     ): Promise<Uint8Array[]> {
       throwIfAborted(signal);
       if (shardIds.length === 0) return [];
-      const shards = await downloadShards([...shardIds], undefined, DEFAULT_MAX_CONCURRENT);
+      const shards = await downloadShards([...shardIds], undefined, DEFAULT_MAX_CONCURRENT, signal);
       throwIfAborted(signal);
       return shards;
     },

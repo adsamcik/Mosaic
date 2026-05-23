@@ -76,7 +76,15 @@ export async function verifyShardIntegrity(
   // Throws CorruptShardHashError for empty / whitespace / malformed.
   const expected = decodeShardHash(expectedHashValue);
   const actual = await rustSha256(shardBytes);
-  if (!constantTimeEquals(expected, actual)) {
+  // v1.0.2 `v102-constant-time-equals-length-early-return`: length is a
+  // non-secret structural property — it is fine to validate it eagerly
+  // and throw a typed error. The actual byte comparison runs on a
+  // fixed-length (32-byte) buffer to remove the length-conditional
+  // early-return branch entirely.
+  if (expected.length !== 32 || actual.length !== 32) {
+    throw new ShardIntegrityMismatchError(context);
+  }
+  if (!constantTimeEqualsFixed32(expected, actual)) {
     throw new ShardIntegrityMismatchError(context);
   }
 }
@@ -151,9 +159,21 @@ export async function verifyShardListIntegrity(
   }
 }
 
-function constantTimeEquals(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
+/**
+ * Constant-time equality for two 32-byte SHA-256 digests.
+ *
+ * v1.0.2 `v102-constant-time-equals-length-early-return`: the previous
+ * `constantTimeEquals` accepted variable-length inputs and returned
+ * `false` immediately on a length mismatch. That early-return is benign
+ * for SHA-256 (both sides are always 32 bytes by construction), but
+ * leaves a length-conditional branch in a function whose name promises
+ * constant-time behavior. We now compare a fixed 32-byte window
+ * unconditionally; the caller is responsible for validating that both
+ * inputs are exactly 32 bytes before invoking this helper (length is a
+ * non-secret structural property and may be checked early).
+ */
+function constantTimeEqualsFixed32(a: Uint8Array, b: Uint8Array): boolean {
   let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!;
+  for (let i = 0; i < 32; i++) diff |= a[i]! ^ b[i]!;
   return diff === 0;
 }

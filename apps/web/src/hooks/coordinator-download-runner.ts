@@ -243,14 +243,18 @@ export async function photosToPlanInput(albumId: string, photos: ReadonlyArray<P
         epochId: photo.epochId,
         tier: 3,
         expectedHash: decodeShardHash(hashes[i]),
-        // PhotoMeta does not carry per-shard encrypted sizes, so we pass a
-        // generous upper bound (1 TiB) instead of 0. The rust snapshot
-        // validator rejects any snapshot where `photo.bytes_written` exceeds
-        // the plan's total declared size, so a 0 here makes the very first
-        // commit-after-write fail with rust code 723 (DownloadSnapshotCorrupt).
-        // 1 TiB per shard keeps the sum well within u64 even for thousands
-        // of shards while never being undershot by a real photo.
-        declaredSize: 2 ** 40,
+        // v1.0.2 `v102-declared-size-weak-bound`: PhotoMeta does not carry
+        // per-shard encrypted sizes, so we pass a sane upper bound (10 GiB)
+        // rather than the previous 1 TiB. The rust snapshot validator
+        // rejects any commit where `photo.bytes_written` exceeds the plan's
+        // total declared size, so a 0 here would fail with rust code 723
+        // (DownloadSnapshotCorrupt). 10 GiB per shard is far above any
+        // realistic encrypted-shard size (~1-50 MB typical, hard ceiling
+        // for a single original ~5 GB) yet still small enough that a
+        // bogus server snapshot cannot abuse the bound to disguise an
+        // implausibly large bytes_written value as legitimate. Tens of
+        // thousands of shards still sum to well under u64.
+        declaredSize: 10 * 1024 * 1024 * 1024,
       })),
     });
   }
@@ -304,14 +308,16 @@ function decodeShardId(value: string): Uint8Array {
  * commit 7d112149).
  */
 export class CorruptShardHashError extends Error {
-  public readonly value: string;
+  // v1.0.2 `v102-corrupt-shard-hash-value-leak`: the offending raw value
+  // is NOT stored as a public readonly property. Doing so caused
+  // `JSON.stringify(err)` (which Comlink, telemetry adapters and generic
+  // error loggers routinely call) to echo the full malformed manifest
+  // string — a potentially attacker-controlled blob — to logs. The
+  // message field already carries a 32-char truncation for human
+  // diagnostics; that is the only surface we expose.
   constructor(value: string) {
-    // Truncate the offending value in the message so we never echo a
-    // potentially attacker-controlled large blob into logs, and never
-    // log key/PII-sized payloads.
     super(`Shard hash is corrupt or malformed: ${value.slice(0, 32)}`);
     this.name = 'CorruptShardHashError';
-    this.value = value;
   }
 }
 

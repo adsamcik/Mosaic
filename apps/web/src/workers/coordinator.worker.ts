@@ -1115,17 +1115,29 @@ export class CoordinatorWorker implements CoordinatorWorkerApi {
   }
 
   private pipelineDeps(pool: CryptoPool, source: SourceStrategy): Parameters<typeof executePhotoTask>[1] {
+    // v1.0.2 `v102-coordinator-abort-cancel-fetch`:
     // AbortSignal is NOT structured-cloneable across Comlink proxies. When the
     // source strategy lives on the main thread (visitor share-link case),
-    // passing `signal` directly throws DataCloneError on postMessage. We race
-    // the signal on the worker side and never pass it across the strategy
-    // call. For in-worker strategies (auth) this trades early request-level
-    // abort for caller-level abort, which is acceptable; the strategy itself
-    // tolerates an undefined signal.
+    // passing `signal` directly throws DataCloneError on postMessage — for
+    // that case we race the signal on the worker side. The previous code
+    // ALWAYS took that path, which meant aborts merely discarded the
+    // already-pending fetch result while the underlying network request
+    // kept running to completion.
+    //
+    // For the in-worker default-auth source (no Comlink boundary) we now
+    // pass the signal through so the underlying `fetch()` call is actually
+    // cancelled at the network layer. Reference-equality against
+    // `this.defaultAuthSource` is the safe in-worker check: any other
+    // source instance is either explicitly passed in via `jobSources`
+    // (visitor flow, always Comlink-proxied) or future strategies that
+    // must opt into signal propagation by extending this branch.
+    const isInWorkerAuthSource = source === this.defaultAuthSource;
     return {
       pool,
       fetchShards: (shardIds: string[], signal: AbortSignal): Promise<Uint8Array[]> =>
-        raceWithAbort(source.fetchShards(shardIds, undefined), signal),
+        isInWorkerAuthSource
+          ? source.fetchShards(shardIds, signal)
+          : raceWithAbort(source.fetchShards(shardIds, undefined), signal),
       getEpochSeed: (albumId: string, epochId: number) => source.resolveKey(albumId, epochId),
       writePhotoChunk: opfsStaging.writePhotoChunk,
       truncatePhoto: opfsStaging.truncatePhotoTo,

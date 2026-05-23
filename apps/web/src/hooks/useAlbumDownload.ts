@@ -3,7 +3,8 @@ import { downloadAlbumAsZip, supportsFileSystemAccess, type AlbumDownloadProgres
 import { createLogger } from '../lib/logger';
 import { useWakeLock } from './useWakeLock';
 import { useDownloadManager } from './useDownloadManager';
-import { runCoordinatorDownload } from './coordinator-download-runner';
+import { runCoordinatorDownload, CorruptShardHashError } from './coordinator-download-runner';
+import { CorruptShardManifest, ShardIntegrityMismatchError } from '../lib/shard-integrity';
 import { maybeStartBackgroundFetch } from '../lib/background-fetch-launcher';
 import { toSafeErrorMessage } from '../lib/error-messages';
 import { useBackgroundFetch } from './useBackgroundFetch';
@@ -168,6 +169,24 @@ export function useAlbumDownload(): UseAlbumDownloadResult {
       }
       const errorForLog = err instanceof Error ? err : new Error(String(err));
       log.error('Album download failed', errorForLog);
+      // v1.0.2 `v102-corrupt-shard-hash-error-message`: integrity /
+      // manifest corruption signals (`CorruptShardHashError`,
+      // `CorruptShardManifest`, `ShardIntegrityMismatchError`) carry
+      // meaningful diagnostic value for the user — they indicate a
+      // bytes-on-the-wire or server-side metadata problem rather than a
+      // transient network failure. Surface a distinct, actionable
+      // message so users do not retry indefinitely against a corrupt
+      // album. The detailed `err.message` is intentionally NOT echoed
+      // (it can carry truncated manifest bytes); only the fixed
+      // category-level string reaches the UI.
+      if (
+        err instanceof CorruptShardHashError
+        || err instanceof CorruptShardManifest
+        || err instanceof ShardIntegrityMismatchError
+      ) {
+        setError(new Error('Download failed: album metadata is corrupt'));
+        return;
+      }
       setError(new Error(toSafeErrorMessage(err, 'Failed to download album')));
     } finally {
       setIsDownloading(false);
