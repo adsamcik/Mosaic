@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Album } from '../components/Albums/AlbumCard';
 import {
   getStoredEncryptedName,
@@ -104,7 +104,17 @@ export function useAlbums() {
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  // v1.0.2 fix: monotonic request id guard. When loadAlbums() races with a
+  // newer refetch (e.g. user updates an album, then refetch fires before the
+  // earlier in-flight load completes), the stale request must NOT overwrite
+  // the fresh albums state (which would re-introduce stale expiresAt /
+  // decryptedName values). Every state mutation triggered by a given
+  // loadAlbums run is gated by `requestIdRef.current === myRequestId`.
+  const requestIdRef = useRef(0);
+
   const loadAlbums = useCallback(async () => {
+    const myRequestId = ++requestIdRef.current;
+    const isCurrent = () => requestIdRef.current === myRequestId;
     try {
       setIsLoading(true);
       setError(null);
@@ -113,6 +123,8 @@ export function useAlbums() {
       const apiAlbums = await paginateAll((skip, take) =>
         api.listAlbums(skip, take),
       );
+
+      if (!isCurrent()) return;
 
       // Transform API albums to frontend format with placeholder names
       // Names will be decrypted asynchronously after initial load
@@ -144,6 +156,8 @@ export function useAlbums() {
       const albumIds = transformedAlbums.map((a) => a.id);
       const photoCounts = await fetchPhotoCountsFromDb(albumIds);
 
+      if (!isCurrent()) return;
+
       // Update albums with photo counts
       setAlbums((prev) =>
         prev.map((album) => ({
@@ -153,8 +167,9 @@ export function useAlbums() {
       );
 
       // Decrypt album names asynchronously
-      await decryptAlbumNames(transformedAlbums);
+      await decryptAlbumNames(transformedAlbums, isCurrent);
     } catch (err) {
+      if (!isCurrent()) return;
       setError(new Error(toSafeErrorMessage(err)));
       setIsLoading(false);
     }
@@ -165,31 +180,89 @@ export function useAlbums() {
    * Decrypt album names using epoch keys.
    * Updates album state as names are decrypted.
    */
-  const decryptAlbumNames = useCallback(async (albumsToDecrypt: Album[]) => {
-    // Process each album's name decryption
-    const decryptionPromises = albumsToDecrypt.map(async (album) => {
-      try {
-        // Try to get encrypted name from server response first,
-        // then fallback to localStorage (for backwards compatibility)
-        const encryptedName =
-          album.encryptedName ?? getStoredEncryptedName(album.id);
+  const decryptAlbumNames = useCallback(
+    async (
+      albumsToDecrypt: Album[],
+      isCurrent: () => boolean = () => true,
+    ) => {
+      // Process each album's name decryption
+      const decryptionPromises = albumsToDecrypt.map(async (album) => {
+        try {
+          // Try to get encrypted name from server response first,
+          // then fallback to localStorage (for backwards compatibility)
+          const encryptedName =
+            album.encryptedName ?? getStoredEncryptedName(album.id);
 
-        if (!encryptedName) {
-          // No encrypted name available - keep placeholder
-          // This happens for albums created by other users or before encryption was added
+          if (!encryptedName) {
+            // No encrypted name available - keep placeholder
+            // This happens for albums created by other users or before encryption was added
+            if (!isCurrent()) return;
+            setAlbums((prev) =>
+              prev.map((a) =>
+                a.id === album.id ? { ...a, isDecrypting: false } : a,
+              ),
+            );
+            return;
+          }
+
+          // Load epoch keys for this album
+          const keysLoaded = await ensureEpochKeysLoaded(album.id);
+          if (!keysLoaded) {
+            // Can't decrypt without keys
+            log.error(`Album ${album.id}: Failed to load epoch keys`);
+            if (!isCurrent()) return;
+            setAlbums((prev) =>
+              prev.map((a) =>
+                a.id === album.id
+                  ? { ...a, isDecrypting: false, decryptionFailed: true }
+                  : a,
+              ),
+            );
+            return;
+          }
+
+          // Get the current epoch key
+          const epochKey = getCurrentEpochKey(album.id);
+          if (!epochKey) {
+            // No epoch key available
+            log.error(`Album ${album.id}: No epoch key in cache after loading`);
+            if (!isCurrent()) return;
+            setAlbums((prev) =>
+              prev.map((a) =>
+                a.id === album.id
+                  ? { ...a, isDecrypting: false, decryptionFailed: true }
+                  : a,
+              ),
+            );
+            return;
+          }
+
+          // Decrypt the album name via the handle-based decrypt path.
+          const decryptedName = await decryptAlbumNameWithHandle(
+            encryptedName,
+            epochKey.epochHandleId,
+          );
+
+          if (!isCurrent()) return;
+
+          // Update state with decrypted name
           setAlbums((prev) =>
             prev.map((a) =>
-              a.id === album.id ? { ...a, isDecrypting: false } : a,
+              a.id === album.id
+                ? {
+                    ...a,
+                    name: decryptedName,
+                    decryptedName,
+                    isDecrypting: false,
+                    decryptionFailed: false,
+                  }
+                : a,
             ),
           );
-          return;
-        }
-
-        // Load epoch keys for this album
-        const keysLoaded = await ensureEpochKeysLoaded(album.id);
-        if (!keysLoaded) {
-          // Can't decrypt without keys
-          log.error(`Album ${album.id}: Failed to load epoch keys`);
+        } catch (err) {
+          log.error(`Failed to decrypt album name for ${album.id}:`, err);
+          // Mark as failed but keep placeholder name
+          if (!isCurrent()) return;
           setAlbums((prev) =>
             prev.map((a) =>
               a.id === album.id
@@ -197,60 +270,14 @@ export function useAlbums() {
                 : a,
             ),
           );
-          return;
         }
+      });
 
-        // Get the current epoch key
-        const epochKey = getCurrentEpochKey(album.id);
-        if (!epochKey) {
-          // No epoch key available
-          log.error(`Album ${album.id}: No epoch key in cache after loading`);
-          setAlbums((prev) =>
-            prev.map((a) =>
-              a.id === album.id
-                ? { ...a, isDecrypting: false, decryptionFailed: true }
-                : a,
-            ),
-          );
-          return;
-        }
-
-        // Decrypt the album name via the handle-based decrypt path.
-        const decryptedName = await decryptAlbumNameWithHandle(
-          encryptedName,
-          epochKey.epochHandleId,
-        );
-
-        // Update state with decrypted name
-        setAlbums((prev) =>
-          prev.map((a) =>
-            a.id === album.id
-              ? {
-                  ...a,
-                  name: decryptedName,
-                  decryptedName,
-                  isDecrypting: false,
-                  decryptionFailed: false,
-                }
-              : a,
-          ),
-        );
-      } catch (err) {
-        log.error(`Failed to decrypt album name for ${album.id}:`, err);
-        // Mark as failed but keep placeholder name
-        setAlbums((prev) =>
-          prev.map((a) =>
-            a.id === album.id
-              ? { ...a, isDecrypting: false, decryptionFailed: true }
-              : a,
-          ),
-        );
-      }
-    });
-
-    // Wait for all decryption attempts to complete
-    await Promise.all(decryptionPromises);
-  }, []);
+      // Wait for all decryption attempts to complete
+      await Promise.all(decryptionPromises);
+    },
+    [],
+  );
 
   /**
    * Update photo count for a single album.

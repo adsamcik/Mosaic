@@ -28,6 +28,28 @@ async function promoteToAdmin(email: string): Promise<void> {
 }
 
 /**
+ * Assert that any `skip` / `take` query parameter on the URL is either
+ * absent or a valid non-negative pagination value (skip >= 0, take >= 1).
+ * Catches regressions where paginateAll forwards bogus values to admin
+ * endpoints (e.g. negative skip, take=0, NaN).
+ */
+function assertPaginationQuery(url: string): void {
+  const parsed = new URL(url);
+  const skip = parsed.searchParams.get('skip');
+  const take = parsed.searchParams.get('take');
+  if (skip !== null) {
+    const skipNum = Number(skip);
+    expect(Number.isInteger(skipNum)).toBe(true);
+    expect(skipNum).toBeGreaterThanOrEqual(0);
+  }
+  if (take !== null) {
+    const takeNum = Number(take);
+    expect(Number.isInteger(takeNum)).toBe(true);
+    expect(takeNum).toBeGreaterThan(0);
+  }
+}
+
+/**
  * Mock the 4 expensive admin API endpoints so the admin page loads instantly.
  * Only `/api/v1/admin/quota-defaults` hits the real backend (lightweight call).
  */
@@ -81,7 +103,12 @@ async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
   // the error state with empty tables. Keep mocks aligned with the real
   // contract introduced in commit 3dab0b22 (feat(api): wrap list responses
   // in PagedResult envelope).
+  //
+  // v1.0.2 hardening: the mock asserts query params are either absent or
+  // valid non-negative pagination values so we catch regressions where
+  // paginateAll / listUsers sends malformed `skip` / `take`.
   await page.route('**/api/v1/admin/users**', async (route) => {
+    assertPaginationQuery(route.request().url());
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -118,6 +145,7 @@ async function mockAdminApis(page: Page, userEmail: string): Promise<void> {
   });
 
   await page.route('**/api/v1/admin/albums**', async (route) => {
+    assertPaginationQuery(route.request().url());
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -322,5 +350,167 @@ test.describe('Admin Dashboard @p2 @ui @admin @slow', () => {
 
     // Admin page should no longer be visible
     await expect(adminPage.container).not.toBeVisible();
+  });
+
+  // v1.0.2 — dedicated coverage for paginateAll across multiple pages.
+  // Existing mocks set nextSkip:null and return short pages (length < 100),
+  // which causes paginateAll to terminate after the first fetch. That left
+  // the multi-page code path (skip advances, additional fetches issued,
+  // results concatenated) untested. This test wires a stateful mock that
+  // returns three full pages (100 + 100 + 50) and asserts every page was
+  // requested with monotonically increasing `skip` and that the final UI
+  // rendered all 250 rows.
+  test('paginateAll fetches all pages and combines users', async ({ testContext }) => {
+    const user = await testContext.createAuthenticatedUser('admin');
+
+    // Build the stateful mock BEFORE login so the admin page's first load
+    // hits it.
+    const userId = '11111111-1111-4111-8111-111111111111';
+    const albumId = '22222222-2222-4222-8222-222222222222';
+    const now = new Date().toISOString();
+
+    // Mock near-limits + stats + albums + settings (default short responses).
+    await user.page.route('**/api/v1/admin/stats/near-limits', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          usersNearStorageLimit: [],
+          usersNearAlbumLimit: [],
+          albumsNearPhotoLimit: [],
+          albumsNearSizeLimit: [],
+        }),
+      });
+    });
+
+    await user.page.route('**/api/v1/admin/stats', async (route) => {
+      if (route.request().url().includes('near-limits')) {
+        return route.continue();
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          totalUsers: 250,
+          totalAlbums: 1,
+          totalPhotos: 0,
+          totalStorageBytes: 0,
+        }),
+      });
+    });
+
+    await user.page.route('**/api/v1/admin/albums**', async (route) => {
+      assertPaginationQuery(route.request().url());
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            {
+              id: albumId,
+              ownerId: userId,
+              ownerAuthSub: user.email,
+              createdAt: now,
+              photoCount: 0,
+              totalSizeBytes: 0,
+            },
+          ],
+          nextSkip: null,
+        }),
+      });
+    });
+
+    await user.page.route('**/api/v1/admin/settings/quota', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          maxStorageBytes: 10737418240,
+          maxAlbums: null,
+        }),
+      });
+    });
+
+    // Stateful multi-page users mock. paginateAll terminates when a page's
+    // length is < pageSize (100), so we return 100, 100, 50.
+    const PAGE_SIZE = 100;
+    const TOTAL = 250;
+    const observedSkips: number[] = [];
+    const makeUser = (i: number) => {
+      // RFC 4122 v4 UUIDs derived from i (version nibble = 4, variant 8).
+      const hex = i.toString(16).padStart(12, '0');
+      return {
+        id: `00000000-0000-4000-8000-${hex}`,
+        authSub: `user-${i}@test.local`,
+        isAdmin: false,
+        createdAt: now,
+        albumCount: 0,
+        totalStorageBytes: 0,
+        quota: {
+          currentStorageBytes: 0,
+          currentAlbumCount: 0,
+        },
+      };
+    };
+
+    await user.page.route('**/api/v1/admin/users**', async (route) => {
+      const url = new URL(route.request().url());
+      assertPaginationQuery(url.toString());
+      const skip = Number(url.searchParams.get('skip') ?? '0');
+      const take = Number(url.searchParams.get('take') ?? String(PAGE_SIZE));
+      observedSkips.push(skip);
+      const end = Math.min(skip + take, TOTAL);
+      const items: ReturnType<typeof makeUser>[] = [];
+      for (let i = skip; i < end; i++) items.push(makeUser(i));
+      const remaining = TOTAL - end;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items,
+          nextSkip: remaining > 0 ? end : null,
+        }),
+      });
+    });
+
+    // Inject isAdmin and login.
+    await user.page.route('**/api/v1/users/me', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      const response = await route.fetch();
+      if (!response.ok()) return route.fulfill({ response });
+      const json = await response.json();
+      json.isAdmin = true;
+      await route.fulfill({
+        status: response.status(),
+        contentType: 'application/json',
+        body: JSON.stringify(json),
+      });
+    });
+
+    await loginUser(user);
+    await promoteToAdmin(user.email);
+
+    const appShell = new AppShell(user.page);
+    await appShell.waitForLoad();
+    await appShell.openAdmin();
+
+    const adminPage = new AdminPage(user.page);
+    await adminPage.waitForLoad();
+
+    await adminPage.openUsers();
+    await expect(adminPage.userTable).toBeVisible();
+
+    // Wait for the third page to land. paginateAll must request skip=0,
+    // skip=100, skip=200 (in that order) and terminate when the 50-item
+    // page comes back.
+    await expect
+      .poll(() => observedSkips.length, { timeout: 10000 })
+      .toBeGreaterThanOrEqual(3);
+
+    expect(observedSkips.slice(0, 3)).toEqual([0, 100, 200]);
+
+    // The UI should render every row (header + 250 user rows).
+    const rows = await adminPage.getUserRows();
+    expect(rows.length).toBeGreaterThanOrEqual(TOTAL);
   });
 });

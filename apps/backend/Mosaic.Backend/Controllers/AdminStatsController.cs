@@ -27,11 +27,26 @@ public class AdminStatsController : ControllerBase
 
 
     /// <summary>
-    /// Get system-wide usage statistics
+    /// Get system-wide usage statistics.
+    ///
+    /// v1.0.2 hardening — the `UsersNearQuota` and `AlbumsNearLimit` warning
+    /// lists are bounded server-side. Without a cap, an installation with
+    /// many users / albums in the >= 80% usage band would force the server
+    /// to materialise an unbounded list (and the admin client to render it).
+    /// Callers can request more results by raising `nearLimitTake` up to
+    /// `MaxNearLimitTake`, and page using `nearLimitSkip`.
     /// </summary>
+    /// <param name="nearLimitSkip">Number of warning rows to skip (default 0).</param>
+    /// <param name="nearLimitTake">Number of warning rows to return per
+    /// category (default 100, clamped to 1..500).</param>
     [HttpGet]
-    public async Task<IActionResult> GetStats()
+    public async Task<IActionResult> GetStats(
+        [FromQuery] int nearLimitSkip = 0,
+        [FromQuery] int nearLimitTake = DefaultNearLimitTake)
     {
+        nearLimitSkip = Math.Max(0, nearLimitSkip);
+        nearLimitTake = Math.Clamp(nearLimitTake, 1, MaxNearLimitTake);
+
         var defaults = await _quotaService.GetDefaultsAsync();
 
         var totalUsers = await _db.Users.CountAsync();
@@ -39,7 +54,8 @@ public class AdminStatsController : ControllerBase
         var totalPhotos = await _db.Manifests.CountAsync(m => !m.IsDeleted);
         var totalStorageBytes = await _db.UserQuotas.SumAsync(q => q.UsedStorageBytes);
 
-        // Find users near quota (>= 80% used)
+        // Find users near quota (>= 80% used). Order + Skip + Take at the
+        // database so we never materialise more than `nearLimitTake` rows.
         var usersNearQuota = await _db.Users
             .AsNoTracking()
             .Include(u => u.Quota)
@@ -52,15 +68,18 @@ public class AdminStatsController : ControllerBase
                 MaxBytes = u.Quota.MaxStorageBytes > 0 ? u.Quota.MaxStorageBytes : defaults.MaxStorageBytesPerUser
             })
             .Where(u => u.MaxBytes > 0 && (u.UsedBytes * 100 / u.MaxBytes) >= 80)
+            .OrderByDescending(u => u.UsedBytes * 100 / u.MaxBytes)
+            .Skip(nearLimitSkip)
+            .Take(nearLimitTake)
             .ToListAsync();
 
         var userWarnings = usersNearQuota.Select(u => new UserQuotaWarning(
             u.Id,
             u.AuthSub,
             (int)(u.UsedBytes * 100 / u.MaxBytes)
-        )).OrderByDescending(w => w.UsagePercent).ToList();
+        )).ToList();
 
-        // Find albums near limit (>= 80% photos or size)
+        // Find albums near limit (>= 80% photos or size). Same cap applies.
         var albumsNearLimit = await _db.Albums
             .AsNoTracking()
             .Include(a => a.Owner)
@@ -79,6 +98,11 @@ public class AdminStatsController : ControllerBase
             .Where(a =>
                 (a.MaxPhotos > 0 && (a.CurrentPhotos * 100 / a.MaxPhotos) >= 80) ||
                 (a.MaxSize > 0 && (a.CurrentSize * 100 / a.MaxSize) >= 80))
+            .OrderByDescending(a =>
+                (a.MaxPhotos > 0 ? (a.CurrentPhotos * 100 / a.MaxPhotos) : 0) +
+                (a.MaxSize > 0 ? (a.CurrentSize * 100 / a.MaxSize) : 0))
+            .Skip(nearLimitSkip)
+            .Take(nearLimitTake)
             .ToListAsync();
 
         var albumWarnings = albumsNearLimit.Select(a => new AlbumLimitWarning(
@@ -86,7 +110,7 @@ public class AdminStatsController : ControllerBase
             a.OwnerAuthSub,
             a.MaxPhotos > 0 ? (int)(a.CurrentPhotos * 100 / a.MaxPhotos) : 0,
             a.MaxSize > 0 ? (int)(a.CurrentSize * 100 / a.MaxSize) : 0
-        )).OrderByDescending(w => Math.Max(w.PhotoUsagePercent, w.SizeUsagePercent)).ToList();
+        )).ToList();
 
         return Ok(new SystemStatsResponse(
             totalUsers,
@@ -97,4 +121,15 @@ public class AdminStatsController : ControllerBase
             albumWarnings
         ));
     }
+
+    /// <summary>
+    /// Default number of near-limit warnings returned per category.
+    /// </summary>
+    private const int DefaultNearLimitTake = 100;
+
+    /// <summary>
+    /// Hard server-side cap on near-limit warnings per category. Prevents an
+    /// unbounded admin request from materialising every quota-warning row.
+    /// </summary>
+    private const int MaxNearLimitTake = 500;
 }
