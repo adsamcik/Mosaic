@@ -149,16 +149,19 @@ function handleError(task: UploadTask, error: Error): void {
   const isPermanentFailure = task.status === 'permanently_failed';
 
   if (isPermanentFailure) {
-    // Permanent failure - mark as failed but keep visible for user action
-    store.markUploadFailed(task.albumId, task.id, error.message);
+    // Permanent failure - mark as terminal `failed_permanent` so
+    // pending-count / waitForSync observers ignore it and the bounded
+    // retry loop in sync-coordinator does not block on it
+    // (v1.0.2 v102-permanent-failures-leave-pending).
+    store.markUploadFailed(task.albumId, task.id, error.message, true);
 
     log.warn(
       `Upload permanently failed: albumId=${task.albumId}, assetId=${task.id}, error=${error.message}`,
     );
   } else {
     // Temporary error with pending retry - just mark as failed
-    // The task will be re-queued automatically by uploadQueue
-    store.markUploadFailed(task.albumId, task.id, error.message);
+    // (status stays pending/syncing so the queue can retry).
+    store.markUploadFailed(task.albumId, task.id, error.message, false);
 
     log.debug(
       `Upload error (will retry): albumId=${task.albumId}, assetId=${task.id}, ` +
@@ -205,8 +208,15 @@ export function retryUploadInStore(albumId: string, assetId: string): void {
     return;
   }
 
-  // Reset progress and clear error
-  store.updateProgress(albumId, assetId, 0);
+  // If the item is in the terminal `failed_permanent` state, reset it
+  // back to `pending` so the upload queue's retry sees a fresh state
+  // (v1.0.2 v102-permanent-failures-leave-pending).
+  if (photo.status === 'failed_permanent') {
+    store.resetForRetry(albumId, assetId);
+  } else {
+    // Reset progress and clear error
+    store.updateProgress(albumId, assetId, 0);
+  }
 
   // Note: The actual retry is handled by uploadQueue.retryPermanentlyFailed()
   // This just resets the visual state

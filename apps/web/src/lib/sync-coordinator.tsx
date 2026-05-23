@@ -40,6 +40,38 @@ const DEBOUNCE_MS = 100;
 const SYNC_TIMEOUT_MS = 30_000;
 
 /**
+ * Upper bound on a single `flushSyncCompleteNow` invocation. Without
+ * this guard, a hung `performFlushWithRetry` (worker stall, syncEngine
+ * never resolves, etc.) would pin the per-album entry in
+ * `flushInFlight` forever and silently coalesce every subsequent
+ * caller into a dead promise (v1.0.2 todo
+ * `v102-flush-coalesce-hung-promise-timeout`).
+ */
+const FLUSH_TIMEOUT_MS = 60_000;
+
+/**
+ * v1.0.2 telemetry snapshot for the bounded-retry mitigation introduced
+ * for `validation-final-gate-v101-cert-02`. The retry loop is a
+ * *symptom* fix for a missing write/read visibility fence between the
+ * DB worker's `insertManifests` and the subsequent `loadAllAlbumPhotos`
+ * read; the long-term fix (proper write-then-read fence at the worker
+ * boundary) is tracked under v1.0.2 todo
+ * `v102-flush-retry-telemetry-rootcause`. These counters expose the
+ * frequency of the mitigation firing in the wild so the long-term fix
+ * can be prioritised and validated post-deploy.
+ */
+export interface SyncCoordinatorRetryMetrics {
+  /** Total retry attempts across all albums since process start. */
+  totalRetryAttempts: number;
+  /** Successful retry passes that promoted at least one pending item. */
+  retrySuccesses: number;
+  /** Retry passes where `syncEngine.sync` threw. */
+  retrySyncFailures: number;
+  /** Flushes that hit the `FLUSH_TIMEOUT_MS` upper bound. */
+  flushTimeouts: number;
+}
+
+/**
  * Pending item awaiting sync confirmation
  */
 interface PendingSync {
@@ -91,6 +123,24 @@ class SyncCoordinator {
    * (MED security-review-2026-05-22-05 follow-up).
    */
   private totalRetryAttempts = 0;
+  private retrySuccesses = 0;
+  private retrySyncFailures = 0;
+  private flushTimeouts = 0;
+
+  /**
+   * Returns a snapshot of retry telemetry counters. Safe to call from
+   * production code paths (e.g., debug overlay, health-check ping)
+   * because it allocates a fresh object and never exposes internal
+   * mutable state.
+   */
+  getRetryMetrics(): SyncCoordinatorRetryMetrics {
+    return {
+      totalRetryAttempts: this.totalRetryAttempts,
+      retrySuccesses: this.retrySuccesses,
+      retrySyncFailures: this.retrySyncFailures,
+      flushTimeouts: this.flushTimeouts,
+    };
+  }
 
   /**
    * Initialize the coordinator.
@@ -263,16 +313,71 @@ class SyncCoordinator {
       return existing;
     }
 
-    const flushPromise = (async () => {
-      try {
-        await this.performFlushWithRetry(albumId);
-      } finally {
+    // v1.0.2 v102-flush-coalesce-hung-promise-timeout:
+    // Bound the in-flight promise lifetime so a stuck worker / hung
+    // syncEngine cannot pin this map entry forever and turn every
+    // subsequent caller into a silent no-op via coalescing.
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        reject(
+          new Error(
+            `flushSyncCompleteNow hung for ${FLUSH_TIMEOUT_MS}ms ` +
+              `(album=${albumId})`,
+          ),
+        );
+      }, FLUSH_TIMEOUT_MS);
+    });
+
+    const flushPromise = Promise.race([
+      this.performFlushWithRetry(albumId),
+      timeoutPromise,
+    ])
+      .catch((err: unknown) => {
+        const isTimeout =
+          err instanceof Error &&
+          err.message.startsWith('flushSyncCompleteNow hung');
+        if (isTimeout) {
+          this.flushTimeouts++;
+          log.error(
+            `flushSyncCompleteNow timeout for album ${albumId} ` +
+              `after ${FLUSH_TIMEOUT_MS}ms; surfacing failure to pending items`,
+          );
+          this.failPendingItems(
+            albumId,
+            'Sync coordinator timed out waiting for confirmation',
+          );
+        }
+        // Re-throw so callers awaiting the flush can react. Map entry
+        // is cleaned up in `finally` below regardless of outcome.
+        throw err;
+      })
+      .finally(() => {
+        if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
         this.flushInFlight.delete(albumId);
-      }
-    })();
+      });
 
     this.flushInFlight.set(albumId, flushPromise);
     return flushPromise;
+  }
+
+  /**
+   * Mark every still-pending/syncing item for the given album as
+   * permanently failed. Invoked when the retry loop or flush timeout
+   * gives up so the UI no longer shows a stuck "Uploading…" overlay
+   * (v1.0.2 todos `v102-flush-retry-final-failure-surface` and
+   * `v102-flush-coalesce-hung-promise-timeout`).
+   */
+  private failPendingItems(albumId: string, message: string): void {
+    const store = usePhotoStore.getState();
+    const album = store.albums.get(albumId);
+    if (!album) return;
+    for (const item of album.items.values()) {
+      if (item.status === 'pending' || item.status === 'syncing') {
+        store.markUploadFailed(albumId, item.assetId, message, true);
+        this.clearPendingSyncTimeout(albumId, item.assetId);
+      }
+    }
   }
 
   /**
@@ -311,7 +416,10 @@ class SyncCoordinator {
           stillPending.push(pending.assetId);
         }
       }
-      if (stillPending.length === 0) return;
+      if (stillPending.length === 0) {
+        if (attempt > 1) this.retrySuccesses++;
+        return;
+      }
 
       this.totalRetryAttempts++;
       if (import.meta.env.DEV) {
@@ -333,13 +441,45 @@ class SyncCoordinator {
       try {
         await syncEngine.sync(albumId);
       } catch (err) {
+        // v1.0.2 v102-flush-retry-final-failure-surface:
+        // Don't silently return — the stuck pending items would only
+        // be released by the 30s SYNC_TIMEOUT_MS path, leaving the UI
+        // showing "Uploading…" for half a minute on every retry-cycle
+        // failure. Surface a specific sync error to those items so the
+        // user sees an actionable failure immediately.
+        this.retrySyncFailures++;
+        const message = err instanceof Error ? err.message : String(err);
         log.warn(`flushSyncCompleteNow retry sync failed`, {
           attempt,
-          error: err instanceof Error ? err.message : String(err),
+          error: message,
         });
+        this.failPendingItems(
+          albumId,
+          `Sync retry failed: ${message}`,
+        );
         return;
       }
       await this.handleSyncComplete(albumId);
+    }
+
+    // Exhausted MAX_RETRIES with items still pending: surface a
+    // terminal failure so the UI stops showing "Uploading…" until the
+    // 30s timeout fires (v1.0.2 v102-flush-retry-final-failure-surface).
+    let leftover = 0;
+    for (const pending of this.pendingSyncs.values()) {
+      if (pending.albumId === albumId) leftover++;
+    }
+    if (leftover > 0) {
+      log.error(
+        `flushSyncCompleteNow exhausted ${MAX_RETRIES} retries with ` +
+          `${leftover} pending items remaining for album ${albumId}; ` +
+          `surfacing permanent failure`,
+      );
+      this.failPendingItems(
+        albumId,
+        `Sync coordinator could not confirm upload after ` +
+          `${MAX_RETRIES} retries`,
+      );
     }
   }
 

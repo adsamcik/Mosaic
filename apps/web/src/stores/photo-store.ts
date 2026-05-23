@@ -5,7 +5,23 @@ import { mutative } from 'zustand-mutative';
 // Types
 // ============================================================================
 
-export type PhotoStatus = 'stable' | 'pending' | 'syncing' | 'deleting';
+/**
+ * `failed_permanent` is a terminal status for uploads that exhausted all
+ * retries (max-retries permanent failure). It is intentionally NOT part
+ * of `pending|syncing` so pending-count, waitForSync()-style observers,
+ * and sync-coordinator retry loops do not block on items that will never
+ * complete on their own. The item remains visible in the gallery with
+ * `item.error` set so the user can either dismiss or trigger an explicit
+ * retry (`retryUploadInStore`).
+ *
+ * See v1.0.2 todo `v102-permanent-failures-leave-pending`.
+ */
+export type PhotoStatus =
+  | 'stable'
+  | 'pending'
+  | 'syncing'
+  | 'deleting'
+  | 'failed_permanent';
 
 /** Current action during upload */
 export type UploadAction =
@@ -56,6 +72,15 @@ export interface LatePromoteIntent {
 /** Time-to-live for a buffered late-promote intent. */
 export const LATE_PROMOTE_TTL_MS = 30_000;
 
+/**
+ * Hard ceiling on buffered late-promote intents per album. When this
+ * limit is hit, the oldest intent (insertion order) is evicted FIFO
+ * before the new one is inserted. Prevents unbounded growth on
+ * inactive albums where TTL-based opportunistic pruning never runs
+ * (v1.0.2 todo `v102-latepromote-intent-ttl-sweep`).
+ */
+export const MAX_INTENTS_PER_ALBUM = 1000;
+
 export interface AlbumPhotoState {
   items: Map<string, PhotoItem>;
   /** Promotions awaiting a late-arriving `addPending`. Keyed by assetId. */
@@ -104,8 +129,27 @@ export interface PhotoStoreActions {
       'encryptedMetadata' | 'thumbnailUrl' | 'createdAt'
     >,
   ) => void;
-  markUploadFailed: (albumId: string, assetId: string, error: string) => void;
+  markUploadFailed: (
+    albumId: string,
+    assetId: string,
+    error: string,
+    permanent?: boolean,
+  ) => void;
   removePending: (albumId: string, assetId: string) => void;
+  /**
+   * Reset a `failed_permanent` item back to `pending` so a user-driven
+   * retry can re-run the normal upload lifecycle. No-op if the item is
+   * not in `failed_permanent`.
+   */
+  resetForRetry: (albumId: string, assetId: string) => void;
+  /**
+   * Active-sweep entry point: prunes TTL-expired late-promote intents
+   * across every album. Designed to be invoked from a periodic timer
+   * so memory does not grow unbounded on inactive albums whose
+   * `addPending` / `promoteToStable` paths (which prune opportunistically)
+   * never run. See v1.0.2 todo `v102-latepromote-intent-ttl-sweep`.
+   */
+  pruneAllLatePromoteIntents: () => void;
 
   // Delete lifecycle
   markDeleting: (albumId: string, assetId: string) => void;
@@ -409,7 +453,17 @@ export const usePhotoStore = create<PhotoStore>()(
         if (!item) {
           const now = Date.now();
           pruneStaleIntents(album.latePromoteIntents, now);
-          album.latePromoteIntents.set(assetId, {
+          // Buffer a late-promote intent so the upcoming addPending
+          // inserts the photo directly as 'stable'. Apply per-album
+          // FIFO cap before inserting to bound memory on inactive
+          // albums (v1.0.2 v102-latepromote-intent-ttl-sweep).
+          const intents = album.latePromoteIntents;
+          while (intents.size >= MAX_INTENTS_PER_ALBUM) {
+            const oldest = intents.keys().next();
+            if (oldest.done) break;
+            intents.delete(oldest.value);
+          }
+          intents.set(assetId, {
             promotionData: metadata,
             expiresAt: now + LATE_PROMOTE_TTL_MS,
           });
@@ -417,12 +471,44 @@ export const usePhotoStore = create<PhotoStore>()(
       });
     },
 
-    markUploadFailed: (albumId: string, assetId: string, error: string) => {
+    markUploadFailed: (
+      albumId: string,
+      assetId: string,
+      error: string,
+      permanent = false,
+    ) => {
       set((state) => {
         const album = state.albums.get(albumId);
         const item = album?.items.get(assetId);
         if (item && (item.status === 'pending' || item.status === 'syncing')) {
           item.error = error;
+          if (permanent) {
+            // Terminal state: pending-count / waitForSync observers
+            // ignore this status so they unblock immediately.
+            item.status = 'failed_permanent';
+          }
+        }
+      });
+    },
+
+    resetForRetry: (albumId: string, assetId: string) => {
+      set((state) => {
+        const album = state.albums.get(albumId);
+        const item = album?.items.get(assetId);
+        if (item && item.status === 'failed_permanent') {
+          item.status = 'pending';
+          item.uploadProgress = 0;
+          item.uploadAction = 'waiting';
+          delete item.error;
+        }
+      });
+    },
+
+    pruneAllLatePromoteIntents: () => {
+      set((state) => {
+        const now = Date.now();
+        for (const album of state.albums.values()) {
+          pruneStaleIntents(album.latePromoteIntents, now);
         }
       });
     },
@@ -432,7 +518,12 @@ export const usePhotoStore = create<PhotoStore>()(
         const album = state.albums.get(albumId);
         if (!album) return;
         const item = album.items.get(assetId);
-        if (item && (item.status === 'pending' || item.status === 'syncing')) {
+        if (
+          item &&
+          (item.status === 'pending' ||
+            item.status === 'syncing' ||
+            item.status === 'failed_permanent')
+        ) {
           // Revoke blob URL to prevent memory leak
           if (item.localBlobUrl) {
             URL.revokeObjectURL(item.localBlobUrl);
@@ -566,8 +657,9 @@ export const usePhotoStore = create<PhotoStore>()(
 
       // Sort: pending first (newest first), then syncing, then stable/deleting by createdAt
       return items.sort((a, b) => {
-        // Status priority: pending > syncing > stable/deleting
+        // Status priority: failed_permanent ≈ pending (top, user must act)
         const statusPriority: Record<PhotoStatus, number> = {
+          failed_permanent: 0,
           pending: 0,
           syncing: 1,
           stable: 2,
