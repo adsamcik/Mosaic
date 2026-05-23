@@ -24,79 +24,17 @@ public class ShareLinkAccessController : ControllerBase
     private readonly MosaicDbContext _db;
     private readonly IStorageService _storage;
     private readonly TimeProvider _timeProvider;
-    private readonly ShareLinkAttemptTracker? _attemptTracker;
 
     public ShareLinkAccessController(
         MosaicDbContext db,
         IConfiguration config,
         IStorageService storage,
-        TimeProvider? timeProvider = null,
-        ShareLinkAttemptTracker? attemptTracker = null)
+        TimeProvider? timeProvider = null)
     {
         _db = db;
         _storage = storage;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _attemptTracker = attemptTracker;
         _ = config;
-    }
-
-    /// <summary>
-    /// Build a stable per-link tracker key from the raw URL segment. We accept
-    /// either base64url or standard base64 inputs (the upstream <see
-    /// cref="Base64UrlHelper.FromBase64Url"/> normalizes both); collapse them
-    /// onto the same key so a base64-vs-base64url swap cannot reset the
-    /// counter. Malformed inputs fall back to their raw form so 404 spam still
-    /// trips lockout.
-    /// </summary>
-    private static string TrackerKey(string linkId)
-    {
-        if (string.IsNullOrEmpty(linkId))
-        {
-            return "(empty)";
-        }
-        var bytes = Base64UrlHelper.FromBase64Url(linkId);
-        if (bytes is not null)
-        {
-            return "b:" + Convert.ToHexString(bytes);
-        }
-        return "r:" + linkId;
-    }
-
-    private IActionResult? ApplyLockoutGate(string trackerKey)
-    {
-        if (_attemptTracker is null)
-        {
-            return null;
-        }
-        var remaining = _attemptTracker.GetLockoutRemaining(trackerKey);
-        if (remaining is { } window)
-        {
-            return BuildLockedOutResponse(window);
-        }
-        return null;
-    }
-
-    private IActionResult? RecordFailureAndMaybeLock(string trackerKey)
-    {
-        if (_attemptTracker is null)
-        {
-            return null;
-        }
-        var locked = _attemptTracker.RecordFailure(trackerKey);
-        if (locked is { } window)
-        {
-            return BuildLockedOutResponse(window);
-        }
-        return null;
-    }
-
-    private IActionResult BuildLockedOutResponse(TimeSpan remaining)
-    {
-        var retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds));
-        Response.Headers["Retry-After"] = retryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        return Problem(
-            detail: "Too many failed access attempts for this link. Try again later.",
-            statusCode: StatusCodes.Status429TooManyRequests);
     }
 
     private static byte[] HashGrantToken(string token)
@@ -162,19 +100,9 @@ public class ShareLinkAccessController : ControllerBase
     [HttpGet("api/v1/s/{linkId}")]
     public async Task<IActionResult> Access(string linkId)
     {
-        var trackerKey = TrackerKey(linkId);
-        if (ApplyLockoutGate(trackerKey) is { } locked)
-        {
-            return locked;
-        }
-
         var linkIdBytes = Base64UrlHelper.FromBase64Url(linkId);
         if (linkIdBytes == null)
         {
-            if (RecordFailureAndMaybeLock(trackerKey) is { } lockedNow)
-            {
-                return lockedNow;
-            }
             return Problem(
                 detail: "Invalid link ID format",
                 statusCode: StatusCodes.Status400BadRequest);
@@ -189,10 +117,6 @@ public class ShareLinkAccessController : ControllerBase
 
         if (shareLink == null)
         {
-            if (RecordFailureAndMaybeLock(trackerKey) is { } lockedNow)
-            {
-                return lockedNow;
-            }
             return Problem(
                 detail: "Link not found",
                 statusCode: StatusCodes.Status404NotFound);
@@ -201,30 +125,18 @@ public class ShareLinkAccessController : ControllerBase
         // Check if revoked
         if (shareLink.IsRevoked)
         {
-            if (RecordFailureAndMaybeLock(trackerKey) is { } lockedNow)
-            {
-                return lockedNow;
-            }
             return Gone(new { error = "This link has been revoked" });
         }
 
         // Check if album has expired
         if (shareLink.Album.ExpiresAt.HasValue && shareLink.Album.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
-            if (RecordFailureAndMaybeLock(trackerKey) is { } lockedNow)
-            {
-                return lockedNow;
-            }
             return Gone(new { error = "Album has expired" });
         }
 
         // Check if expired
         if (shareLink.ExpiresAt.HasValue && shareLink.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
-            if (RecordFailureAndMaybeLock(trackerKey) is { } lockedNow)
-            {
-                return lockedNow;
-            }
             return Gone(new { error = "This link has expired" });
         }
 
@@ -246,18 +158,10 @@ public class ShareLinkAccessController : ControllerBase
 
         if (trackedLink.IsRevoked)
         {
-            if (RecordFailureAndMaybeLock(trackerKey) is { } lockedNow)
-            {
-                return lockedNow;
-            }
             return Gone(new { error = "This link has been revoked" });
         }
         if (trackedLink.MaxUses.HasValue && trackedLink.UseCount >= trackedLink.MaxUses.Value)
         {
-            if (RecordFailureAndMaybeLock(trackerKey) is { } lockedNow)
-            {
-                return lockedNow;
-            }
             return Gone(new { error = "This link has reached its maximum uses" });
         }
 
@@ -271,8 +175,6 @@ public class ShareLinkAccessController : ControllerBase
         await tx.CommitAsync(HttpContext.RequestAborted);
 
         shareLink.UseCount = trackedLink.UseCount;
-
-        _attemptTracker?.RecordSuccess(trackerKey);
 
         return Ok(new LinkAccessResponse
         {
