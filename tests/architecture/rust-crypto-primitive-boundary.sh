@@ -25,15 +25,18 @@ declare -A ALLOWED_FILES=(
 
 PATTERN_NAMES=(
   primitive_crate_import
+  primitive_crate_qualified_path
 )
 
 PATTERN_REGEXES=(
-  '\buse\s+(sha2|sha1|blake2|hkdf|hmac|chacha20(poly1305)?|aes_gcm|xchacha20poly1305|ed25519(_dalek)?|x25519(_dalek)?|argon2|crypto_secretbox|pbkdf2|generic_array|hybrid_array)\s*(::|\{)'
+  '\buse\s+(sha2|sha1|blake2|hkdf|hmac|chacha20(poly1305)?|aes_gcm|xchacha20poly1305|ed25519(_dalek)?|x25519(_dalek)?|argon2|crypto_secretbox|pbkdf2|generic_array|hybrid_array)\s*(::|\{|as\b|;)'
+  '(?<!\w)(?<!mosaic_crypto::)(?:::)?(sha2|sha1|blake2|hkdf|hmac|chacha20poly1305|chacha20|aes_gcm|xchacha20poly1305|ed25519_dalek|ed25519|x25519_dalek|x25519|argon2|crypto_secretbox|pbkdf2|generic_array|hybrid_array)::\w'
 )
 
 regex_for() {
   case "$1" in
     primitive_crate_import) printf '%s' "${PATTERN_REGEXES[0]}" ;;
+    primitive_crate_qualified_path) printf '%s' "${PATTERN_REGEXES[1]}" ;;
   esac
 }
 
@@ -63,6 +66,19 @@ assert_pattern_fixture_caught() {
 assert_pattern_fixture_caught 'sha2-import' 'use sha2::{Digest, Sha256};' 'primitive_crate_import'
 assert_pattern_fixture_caught 'hkdf-import' 'use hkdf::Hkdf;' 'primitive_crate_import'
 assert_pattern_fixture_caught 'ed25519-import' 'use ed25519_dalek::SigningKey;' 'primitive_crate_import'
+assert_pattern_fixture_caught 'sha2-aliased-import' 'use sha2 as primitive_sha;' 'primitive_crate_import'
+assert_pattern_fixture_caught 'sha2-qualified-absolute' 'let h = ::sha2::Sha256::new();' 'primitive_crate_qualified_path'
+assert_pattern_fixture_caught 'hkdf-qualified-bare' 'let kdf = hkdf::Hkdf::<sha2::Sha256>::new(None, &ikm);' 'primitive_crate_qualified_path'
+assert_pattern_fixture_caught 'ed25519-qualified-crate' 'let sk = crate::ed25519_dalek::SigningKey::from_bytes(&b);' 'primitive_crate_qualified_path'
+assert_pattern_fixture_caught 'argon2-qualified-absolute' 'let a = ::argon2::Argon2::default();' 'primitive_crate_qualified_path'
+
+# Allowlist proof: paths through our facade `mosaic_crypto::` must NOT trip the
+# qualified-path pattern (verifies the negative-lookbehind allowlist works).
+mosaic_facade_line='let h = mosaic_crypto::sha2::Sha256::new();'
+if printf '%s' "$mosaic_facade_line" | grep -Pq "$(regex_for primitive_crate_qualified_path)"; then
+  echo "rust-crypto-primitive-boundary allowlist regression: facade line must not match qualified-path pattern" >&2
+  exit 1
+fi
 
 violations=()
 
