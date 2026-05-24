@@ -39,6 +39,34 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: License audit (production deps, SPDX allowlist)
+        # v1.0.2 s15: fail the build if any production npm dependency ships
+        # under a license that is not on the explicit allowlist. Uses
+        # npx --yes license-checker (no new devDependency added; downloaded
+        # on demand). Production-only scope: dev-only tooling (test runners,
+        # bundlers) is not shipped to users and is excluded.
+        #
+        # Allowlist rationale:
+        #   - Permissive: MIT, ISC, BSD-*, Apache-2.0, CC0-1.0, 0BSD,
+        #     Unlicense, BlueOak-1.0.0, Python-2.0
+        #   - OFL-1.1: SIL Open Font License, used by @fontsource/* font
+        #     packages. Permissive for embedding/redistribution.
+        #   - LGPL-3.0: heic-to (WASM binding to libheif). Documented in
+        #     docs/SECURITY.md Dependabot triage; reviewed and accepted.
+        #   - MIT*: license-checker heuristic match for MIT-style text where
+        #     the file lacks an SPDX header (e.g. combine-errors).
+        # Self-package excluded via --excludePackages: @mosaic/web is the
+        # private workspace root and is correctly marked UNLICENSED.
+        run: |
+          set -e
+          ALLOW='MIT;MIT*;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC0-1.0;CC-BY-4.0;Unlicense;0BSD;Python-2.0;BlueOak-1.0.0;OFL-1.1;LGPL-3.0'
+          echo "::group::license-checker libs/crypto"
+          (cd libs/crypto && npx --yes license-checker --production --onlyAllow "$ALLOW" --summary)
+          echo "::endgroup::"
+          echo "::group::license-checker apps/web"
+          (cd apps/web && npx --yes license-checker --production --onlyAllow "$ALLOW" --excludePackages "@mosaic/web@0.0.0-dev" --summary)
+          echo "::endgroup::"
+
       - name: Install crypto library dependencies
         working-directory: libs/crypto
         run: npm ci
