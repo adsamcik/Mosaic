@@ -24,7 +24,13 @@ object ShardUploadScheduler {
       .setInputData(inputData(jobId, shardId, tusEndpoint, metadataSignature))
       .setConstraints(
         Constraints.Builder()
-          .setRequiredNetworkType(NetworkType.CONNECTED)
+          // v1.0.2 network-type-unmetered: only upload over UNMETERED networks
+          // (Wi-Fi / Ethernet) by default to avoid burning cellular data on
+          // potentially-large shard payloads. Users on metered connections will
+          // see queued uploads resume automatically once an unmetered network
+          // becomes available. Exposing this as a user preference is tracked
+          // separately; the safe default is UNMETERED.
+          .setRequiredNetworkType(NetworkType.UNMETERED)
           .build(),
       )
       .setInitialDelay(coercedDelayMs, TimeUnit.MILLISECONDS)
