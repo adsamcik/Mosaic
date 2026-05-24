@@ -10,6 +10,9 @@ using Mosaic.Backend.Middleware;
 using Mosaic.Backend.Services;
 using Mosaic.Backend.SidecarSignaling;
 using Scalar.AspNetCore;
+using Serilog;
+using Serilog.Events;
+using Serilog.Filters;
 using tusdotnet;
 using tusdotnet.Stores;
 using System.Data.Common;
@@ -20,6 +23,49 @@ using Microsoft.Extensions.Options;
 using Mosaic.Backend.Crypto;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// v1.0.2 audit-event-sink: configure Serilog with a dedicated, filtered file
+// sink for security-relevant ([Audit]) events. Audit logs roll daily, are
+// retained for 90 days, and are written to a separate `audit-YYYYMMDD.log`
+// file so they can be shipped to an immutable / append-only store without
+// dragging the full application log along. Regular (non-audit) log events
+// flow to the normal console / sub-logger so existing operator workflows
+// are unaffected.
+//
+// Note: the directory is created automatically by Serilog.Sinks.File on first
+// write — no extra setup is required for dev / Docker / production.
+var auditLogPath = builder.Configuration["Audit:LogPath"]
+    ?? Path.Combine(builder.Environment.ContentRootPath, "logs", "audit-.log");
+var auditRetentionDays = builder.Configuration.GetValue<int?>("Audit:RetainedFileCountLimit") ?? 90;
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    // Normal application logs → console (matches the previous default
+    // Microsoft.Extensions.Logging behaviour for ops familiarity).
+    .WriteTo.Logger(lc => lc
+        .Filter.ByExcluding(Matching.WithProperty<string>(
+            AuditLogService.CategoryPropertyName,
+            v => v == AuditLogService.AuditCategoryValue))
+        .WriteTo.Console(outputTemplate:
+            "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}"))
+    // Audit-tagged events → append-only daily-rolled file.
+    .WriteTo.Logger(lc => lc
+        .Filter.ByIncludingOnly(Matching.WithProperty<string>(
+            AuditLogService.CategoryPropertyName,
+            v => v == AuditLogService.AuditCategoryValue))
+        .WriteTo.File(
+            path: auditLogPath,
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: auditRetentionDays,
+            shared: true,
+            outputTemplate:
+                "{Timestamp:o} {Level:u3} {Message:lj} {Properties:j}{NewLine}"))
+    .CreateLogger();
+
+builder.Host.UseSerilog();
 
 // Database - use SQLite for development, PostgreSQL for production
 var connectionString = builder.Configuration.GetConnectionString("Default");

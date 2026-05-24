@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
+using Serilog.Context;
 
 namespace Mosaic.Backend.Services;
 
@@ -127,6 +129,21 @@ public sealed record AuditLogEvent
 /// <inheritdoc />
 public sealed class AuditLogService : IAuditLogService
 {
+    /// <summary>
+    /// Name of the Serilog <c>LogContext</c> property that tags an event as
+    /// security-relevant. Used by the Serilog audit sink filter configured in
+    /// <c>Program.cs</c> to route the message to the append-only audit log
+    /// file. Tests reference this constant directly to avoid a stringly-typed
+    /// coupling between the writer and the sink configuration.
+    /// </summary>
+    public const string CategoryPropertyName = "Category";
+
+    /// <summary>
+    /// Value of the <see cref="CategoryPropertyName"/> property that the
+    /// audit sink filter matches.
+    /// </summary>
+    public const string AuditCategoryValue = "Audit";
+
     private static readonly JsonSerializerOptions DetailsJsonOptions = new()
     {
         WriteIndented = false,
@@ -178,6 +195,30 @@ public sealed class AuditLogService : IAuditLogService
                 "Failed to persist audit log entry {EventType} for actor {ActorUserId}",
                 evt.EventType,
                 evt.ActorUserId);
+        }
+
+        // v1.0.2 audit-event-sink: mirror the event to the Serilog audit sink
+        // via a Category-tagged structured log. Pushing the property through
+        // LogContext (rather than relying on a scope) lets the filter in
+        // Program.cs route it to the append-only audit.log file. The DB write
+        // remains the source of truth — the file sink is a redundant,
+        // tamper-evident copy operators can ship to immutable storage. We
+        // never include the DetailsJson body when it might contain free-form
+        // data; only stable fields (event type, outcome, actor, target) flow
+        // to the structured log so accidental PII leakage stays bounded.
+        using (LogContext.PushProperty(CategoryPropertyName, AuditCategoryValue))
+        using (LogContext.PushProperty("AuditEventType", entry.EventType))
+        using (LogContext.PushProperty("AuditOutcome", entry.Outcome))
+        using (LogContext.PushProperty("AuditActorUserId", entry.ActorUserId))
+        using (LogContext.PushProperty("AuditTargetType", entry.TargetType))
+        using (LogContext.PushProperty("AuditTargetId", entry.TargetId))
+        using (LogContext.PushProperty("AuditRequestId", entry.RequestId))
+        using (LogContext.PushProperty("AuditOccurredAt", entry.OccurredAt.ToString("o")))
+        {
+            _logger.LogInformation(
+                "audit {AuditEventType} {AuditOutcome}",
+                entry.EventType,
+                entry.Outcome);
         }
     }
 
