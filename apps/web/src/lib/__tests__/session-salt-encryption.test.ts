@@ -136,6 +136,7 @@ vi.mock('../key-cache', () => ({
 
 vi.mock('../link-tier-key-store', () => ({
   clearLinkKeyEncryption: vi.fn(),
+  purgeAllLinkTierKeys: vi.fn(async () => undefined),
 }));
 
 vi.mock('../local-auth', () => ({

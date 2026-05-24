@@ -20,7 +20,7 @@ vi.mock('../key-cache', () => ({
   getCachedKeys: vi.fn(),
   hasCachedKeys: vi.fn(() => false),
 }));
-vi.mock('../link-tier-key-store', () => ({ clearLinkKeyEncryption: vi.fn() }));
+vi.mock('../link-tier-key-store', () => ({ clearLinkKeyEncryption: vi.fn(), purgeAllLinkTierKeys: vi.fn(async () => undefined) }));
 vi.mock('../local-auth', () => ({
   localAuthLogin: vi.fn(),
   localAuthRegister: vi.fn(),

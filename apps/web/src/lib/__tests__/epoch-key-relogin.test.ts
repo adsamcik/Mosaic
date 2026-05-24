@@ -95,6 +95,7 @@ vi.mock('../key-cache', () => ({
 
 vi.mock('../link-tier-key-store', () => ({
   clearLinkKeyEncryption: vi.fn(),
+  purgeAllLinkTierKeys: vi.fn(async () => undefined),
 }));
 
 vi.mock('../local-auth', () => ({
@@ -188,6 +189,7 @@ async function getSessionModule() {
   }));
   vi.doMock('../link-tier-key-store', () => ({
     clearLinkKeyEncryption: vi.fn(),
+    purgeAllLinkTierKeys: vi.fn(async () => undefined),
   }));
   vi.doMock('../local-auth', () => ({
     localAuthLogin: vi.fn(),

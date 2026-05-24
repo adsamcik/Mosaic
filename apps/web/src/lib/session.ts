@@ -21,7 +21,7 @@ import {
   hasCachedKeys,
   type CachedKeys,
 } from './key-cache';
-import { clearLinkKeyEncryption } from './link-tier-key-store';
+import { clearLinkKeyEncryption, purgeAllLinkTierKeys } from './link-tier-key-store';
 import { localAuthLogin, localAuthRegister } from './local-auth';
 import { createLogger } from './logger';
 import {
@@ -255,6 +255,7 @@ class SessionManager {
     clearAllEpochKeys();
     clearCacheEncryptionKey();
     clearLinkKeyEncryption();
+    void purgeAllLinkTierKeys();
 
     void closeDbClient().catch((error: unknown) => {
       log.warn('Failed to close DB client after session expiry', { error });
@@ -356,6 +357,7 @@ class SessionManager {
     clearAllEpochKeys();
     clearCacheEncryptionKey();
     clearLinkKeyEncryption();
+    void purgeAllLinkTierKeys();
 
     // Dispose sync-related timers before closing worker clients
     syncCoordinator.dispose();
@@ -1073,6 +1075,7 @@ class SessionManager {
     // Clear key cache encryption key
     clearCacheEncryptionKey();
     clearLinkKeyEncryption();
+    await purgeAllLinkTierKeys();
 
     // Close all workers and clear keys
     await closeDbClient();

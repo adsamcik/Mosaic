@@ -200,10 +200,72 @@ export function clearLinkKeyEncryption(): void {
 }
 
 /**
- * Open IndexedDB for link key storage
+ * Type guard: true iff the IDB record is in the post-cutover encrypted
+ * envelope format (has both `ciphertext` and `version`). Records lacking
+ * these markers are pre-cutover plaintext entries and MUST be purged on
+ * sight — they have no user/session scoping and could otherwise be loaded
+ * by a different session on a shared browser, bypassing logout and
+ * revocation expectations (security-review-2026-05-24-01).
+ */
+function isEncryptedRecord(value: unknown): value is EncryptedStoredLinkKeys {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.ciphertext === 'string' &&
+    typeof v.version === 'number' &&
+    v.wrapVersion === 2
+  );
+}
+
+/**
+ * Walk every record in the link-keys store and delete anything that is not
+ * a properly-encrypted post-cutover envelope. Runs every time the database
+ * is opened so legacy plaintext entries written by older builds (or by a
+ * previous session on a shared browser) can never be read or migrated.
+ */
+function purgeNonEncryptedRecords(db: IDBDatabase): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let tx: IDBTransaction;
+    try {
+      tx = db.transaction(STORE_NAME, 'readwrite');
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    const store = tx.objectStore(STORE_NAME);
+    const cursorReq = store.openCursor();
+    let purged = 0;
+    cursorReq.onerror = () => reject(cursorReq.error);
+    cursorReq.onsuccess = () => {
+      const cursor = cursorReq.result;
+      if (cursor) {
+        if (!isEncryptedRecord(cursor.value)) {
+          cursor.delete();
+          purged += 1;
+        }
+        cursor.continue();
+      }
+    };
+    tx.oncomplete = () => {
+      if (purged > 0) {
+        log.warn('Purged legacy/invalid link tier records on store open', {
+          purged,
+        });
+      }
+      resolve();
+    };
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Purge transaction aborted'));
+  });
+}
+
+/**
+ * Open IndexedDB for link key storage. Every open also sweeps and removes
+ * any record that is not a properly-encrypted envelope, so legacy
+ * unencrypted records cannot survive across sessions on shared browsers.
  */
 async function openLinkKeysDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onerror = (event) => {
@@ -233,6 +295,15 @@ async function openLinkKeysDb(): Promise<IDBDatabase> {
       }
     };
   });
+
+  try {
+    await purgeNonEncryptedRecords(db);
+  } catch (error) {
+    log.warn('Failed to purge legacy link tier records on open', { error });
+    // Continue — purge failure must not break the store, but the load path
+    // also rejects legacy records as a defence-in-depth check.
+  }
+  return db;
 }
 
 /**
@@ -342,77 +413,58 @@ export async function getTierKeys(
       try {
         let plaintext: StoredLinkKeysPlaintext;
 
-        // Detect encrypted vs legacy format
-        if ('ciphertext' in stored && 'version' in stored) {
-          // Encrypted format - decrypt. Legacy WebCrypto-wrapped entries
-          // cannot be opened after this cutover because their non-extractable
-          // JS key was memory-only; clear them as cache misses.
-          if (stored.wrapVersion !== 2) {
-            log.info('Discarding legacy WebCrypto-wrapped tier keys', { linkId });
-            await removeTierKeys(linkId);
-            resolve(null);
-            return;
-          }
-          const handle = await getLinkWrapHandle();
-          const ciphertext = fromBase64(stored.ciphertext);
+        // Only accept post-cutover encrypted envelopes. The open-time purge
+        // already removes legacy plaintext records, but defence-in-depth: if
+        // any non-encrypted record survives (e.g. purge transaction aborted),
+        // refuse to load it and delete it now. Legacy records are NEVER
+        // migrated — they have no user/session scoping and could otherwise
+        // leak across sessions on a shared browser
+        // (security-review-2026-05-24-01).
+        if (!isEncryptedRecord(stored)) {
+          log.warn(
+            'Refusing to load legacy unencrypted link tier record; deleting',
+            { linkId },
+          );
+          await removeTierKeys(linkId);
+          resolve(null);
+          return;
+        }
 
+        // Encrypted format - decrypt. Legacy WebCrypto-wrapped entries
+        // cannot be opened after this cutover because their non-extractable
+        // JS key was memory-only; clear them as cache misses.
+        if (stored.wrapVersion !== 2) {
+          log.info('Discarding legacy WebCrypto-wrapped tier keys', { linkId });
+          await removeTierKeys(linkId);
+          resolve(null);
+          return;
+        }
+        const handle = await getLinkWrapHandle();
+        const ciphertext = fromBase64(stored.ciphertext);
+
+        try {
+          const decrypted = consumeBytesResult(
+            unwrapLinkTierBlob(handle, ciphertext),
+            'unwrapLinkTierBlob',
+          );
           try {
-            const decrypted = consumeBytesResult(
-              unwrapLinkTierBlob(handle, ciphertext),
-              'unwrapLinkTierBlob',
-            );
-            try {
-              plaintext = JSON.parse(new TextDecoder().decode(decrypted));
-            } finally {
-              decrypted.fill(0);
-            }
-          } catch (decryptError) {
-            // Decryption failed (likely different session key)
-            log.warn('Failed to decrypt tier keys, clearing entry', {
-              linkId,
-              error:
-                decryptError instanceof Error
-                  ? decryptError.message
-                  : String(decryptError),
-            });
-            await removeTierKeys(linkId);
-            resolve(null);
-            return;
+            plaintext = JSON.parse(new TextDecoder().decode(decrypted));
+          } finally {
+            decrypted.fill(0);
           }
-        } else {
-          // Legacy unencrypted format - migrate by re-saving
-          log.info('Migrating legacy unencrypted tier keys', { linkId });
-          const legacy = stored as LegacyStoredLinkKeys;
-          plaintext = {
-            albumId: legacy.albumId,
-            accessTier: legacy.accessTier,
-            keys: legacy.keys,
-          };
-
-          // Build tier keys map for migration
-          const tierKeys = new Map<number, Map<AccessTierType, TierKey>>();
-          for (const key of plaintext.keys) {
-            if (!tierKeys.has(key.epochId)) {
-              tierKeys.set(key.epochId, new Map());
-            }
-            const linkTierHandleId = await deserializeLinkTierHandle(key);
-            const tierKey: TierKey = {
-              epochId: key.epochId,
-              tier: key.tier,
-            };
-            if (linkTierHandleId) {
-              tierKey.linkTierHandleId = linkTierHandleId;
-            }
-            if (key.signPubkey) {
-              tierKey.signPubkey = fromBase64(key.signPubkey);
-            }
-            tierKeys.get(key.epochId)!.set(key.tier, tierKey);
-          }
-
-          // Re-save with encryption (fire and forget)
-          saveTierKeys(linkId, plaintext.albumId, plaintext.accessTier, tierKeys)
-            .then(() => log.debug('Migrated tier keys to encrypted format', { linkId }))
-            .catch((err) => log.error('Failed to migrate tier keys', err));
+        } catch (decryptError) {
+          // Decryption failed (likely different session key / shared browser
+          // session boundary). Fail closed: drop the entry.
+          log.warn('Failed to decrypt tier keys, clearing entry', {
+            linkId,
+            error:
+              decryptError instanceof Error
+                ? decryptError.message
+                : String(decryptError),
+          });
+          await removeTierKeys(linkId);
+          resolve(null);
+          return;
         }
 
         // Build tier keys map
@@ -493,4 +545,24 @@ export async function clearAllTierKeys(): Promise<void> {
     request.onsuccess = () => resolve();
     tx.oncomplete = () => db.close();
   });
+}
+
+/**
+ * Purge ALL link tier key state on logout / session boundary.
+ *
+ * Wipes the in-memory Rust wrap handle AND every IndexedDB record. Must be
+ * called on every logout / session-expiry path so that a stale link tier
+ * key (encrypted or otherwise) cannot survive into a different user session
+ * on a shared browser (security-review-2026-05-24-01).
+ *
+ * Safe to call from a sync teardown path: returns a promise that callers
+ * may either await or fire-and-forget.
+ */
+export async function purgeAllLinkTierKeys(): Promise<void> {
+  clearLinkKeyEncryption();
+  try {
+    await clearAllTierKeys();
+  } catch (error) {
+    log.warn('Failed to clear link tier keys on logout', { error });
+  }
 }

@@ -138,6 +138,47 @@ function installFakeIndexedDB(): void {
                   r.onsuccess?.call(r, new Event('success'));
                   fireComplete();
                 }),
+              openCursor: () => {
+                const req: {
+                  onerror: ((ev: Event) => unknown) | null;
+                  onsuccess: ((ev: Event) => unknown) | null;
+                  result: unknown;
+                  error: unknown;
+                } = {
+                  onerror: null,
+                  onsuccess: null,
+                  result: null,
+                  error: null,
+                };
+                const keys = Array.from(records.keys());
+                let index = 0;
+                const advance = () => {
+                  queueMicrotask(() => {
+                    if (index >= keys.length) {
+                      req.result = null;
+                      req.onsuccess?.call(req, new Event('success'));
+                      fireComplete();
+                      return;
+                    }
+                    const k = keys[index]!;
+                    const value = records.get(k);
+                    const cursor = {
+                      value,
+                      delete: () => {
+                        records.delete(k);
+                      },
+                      continue: () => {
+                        index += 1;
+                        advance();
+                      },
+                    };
+                    req.result = cursor;
+                    req.onsuccess?.call(req, new Event('success'));
+                  });
+                };
+                advance();
+                return req;
+              },
             };
           },
         };
@@ -337,6 +378,149 @@ describe('link-tier-key-store (H3 security regression)', () => {
     expect(wasm.createLinkTierWrapHandle).toHaveBeenCalledTimes(2);
     expect(generateSpy).not.toHaveBeenCalled();
     // Still no raw key bytes in sessionStorage afterwards.
+    expect(sessionStorage.getItem(LINK_KEY_STORAGE_KEY)).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // security-review-2026-05-24-01 regression: legacy plaintext link tier
+  // records must never survive a store open, and must never be loaded /
+  // migrated. On a shared browser this prevents a stale link tier key from
+  // crossing user/session boundaries (linkId-only IDB key was previously
+  // sufficient to load and silently migrate another session's keys).
+  // -------------------------------------------------------------------------
+
+  /** Open the fake IDB directly and write a record (bypassing the store API). */
+  function putRawRecord(value: Record<string, unknown> & { linkId: string }): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const openReq = (
+        globalThis as unknown as { indexedDB: IDBFactory }
+      ).indexedDB.open('mosaic-link-keys', 1);
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction('keys', 'readwrite');
+        const store = tx.objectStore('keys');
+        const r = store.put(value as unknown as object);
+        r.onerror = () => reject(r.error);
+        r.onsuccess = () => resolve();
+      };
+    });
+  }
+
+  function getRawRecord(linkId: string): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const openReq = (
+        globalThis as unknown as { indexedDB: IDBFactory }
+      ).indexedDB.open('mosaic-link-keys', 1);
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction('keys', 'readonly');
+        const store = tx.objectStore('keys');
+        const r = store.get(linkId);
+        r.onerror = () => reject(r.error);
+        r.onsuccess = () => resolve(r.result);
+      };
+    });
+  }
+
+  it('purges legacy unencrypted records on store open', async () => {
+    // Seed a legacy plaintext record (no ciphertext, no version, no
+    // wrapVersion — pre-cutover format).
+    await putRawRecord({
+      linkId: 'legacy-1',
+      albumId: 'album-legacy',
+      accessTier: AccessTier.PREVIEW,
+      keys: [{ epochId: 1, tier: AccessTier.PREVIEW, key: 'AAAA' }],
+      storedAt: 0,
+    });
+
+    // Sanity: the seed actually landed.
+    expect(await getRawRecord('legacy-1')).toBeDefined();
+
+    // Opening the store via the wrapper (any operation does it).
+    const { saveTierKeys } = await import('../link-tier-key-store');
+    const fresh = new Map<number, Map<AccessTier, ReturnType<typeof makeTierKey>>>();
+    const inner = new Map<AccessTier, ReturnType<typeof makeTierKey>>();
+    inner.set(AccessTier.THUMB, makeTierKey(2, AccessTier.THUMB));
+    fresh.set(2, inner);
+    await saveTierKeys('linkSafe', 'albumSafe', AccessTier.THUMB, fresh);
+
+    // Legacy record must have been purged. The new encrypted record stays.
+    expect(await getRawRecord('legacy-1')).toBeUndefined();
+    expect(await getRawRecord('linkSafe')).toBeDefined();
+  });
+
+  it('refuses to load (and deletes) any legacy record that slips past the purge', async () => {
+    // Belt-and-braces: even if a non-encrypted record somehow exists at
+    // load time, getTierKeys must return null and delete it — never
+    // migrate or return it.
+    const { getTierKeys } = await import('../link-tier-key-store');
+
+    // Bypass open-time purge by inserting AFTER an initial open completes.
+    await getTierKeys('warmup'); // ensures store exists, open completes
+    await putRawRecord({
+      linkId: 'legacy-2',
+      albumId: 'album-legacy-2',
+      accessTier: AccessTier.FULL,
+      keys: [{ epochId: 3, tier: AccessTier.FULL, key: 'AAAA' }],
+      storedAt: 0,
+    });
+
+    const loaded = await getTierKeys('legacy-2');
+    // Either purge-on-open or load-path rejection MUST kick in.
+    expect(loaded).toBeNull();
+    expect(await getRawRecord('legacy-2')).toBeUndefined();
+  });
+
+  it('fails closed when wrap handle changes between sessions (no cross-session leakage)', async () => {
+    const wasm = await import('../../generated/mosaic-wasm/mosaic_wasm.js');
+    const mod = await import('../link-tier-key-store');
+
+    // Session A: save with handle 1.
+    (wasm.createLinkTierWrapHandle as unknown as { mockReturnValueOnce: (v: bigint) => unknown })
+      .mockReturnValueOnce(11n);
+    const tierKeys = new Map<number, Map<AccessTier, ReturnType<typeof makeTierKey>>>();
+    const inner = new Map<AccessTier, ReturnType<typeof makeTierKey>>();
+    inner.set(AccessTier.THUMB, makeTierKey(5, AccessTier.THUMB));
+    tierKeys.set(5, inner);
+    await mod.saveTierKeys('linkX', 'albumX', AccessTier.THUMB, tierKeys);
+    expect(await getRawRecord('linkX')).toBeDefined();
+
+    // Session B: simulate logout — drop the in-memory wrap handle, then
+    // arrange a different handle on next mint and make unwrap fail when
+    // the handle no longer matches what was used to wrap.
+    mod.clearLinkKeyEncryption();
+    (wasm.unwrapLinkTierBlob as unknown as {
+      mockImplementationOnce: (fn: (h: bigint, _b: Uint8Array) => unknown) => unknown;
+    }).mockImplementationOnce((handle: bigint, _bytes: Uint8Array) => ({
+      code: handle === 11n ? 0 : 1,
+      bytes: new Uint8Array(),
+      free: () => {},
+    }));
+    (wasm.createLinkTierWrapHandle as unknown as { mockReturnValueOnce: (v: bigint) => unknown })
+      .mockReturnValueOnce(22n);
+
+    const result = await mod.getTierKeys('linkX');
+    // Session B (different handle) must not be able to read session A's
+    // record — and the record must be evicted as a cache miss.
+    expect(result).toBeNull();
+    expect(await getRawRecord('linkX')).toBeUndefined();
+  });
+
+  it('purgeAllLinkTierKeys wipes both in-memory handle and IDB', async () => {
+    const mod = await import('../link-tier-key-store');
+
+    const tierKeys = new Map<number, Map<AccessTier, ReturnType<typeof makeTierKey>>>();
+    const inner = new Map<AccessTier, ReturnType<typeof makeTierKey>>();
+    inner.set(AccessTier.THUMB, makeTierKey(1, AccessTier.THUMB));
+    tierKeys.set(1, inner);
+    await mod.saveTierKeys('linkP', 'albumP', AccessTier.THUMB, tierKeys);
+    expect(await getRawRecord('linkP')).toBeDefined();
+
+    await mod.purgeAllLinkTierKeys();
+
+    expect(await getRawRecord('linkP')).toBeUndefined();
     expect(sessionStorage.getItem(LINK_KEY_STORAGE_KEY)).toBeNull();
   });
 });
