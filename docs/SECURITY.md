@@ -1013,7 +1013,7 @@ pm audit, all workspaces)
 | Workspace | Pre-fix vulns | Post-fix vulns | Notes |
 |-----------|---------------|----------------|-------|
 | `libs/crypto` | 2 moderate (dev) | 0 | `qs` `< 6.15.2` (GHSA-q8mj-m7cp-5q26) and `brace-expansion` (GHSA-jxxr-4gwj-5jf2) pulled transitively by `@stryker-mutator/core` (mutation testing, dev-only). Pinned via npm `overrides` to `qs@^6.15.2` and `brace-expansion@^2.0.2`. |
-| `apps/web` | 1 moderate (dev) | 0 | `ws < 8.20.1` (GHSA-58qx-3vcg-4xpx) pulled by `happy-dom` (test environment, dev-only). Pinned via npm `overrides` to `ws@^8.20.1`. |
+| `apps/web` | 1 moderate (dev) | 1 moderate (dev, accepted) | `ws < 8.20.1` (GHSA-58qx-3vcg-4xpx, uninitialized memory disclosure) pulled by `happy-dom` (test environment, dev-only). Accepted at v1.0.2: the advisory requires an attacker controlling HTTP traffic into the test runner inside CI, and CI does not expose `happy-dom` to untrusted input. An npm `overrides` pin was attempted but the resulting Windows-generated lockfile dropped Linux-specific `@emnapi/*` optional packages and broke `npm ci` in CI; revisit when `happy-dom` ships a parent bump. Below the existing `--audit-level=high` CI gate. |
 | `tests/integration` | 0 | 0 | Clean. |
 | `tests/e2e` | 0 | 0 | Clean. |
 
