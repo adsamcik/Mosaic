@@ -602,6 +602,14 @@
       "done": "Hotovo!"
     }
   },
+  "storage": {
+    "pressureBanner": {
+      "title": "Úložiště je téměř plné",
+      "criticalTitle": "Úložiště je téměř plné — vyžaduje pozornost",
+      "message": "Mosaic používá {{usage}} z {{quota}} ({{percent}} %) úložiště tohoto prohlížeče. Uvolněte místo vyčištěním stažených alb v Nastavení, aby nahrávání ani stahování neselhalo.",
+      "dismiss": "Zavřít"
+    }
+  },
   "settings": {
     "title": "Nastavení",
     "account": {

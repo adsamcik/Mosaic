@@ -9,6 +9,7 @@ import { Gallery } from '../Gallery/Gallery';
 import { SectionErrorFallback } from '../SectionErrorFallback';
 import { DownloadTray } from '../Download/DownloadTray';
 import { DownloadResumePrompt } from '../Download/DownloadResumePrompt';
+import { StoragePressureBanner } from '../Storage';
 import { getApi } from '../../lib/api';
 import { getCurrentAlbumManifest } from '../../lib/album-manifest-source';
 
@@ -283,6 +284,7 @@ export function AppShell() {
             </ErrorBoundary>
           )}
         </main>
+        <StoragePressureBanner />
         <DownloadTray />
         <DownloadResumePrompt getCurrentManifest={getCurrentAlbumManifest} />
       </div>

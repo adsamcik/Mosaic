@@ -591,6 +591,14 @@
       "done": "Done!"
     }
   },
+  "storage": {
+    "pressureBanner": {
+      "title": "Storage nearly full",
+      "criticalTitle": "Storage almost full — action needed",
+      "message": "Mosaic is using {{usage}} of {{quota}} ({{percent}}%) of this browser's storage. Free space by clearing cached albums in Settings to avoid uploads or downloads failing.",
+      "dismiss": "Dismiss"
+    }
+  },
   "settings": {
     "title": "Settings",
     "account": {
