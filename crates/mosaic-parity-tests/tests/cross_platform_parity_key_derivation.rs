@@ -135,7 +135,6 @@ fn user_salt_envelope_v2_vector_matches_crypto_wasm_and_uniffi() {
     assert_eq!(uniffi.bytes, expected_salt);
 }
 
-
 #[test]
 fn password_nfkc_normalization_matches_known_utf8_vector() {
     let nfd = mosaic_crypto::normalize_password_for_kdf("cafe\u{0301}");

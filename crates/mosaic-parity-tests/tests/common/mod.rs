@@ -6,7 +6,6 @@
 //! Items are marked `pub` so that they remain accessible from every split
 //! test binary that includes this module.
 #![allow(dead_code, unused_imports)]
-
 // Test-only allowlist: `expect()` is idiomatic for cross-client parity test
 // failure reporting; same convention as the other parity test modules.
 #![allow(clippy::expect_used)]
@@ -31,7 +30,9 @@ pub use mosaic_uniffi::{
     ClientCoreUploadShardRef as UniUploadShardRef, DownloadInitInput, DownloadPlanEntryInput,
     DownloadPlanInput, DownloadPlanShardInput, MediaFormat as UniMediaFormat,
 };
-pub use mosaic_vectors::{ParsedVector, default_corpus_dir, load_vector, vectors::ContentHashVector};
+pub use mosaic_vectors::{
+    ParsedVector, default_corpus_dir, load_vector, vectors::ContentHashVector,
+};
 pub use mosaic_wasm::{
     AccountUnlockRequest as WasmAccountUnlockRequest,
     ClientCoreAlbumSyncEffect as WasmAlbumSyncEffect,
@@ -81,7 +82,6 @@ pub fn must_some<T>(option: Option<T>, context: &str) -> T {
         None => panic!("{context}"),
     }
 }
-
 
 pub fn encoded_manifest_shards() -> Vec<u8> {
     let mut encoded = Vec::new();
@@ -608,7 +608,9 @@ pub fn canonical_wasm_album_sync_transition_bytes(transition: &WasmAlbumSyncTran
     )
 }
 
-pub fn canonical_uniffi_album_sync_transition_bytes(transition: &UniAlbumSyncTransition) -> Vec<u8> {
+pub fn canonical_uniffi_album_sync_transition_bytes(
+    transition: &UniAlbumSyncTransition,
+) -> Vec<u8> {
     canonical_album_sync_transition_bytes(
         canonical_uniffi_album_sync_snapshot_value(&transition.snapshot),
         transition

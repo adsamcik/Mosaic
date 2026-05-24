@@ -38,7 +38,6 @@ fn share_link_url_builder_matches_wasm_and_uniffi() {
     );
 }
 
-
 #[test]
 fn sidecar_room_id_matches_known_vector_across_crypto_wasm_and_uniffi() {
     let msg1: Vec<u8> = (0_u8..32).collect();

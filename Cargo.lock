@@ -706,6 +706,7 @@ dependencies = [
  "hmac",
  "mosaic-domain",
  "pbkdf2",
+ "proptest",
  "rand_core",
  "serde",
  "serde_json",
