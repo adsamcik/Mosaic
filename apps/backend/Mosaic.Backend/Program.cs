@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Infrastructure;
+using Mosaic.Backend.Logging.Hooks;
 using Mosaic.Backend.Middleware;
 using Mosaic.Backend.Services;
 using Mosaic.Backend.SidecarSignaling;
@@ -73,7 +74,12 @@ Log.Logger = new LoggerConfiguration()
             retainedFileCountLimit: auditRetentionDays,
             fileSizeLimitBytes: auditFileSizeLimitBytes,
             rollOnFileSizeLimit: true,
-            shared: true,
+            // Note: ``shared: true`` is incompatible with file lifecycle
+            // hooks in Serilog.Sinks.File. The backend runs as a single
+            // ASP.NET process, so multi-writer sharing is not required;
+            // we prefer the chmod-on-open hook
+            // (security-review-2026-05-24-05) over shared-writer support.
+            hooks: new RestrictivePermissionsHook(),
             outputTemplate:
                 "{Timestamp:o} {Level:u3} {Message:lj} {Properties:j}{NewLine}"))
     .CreateLogger();
