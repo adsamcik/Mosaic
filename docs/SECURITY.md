@@ -994,3 +994,71 @@ parity-tests deviation manifest at
 `crates/mosaic-parity-tests/tests/cross_platform_parity.rs`. The
 RELEASE_NOTES known-limitation entry has been refined in v1.0.2 to
 match this precise framing.
+
+
+## Dependency Audit Triage — 2026-05 (v1.0.2)
+
+Snapshot of automated and manual dependency-vulnerability triage performed
+for the v1.0.2 release.
+
+### Cargo (cargo audit)
+
+- **Result:** 0 vulnerabilities across 187 crate dependencies.
+- **Advisory DB:** 1098 advisories loaded from RustSec.
+- **Action:** None required.
+
+### npm (
+pm audit, all workspaces)
+
+| Workspace | Pre-fix vulns | Post-fix vulns | Notes |
+|-----------|---------------|----------------|-------|
+| `libs/crypto` | 2 moderate (dev) | 0 | `qs` `< 6.15.2` (GHSA-q8mj-m7cp-5q26) and `brace-expansion` (GHSA-jxxr-4gwj-5jf2) pulled transitively by `@stryker-mutator/core` (mutation testing, dev-only). Pinned via npm `overrides` to `qs@^6.15.2` and `brace-expansion@^2.0.2`. |
+| `apps/web` | 1 moderate (dev) | 0 | `ws < 8.20.1` (GHSA-58qx-3vcg-4xpx) pulled by `happy-dom` (test environment, dev-only). Pinned via npm `overrides` to `ws@^8.20.1`. |
+| `tests/integration` | 0 | 0 | Clean. |
+| `tests/e2e` | 0 | 0 | Clean. |
+
+CI gate (`npm audit --audit-level=high`) was already in place from v1.0.1 s15;
+the moderate-severity findings above were below that threshold but fixed
+proactively for v1.0.2 dependabot-qs.
+
+### Dependabot
+
+GitHub Dependabot alerts mirror the `npm audit` findings above. No alerts
+remain open at v1.0.2 cut. Future triage SLA:
+
+- **High/Critical with patch available** — fix in the next patch release.
+- **Moderate dev-only** — pin via `overrides` when a clean parent bump is
+  unavailable, or wait for upstream patch.
+- **Low / no-fix-available** — dismiss in the Dependabot UI with rationale
+  and document here.
+
+### License audit (`license-checker`, production deps)
+
+CI step added in `.github/workflows/tests.yml` (v1.0.2 s15). Allowlist:
+
+`
+MIT, MIT*, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, CC0-1.0,
+CC-BY-4.0, Unlicense, 0BSD, Python-2.0, BlueOak-1.0.0, OFL-1.1, LGPL-3.0
+`
+
+Notable non-permissive entries on the allowlist:
+
+- **OFL-1.1** — used by `@fontsource/inter` and `@fontsource/outfit`.
+  SIL Open Font License permits embedding and redistribution.
+- **LGPL-3.0** — `heic-to` (WASM binding to libheif). Used dynamically
+  from a Web Worker; not statically linked. Reviewed and accepted.
+- **MIT\*** — license-checker heuristic match where the package ships
+  MIT-style license text without an SPDX header (`combine-errors`).
+
+`@mosaic/web` itself is correctly marked `UNLICENSED` (private workspace
+root) and is excluded from the gate via `--excludePackages`.
+
+### Configuration secrets
+
+`apps/backend/Mosaic.Backend/appsettings.json` previously shipped
+`Password=dev` in the committed default connection string. Removed in
+v1.0.2 s15; the committed value is now a literal placeholder
+(`__SET_VIA_ENV_ConnectionStrings__Default__`) and the real password must
+be provided via the `ConnectionStrings__Default` environment variable.
+Local development is unaffected: `scripts/dev.ps1` and `scripts/dev.sh`
+already export this env var.
