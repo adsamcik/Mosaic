@@ -706,7 +706,6 @@ dependencies = [
  "hmac",
  "mosaic-domain",
  "pbkdf2",
- "proptest",
  "rand_core",
  "serde",
  "serde_json",
@@ -747,6 +746,7 @@ dependencies = [
  "mosaic-wasm",
  "proptest",
  "sha2",
+ "zeroize",
 ]
 
 [[package]]
