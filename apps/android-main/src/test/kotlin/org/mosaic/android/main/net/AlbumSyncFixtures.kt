@@ -26,6 +26,8 @@ internal object AlbumSyncFixtures {
         encryptedMeta = "ZW5jcnlwdGVkLW1ldGE=",
         signature = "c2lnbmF0dXJl",
         signerPubkey = "cHVia2V5",
+        createdAt = "2026-05-20T00:00:00Z",
+        updatedAt = "2026-05-20T00:00:00Z",
         shardIds = listOf("018f9f8d-99df-7b42-8f0d-999999999999"),
         shards = listOf(
           AlbumSyncShard(

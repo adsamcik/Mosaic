@@ -25,6 +25,8 @@ data class AlbumSyncManifest(
   @SerialName("encryptedMeta") val encryptedMeta: String? = null,
   @SerialName("signature") val signature: String? = null,
   @SerialName("signerPubkey") val signerPubkey: String? = null,
+  @SerialName("createdAt") val createdAt: String,
+  @SerialName("updatedAt") val updatedAt: String,
   @SerialName("expiresAt") val expiresAt: String? = null,
   @SerialName("shardIds") val shardIds: List<String> = emptyList(),
   @SerialName("shards") val shards: List<AlbumSyncShard> = emptyList(),
