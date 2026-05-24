@@ -37,6 +37,17 @@ var builder = WebApplication.CreateBuilder(args);
 var auditLogPath = builder.Configuration["Audit:LogPath"]
     ?? Path.Combine(builder.Environment.ContentRootPath, "logs", "audit-.log");
 var auditRetentionDays = builder.Configuration.GetValue<int?>("Audit:RetainedFileCountLimit") ?? 90;
+// security-review-2026-05-24-04: cap individual audit log files so a single
+// daily file cannot grow without bound (Serilog's implicit default is 1 GB,
+// at which point the sink silently stops writing). 100 MB per file with
+// size-based rollover keeps files manageable while still rolling daily.
+var auditFileSizeLimitBytes = builder.Configuration.GetValue<long?>("Audit:FileSizeLimitBytes") ?? 104857600L; // 100 MB
+
+// security-review-2026-05-24-04: surface Serilog sink failures (disk full,
+// permission denied, rollover errors) to stderr instead of swallowing them.
+// Without SelfLog enabled, audit-write failures are invisible — operators
+// would only notice missing audit events after the fact.
+Serilog.Debugging.SelfLog.Enable(msg => Console.Error.WriteLine(msg));
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -60,6 +71,8 @@ Log.Logger = new LoggerConfiguration()
             path: auditLogPath,
             rollingInterval: RollingInterval.Day,
             retainedFileCountLimit: auditRetentionDays,
+            fileSizeLimitBytes: auditFileSizeLimitBytes,
+            rollOnFileSizeLimit: true,
             shared: true,
             outputTemplate:
                 "{Timestamp:o} {Level:u3} {Message:lj} {Properties:j}{NewLine}"))
