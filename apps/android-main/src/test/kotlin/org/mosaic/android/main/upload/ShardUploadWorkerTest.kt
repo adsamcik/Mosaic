@@ -211,7 +211,7 @@ class ShardUploadWorkerTest {
   }
 
   @Test
-  fun schedulerBuildsConnectedShardUploadRequestWithBackoffAndTags() {
+  fun schedulerBuildsUnmeteredShardUploadRequestWithBackoffAndTags() {
     val request = ShardUploadScheduler.buildRequest(
       jobId = "job-123",
       shardId = "shard-9",
@@ -221,7 +221,7 @@ class ShardUploadWorkerTest {
 
     assertTrue(request.tags.contains("upload-job-job-123"))
     assertTrue(request.tags.contains(ShardUploadScheduler.SHARD_UPLOAD_TAG))
-    assertEquals(NetworkType.CONNECTED, request.workSpec.constraints.requiredNetworkType)
+    assertEquals(NetworkType.UNMETERED, request.workSpec.constraints.requiredNetworkType)
     assertEquals("job-123", request.workSpec.input.getString(ShardUploadWorker.KEY_UPLOAD_JOB_ID))
     assertEquals("shard-9", request.workSpec.input.getString(ShardUploadWorker.KEY_SHARD_ID))
     assertEquals("https://uploads.example.test/files", request.workSpec.input.getString(ShardUploadWorker.KEY_TUS_ENDPOINT))
