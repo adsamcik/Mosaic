@@ -209,18 +209,30 @@ class CryptoWorkerPool implements CryptoPool {
     }
     this.ensureWorkers();
     const release = await this.semaphore.acquire();
-    const slot = this.nextIdleSlot();
-    slot.busy = true;
+    // v1.0.2 review-MED (`v102-crypto-pool-shutdown-permit-leak`): wrap the
+    // ENTIRE post-acquire dispatch in try/finally. Previously `nextIdleSlot()`
+    // could throw (e.g. invariant violation: semaphore admitted work but no
+    // idle slot exists — possible if `shutdown()` raced with an in-flight
+    // acquire and cleared `slots`) BEFORE the try, leaking the semaphore
+    // permit. A leaked permit permanently reduces pool throughput and, after
+    // `permits` such leaks, deadlocks every future dispatch.
+    let slot: WorkerSlot | undefined;
     try {
-      return await op(slot.api);
-    } catch (error) {
-      if (isWorkerDiedError(error)) {
-        this.respawnSlot(slot);
-        throw new DownloadError('IllegalState', 'Crypto worker terminated unexpectedly', { cause: error });
+      slot = this.nextIdleSlot();
+      slot.busy = true;
+      try {
+        return await op(slot.api);
+      } catch (error) {
+        if (isWorkerDiedError(error)) {
+          this.respawnSlot(slot);
+          throw new DownloadError('IllegalState', 'Crypto worker terminated unexpectedly', { cause: error });
+        }
+        throw error;
       }
-      throw error;
     } finally {
-      slot.busy = false;
+      if (slot) {
+        slot.busy = false;
+      }
       release();
     }
   }

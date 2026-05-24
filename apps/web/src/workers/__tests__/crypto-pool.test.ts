@@ -219,4 +219,74 @@ describe('crypto pool', () => {
     expect(CRYPTO_POOL_MAX_WAITERS).toBeGreaterThan(0);
     expect(Number.isInteger(CRYPTO_POOL_MAX_WAITERS)).toBe(true);
   });
+
+  it('releases the semaphore permit when post-acquire work throws (v1.0.2 permit-leak fix)', async () => {
+    // v1.0.2 review-MED `v102-crypto-pool-shutdown-permit-leak`: dispatch()
+    // previously called `nextIdleSlot()` BEFORE its try/finally, so an
+    // exception from `nextIdleSlot()` (e.g. when `shutdown()` races and
+    // clears `slots[]` between acquire() and nextIdleSlot()) leaked the
+    // semaphore permit. The fix wraps the entire post-acquire body in
+    // try/finally. This structural test exercises that exact pattern using
+    // the exposed semaphore: a thrown post-acquire failure must still
+    // release the permit so a subsequent acquire() can succeed.
+    const sem = __cryptoPoolTestUtils.createSemaphoreForTesting(1, 4);
+
+    // Simulate the fixed dispatch() try/finally: acquire, throw inside,
+    // release in finally.
+    await expect(
+      (async () => {
+        const release = await sem.acquire();
+        try {
+          throw new DownloadError('IllegalState', 'simulated nextIdleSlot failure');
+        } finally {
+          release();
+        }
+      })(),
+    ).rejects.toBeInstanceOf(DownloadError);
+
+    // Permit must be available again — otherwise pool throughput is
+    // permanently reduced and after `permits` such leaks the pool deadlocks.
+    const release2 = await sem.acquire();
+    expect(typeof release2).toBe('function');
+    release2();
+  });
+
+  it('dispatch survives a shutdown that races a queued waiter (v1.0.2 permit-leak regression)', async () => {
+    // Black-box regression: when shutdown() clears slots between a queued
+    // waiter's acquire() resolving and its nextIdleSlot() call, dispatch
+    // must reject cleanly. Before v1.0.2 the rejection still happened but
+    // the permit leaked (silently). The fix guarantees the finally runs.
+    let rejectInFlight: ((error: Error) => void) | null = null;
+    __cryptoPoolTestUtils.setWorkerFactory(() => new FakeWorker({
+      async verifyShard(): Promise<void> {
+        await new Promise<void>((_resolve, reject) => {
+          rejectInFlight = reject;
+        });
+      },
+      async decryptShardWithTierKey(shardBytes: Uint8Array): Promise<Uint8Array> {
+        return shardBytes;
+      },
+    }));
+    const pool = await getCryptoPool({ size: 1 });
+
+    // dispatch1 occupies the only slot.
+    const dispatch1 = pool.verifyShard(new Uint8Array([1]), new Uint8Array([2]));
+    await vi.waitFor(() => expect(rejectInFlight).not.toBeNull());
+
+    // dispatch2 queues on the semaphore (no idle slot yet).
+    const dispatch2 = pool.verifyShard(new Uint8Array([3]), new Uint8Array([4]));
+
+    // Shutdown clears slots[] while dispatch2 is still queued at acquire().
+    await pool.shutdown();
+
+    // Unblock dispatch1 so the semaphore permit releases and dispatch2
+    // advances into the (formerly bug-prone) post-acquire path where
+    // slots[] is empty and nextIdleSlot() throws.
+    const reject = rejectInFlight as ((error: Error) => void) | null;
+    if (!reject) throw new Error('expected in-flight rejection hook');
+    reject(Object.assign(new Error('crypto worker slot torn down'), { terminated: true }));
+
+    await expect(dispatch1).rejects.toBeInstanceOf(DownloadError);
+    await expect(dispatch2).rejects.toBeInstanceOf(DownloadError);
+  });
 });

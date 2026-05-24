@@ -194,6 +194,15 @@ impl TunnelKeyMaterial {
 /// (which consumes it and zeroizes the seed on drop).
 impl TunnelKeyMaterial {
     /// Borrow the raw tunnel seed bytes (32 bytes).
+    ///
+    /// SECURITY: gated behind test/introspection builds only. v1.0.2 review-MED
+    /// (`v102-tunnel-keymaterial-seed-for-tests-cfg-gate`) mirrors the
+    /// `#[cfg]` already applied to the sibling `from_seed_for_tests` so that
+    /// release builds without the `__test-introspection` feature cannot
+    /// extract the raw tunnel seed from a live `TunnelKeyMaterial` handle.
+    /// Production callers must hand the material straight to
+    /// `crate::sidecar::open_tunnel`, which consumes it and zeroizes on drop.
+    #[cfg(any(test, feature = "__test-introspection"))]
     #[must_use]
     pub fn seed_for_tests(&self) -> &[u8] {
         &self.seed

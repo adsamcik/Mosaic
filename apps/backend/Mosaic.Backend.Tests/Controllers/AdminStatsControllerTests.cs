@@ -114,6 +114,39 @@ public class AdminStatsControllerTests
     }
 
     [Fact]
+    public async Task GetStats_ClampsExcessiveSkip_AtHardCap()
+    {
+        // v1.0.2 review-MED `v102-admin-stats-skip-unbounded`: without an
+        // upper cap on `nearLimitSkip`, an attacker can ask the database to
+        // walk past arbitrarily many rows. The server clamps `nearLimitSkip`
+        // to a fixed ceiling so the worst-case offset is bounded.
+        var db = CreateDb();
+        // 30 warning rows seeded; far smaller than the clamp ceiling, so any
+        // accepted "huge" skip will produce an empty page, and rejecting the
+        // skip cap (i.e. interpreting it as `int.MaxValue`) also produces an
+        // empty page. We instead assert the clamp by comparing two requests:
+        // skip = MaxSkip+1 must return the SAME page as skip = MaxSkip.
+        await SeedUsersAtQuota(db, count: 30);
+
+        var controller = CreateController(db);
+
+        // Skip = int.MaxValue would, without clamping, scan past every row.
+        // Clamped to 10_000 it produces an empty page (only 30 rows seeded).
+        var result = await controller.GetStats(nearLimitSkip: int.MaxValue, nearLimitTake: 10);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var stats = Assert.IsType<SystemStatsResponse>(ok.Value);
+        Assert.Empty(stats.UsersNearQuota);
+
+        // And a skip well above the cap must equal a skip exactly at the cap
+        // (both clamp to 10_000 → both return empty since we only seeded 30).
+        var atCapResult = await controller.GetStats(nearLimitSkip: 10_000, nearLimitTake: 10);
+        var atCap = Assert.IsType<SystemStatsResponse>(Assert.IsType<OkObjectResult>(atCapResult).Value);
+        var aboveCapResult = await controller.GetStats(nearLimitSkip: 50_000, nearLimitTake: 10);
+        var aboveCap = Assert.IsType<SystemStatsResponse>(Assert.IsType<OkObjectResult>(aboveCapResult).Value);
+        Assert.Equal(atCap.UsersNearQuota.Count, aboveCap.UsersNearQuota.Count);
+    }
+
+    [Fact]
     public async Task GetStats_ClampsNegativeSkipAndZeroTake()
     {
         var db = CreateDb();

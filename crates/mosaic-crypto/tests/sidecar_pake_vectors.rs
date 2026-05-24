@@ -125,11 +125,22 @@ fn happy_path_both_sides_agree() {
     assert_eq!(init_material.role(), TunnelRoleTag::Initiator);
     assert_eq!(resp_material.role(), TunnelRoleTag::Responder);
     // Tunnel seeds derive the same byte vector from the same session secret +
-    // transcript. Compare via private accessor (exposed under cfg(test)).
+    // transcript. v1.0.2 review-MED (`v102-tunnel-keymaterial-seed-for-tests-cfg-gate`):
+    // `seed_for_tests` is now `#[cfg(any(test, feature = "__test-introspection"))]`
+    // so release-mode integration runs (without the feature) can't dump the
+    // raw seed. Run this binding test with `--features __test-introspection`
+    // to enforce the byte-level parity assertion.
+    #[cfg(feature = "__test-introspection")]
     assert_eq!(
         init_material.seed_for_tests(),
         resp_material.seed_for_tests()
     );
+    // Silence unused-variable warnings when the feature is off.
+    #[cfg(not(feature = "__test-introspection"))]
+    {
+        let _ = &init_material;
+        let _ = &resp_material;
+    }
 }
 
 #[test]

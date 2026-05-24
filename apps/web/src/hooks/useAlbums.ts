@@ -310,6 +310,11 @@ export function useAlbums() {
    * @returns true if deletion succeeded, false otherwise
    */
   const deleteAlbum = useCallback(async (albumId: string): Promise<boolean> => {
+    // v1.0.2 review-MED (`v102-usealbums-delete-rename-races`): bump the
+    // request-id so any in-flight loadAlbums() dispatch (e.g. mount-triggered
+    // load racing a user-initiated delete) becomes stale and cannot resurrect
+    // the deleted album by overwriting state with its pre-delete snapshot.
+    requestIdRef.current++;
     try {
       const api = getApi();
       await api.deleteAlbum(albumId);
@@ -359,6 +364,10 @@ export function useAlbums() {
    */
   const renameAlbum = useCallback(
     async (albumId: string, newName: string): Promise<boolean> => {
+      // v1.0.2 review-MED (`v102-usealbums-delete-rename-races`): bump the
+      // request-id so any in-flight loadAlbums() dispatch cannot overwrite
+      // the freshly-renamed album with its stale pre-rename name.
+      requestIdRef.current++;
       try {
         // Load epoch keys for this album
         const keysLoaded = await ensureEpochKeysLoaded(albumId);

@@ -244,4 +244,104 @@ describe('useAlbums — request-generation guard (v1.0.2)', () => {
     expect(latestState!.albums).toHaveLength(1);
     expect(latestState!.albums[0]!.id).toBe('album-fresh');
   });
+
+  it('deleteAlbum() invalidates an in-flight loadAlbums() (v1.0.2 review-MED)', async () => {
+    // v1.0.2 review-MED `v102-usealbums-delete-rename-races`: if an
+    // in-flight loadAlbums() resolves AFTER deleteAlbum() has stripped the
+    // album from local state, the stale response would resurrect the
+    // deleted album. Bumping requestIdRef on delete invalidates the
+    // in-flight load so its callback is dropped by isCurrent().
+    const stale = deferred<Array<Record<string, unknown>>>();
+    listAlbumsMock.mockImplementationOnce(() => stale.promise);
+
+    const deleteAlbumMock = vi.fn(async () => {});
+    getApiMock.mockReturnValue({
+      listAlbums: listAlbumsMock,
+      deleteAlbum: deleteAlbumMock,
+    });
+
+    let latestState: ReturnType<typeof useAlbums> | null = null;
+    const capture = (s: ReturnType<typeof useAlbums>) => {
+      latestState = s;
+    };
+    await mount(<HookProbe onState={capture} />);
+
+    // Mount triggers loadAlbums (pending). Call deleteAlbum BEFORE the
+    // load resolves: the in-flight load must be invalidated so that
+    // resolving it later does NOT re-introduce the deleted album.
+    await act(async () => {
+      await latestState!.deleteAlbum('album-doomed');
+      await Promise.resolve();
+    });
+
+    expect(deleteAlbumMock).toHaveBeenCalledWith('album-doomed');
+
+    // Now resolve the stale load with the doomed album present.
+    await act(async () => {
+      stale.resolve([
+        {
+          id: 'album-doomed',
+          createdAt: '2025-01-01T00:00:00Z',
+          encryptedName: null,
+          expiresAt: null,
+        },
+      ]);
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    // The stale response must NOT have resurrected the deleted album.
+    expect(latestState!.albums).toHaveLength(0);
+  });
+
+  it('renameAlbum() invalidates an in-flight loadAlbums() (v1.0.2 review-MED)', async () => {
+    // v1.0.2 review-MED `v102-usealbums-delete-rename-races`: renameAlbum
+    // updates local state with the fresh name. A still-in-flight load
+    // resolving with the OLD (encrypted) name would overwrite the renamed
+    // entry with stale placeholder data. requestIdRef.current++ on rename
+    // entry stops that.
+    const stale = deferred<Array<Record<string, unknown>>>();
+    listAlbumsMock.mockImplementationOnce(() => stale.promise);
+
+    const renameAlbumMock = vi.fn(async () => {});
+    getApiMock.mockReturnValue({
+      listAlbums: listAlbumsMock,
+      renameAlbum: renameAlbumMock,
+    });
+
+    let latestState: ReturnType<typeof useAlbums> | null = null;
+    const capture = (s: ReturnType<typeof useAlbums>) => {
+      latestState = s;
+    };
+    await mount(<HookProbe onState={capture} />);
+
+    // Rename throws inside the hook because epoch keys aren't loaded in
+    // this test harness — but the requestIdRef bump happens BEFORE the
+    // throw, which is exactly the invalidation we want to verify.
+    await act(async () => {
+      try {
+        await latestState!.renameAlbum('album-renamed', 'New Name');
+      } catch {
+        // Expected: epoch-key mocks return false → renameAlbum rejects.
+      }
+      await Promise.resolve();
+    });
+
+    // Resolve stale load with the album that was being renamed.
+    await act(async () => {
+      stale.resolve([
+        {
+          id: 'album-renamed',
+          createdAt: '2025-01-01T00:00:00Z',
+          encryptedName: null,
+          expiresAt: null,
+        },
+      ]);
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    // The in-flight load was invalidated by the rename → no albums applied.
+    expect(latestState!.albums).toHaveLength(0);
+  });
 });

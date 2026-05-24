@@ -36,7 +36,12 @@ public class AdminStatsController : ControllerBase
     /// Callers can request more results by raising `nearLimitTake` up to
     /// `MaxNearLimitTake`, and page using `nearLimitSkip`.
     /// </summary>
-    /// <param name="nearLimitSkip">Number of warning rows to skip (default 0).</param>
+    /// <param name="nearLimitSkip">Number of warning rows to skip (default 0,
+    /// clamped to 0..<see cref="MaxNearLimitSkip"/>). v1.0.2 review-MED hardening
+    /// (`v102-admin-stats-skip-unbounded`): without an upper cap, an attacker
+    /// (or a buggy admin client) could request `nearLimitSkip=2_000_000_000`
+    /// and force PostgreSQL to scan/skip an unbounded range of warning rows
+    /// despite the per-page `nearLimitTake` cap.</param>
     /// <param name="nearLimitTake">Number of warning rows to return per
     /// category (default 100, clamped to 1..500).</param>
     [HttpGet]
@@ -44,7 +49,7 @@ public class AdminStatsController : ControllerBase
         [FromQuery] int nearLimitSkip = 0,
         [FromQuery] int nearLimitTake = DefaultNearLimitTake)
     {
-        nearLimitSkip = Math.Max(0, nearLimitSkip);
+        nearLimitSkip = Math.Clamp(nearLimitSkip, 0, MaxNearLimitSkip);
         nearLimitTake = Math.Clamp(nearLimitTake, 1, MaxNearLimitTake);
 
         var defaults = await _quotaService.GetDefaultsAsync();
@@ -132,4 +137,14 @@ public class AdminStatsController : ControllerBase
     /// unbounded admin request from materialising every quota-warning row.
     /// </summary>
     private const int MaxNearLimitTake = 500;
+
+    /// <summary>
+    /// Hard server-side cap on `nearLimitSkip`. v1.0.2 review-MED
+    /// (`v102-admin-stats-skip-unbounded`): pairs with `MaxNearLimitTake` so
+    /// that the worst-case rows the server is willing to walk per request is
+    /// bounded (10_000 + 500 = 10_500 rows), defeating skip-amplification DoS.
+    /// Mosaic's ≤50-user / small-fleet target means real callers never need
+    /// to page past this; an admin who does should narrow the query first.
+    /// </summary>
+    private const int MaxNearLimitSkip = 10_000;
 }
