@@ -65,11 +65,11 @@ class VideoFrameExtractorTest {
   }
 
   @Test
-  fun timeoutOnHungVideo() = runTest {
+  fun timeoutOnHungVideo() = runBlocking {
     val retriever = StubFrameRetriever(
       frame = Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888),
       orientation = "0",
-      sleepMillis = 60_000L,
+      sleepMillis = 5_000L,
     )
     val decoder = MediaMetadataRetrieverFrameDecoder(
       context = context,
