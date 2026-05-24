@@ -39,12 +39,25 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Install crypto library dependencies
+        working-directory: libs/crypto
+        run: npm ci
+
+      - name: Install admin dependencies
+        working-directory: apps/web
+        run: npm ci
+
       - name: License audit (production deps, SPDX allowlist)
         # v1.0.2 s15: fail the build if any production npm dependency ships
         # under a license that is not on the explicit allowlist. Uses
         # npx --yes license-checker (no new devDependency added; downloaded
         # on demand). Production-only scope: dev-only tooling (test runners,
         # bundlers) is not shipped to users and is excluded.
+        #
+        # Ordering: MUST run AFTER `npm ci` for both libs/crypto and apps/web
+        # (security-review-2026-05-24-03). license-checker walks the on-disk
+        # node_modules tree; running it before install on a fresh CI runner
+        # would silently audit an empty dep tree and pass vacuously.
         #
         # Allowlist rationale:
         #   - Permissive: MIT, ISC, BSD-*, Apache-2.0, CC0-1.0, 0BSD,
@@ -60,6 +73,10 @@ jobs:
         run: |
           set -e
           ALLOW='MIT;MIT*;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC0-1.0;CC-BY-4.0;Unlicense;0BSD;Python-2.0;BlueOak-1.0.0;OFL-1.1;LGPL-3.0'
+          # Sanity check: fail loudly if node_modules is missing (would mean
+          # license-checker was ordered before npm ci again).
+          test -d libs/crypto/node_modules || { echo "libs/crypto/node_modules missing — license audit would be vacuous"; exit 1; }
+          test -d apps/web/node_modules || { echo "apps/web/node_modules missing — license audit would be vacuous"; exit 1; }
           echo "::group::license-checker libs/crypto"
           (cd libs/crypto && npx --yes license-checker --production --onlyAllow "$ALLOW" --summary)
           echo "::endgroup::"
@@ -67,17 +84,9 @@ jobs:
           (cd apps/web && npx --yes license-checker --production --onlyAllow "$ALLOW" --excludePackages "@mosaic/web@0.0.0-dev" --summary)
           echo "::endgroup::"
 
-      - name: Install crypto library dependencies
-        working-directory: libs/crypto
-        run: npm ci
-      
       - name: Run crypto library tests
         working-directory: libs/crypto
         run: npm run test:coverage
-      
-      - name: Install admin dependencies
-        working-directory: apps/web
-        run: npm ci
 
       - name: Check i18n translation parity (en vs cs)
         run: node scripts/check-i18n-parity.mjs
