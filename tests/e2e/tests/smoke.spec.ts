@@ -155,15 +155,15 @@ test.describe('Smoke Tests @smoke @p0 @fast', () => {
     await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
   });
 
-  test('SMOKE-4: can view photo persists in gallery', async ({ sharedContext }) => {
+  test('SMOKE-4: uploaded photo persists after a full page reload', async ({ sharedContext }) => {
     const { page } = sharedContext;
 
-    // Verify gallery shows photo (we're already in the gallery from SMOKE-3)
-    const gallery = new GalleryPage(page);
+    await page.reload({ waitUntil: 'domcontentloaded' });
 
-    // Photo should still be there
-    const photoCount = await gallery.photos.count();
-    expect(photoCount).toBeGreaterThanOrEqual(1);
+    const gallery = new GalleryPage(page);
+    await gallery.waitForLoad();
+    await expect(gallery.photos.first()).toBeVisible({ timeout: CRYPTO_TIMEOUT.BATCH });
+    expect(await gallery.photos.count()).toBeGreaterThanOrEqual(1);
   });
 
   test('SMOKE-5: can navigate back to album list', async ({ sharedContext }) => {

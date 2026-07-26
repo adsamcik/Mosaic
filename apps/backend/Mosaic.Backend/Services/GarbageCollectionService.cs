@@ -68,6 +68,7 @@ public class GarbageCollectionService : BackgroundService
                 var expiredAlbums = 0;
                 var expiredUploadReservations = 0;
 
+                await TusEventHandlers.ReconcileIncompleteUploadsAsync(_services, stoppingToken);
                 expiredUploadReservations = await TusEventHandlers.CleanupExpiredReservationsAsync(_services, stoppingToken);
                 orphanedBlobs = await CleanExpiredPendingShardsAsync();
                 orphanedBlobs += await CleanTrashedShardsAsync(stoppingToken);

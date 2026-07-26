@@ -1,6 +1,8 @@
 # Dependency Governance — single-maintainer & niche packages
 
-> **Status:** Living document. Last reviewed for v1.0.2.
+> **Status:** Active source policy; the prior v1.0.2 label was an internal
+> workstream marker, not a release claim. See
+> [RELEASE_STATE.md](RELEASE_STATE.md).
 > **Owner:** Mosaic maintainers.
 > **Companion to:** `docs/DEPENDENCY_POLICY.md` (general policy),
 > `docs/TOOLCHAIN_LIFECYCLE.md` (build toolchain).

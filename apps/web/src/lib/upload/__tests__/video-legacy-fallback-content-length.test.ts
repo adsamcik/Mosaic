@@ -92,7 +92,8 @@ describe('legacy upload fallback persists encrypted envelope length', () => {
     mocks.encryptShardWithEpochHandle.mockImplementation(
       async (_handle: EpochHandleId, plaintext: Uint8Array, tier: number) => {
         const envelope = new Uint8Array(64 + plaintext.byteLength + 16);
-        envelope[0] = tier;
+        envelope.set([0x53, 0x47, 0x7a, 0x6b, 3]);
+        envelope[5] = tier;
         return envelope;
       },
     );

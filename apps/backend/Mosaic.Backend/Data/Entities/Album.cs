@@ -36,6 +36,15 @@ public class Album
     public int ExpirationWarningDays { get; set; } = 7;
 
     /// <summary>
+    /// SHA-256 fingerprint of the idempotent create request. Stored in the
+    /// same transaction as the album and its initial owner/key rows so a
+    /// retry can recover the original server-generated resource even if the
+    /// outer response replay record was not persisted.
+    /// </summary>
+    [MaxLength(32)]
+    public byte[]? CreateRequestHash { get; set; }
+
+    /// <summary>
     /// Concurrency token for optimistic locking. Automatically incremented on update.
     /// </summary>
     public uint RowVersion { get; set; }

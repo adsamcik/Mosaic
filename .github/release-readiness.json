@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "evidence_binding": "direct-parent-source-commit",
+  "stable_publication_enabled": false,
+  "status": "production-readiness-candidate",
+  "reason": "Stable publication remains blocked until independent and environment-specific release evidence is complete.",
+  "required_external_evidence": [
+    "independent-cryptographic-review",
+    "production-backup-restore-drill",
+    "upgrade-and-rollback-drill",
+    "named-hardware-performance-budgets",
+    "firefox-webkit-opfs-durability-matrix",
+    "real-proxyauth-boundary-test",
+    "production-audit-persistence-test",
+    "repository-governance-controls"
+  ],
+  "external_evidence": {}
+}

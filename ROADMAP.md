@@ -1,8 +1,13 @@
 # Mosaic — Programme Roadmap
 
-> **Status:** Active development towards v1. All commits go directly to `main`.
+> **Status:** Historical planning snapshot; non-authoritative.
 > **Last refresh:** 2026-05-05 (HEAD commit hash recorded post-commit).
-> **Source of truth for completion state:** SQL todos table + `docs/IMPLEMENTATION_PLAN.md` §12.1 ticket ledger.
+> It does not describe current completion, release maturity, branch policy, or
+> supported artifacts. See
+> [`docs/RELEASE_STATE.md`](docs/RELEASE_STATE.md) for the current status and
+> immutable-evidence requirements.
+> **Historical source for the snapshot's completion state:** SQL todos table +
+> `docs/IMPLEMENTATION_PLAN.md` §12.1 ticket ledger.
 > **Programme tally:** 106 done / 74 pending / 0 blocked (180 total).
 
 ---

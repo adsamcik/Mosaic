@@ -3493,20 +3493,6 @@ export function createIdentityHandle(account_key_handle) {
 }
 
 /**
- * Creates a share-link handle and first wrapped tier through WASM.
- * @param {string} album_id
- * @param {bigint} epoch_handle
- * @param {number} tier_byte
- * @returns {CreateLinkShareHandleResult}
- */
-export function createLinkShareHandle(album_id, epoch_handle, tier_byte) {
-    const ptr0 = passStringToWasm0(album_id, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
-    const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.createLinkShareHandle(ptr0, len0, epoch_handle, tier_byte);
-    return CreateLinkShareHandleResult.__wrap(ret);
-}
-
-/**
  * v2 binding variant of `createLinkShareHandle` (batch 4c - A1).
  * @param {string} album_id
  * @param {bigint} epoch_handle
@@ -4305,6 +4291,26 @@ export function manifestTranscriptBytes(album_id, epoch_id, encrypted_meta, enco
 }
 
 /**
+ * Builds the canonical v2 manifest transcript with its signed freshness sequence.
+ * @param {Uint8Array} album_id
+ * @param {number} epoch_id
+ * @param {bigint} manifest_seq
+ * @param {Uint8Array} encrypted_meta
+ * @param {Uint8Array} encoded_shards
+ * @returns {BytesResult}
+ */
+export function manifestTranscriptBytesV2(album_id, epoch_id, manifest_seq, encrypted_meta, encoded_shards) {
+    const ptr0 = passArray8ToWasm0(album_id, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(encrypted_meta, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray8ToWasm0(encoded_shards, wasm.__wbindgen_export2);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.manifestTranscriptBytesV2(ptr0, len0, epoch_id, manifest_seq, ptr1, len1, ptr2, len2);
+    return BytesResult.__wrap(ret);
+}
+
+/**
  * Mints a link-tier handle from a raw 32-byte tier key through WASM.
  * @param {Uint8Array} raw_key
  * @returns {LinkTierHandleResult}
@@ -5000,19 +5006,7 @@ export function wrapLinkTierBlob(handle, plaintext) {
 }
 
 /**
- * Wraps an epoch tier for an existing share-link handle through WASM.
- * @param {bigint} link_share_handle
- * @param {bigint} epoch_handle
- * @param {number} tier_byte
- * @returns {WrappedTierKeyResult}
- */
-export function wrapLinkTierHandle(link_share_handle, epoch_handle, tier_byte) {
-    const ret = wasm.wrapLinkTierHandle(link_share_handle, epoch_handle, tier_byte);
-    return WrappedTierKeyResult.__wrap(ret);
-}
-
-/**
- * v2 binding variant of `wrapLinkTierHandle` (batch 4c - A1).
+ * Wraps an epoch tier with AAD bound to link, tier, and epoch through WASM.
  * @param {bigint} link_share_handle
  * @param {bigint} epoch_handle
  * @param {number} tier_byte

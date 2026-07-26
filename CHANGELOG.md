@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Manifest producer contract corrected** — public manifest mutations now use
+  reserve → sign → client-addressed finalize/update/tombstone. A positive
+  `manifestSeq` is signature-bound and consumed with its target-bound sequence
+  reservation; clients keep per-manifest replay checkpoints in separate
+  encrypted security state.
+- **Idempotency scope corrected** — `Idempotency-Key` is mandatory for album and
+  share-link creation, optional for manifest finalization, and rejected on
+  unsupported routes. Tus PATCH continues to use its offset contract.
+- **Per-photo expiration deferred** — album and share-link expiration remain
+  supported. Former photo-expiration handlers are non-routable, public v2
+  manifest finalization rejects non-null `expiresAt`, and automatic per-photo
+  expiration cleanup is disabled until a reservation-backed signed lifecycle
+  is specified.
 - **BREAKING: API routes moved from `/api/*` to `/api/v1/*`** (v1.0.1 s23). All backend HTTP endpoints (auth, albums, manifests, members, epoch-keys, users, admin, share-links, test-seed, sidecar signaling/telemetry, tus uploads) are now served under the `/api/v1/` prefix. Unversioned health/observability surfaces (`/health`, `/scalar`, `/openapi`, `/.well-known/*`) are unchanged. Web (`apps/web`), Android (`apps/android-main`), integration tests, and E2E tests have been updated to the new prefix in lockstep. The change prepares the API surface for future versioned evolution; existing out-of-tree clients hitting `/api/...` (without a version segment) will receive 404 until updated. See also the late-v1 protocol freeze in `docs/RELEASE.md` — route paths remain frozen at the v1 contract; this is a one-time path prefix shift, not a contract change.
 
 ### Added
@@ -34,12 +47,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`apps/android-shell` foundation** — JVM-only privacy contracts for state machines (server auth vs crypto unlock), Photo Picker staging, upload queue records, manual upload handoff, work policy, and Slice 0C bridge interfaces.
 
 #### Backend
-- **Timed album & photo expiration** — server-clock album/photo expiry, deterministic GC sweeps, access enforcement returning 410 Gone for expired aggregates, focused contract tests (`PhotoExpirationRoute_UsesAlbumScopedPatchContract`, `UpdateExpiration_ReturnsContractResponse_WithIdAndUpdatedAt`).
+- **Timed album expiration** — server-clock album expiry, deterministic cleanup, and access enforcement returning `410 Gone` for expired albums. The earlier per-photo prototype is superseded by the deferred contract above.
 - **Pagination + cleanup hardening** — share-link list pagination, pagination headers, epoch-rotation page draining, and full cleanup-batch draining.
 
 #### Web
 - **Sync conflict resolution** — deterministic three-way block merge with LWW fallback for album content (`SPEC-SyncConflictResolution.md`).
-- **Timed expiration UI** — local purge with destructive-acknowledge dialog, expiration presets, expiry badges, photo-expiration adapter; routes 404 (deleted) and 410 (expired) sync responses through `purgeLocalAlbum` with distinct reasons.
+- **Timed album expiration UI** — local purge with destructive acknowledgement, expiration presets, and expiry badges; routes album-level 404 (deleted) and 410 (expired) sync responses through `purgeLocalAlbum` with distinct reasons. No supported photo-expiration adapter remains.
 - **Photo description editing** — owners/editors edit encrypted photo descriptions from the lightbox without exposing plaintext to the server.
 - **Shared album download (ZIP)** — full-access share-link viewers paginate all photos and download client-decrypted ZIPs.
 - **Per-symbol rust-cutover boundary guard** expanded from 5 → 24 checks; rejects wildcard imports of legacy `@mosaic/crypto` symbols across cutover-retired modules.

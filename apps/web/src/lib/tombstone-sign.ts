@@ -8,20 +8,28 @@
  * (audit `sync C2`).
  */
 
+import { getApi, toBase64 } from './api';
+import type { DeleteManifestRequest } from './api-types';
 import { getCryptoClient } from './crypto-client';
 import { fetchAndUnwrapEpochKeys } from './epoch-key-service';
 import { getCurrentEpochKey } from './epoch-key-store';
-import { buildTombstoneTranscriptBytes } from './tombstone-transcript';
+import { buildTombstoneTranscriptBytesV2 } from './tombstone-transcript';
 
 /**
  * The bytes a signed delete sends to the backend, ready to drop into the
  * DELETE /manifests/{id} body.
  */
-export interface SignedTombstone {
+export interface SignedTombstone extends DeleteManifestRequest {
   /** Base64 of the 64-byte Ed25519 signature. */
   tombstoneSignature: string;
   /** Epoch ID whose `ManifestSigningSecretKey` produced the signature. */
   signerEpochId: number;
+  /** Monotonic signer sequence bound into the v2 transcript. */
+  tombstoneSeq: number;
+  /** Server reservation consumed atomically by the delete. */
+  sequenceReservationId: string;
+  /** Immutable pre-delete version bound into the signature. */
+  tombstoneVersionCreated: number;
 }
 
 /**
@@ -36,6 +44,8 @@ export async function signTombstone(input: {
   albumId: string;
   photoId: string;
   versionCreated: number;
+  /** Stable UUID for retrying the same reservation request. */
+  operationId?: string;
 }): Promise<SignedTombstone> {
   // Make sure we have at least one epoch key cached; deletes can happen
   // long after the last sync and a stale cache would leave us with no
@@ -49,9 +59,20 @@ export async function signTombstone(input: {
     );
   }
 
-  const transcriptBytes = buildTombstoneTranscriptBytes({
+  const operationId = input.operationId ?? globalThis.crypto.randomUUID();
+  const api = getApi();
+  const reservation = await api.reserveManifestSequence({
+    albumId: input.albumId,
+    signerPubkey: toBase64(epochBundle.signPublicKey),
+    targetManifestId: input.photoId,
+    operationId,
+    operationKind: 'Tombstone',
+  });
+
+  const transcriptBytes = buildTombstoneTranscriptBytesV2({
     albumId: input.albumId,
     epochId: epochBundle.epochId,
+    tombstoneSeq: reservation.manifestSeq,
     photoId: input.photoId,
     versionCreated: input.versionCreated,
   });
@@ -70,13 +91,8 @@ export async function signTombstone(input: {
   return {
     tombstoneSignature: toBase64(signatureBytes),
     signerEpochId: epochBundle.epochId,
+    tombstoneSeq: reservation.manifestSeq,
+    sequenceReservationId: reservation.reservationId,
+    tombstoneVersionCreated: input.versionCreated,
   };
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
 }

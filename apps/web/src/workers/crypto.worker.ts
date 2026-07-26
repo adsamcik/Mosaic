@@ -1427,33 +1427,6 @@ class CryptoWorker implements CryptoWorkerApi {
     return facade.buildShareLinkUrl(opts);
   }
 
-  async createLinkShareHandle(
-    albumId: string,
-    epochHandleId: EpochHandleId,
-    tier: 1 | 2 | 3 | ShardTier,
-  ): Promise<{
-    linkShareHandleId: LinkShareHandleId;
-    linkId: Uint8Array;
-    linkUrlToken: Uint8Array;
-    tier: number;
-    nonce: Uint8Array;
-    encryptedKey: Uint8Array;
-  }> {
-    const facade = await getRustFacade();
-    return this.handleRegistry.withLease(epochHandleId, 'epoch', (rustEpoch) => {
-      const created = facade.createLinkShareHandle(albumId, rustEpoch, tier);
-      const handle = this.handleRegistry.registerLinkShare(created.handle);
-      return {
-        linkShareHandleId: handle.id as LinkShareHandleId,
-        linkId: created.linkId,
-        linkUrlToken: created.linkUrlToken,
-        tier: created.tier,
-        nonce: created.nonce,
-        encryptedKey: created.encryptedKey,
-      };
-    });
-  }
-
   // v2 binding variant of createLinkShareHandle (batch 4d - A1).
   // Emits the first-tier wrap with AAD bound to (link_id, tier, epoch_id).
   // Use this for new share links so server-side wrap-row substitution is
@@ -1497,20 +1470,7 @@ class CryptoWorker implements CryptoWorkerApi {
     };
   }
 
-  async wrapLinkTierHandle(
-    linkShareHandleId: LinkShareHandleId,
-    epochHandleId: EpochHandleId,
-    tier: 1 | 2 | 3 | ShardTier,
-  ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }> {
-    const facade = await getRustFacade();
-    return this.handleRegistry.withLease(linkShareHandleId, 'linkShare', (rustLink) =>
-      this.handleRegistry.withLease(epochHandleId, 'epoch', (rustEpoch) =>
-        facade.wrapLinkTierHandle(rustLink, rustEpoch, tier),
-      ),
-    );
-  }
-
-  // v2 binding variant of wrapLinkTierHandle (batch 4d - A1).
+  // The only writer: AAD-bound to link, tier, and epoch.
   async wrapLinkTierHandleV2(
     linkShareHandleId: LinkShareHandleId,
     epochHandleId: EpochHandleId,

@@ -22,8 +22,11 @@
 
 const TOMBSTONE_SIGN_CONTEXT = new TextEncoder().encode('Mosaic_Tombstone_v1');
 const TOMBSTONE_TRANSCRIPT_VERSION = 1;
+const TOMBSTONE_SIGN_CONTEXT_V2 = new TextEncoder().encode('Mosaic_Tombstone_v2');
+const TOMBSTONE_TRANSCRIPT_VERSION_V2 = 2;
 
 export const TOMBSTONE_TRANSCRIPT_LENGTH = 64;
+export const TOMBSTONE_TRANSCRIPT_V2_LENGTH = 72;
 
 /**
  * Parses a UUID string into 16 raw bytes (network byte order, matching
@@ -105,6 +108,66 @@ export function buildTombstoneTranscriptBytes(input: {
     // so this can only fire if a future change forgets to update the
     // constant. Keep the assertion to catch that mismatch immediately.
     throw new Error(`tombstone transcript length drift: ${off} != ${TOMBSTONE_TRANSCRIPT_LENGTH}`);
+  }
+  return buf;
+}
+
+/**
+ * Builds the reservation-backed v2 tombstone transcript. The sequence and
+ * the target's pre-delete version are both signature-bound; the server may
+ * advance `versionCreated` to the deletion cursor without changing these
+ * immutable signed inputs.
+ */
+export function buildTombstoneTranscriptBytesV2(input: {
+  albumId: string;
+  epochId: number;
+  tombstoneSeq: number;
+  photoId: string;
+  versionCreated: number;
+}): Uint8Array {
+  if (!Number.isInteger(input.epochId) || input.epochId < 0 || input.epochId > 0xffff_ffff) {
+    throw new Error(`tombstone epochId must be a u32 (got ${input.epochId})`);
+  }
+  if (!Number.isSafeInteger(input.tombstoneSeq) || input.tombstoneSeq <= 0) {
+    throw new Error(
+      `tombstoneSeq must be a positive safe integer (got ${input.tombstoneSeq})`,
+    );
+  }
+  if (!Number.isInteger(input.versionCreated)) {
+    throw new Error(`tombstone versionCreated must be an integer (got ${input.versionCreated})`);
+  }
+  if (!Number.isSafeInteger(input.versionCreated)) {
+    throw new Error(
+      `tombstone versionCreated must be within JS safe-integer range (got ${input.versionCreated})`,
+    );
+  }
+
+  const albumBytes = uuidToRawBytes(input.albumId);
+  const photoBytes = uuidToRawBytes(input.photoId);
+  const buf = new Uint8Array(TOMBSTONE_TRANSCRIPT_V2_LENGTH);
+  let off = 0;
+  buf.set(TOMBSTONE_SIGN_CONTEXT_V2, off);
+  off += TOMBSTONE_SIGN_CONTEXT_V2.length;
+  buf[off] = TOMBSTONE_TRANSCRIPT_VERSION_V2;
+  off += 1;
+  buf.set(albumBytes, off);
+  off += 16;
+
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  view.setUint32(off, input.epochId, /* littleEndian */ true);
+  off += 4;
+  view.setBigInt64(off, BigInt(input.tombstoneSeq), /* littleEndian */ true);
+  off += 8;
+
+  buf.set(photoBytes, off);
+  off += 16;
+  view.setBigInt64(off, BigInt(input.versionCreated), /* littleEndian */ true);
+  off += 8;
+
+  if (off !== TOMBSTONE_TRANSCRIPT_V2_LENGTH) {
+    throw new Error(
+      `tombstone v2 transcript length drift: ${off} != ${TOMBSTONE_TRANSCRIPT_V2_LENGTH}`,
+    );
   }
   return buf;
 }

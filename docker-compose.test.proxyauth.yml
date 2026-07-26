@@ -4,7 +4,9 @@
 # ProxyAuth-only mode for the `e2e-tests-proxyauth` CI matrix entry. The
 # Playwright suite simulates the upstream reverse proxy by injecting
 # Remote-User headers via `context.route()`. The frontend nginx in this
-# override forwards that header (production nginx strips it for safety).
+# override forwards that header through the explicit TEST-ONLY config.
+# This is the only Compose file allowed to mount nginx.proxyauth.conf; candidate
+# deployments mount nginx.proxyauth-deployment.conf instead.
 #
 # Use:
 #   docker compose -f docker-compose.test.yml -f docker-compose.test.proxyauth.yml up -d

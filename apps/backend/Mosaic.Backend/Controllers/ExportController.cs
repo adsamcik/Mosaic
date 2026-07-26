@@ -280,6 +280,9 @@ public class ExportController : ControllerBase
                         manifest.UpdatedAt,
                         TombstoneSignature = manifest.TombstoneSignature,
                         manifest.TombstoneSignerEpochId,
+                        manifest.TombstoneProtocolVersion,
+                        manifest.TombstoneSeq,
+                        manifest.TombstoneVersionCreated,
                         manifest.ManifestSeq,
                         manifest.ExpiresAt,
                         ManifestShards = manifest.ManifestShards

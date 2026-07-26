@@ -19,14 +19,26 @@ public class ExpirationRouteContractTests
     }
 
     [Fact]
-    public void PhotoExpirationRoute_UsesAlbumScopedPatchContract()
+    public void UnsignedPhotoExpirationAdapters_AreNotRoutable()
     {
+        var albumAdapter = typeof(AlbumsController)
+            .GetMethod(nameof(AlbumsController.UpdatePhotoExpiration));
+        var manifestAdapter = typeof(ManifestsController)
+            .GetMethod(nameof(ManifestsController.UpdateExpiration));
+        Assert.NotNull(albumAdapter);
+        Assert.NotNull(manifestAdapter);
+        Assert.NotNull(albumAdapter!.GetCustomAttribute<NonActionAttribute>());
+        Assert.NotNull(manifestAdapter!.GetCustomAttribute<NonActionAttribute>());
+
         var routes = typeof(AlbumsController).Assembly.GetTypes()
             .Where(t => !t.IsAbstract && typeof(ControllerBase).IsAssignableFrom(t))
             .SelectMany(GetPatchRoutes)
             .ToArray();
 
-        Assert.Contains("api/v1/albums/{albumId:guid}/photos/{photoId:guid}/expiration", routes);
+        Assert.DoesNotContain(
+            "api/v1/albums/{albumId:guid}/photos/{photoId:guid}/expiration",
+            routes);
+        Assert.DoesNotContain("api/v1/manifests/{manifestId:guid}/expiration", routes);
     }
 
     private static IEnumerable<string> GetPatchRoutes(Type controllerType)

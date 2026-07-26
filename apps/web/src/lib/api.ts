@@ -38,10 +38,11 @@ import type {
   RotateEpochRequest,
   RemoveAndRotateRequest,
   ManifestRecord,
-  CreateManifestRequest,
-  ManifestCreated,
   UpdateManifestMetadataRequest,
   ManifestMetadataUpdated,
+  ReserveManifestSequenceRequest,
+  ManifestSequenceReservation,
+  DeleteManifestRequest,
   CreateShardRequest,
   ShardCreated,
   ShareLinkResponse,
@@ -52,7 +53,6 @@ import type {
   LinkEpochKeyResponse,
   ShareLinkPhotoResponse,
   UpdateExpirationRequest,
-  UpdatePhotoExpirationRequest,
   UpdateLinkExpirationRequest,
   QuotaDefaults,
   AdminUserResponse,
@@ -81,9 +81,9 @@ import {
   HealthResponseSchema,
   LinkAccessResponseSchema,
   LinkEpochKeyResponseListSchema,
-  ManifestCreatedSchema,
   ManifestMetadataUpdatedSchema,
   ManifestRecordSchema,
+  ManifestSequenceReservationSchema,
   NearLimitsResponseSchema,
   QuotaDefaultsSchema,
   RenameAlbumResponseSchema,
@@ -583,6 +583,31 @@ export async function paginateAll<T>(
   return out;
 }
 
+
+function toBase64Url(data: Uint8Array): string {
+  return toBase64(data)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+async function albumCreationIdempotencyKey(
+  request: CreateAlbumRequest,
+): Promise<string> {
+  const signerBytes = fromBase64(request.initialEpochKey.signPubkey);
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new Uint8Array(signerBytes).buffer,
+  );
+  return `album:${toBase64Url(new Uint8Array(digest))}`;
+}
+
+function shareLinkCreationIdempotencyKey(
+  request: CreateShareLinkRequest,
+): string {
+  return `share:${toBase64Url(fromBase64(request.linkId))}`;
+}
+
 // =============================================================================
 // API Client Implementation
 // =============================================================================
@@ -661,9 +686,13 @@ export function createApiClient(): MosaicApi {
     },
 
     async createAlbum(request: CreateAlbumRequest): Promise<Album> {
+      const idempotencyKey = await albumCreationIdempotencyKey(request);
       return apiRequest('/albums', {
         method: 'POST',
         body: request,
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+        },
         schema: AlbumSchema,
       });
     },
@@ -878,13 +907,13 @@ export function createApiClient(): MosaicApi {
     // =========================================================================
     // Manifests
     // =========================================================================
-    async createManifest(
-      request: CreateManifestRequest,
-    ): Promise<ManifestCreated> {
-      return apiRequest('/manifests', {
+    async reserveManifestSequence(
+      request: ReserveManifestSequenceRequest,
+    ): Promise<ManifestSequenceReservation> {
+      return apiRequest('/manifests/sequence-reservations', {
         method: 'POST',
         body: request,
-        schema: ManifestCreatedSchema,
+        schema: ManifestSequenceReservationSchema,
       });
     },
 
@@ -907,13 +936,8 @@ export function createApiClient(): MosaicApi {
 
     async deleteManifest(
       manifestId: string,
-      body?: { tombstoneSignature: string; signerEpochId: number } | null,
+      body: DeleteManifestRequest,
     ): Promise<void> {
-      if (body == null) {
-        return apiRequest(`/manifests/${manifestId}`, {
-          method: 'DELETE',
-        });
-      }
       // v1.0.1 photos-f: pass the body object directly. apiRequest already
       // JSON.stringifies bodies and sets the Content-Type header; doing it
       // manually here previously caused a double-stringify so the backend
@@ -925,16 +949,6 @@ export function createApiClient(): MosaicApi {
       return apiRequest(`/manifests/${manifestId}`, {
         method: 'DELETE',
         body,
-      });
-    },
-
-    async updatePhotoExpiration(
-      manifestId: string,
-      request: UpdatePhotoExpirationRequest,
-    ): Promise<void> {
-      return apiRequest(`/manifests/${manifestId}/expiration`, {
-        method: 'PATCH',
-        body: request,
       });
     },
 
@@ -993,9 +1007,13 @@ export function createApiClient(): MosaicApi {
       albumId: string,
       request: CreateShareLinkRequest,
     ): Promise<ShareLinkResponse> {
+      const idempotencyKey = shareLinkCreationIdempotencyKey(request);
       return apiRequest(`/albums/${albumId}/share-links`, {
         method: 'POST',
         body: request,
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+        },
         schema: ShareLinkResponseSchema,
       });
     },

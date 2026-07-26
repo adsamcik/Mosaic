@@ -7,6 +7,7 @@ using Mosaic.Backend.Data;
 using Mosaic.Backend.Middleware;
 using Mosaic.Backend.Tests.Helpers;
 using NSubstitute;
+using System.Net;
 using System.Security.Cryptography;
 using Xunit;
 
@@ -224,6 +225,81 @@ public class AuthSecurityIntegrationTests
         Assert.Contains("mosaic_session=", setCookie);
         Assert.Contains("path=/api", setCookie, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("samesite=lax", setCookie, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ProxyAuth_UsesCapturedSocketPeer_AfterForwardedClientIpRewrite()
+    {
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            "Production",
+            new Dictionary<string, string?>
+            {
+                ["Auth:LocalAuthEnabled"] = "false",
+                ["Auth:ProxyAuthEnabled"] = "true",
+                ["Auth:TrustedProxies:0"] = "10.0.0.0/8"
+            },
+            context =>
+            {
+                nextCalled = true;
+                Assert.Equal("proxy-user@example.com", context.Items["AuthSub"]);
+                return Task.CompletedTask;
+            });
+        using var db = TestDbContextFactory.Create();
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/albums";
+        context.Connection.RemoteIpAddress = IPAddress.Parse("10.2.3.4");
+        context.Request.Headers["Remote-User"] = "proxy-user@example.com";
+        var capture = new SocketPeerCaptureMiddleware(async capturedContext =>
+        {
+            // Simulate ForwardedHeadersMiddleware replacing RemoteIpAddress
+            // with the public client address after the socket peer was saved.
+            capturedContext.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.27");
+            await middleware.InvokeAsync(capturedContext, db);
+        });
+
+        await capture.InvokeAsync(context);
+
+        Assert.True(nextCalled);
+        Assert.Equal("ProxyAuth", context.Items["AuthMethod"]);
+    }
+
+    [Fact]
+    public async Task ProxyAuth_RejectsSpoofedHeader_WhenCapturedSocketPeerIsUntrusted()
+    {
+        var nextCalled = false;
+        var middleware = CreateMiddleware(
+            "Production",
+            new Dictionary<string, string?>
+            {
+                ["Auth:LocalAuthEnabled"] = "false",
+                ["Auth:ProxyAuthEnabled"] = "true",
+                ["Auth:TrustedProxies:0"] = "10.0.0.0/8"
+            },
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            });
+        using var db = TestDbContextFactory.Create();
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/v1/albums";
+        context.Connection.RemoteIpAddress = IPAddress.Parse("198.51.100.12");
+        context.Request.Headers["Remote-User"] = "spoofed-user@example.com";
+        var capture = new SocketPeerCaptureMiddleware(async capturedContext =>
+        {
+            // Even a later trusted-looking rewritten address must not replace
+            // the actual untrusted socket peer in the auth decision.
+            capturedContext.Connection.RemoteIpAddress = IPAddress.Parse("10.9.8.7");
+            await middleware.InvokeAsync(capturedContext, db);
+        });
+
+        await capture.InvokeAsync(context);
+
+        Assert.False(nextCalled);
+        Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+        Assert.False(context.Request.Headers.ContainsKey("Remote-User"));
+        Assert.False(context.Items.ContainsKey("AuthSub"));
     }
 
     private static CombinedAuthMiddleware CreateMiddleware(

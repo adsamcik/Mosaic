@@ -1,9 +1,11 @@
-# Mosaic v1.0.0
+# Mosaic v1.0.0 (unreleased historical draft)
 
-> First stable release. Protocol surfaces are now frozen per
-> [SPEC-ReleaseTagFreezePolicy.md](specs/SPEC-ReleaseTagFreezePolicy.md).
-> Future v1.x releases will preserve wire-format compatibility; protocol
-> breaks are reserved for v2.
+> **Status correction (2026 production-readiness audit):** The audited
+> repository contains no `v1.0.0` Git tag. This draft records an intended
+> protocol-freeze milestone; it is not evidence of a stable product release,
+> supported Android client, or published artifact. See
+> [RELEASE_STATE.md](RELEASE_STATE.md) for the authoritative maturity and
+> immutable release-evidence rules.
 
 ## What Mosaic is
 
@@ -16,7 +18,7 @@ client that owns the keys.
 
 ## What v1.0.0 means
 
-v1.0.0 is the first stable protocol lock for Mosaic.
+This draft proposed v1.0.0 as the first stable protocol lock for Mosaic; no such tag exists in the audited repository.
 
 The important plain-language promise is simple: photos uploaded by a v1 client
 must remain readable by compatible v1.x clients, and v1.x clients must not
@@ -351,8 +353,9 @@ For future reviewers who need to re-audit v1 quickly:
 
 ## Breaking changes
 
-There are no expected breaking changes for external users because v1.0.0 is the
-first stable public protocol release.
+The draft expected no breaking changes for external users because it proposed
+v1.0.0 as the first stable public protocol release. That guarantee never became
+effective without the tag and immutable evidence described in RELEASE_STATE.md.
 
 For contributors who worked on pre-v1 builds, the internal breaking changes are
 substantial:

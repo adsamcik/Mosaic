@@ -1,0 +1,6 @@
+[bindings.kotlin]
+# Android minSdk 26 is Java 8 compatible. Use UniFFI's JNA fallback instead
+# of emitting java.lang.ref.Cleaner (API 33) or SystemCleaner (API 34).
+android = true
+android_cleaner = false
+disable_java_cleaner = true

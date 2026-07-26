@@ -11,11 +11,8 @@ import { getApi } from '../lib/api';
 import { ContentHashDedup } from '../lib/content-hash';
 import { getDbClient } from '../lib/db-client';
 import { toSafeErrorMessage } from '../lib/error-messages';
-import { createLogger } from '../lib/logger';
 import { releasePhoto, releaseThumbnail } from '../lib/photo-service';
 import { signTombstone } from '../lib/tombstone-sign';
-
-const log = createLogger('usePhotoActions');
 
 /**
  * Error thrown when photo deletion fails
@@ -64,6 +61,63 @@ export interface UsePhotoActionsResult {
   clearError: () => void;
 }
 
+const MANIFEST_SEQUENCE_STALE_RETRY_LIMIT = 1;
+
+function isManifestSequenceStaleError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const record = error as {
+    readonly status?: unknown;
+    readonly problem?: unknown;
+  };
+  if (
+    record.status !== 409 ||
+    typeof record.problem !== 'object' ||
+    record.problem === null
+  ) {
+    return false;
+  }
+  return (
+    (record.problem as { readonly code?: unknown }).code ===
+    'MANIFEST_SEQUENCE_STALE'
+  );
+}
+
+async function deleteManifestWithSignedTombstone(input: {
+  readonly manifestId: string;
+  readonly albumId: string;
+  readonly versionCreated: number;
+}): Promise<void> {
+  const api = getApi();
+  const operationId = globalThis.crypto.randomUUID();
+
+  for (
+    let staleRetry = 0;
+    staleRetry <= MANIFEST_SEQUENCE_STALE_RETRY_LIMIT;
+    staleRetry += 1
+  ) {
+    const signedBody = await signTombstone({
+      albumId: input.albumId,
+      photoId: input.manifestId,
+      versionCreated: input.versionCreated,
+      operationId,
+    });
+
+    try {
+      await api.deleteManifest(input.manifestId, signedBody);
+      return;
+    } catch (error) {
+      if (
+        !isManifestSequenceStaleError(error) ||
+        staleRetry === MANIFEST_SEQUENCE_STALE_RETRY_LIMIT
+      ) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error('Tombstone sequence retry loop exhausted unexpectedly');
+}
+
 /**
  * Hook for photo management actions
  *
@@ -105,42 +159,23 @@ export function usePhotoActions(): UsePhotoActionsResult {
         const db = await getDbClient();
         const contentHashDedup = new ContentHashDedup();
 
-        // A2 (audit "sync C2"): sign the tombstone transcript so other
-        // clients verify the deletion before purging local state. The
-        // current manifest is fetched from the server to get the
-        // authoritative `versionCreated`; a stale local value would yield
-        // a signature that visitor sync rejects. A best-effort: if signing
-        // fails (no cached epoch key, network glitch, etc.), we still
-        // proceed with an UNSIGNED delete so the user is not blocked, and
-        // log the reason. Visitor clients then surface the row as
-        // `tombstone-unsigned` and refuse to purge until it is re-deleted
-        // — which is the correct fail-closed posture.
-        let signedBody: Awaited<ReturnType<typeof signTombstone>> | null = null;
-        try {
-          const manifest = await api.getManifest(manifestId);
-          signedBody = await signTombstone({
-            albumId,
-            photoId: manifestId,
-            versionCreated: manifest.versionCreated,
-          });
-        } catch (signErr) {
-          log.warn('Falling back to unsigned tombstone (audit sync C2)', {
-            albumId,
-            manifestId,
-            reason: signErr instanceof Error ? signErr.message : String(signErr),
-          });
-        }
+        // A reservation-backed v2 tombstone is mandatory. The signature
+        // binds the server-authoritative pre-delete version; if fetching,
+        // reserving, or signing fails, deletion fails closed.
+        const manifest = await api.getManifest(manifestId);
+        await deleteManifestWithSignedTombstone({
+          manifestId,
+          albumId,
+          versionCreated: manifest.versionCreated,
+        });
 
-        // 1. Delete from server (with signed tombstone body when available)
-        await api.deleteManifest(manifestId, signedBody);
-
-        // 2. Delete stale dedup record so a re-upload is not blocked
+        // 1. Delete stale dedup record so a re-upload is not blocked
         await contentHashDedup.deleteByPhotoId(albumId, manifestId);
 
-        // 3. Delete from local database
+        // 2. Delete from local database
         await db.deleteManifest(manifestId);
 
-        // 4. Clean up caches
+        // 3. Clean up caches
         cleanupPhotoCache(manifestId, albumId);
       } catch (err) {
         const message = toSafeErrorMessage(err, 'Failed to delete photo');
@@ -184,37 +219,22 @@ export function usePhotoActions(): UsePhotoActionsResult {
         // and to ensure proper error handling for each photo
         for (const manifestId of manifestIds) {
           try {
-            // A2 (audit "sync C2"): sign per-photo (each transcript binds
-            // photoId + versionCreated). Same fail-open-but-warn semantics
-            // as the single-photo path: visitor sync rejects unsigned
-            // tombstones, so an unsigned bulk-delete entry effectively
-            // becomes a no-op on other clients until re-deleted.
-            let signedBody: Awaited<ReturnType<typeof signTombstone>> | null = null;
-            try {
-              const manifest = await api.getManifest(manifestId);
-              signedBody = await signTombstone({
-                albumId,
-                photoId: manifestId,
-                versionCreated: manifest.versionCreated,
-              });
-            } catch (signErr) {
-              log.warn('Falling back to unsigned tombstone in bulk delete', {
-                albumId,
-                manifestId,
-                reason: signErr instanceof Error ? signErr.message : String(signErr),
-              });
-            }
+            // Each photo needs its own signed sequence and pre-delete version.
+            // A signing failure is recorded for that item without deleting it.
+            const manifest = await api.getManifest(manifestId);
+            await deleteManifestWithSignedTombstone({
+              manifestId,
+              albumId,
+              versionCreated: manifest.versionCreated,
+            });
 
-            // 1. Delete from server
-            await api.deleteManifest(manifestId, signedBody);
-
-            // 2. Delete stale dedup record so a re-upload is not blocked
+            // 1. Delete stale dedup record so a re-upload is not blocked
             await contentHashDedup.deleteByPhotoId(albumId, manifestId);
 
-            // 3. Delete from local database
+            // 2. Delete from local database
             await db.deleteManifest(manifestId);
 
-            // 4. Clean up caches
+            // 3. Clean up caches
             cleanupPhotoCache(manifestId, albumId);
 
             result.successCount++;

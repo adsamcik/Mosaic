@@ -16,6 +16,10 @@ public class Shard
     [MaxLength(255)]
     public required string StorageKey { get; set; }
     public long SizeBytes { get; set; }
+
+    /// <summary>Authenticated Tus blob envelope format version.</summary>
+    public int? EnvelopeVersion { get; set; }
+
     public ShardStatus Status { get; set; } = ShardStatus.PENDING;
     public DateTime StatusUpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? PendingExpiresAt { get; set; }

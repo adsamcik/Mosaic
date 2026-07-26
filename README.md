@@ -2,23 +2,25 @@
 
 A zero-knowledge encrypted photo gallery for personal use.
 
+> **Preview status:** This checkout is not production-ready. Use only disposable or independently backed-up data until the audit release blockers have been independently resolved. See the authoritative [release-state and evidence page](docs/RELEASE_STATE.md).
+
 ## Overview
 
-Mosaic is a self-hosted photo gallery where the server never sees your photos. All encryption and decryption happens on the web or Android client using modern cryptographic primitives.
+Mosaic is a self-hosted photo gallery where the server never sees your photos. All encryption and decryption happens client-side using modern cryptographic primitives.
 
 **Target Scale:** ≤50 users
 
 ## Features
 
 - 🔐 **End-to-end encryption** - Photos encrypted before upload, decrypted on the client
-- 📱 **Android client** - First-class v1 client using the shared Rust core for on-device decryption
+- 📱 **Android developer preview** - Rust/UniFFI foundation and FFI smoke-test surface; not a releasable gallery client
 - 🖼️ **Gallery management** - Organize photos into albums
 - 👥 **Secure sharing** - Share albums with family using epoch-based keys
 - 🗺️ **Map view** - Browse photos by location (GPS metadata encrypted)
 - 🔍 **Full-text search** - Search photo metadata (client-side)
 - 📱 **Offline capable** - Local database with sync
 - 📡 **Sidecar Beacon (beta)** - download an album directly to a second device (phone/tablet) over an end-to-end encrypted WebRTC channel; the server only relays opaque PAKE+AEAD bytes. Build with `VITE_FEATURE_SIDECAR=1` to enable. See [docs/architecture/SIDECAR.md](docs/architecture/SIDECAR.md), [docs/sidecar-beta-rollout.md](docs/sidecar-beta-rollout.md), and [docs/sidecar-test-matrix.md](docs/sidecar-test-matrix.md).
-- 🦀 **Shared Rust client core** - Web (`mosaic-wasm`) and Android (`mosaic-uniffi`) call into the same audited Rust workspace; cross-client byte-equality is enforced by the golden-vector corpus under `tests/vectors/`
+- 🦀 **Shared Rust client core** - Web (`mosaic-wasm`) and Android (`mosaic-uniffi`) call into the same Rust workspace; cross-client byte-equality is enforced by the golden-vector corpus under `tests/vectors/`
 
 ## Architecture
 
@@ -48,7 +50,7 @@ Mosaic is a self-hosted photo gallery where the server never sees your photos. A
 | Crypto | libsodium (legacy surface) + Rust client core (`crates/`, handle-based facade) |
 | Local DB | SQLite-WASM (`fts5-sql-bundle`) + OPFS |
 | Uploads | Tus protocol (resumable) |
-| Android | Kotlin 2.0 + AGP 8.7 + Rust UniFFI core (`apps/android-main`, foundation slice) |
+| Android | Kotlin + Rust UniFFI foundation (`apps/android-main`, developer preview; not a stable release surface) |
 
 ## Project Structure
 
@@ -81,10 +83,13 @@ cd Mosaic
 
 # Configure environment
 cp .env.example .env
-# Edit .env and set POSTGRES_PASSWORD (generate with: openssl rand -base64 32)
+# Edit .env and set strong POSTGRES_PASSWORD and AUTH_SERVER_SECRET values
+# (generate each separately with: openssl rand -base64 32)
 
-# Build and start all services
-docker compose up -d
+# Start PostgreSQL, apply the schema explicitly, then start serving
+docker compose up -d postgres
+docker compose run --rm backend --migrate-only
+docker compose up -d --wait
 
 # Check status
 docker compose ps
@@ -113,13 +118,19 @@ For convenience, use the helper script for common operations:
 ./scripts/mosaic.sh backup
 ```
 
+`start` assumes the explicit `--migrate-only` initialization above has already
+succeeded; it does not apply schema changes. Repeat that boundary before each
+schema-bearing upgrade.
+
 ### Production Deployment
 
-For production, you should:
+Before evaluating a production candidate, you should:
 
 1. Set a strong `POSTGRES_PASSWORD` in `.env`
-2. Put a reverse proxy (Caddy, Traefik, nginx) in front for TLS termination
-3. Configure your reverse proxy to pass the `Remote-User` header for authentication
+2. Generate and preserve a stable `AUTH_SERVER_SECRET`
+3. Put a reverse proxy (Caddy, Traefik, nginx) in front for TLS termination
+4. Keep LocalAuth enabled by default; enable ProxyAuth only with an exact,
+   independently tested trusted-proxy boundary
 
 **Documentation:**
 
@@ -269,34 +280,49 @@ See [docs/SECURITY.md](docs/SECURITY.md) for the full security model.
 
 ## Releases
 
-Mosaic uses GitHub Container Registry for Docker images. To create a new release:
+This checkout is a production-readiness candidate, not a stable release. The
+audited repository tag history ends at `v0.2.0`; the v1.0.0 notes and roadmap
+are unreleased historical planning records. See
+[docs/RELEASE_STATE.md](docs/RELEASE_STATE.md) before interpreting any version
+label or artifact claim.
+
+Stable publication is currently fail-closed:
+`.github/release-readiness.json` sets `stable_publication_enabled` to `false`
+until all eight publicly retrievable, digest-verified, source-commit-bound,
+unexpired external evidence records pass independent review. Evidence names
+the immutable candidate source commit. A stable tag may point only to its
+single non-merge child that changes `.github/release-readiness.json` and
+nothing else, avoiding a self-referential commit while preventing unassessed
+source or workflow changes.
+The publication
+workflow then runs the complete supported web/backend suite, builds
+multi-architecture candidates by digest, generates SBOM/provenance, verifies a
+clean consumer, creates immutable exact-version image tags, and records both
+digests in the GitHub Release. Android remains a separately dispatched
+developer preview and is never attached to the stable release.
+
+### Using a Verified Published Release
+
+Copy the immutable digests from the matching GitHub Release and verify them
+before deployment:
 
 ```bash
-# Tag a version (triggers publish workflow)
-git tag v0.0.1
-git push origin v0.0.1
+gh attestation verify oci://ghcr.io/adsamcik/mosaic-backend@sha256:<backend-digest> --repo adsamcik/Mosaic
+gh attestation verify oci://ghcr.io/adsamcik/mosaic-frontend@sha256:<frontend-digest> --repo adsamcik/Mosaic
+
+docker pull ghcr.io/adsamcik/mosaic-backend@sha256:<backend-digest>
+docker pull ghcr.io/adsamcik/mosaic-frontend@sha256:<frontend-digest>
 ```
 
-This will:
-
-1. Run all tests (crypto, frontend, backend)
-2. Build multi-architecture Docker images (amd64, arm64)
-3. Push to `ghcr.io/adsamcik/mosaic-backend` and `ghcr.io/adsamcik/mosaic-frontend`
-4. Create a GitHub Release with image digests
-
-### Using Published Images
-
-```bash
-# Pull the latest release
-docker pull ghcr.io/adsamcik/mosaic-backend:latest
-docker pull ghcr.io/adsamcik/mosaic-frontend:latest
-
-# Or a specific version
-docker pull ghcr.io/adsamcik/mosaic-backend:0.0.1
-docker pull ghcr.io/adsamcik/mosaic-frontend:0.0.1
-```
+Mosaic does not publish a supported `latest` or moving major/minor tag. A tag,
+digest, attestation, or release record that is absent or disagrees is an
+unsupported preview artifact.
 
 ## Browser Support
+
+These are candidate minimums, not completed production evidence. The
+Firefox/WebKit OPFS durability matrix remains a required external release
+record while stable publication is disabled.
 
 | Browser     | Minimum Version |
 | ----------- | --------------- |

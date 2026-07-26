@@ -2,7 +2,37 @@
 
 ## Status
 
-Locked for R-Cl1 upload state-machine DTO finalization. This SPEC is governed by ADR-011, ADR-013, ADR-018, ADR-022, and ADR-023. AlbumSync remains the legacy/R-Cl2 reducer surface in this file: existing AlbumSync behavior and tests are preserved, but the frozen AlbumSync DTO/CBOR contract is not finalized by R-Cl1.
+Locked for the historical R-Cl1 v1 reducer/CBOR allocations; amended
+below for the current ordered manifest producer. Existing numeric keys and phase
+values remain append-only.
+
+### Current producer and replay amendment
+
+`CreatingManifest` now means reserve → sign → client-addressed finalize. The
+adapter persists a stable target manifest ID and operation ID, obtains a
+`Create` reservation, binds its positive `manifestSeq` into the v2 signature,
+and submits the exact body plus `sequenceReservationId` to
+`POST /api/v1/manifests/{manifestId}/finalize`. A reservation retry reuses the
+same operation binding; finalize retry reuses the same target, reservation,
+sequence, signature, and body.
+
+Finalize correctness is intrinsic to the client-selected manifest ID and stored
+request hash. `Idempotency-Key` is an optional middleware-cache optimization,
+not required reducer state and not a 30-day correctness window. The frozen key
+`7` remains an upload-job operation identity for compatibility/Tus helpers and
+may derive an optional header; it must not be reinterpreted as a required
+finalize header.
+
+Receive-side signed-manifest replay checkpoints are stored per logical manifest
+in a separate encrypted security-state collection. The sync/gallery projection
+and this AlbumSync reducer must not use one album-wide or signer-wide receive
+watermark to reject distinct manifests delivered out of order. For the same
+manifest, an older sequence or equal sequence with different signed content
+fails closed.
+
+Where the original v1 clauses below conflict with this amendment, this
+amendment controls. This SPEC remains governed by ADR-011, ADR-013, ADR-018,
+ADR-022 as amended, and ADR-023.
 
 ## Scope and zero-knowledge invariant
 
@@ -21,7 +51,7 @@ The upload reducer is a pure client-side state machine. It receives opaque UUIDv
 | 4 | `retry_count` | `u8` | `<= max_retry_count`; resets to `0` on forward progress. |
 | 5 | `max_retry_count` | `u8` | `<= MAX_RETRY_COUNT_LIMIT (64)`. |
 | 6 | `next_retry_not_before_ms` | `null` or `i64` | Absolute adapter-clock gate; reducer does not read time. |
-| 7 | `idempotency_key` | UUIDv7 bytes | ADR-022 manifest idempotency key; the backend idempotency window is 30 days and adapters must treat expiry as `IdempotencyExpired`. |
+| 7 | `idempotency_key` | UUIDv7 bytes | Historical upload-job operation identity retained by the locked schema; used by Tus/recovery helpers and may derive an optional finalize cache header, but is not a mandatory finalize header or correctness deadline. |
 | 8 | `tiered_shards` | array of shard maps | At most 10,000; unique `(tier, shard_index)`. |
 | 9 | `shard_set_hash` | `null` or 32 bytes | Commitment for ADR-022 manifest recovery; debug-redacted. |
 | 10 | `snapshot_revision` | `u64` | Increments for non-idempotent accepted events only. |
@@ -59,7 +89,7 @@ Upsert immutability: after a shard coordinate exists, `shard_id`, `sha256`, `con
 | 3 | `EncryptingShard` | Adapter should encrypt next unuploaded shard. |
 | 4 | `CreatingShardUpload` | Adapter should create/resume Tus upload for a shard. |
 | 5 | `UploadingShard` | Adapter should upload encrypted shard bytes. |
-| 6 | `CreatingManifest` | Adapter should POST ADR-022 manifest with idempotency key. |
+| 6 | `CreatingManifest` | Adapter should reuse/persist the stable target and operation IDs, reserve a `Create` sequence, sign it, and finalize the client-addressed manifest. |
 | 7 | `ManifestCommitUnknown` | Manifest POST outcome is unknown; recover via sync. |
 | 8 | `AwaitingSyncConfirmation` | Waiting for album sync confirmation. |
 | 9 | `RetryWaiting` | Timer gate before retrying a caller-specified target phase. |
@@ -113,7 +143,6 @@ Every event carries a UUIDv7 `effect_id`. If a non-`EffectAck` incoming event's 
 | `CancelRequested` | none | non-terminal | `Cancelled`; `CleanupStaging(UserCancelled)`. |
 | `AlbumDeleted` | none | non-terminal | `Cancelled`; `CleanupStaging(AlbumDeleted)` per ADR-011. |
 | `NonRetryableFailure` | `code` | non-terminal | `Failed`; `CleanupStaging(Failed)`. |
-| `IdempotencyExpired` | none | non-terminal | `Failed`; `CleanupStaging(Failed)`. |
 
 ## Upload effect taxonomy
 
@@ -126,9 +155,9 @@ Every effect carries the deterministic event `effect_id` that caused it.
 | `EncryptShard` | `effect_id`, `tier`, `shard_index` | Encrypt the selected shard client-side. |
 | `CreateShardUpload` | `effect_id`, `shard` | Create/resume upload using immutable shard id. |
 | `UploadShard` | `effect_id`, `shard` | Upload encrypted bytes only. |
-| `CreateManifest` | `effect_id`, `idempotency_key`, `tiered_shards`, `shard_set_hash` | POST ADR-022 manifest with deterministic idempotency; telemetry/error codes cite ADR-018. |
+| `CreateManifest` | `effect_id`, stable target/operation IDs, positive `manifest_seq`, `sequence_reservation_id`, signed body/hash, optional `idempotency_key`, `tiered_shards`, `shard_set_hash` | Reserve if needed, then finalize the same client-addressed manifest; never allocate a fresh sequence for an outcome-unknown retry. |
 | `AwaitSyncConfirmation` | `effect_id` | Trigger/wait for sync confirmation. |
-| `RecoverManifestThroughSync` | `effect_id`, `asset_id`, `since_metadata_version`, `shard_set_hash` | Scan sync results per ADR-022 recovery law. |
+| `RecoverManifestThroughSync` | `effect_id`, target manifest ID, `asset_id`, signed sequence/body commitment, `since_metadata_version`, `shard_set_hash` | Resolve the client-addressed target through sync/read and verify its signed sequence and shard commitment before confirming. |
 | `ScheduleRetry` | `effect_id`, `attempt`, `not_before_ms`, `target_phase` | Persist timer and later emit `RetryTimerElapsed { target_phase }`. |
 | `CleanupStaging` | `effect_id`, `reason` | Delete local staging state; never touch committed encrypted blobs. |
 
@@ -188,12 +217,24 @@ counter names are:
 
 | Sync/recovery outcome | Required comparison | Reducer result |
 |---|---|---|
-| `Match` | `asset_id` and `shard_set_hash` match the committed sync result | `Confirmed`; no cleanup. |
-| `ShardSetConflict` | `asset_id` matches but shard-set commitment differs | `Failed`; `CleanupStaging(Failed)`; `failure_code = ManifestSetConflict`; cleanup reason remains presentation-only. |
-| `NotFoundTimedOut` | No matching sync result before adapter timeout | `RetryWaiting` + `ScheduleRetry { target_phase: CreatingManifest }` while budget remains; exhausted budget fails. |
-| `IdempotencyExpired` | Backend idempotency window expired | `Failed`; `CleanupStaging(Failed)`; `failure_code = IdempotencyExpired`; cleanup reason remains presentation-only. |
+| `Match` | Client-selected manifest ID plus signed sequence/body and `shard_set_hash` match the committed result | `Confirmed`; no cleanup. |
+| `ShardSetConflict` | Target/asset identity matches but signed body or shard-set commitment differs | `Failed`; `CleanupStaging(Failed)`; `failure_code = ManifestSetConflict`; cleanup reason remains presentation-only. |
+| `NotFoundTimedOut` | The target is not observable before adapter timeout | `RetryWaiting` + `ScheduleRetry { target_phase: CreatingManifest }` while budget remains; retry uses the same target, operation binding, reservation, signed sequence, and body. Exhausted budget fails. |
 
-`RecoverManifestThroughSync` includes `asset_id`, `since_metadata_version`, and `shard_set_hash` so ADR-022 recovery can query only sync deltas needed to classify the outcome. `asset_id` is event/effect scoped and not persisted in snapshot v1. ADR-022 idempotency records expire after 30 days; expiry is represented by persisted `failure_code = IdempotencyExpired`.
+`RecoverManifestThroughSync` carries the client-selected target and the signed
+sequence/body/shard commitments needed to classify the outcome. `asset_id` may
+remain event/effect scoped under the frozen v1 snapshot. Recovery never depends
+on an idempotency-cache expiry response and never allocates a replacement
+sequence merely because the optional cache entry aged out.
+
+### Signed-manifest receive checkpoint
+
+After cryptographic verification and before applying plaintext/gallery state,
+the adapter compares the incoming signed state with the encrypted checkpoint
+for that manifest ID. It atomically advances the checkpoint with the applied
+projection. An older sequence, or equal sequence with a different signed-body
+commitment, is a replay/conflict. No maximum observed on another manifest may
+cause rejection.
 
 ## ADR-011 album deletion interaction
 

@@ -18,7 +18,6 @@ public interface IAlbumExpirationService
 public sealed class AlbumExpirationService : IAlbumExpirationService
 {
     private const int AlbumBatchSize = 10;
-    private const int ManifestBatchSize = 100;
 
     private readonly MosaicDbContext _db;
     private readonly TimeProvider _timeProvider;
@@ -52,27 +51,23 @@ public sealed class AlbumExpirationService : IAlbumExpirationService
 
     public async Task<bool> EnforceManifestExpirationAsync(Guid manifestId, CancellationToken cancellationToken = default)
     {
-        var manifest = await _db.Manifests
+        // Per-photo expiration is intentionally fail-closed until it has a
+        // reservation-backed signed v2 lifecycle mutation. Historical
+        // ExpiresAt values must never create unsigned tombstones. Retain this
+        // compatibility entry point only to enforce the containing album's
+        // independently supported expiration policy.
+        var albumId = await _db.Manifests
             .IgnoreQueryFilters()
-            .Include(m => m.Album)
-            .FirstOrDefaultAsync(m => m.Id == manifestId, cancellationToken);
+            .Where(manifest => manifest.Id == manifestId)
+            .Select(manifest => (Guid?)manifest.AlbumId)
+            .FirstOrDefaultAsync(cancellationToken);
 
-        if (manifest == null)
+        if (!albumId.HasValue)
         {
             return false;
         }
 
-        if (IsExpired(manifest.Album.ExpiresAt))
-        {
-            return await DeleteExpiredAlbumAsync(manifest.Album, cancellationToken);
-        }
-
-        if (manifest.IsDeleted || !IsExpired(manifest.ExpiresAt))
-        {
-            return false;
-        }
-
-        return await DeleteExpiredManifestAsync(manifest, cancellationToken);
+        return await EnforceAlbumExpirationAsync(albumId.Value, cancellationToken);
     }
 
     public async Task<int> SweepExpiredAlbumsAsync(CancellationToken cancellationToken = default)
@@ -106,41 +101,10 @@ public sealed class AlbumExpirationService : IAlbumExpirationService
         return deletedCount;
     }
 
-    public async Task<int> SweepExpiredManifestsAsync(Guid? albumId = null, CancellationToken cancellationToken = default)
-    {
-        var deletedCount = 0;
-
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            var expiredManifests = await QueryExpiredManifestsAsync(albumId, cancellationToken);
-            if (expiredManifests.Count == 0)
-            {
-                break;
-            }
-
-            foreach (var manifest in expiredManifests)
-            {
-                try
-                {
-                    if (manifest.Album == null || IsExpired(manifest.Album.ExpiresAt))
-                    {
-                        continue;
-                    }
-
-                    if (await DeleteExpiredManifestAsync(manifest, cancellationToken))
-                    {
-                        deletedCount++;
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    _logger.LogError(ex, "Failed to expire manifest {ManifestId}", manifest.Id);
-                }
-            }
-        }
-
-        return deletedCount;
-    }
+    public Task<int> SweepExpiredManifestsAsync(Guid? albumId = null, CancellationToken cancellationToken = default)
+        // Compatibility no-op: automatic per-photo expiration cannot safely
+        // advance the signed manifest stream without a client signature.
+        => Task.FromResult(0);
 
     private async Task<List<Album>> QueryExpiredAlbumsAsync(CancellationToken cancellationToken)
     {
@@ -161,35 +125,6 @@ public sealed class AlbumExpirationService : IAlbumExpirationService
             .Where(a => a.ExpiresAt != null && a.ExpiresAt <= now)
             .OrderBy(a => a.ExpiresAt)
             .Take(AlbumBatchSize)
-            .ToListAsync(cancellationToken);
-    }
-
-    private async Task<List<Manifest>> QueryExpiredManifestsAsync(Guid? albumId, CancellationToken cancellationToken)
-    {
-        var now = UtcNow;
-        var query = _db.Manifests
-            .IgnoreQueryFilters()
-            .Include(m => m.Album)
-            .Where(m => !m.IsDeleted && m.ExpiresAt != null);
-
-        if (albumId.HasValue)
-        {
-            query = query.Where(m => m.AlbumId == albumId.Value);
-        }
-
-        if (_db.UsesLiteProvider())
-        {
-            return (await query.ToListAsync(cancellationToken))
-                .Where(m => m.ExpiresAt <= now)
-                .OrderBy(m => m.ExpiresAt)
-                .Take(ManifestBatchSize)
-                .ToList();
-        }
-
-        return await query
-            .Where(m => m.ExpiresAt <= now)
-            .OrderBy(m => m.ExpiresAt)
-            .Take(ManifestBatchSize)
             .ToListAsync(cancellationToken);
     }
 
@@ -233,52 +168,4 @@ public sealed class AlbumExpirationService : IAlbumExpirationService
         }
     }
 
-    private async Task<bool> DeleteExpiredManifestAsync(Manifest manifest, CancellationToken cancellationToken)
-    {
-        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
-        try
-        {
-            var utcNow = UtcNow.UtcDateTime;
-            var album = manifest.Album ?? await _db.Albums.FindAsync([manifest.AlbumId], cancellationToken);
-            if (album == null)
-            {
-                await transaction.CommitAsync(cancellationToken);
-                return false;
-            }
-
-            var cleanupResult = await ShardReferenceCleanup.DetachManifestShardsAsync(
-                _db,
-                [manifest.Id],
-                utcNow,
-                cancellationToken);
-
-            album.CurrentVersion++;
-            album.UpdatedAt = utcNow;
-            manifest.IsDeleted = true;
-            manifest.EncryptedMeta = [];
-            manifest.ExpiresAt = null;
-            manifest.VersionCreated = album.CurrentVersion;
-            manifest.UpdatedAt = utcNow;
-
-            var albumLimits = await _db.AlbumLimits.FindAsync([album.Id], cancellationToken);
-            if (albumLimits != null)
-            {
-                albumLimits.CurrentPhotoCount = Math.Max(0, albumLimits.CurrentPhotoCount - 1);
-                albumLimits.CurrentSizeBytes = Math.Max(0, albumLimits.CurrentSizeBytes - cleanupResult.TotalDetachedSizeBytes);
-                albumLimits.UpdatedAt = utcNow;
-            }
-
-            await _db.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
-            return true;
-        }
-        catch (DbUpdateConcurrencyException ex)
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            _db.ChangeTracker.Clear();
-            _logger.LogInformation(ex, "Expired manifest {ManifestId} was already cleaned up concurrently", manifest.Id);
-            return false;
-        }
-    }
 }

@@ -66,7 +66,7 @@ public class TusEventHandlerTests : IDisposable
         Dictionary<string, tusdotnet.Models.Metadata> metadata;
         if (albumId.HasValue)
         {
-            var hdr = $"albumId {Convert.ToBase64String(Encoding.UTF8.GetBytes(albumId.Value.ToString()))},content-sha256 {Convert.ToBase64String(Encoding.UTF8.GetBytes(ValidContentSha256))},blob-format-version {Convert.ToBase64String(Encoding.UTF8.GetBytes("1"))}";
+            var hdr = $"albumId {Convert.ToBase64String(Encoding.UTF8.GetBytes(albumId.Value.ToString()))},content-sha256 {Convert.ToBase64String(Encoding.UTF8.GetBytes(ValidContentSha256))},blob-format-version {Convert.ToBase64String(Encoding.UTF8.GetBytes("1"))},envelope-version {Convert.ToBase64String(Encoding.UTF8.GetBytes("3"))}";
             metadata = tusdotnet.Models.Metadata.Parse(hdr);
         }
         else

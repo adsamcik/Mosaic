@@ -107,7 +107,7 @@ export async function processLegacyUpload(
       sha256: encrypted.sha256,
       tier: 3,
       contentLength: encrypted.envelopeBytes.byteLength,
-      envelopeVersion: 3,
+      envelopeVersion: encrypted.envelopeVersion,
     });
     await ctx.updatePersistedTask(task.id, {
       completedShards: task.completedShards,

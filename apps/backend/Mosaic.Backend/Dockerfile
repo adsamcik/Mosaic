@@ -47,8 +47,8 @@ LABEL org.opencontainers.image.title="Mosaic Backend" \
 # Create non-root user for security
 RUN groupadd -r mosaic && useradd -r -g mosaic mosaic
 
-# Create data directories
-RUN mkdir -p /app/data/blobs && chown -R mosaic:mosaic /app/data
+# Create the only runtime-writable persistent directories.
+RUN mkdir -p /app/data/blobs /app/data/audit && chown -R mosaic:mosaic /app/data
 
 # Copy published application
 COPY --from=build /app/publish .

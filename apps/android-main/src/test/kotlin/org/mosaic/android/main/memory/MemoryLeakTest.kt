@@ -20,6 +20,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mosaic.android.main.crypto.EncryptedShardEnvelope
 import org.mosaic.android.main.crypto.ShardCryptoEngine
 import org.mosaic.android.main.crypto.ShardEncryptionWorker
 import org.mosaic.android.main.crypto.ShardEnvelopeStore
@@ -139,9 +140,9 @@ class MemoryLeakTest {
       plaintext: ByteArray,
       tier: Int,
       shardIndex: Int,
-    ): ByteArray {
+    ): EncryptedShardEnvelope {
       smallCalls++
-      return "envelope-$smallCalls".toByteArray()
+      return EncryptedShardEnvelope.fromBytes(byteArrayOf(0x53, 0x47, 0x7a, 0x6b, 0x03) + "envelope-$smallCalls".toByteArray())
     }
 
     override fun encryptStreamingShard(
@@ -150,10 +151,10 @@ class MemoryLeakTest {
       plaintextLength: Long,
       tier: Int,
       shardIndex: Int,
-    ): ByteArray {
+    ): EncryptedShardEnvelope {
       streamingCalls++
       plaintext.use { it.readBytes() }
-      return "streaming-envelope-$streamingCalls".toByteArray()
+      return EncryptedShardEnvelope.fromBytes(byteArrayOf(0x53, 0x47, 0x7a, 0x6b, 0x04) + "streaming-envelope-$streamingCalls".toByteArray())
     }
   }
 }

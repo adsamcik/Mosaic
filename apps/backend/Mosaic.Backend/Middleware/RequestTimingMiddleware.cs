@@ -32,7 +32,7 @@ public class RequestTimingMiddleware
             stopwatch.Stop();
             var elapsed = stopwatch.ElapsedMilliseconds;
             var method = context.Request.Method;
-            var path = context.Request.Path.Value ?? "/";
+            var path = SafeRequestPath.ForLogging(context);
             var statusCode = context.Response.StatusCode;
 
             // Use appropriate log level based on status code

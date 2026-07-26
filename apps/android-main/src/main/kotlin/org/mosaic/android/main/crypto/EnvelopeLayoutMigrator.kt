@@ -1,9 +1,10 @@
 package org.mosaic.android.main.crypto
 
 import android.content.Context
-import androidx.work.Logger
 import java.io.File
 import org.mosaic.android.main.db.UploadQueueDatabase
+import org.mosaic.android.main.diagnostics.PrivacySafeDiagnosticEvent
+import org.mosaic.android.main.diagnostics.PrivacySafeLogger
 
 /**
  * One-shot migrator that moves pre-v1.0.1 envelope files from the flat
@@ -28,7 +29,6 @@ import org.mosaic.android.main.db.UploadQueueDatabase
 internal object EnvelopeLayoutMigrator {
   internal const val SHARED_PREFS_NAME = "mosaic.envelope_layout"
   internal const val PREF_KEY_MIGRATED = "envelope_layout_migrated_v1_0_1"
-  private const val TAG = "EnvelopeLayoutMigrator"
   private val LEGACY_FILENAME_PATTERN = Regex("^[0-9a-f]{64}\\.envelope$")
 
   data class MigrationResult(
@@ -55,16 +55,17 @@ internal object EnvelopeLayoutMigrator {
 
     val result = runCatching { migrateLegacyEnvelopes(context, database) }
       .getOrElse { throwable ->
-        Logger.get().warning(TAG, "Envelope layout migration aborted", throwable)
+        PrivacySafeLogger.record(PrivacySafeDiagnosticEvent.ENVELOPE_LAYOUT_MIGRATION_ABORTED)
         return MigrationResult(moved = 0, orphaned = 0, errors = listOf(throwable.javaClass.simpleName))
       }
 
     if (result.isFullSuccess) {
       prefs.edit().putBoolean(PREF_KEY_MIGRATED, true).apply()
     }
-    Logger.get().info(
-      TAG,
-      "Envelope layout migration complete (moved=${result.moved}, orphaned=${result.orphaned}, errors=${result.errors.size})",
+    PrivacySafeLogger.recordEnvelopeMigrationSummary(
+      moved = result.moved,
+      orphaned = result.orphaned,
+      errors = result.errors.size,
     )
     return result
   }

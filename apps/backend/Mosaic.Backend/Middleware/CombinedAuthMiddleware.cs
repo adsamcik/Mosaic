@@ -74,6 +74,16 @@ public partial class CombinedAuthMiddleware
     {
         var path = context.Request.Path.Value ?? "";
         var isPublicPath = IsPublicPath(path);
+        var trustedProxyPeer = _proxyAuthEnabled && IsTrustedProxyPeer(context);
+
+        // Remote-User is authoritative only when it arrived on a connection
+        // whose immediate socket peer is explicitly trusted. Scrub it even
+        // when LocalAuth succeeds or the route is public so downstream code
+        // can never mistake a spoofed identity header for authenticated state.
+        if (!trustedProxyPeer)
+        {
+            context.Request.Headers.Remove("Remote-User");
+        }
 
         // Special case: /api/v1/auth/init returns 404 when LocalAuth is disabled
         if (isPublicPath &&
@@ -101,7 +111,7 @@ public partial class CombinedAuthMiddleware
         {
             authenticated = true;
         }
-        else if (_proxyAuthEnabled && TryProxyAuth(context))
+        else if (trustedProxyPeer && TryProxyAuth(context))
         {
             authenticated = true;
         }
@@ -216,23 +226,26 @@ public partial class CombinedAuthMiddleware
         });
     }
 
-    private bool TryProxyAuth(HttpContext context)
+    private bool IsTrustedProxyPeer(HttpContext context)
     {
-        var remoteIp = context.Connection.RemoteIpAddress;
-        if (remoteIp == null)
+        var socketPeerIp = SocketPeerCaptureMiddleware.GetSocketPeerAddress(context);
+        if (socketPeerIp == null)
         {
-            _logger.LogDebug("No remote IP address");
+            _logger.LogDebug("No captured socket peer IP address");
             return false;
         }
 
-        // Check if request is from trusted proxy
-        var isTrusted = _trustedNetworks.Any(network => network.Contains(remoteIp));
+        var isTrusted = _trustedNetworks.Any(network => network.Contains(socketPeerIp));
         if (!isTrusted)
         {
-            _logger.LogDebug("Request from untrusted IP: {IP}", remoteIp);
-            return false;
+            _logger.LogDebug("Request from untrusted proxy peer IP: {IP}", socketPeerIp);
         }
 
+        return isTrusted;
+    }
+
+    private bool TryProxyAuth(HttpContext context)
+    {
         // Extract and validate Remote-User header
         var remoteUser = context.Request.Headers["Remote-User"].FirstOrDefault();
         if (string.IsNullOrEmpty(remoteUser))

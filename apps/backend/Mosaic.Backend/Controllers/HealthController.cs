@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
+using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
 
@@ -17,7 +18,7 @@ namespace Mosaic.Backend.Controllers;
 /// </item>
 /// <item>
 ///   <c>GET /health/ready</c> — readiness: checks downstream
-///   dependencies (currently: database connectivity). Returns 503
+///   dependencies (database connectivity and audit-sink writability). Returns 503
 ///   while the process is alive but cannot serve traffic correctly.
 ///   Orchestrators stop routing requests to a non-ready instance
 ///   without restarting it.
@@ -34,8 +35,18 @@ namespace Mosaic.Backend.Controllers;
 public class HealthController : ControllerBase
 {
     private readonly MosaicDbContext _db;
+    private readonly IAuditSinkHealthProbe? _auditSinkHealth;
+    private readonly MosaicMetrics? _metrics;
 
-    public HealthController(MosaicDbContext db) => _db = db;
+    public HealthController(
+        MosaicDbContext db,
+        IAuditSinkHealthProbe? auditSinkHealth = null,
+        MosaicMetrics? metrics = null)
+    {
+        _db = db;
+        _auditSinkHealth = auditSinkHealth;
+        _metrics = metrics;
+    }
 
     /// <summary>
     /// Legacy combined health probe. Equivalent to <see cref="Ready"/>.
@@ -55,18 +66,30 @@ public class HealthController : ControllerBase
     }
 
     /// <summary>
-    /// Readiness probe. Verifies the database is reachable. Returns
-    /// 503 with a stable JSON body when downstream is broken so an
+    /// Readiness probe. Verifies the required audit sink is writable and
+    /// the database is reachable. Returns 503 with a stable JSON body when
+    /// a downstream dependency is broken so an
     /// orchestrator can stop routing traffic without restarting the
     /// process (a restart would not fix a downed database).
     /// </summary>
     [HttpGet("ready")]
     public async Task<IActionResult> Ready()
     {
+        var auditSinkHealthy = _auditSinkHealth?.IsWritable() ?? true;
+        _metrics?.SetAuditSinkHealthy(auditSinkHealthy);
+        if (!auditSinkHealthy)
+        {
+            return StatusCode(503, new
+            {
+                status = "unhealthy",
+                dependency = "audit-sink"
+            });
+        }
+
         try
         {
             await _db.Database.ExecuteSqlRawAsync("SELECT 1");
-            return Ok(new { status = "healthy", timestamp = DateTime.UtcNow });
+            return Ok(new { status = "healthy", auditSink = "writable", timestamp = DateTime.UtcNow });
         }
         catch
         {

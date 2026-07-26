@@ -68,7 +68,7 @@ public class ManifestIdempotencyIntegrationTests
         var context = new DefaultHttpContext();
         context.Items["AuthSub"] = AuthSub;
         context.Request.Method = HttpMethods.Post;
-        context.Request.Path = "/api/v1/manifests";
+        context.Request.Path = "/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize";
         context.Request.ContentType = "application/json";
         context.Request.Headers[IdempotencyMiddleware.HeaderName] = idempotencyKey;
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));

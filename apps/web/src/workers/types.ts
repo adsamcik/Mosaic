@@ -239,6 +239,52 @@ export interface DecryptedManifest {
   shardIds: string[];
 }
 
+/**
+ * Persisted v2 manifest replay floor for one album and signing public key.
+ * The key is a canonical public-key identifier, never secret material.
+ */
+export interface ManifestSeqHighWaterMark {
+  readonly albumId: string;
+  readonly signerKey: string;
+  readonly manifestSeq: number;
+}
+
+/** Highest authenticated signing epoch observed for an album. */
+export interface AlbumEpochHighWaterMark {
+  readonly albumId: string;
+  readonly epochId: number;
+  /** Canonical lowercase-hex Ed25519 public key for this epoch. */
+  readonly signerKey: string;
+}
+
+/**
+ * Exact verified v2 state for one manifest. The fingerprint is the lowercase
+ * hex encoding of the canonical 64-byte Ed25519 signature after verification.
+ * Together with signer, sequence, manifest identity, and operation kind it
+ * permits safe idempotent cache rehydration without accepting older state.
+ */
+export type ManifestReplayOperationKind = 'Live' | 'Tombstone';
+
+export interface ManifestReplayCheckpoint {
+  readonly albumId: string;
+  readonly signerKey: string;
+  readonly epochId: number;
+  readonly manifestId: string;
+  readonly manifestSeq: number;
+  readonly operationKind: ManifestReplayOperationKind;
+  readonly signatureFingerprint: string;
+}
+
+/**
+ * Album cursor checkpoint committed alongside a verified manifest page.
+ * Coupling it to a v2 replay-floor transaction prevents the two durable
+ * values from diverging if the process stops between separate writes.
+ */
+export interface ManifestSyncCheckpoint {
+  readonly albumId: string;
+  readonly albumVersion: number;
+}
+
 export interface ManifestTranscriptShard {
   readonly chunkIndex: number;
   readonly tier: number;
@@ -251,6 +297,10 @@ export interface ManifestTranscriptInput {
   readonly epochId: number;
   readonly encryptedMeta: Uint8Array;
   readonly shards: readonly ManifestTranscriptShard[];
+  /**
+   * Present only for the signed v2 manifest transcript.
+   */
+  readonly manifestSeq?: number;
 }
 
 /** Geographic point for map clustering */
@@ -320,18 +370,19 @@ export interface DbWorkerApi {
    *
    * `init` performs sql.js bootstrap, loads (and decrypts) any persisted
    * OPFS snapshot, runs schema migrations, and leaves the worker ready
-   * for use. A snapshot whose first byte does not match the current
-   * `SNAPSHOT_VERSION` is silently discarded and the worker reinitializes
-   * from an empty database (the cutover policy: server is the source of
-   * truth, stale snapshots are not preserved across the migration).
+   * for use. Signed-manifest replay state is loaded independently from the
+   * disposable SQLite cache. An unreadable security envelope fails closed;
+   * an incompatible cache can be rebuilt without forgetting verified
+   * sequence floors or exact per-manifest signed-state heads.
    */
   init(crypto: DbCryptoBridge): Promise<void>;
 
   /**
-   * Delete the persisted encrypted snapshot and recreate an empty database.
-   * Reuses the crypto bridge supplied to `init` and leaves the worker ready
-   * for immediate use. Must only be called after `init(crypto)` has
-   * attached the bridge.
+   * Recreate the disposable encrypted SQLite cache while preserving the
+   * separate account-wrapped replay-security state. Reuses the crypto bridge
+   * supplied to `init` and leaves the worker ready for a full server resync.
+   * Explicit Clear Local Data/device forget remains the only operation that
+   * removes both persistence domains.
    */
   resetStorage(): Promise<void>;
 
@@ -345,7 +396,35 @@ export interface DbWorkerApi {
   setAlbumVersion(albumId: string, version: number): Promise<void>;
 
   // Manifest operations
-  insertManifests(manifests: DecryptedManifest[]): Promise<void>;
+  /**
+   * Read the durable replay floor for an album/signing-key pair.
+   */
+  getManifestSeqHighWater(albumId: string, signerKey: string): Promise<number | null>;
+  /** Read the highest authenticated epoch and its bound signing key. */
+  getAlbumEpochHighWater(albumId: string): Promise<AlbumEpochHighWaterMark | null>;
+  /** Read the one exact verified current head for a manifest. */
+  getManifestReplayCheckpoint(
+    albumId: string,
+    manifestId: string,
+  ): Promise<ManifestReplayCheckpoint | null>;
+
+  /** List retained exact heads used to prove a full rebuild is complete. */
+  listManifestReplayCheckpoints(
+    albumId: string,
+  ): Promise<readonly ManifestReplayCheckpoint[]>;
+
+  /**
+   * Persist replay security before committing decrypted cache rows/cursor.
+   * This ordering prevents a crash from applying or purging state without
+   * first making its freshness proof durable.
+   */
+  insertManifests(
+    manifests: DecryptedManifest[],
+    manifestSeqHighWaters?: readonly ManifestSeqHighWaterMark[],
+    manifestSyncCheckpoint?: ManifestSyncCheckpoint,
+    manifestReplayCheckpoints?: readonly ManifestReplayCheckpoint[],
+    albumEpochHighWaters?: readonly AlbumEpochHighWaterMark[],
+  ): Promise<void>;
   deleteManifest(id: string): Promise<void>;
   updatePhotoRotation(
     photoId: string,
@@ -1103,19 +1182,6 @@ export interface CryptoWorkerApi {
     linkUrlToken: string;
   }): Promise<string>;
 
-  createLinkShareHandle(
-    albumId: string,
-    epochHandleId: EpochHandleId,
-    tier: 1 | 2 | 3 | ShardTier,
-  ): Promise<{
-    linkShareHandleId: LinkShareHandleId;
-    linkId: Uint8Array;
-    linkUrlToken: Uint8Array;
-    tier: number;
-    nonce: Uint8Array;
-    encryptedKey: Uint8Array;
-  }>;
-
   // v2 binding variant of createLinkShareHandle (batch 4d - A1).
   createLinkShareHandleV2(
     albumId: string,
@@ -1137,13 +1203,7 @@ export interface CryptoWorkerApi {
     linkId: Uint8Array;
   }>;
 
-  wrapLinkTierHandle(
-    linkShareHandleId: LinkShareHandleId,
-    epochHandleId: EpochHandleId,
-    tier: 1 | 2 | 3 | ShardTier,
-  ): Promise<{ tier: number; nonce: Uint8Array; encryptedKey: Uint8Array }>;
-
-  // v2 binding variant of wrapLinkTierHandle (batch 4d - A1).
+  // The only writer: AAD-bound to link, tier, and epoch.
   wrapLinkTierHandleV2(
     linkShareHandleId: LinkShareHandleId,
     epochHandleId: EpochHandleId,

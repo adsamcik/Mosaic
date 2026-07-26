@@ -14,12 +14,14 @@ interface FinalizeShardLike {
 export function manifestTranscriptInputForFinalize(input: {
   readonly albumId: string;
   readonly epochId: number;
+  readonly manifestSeq: number;
   readonly encryptedMeta: Uint8Array;
   readonly tieredShards: readonly FinalizeShardLike[];
 }): ManifestTranscriptInput {
   return {
     albumId: input.albumId,
     epochId: input.epochId,
+    manifestSeq: input.manifestSeq,
     encryptedMeta: input.encryptedMeta,
     shards: transcriptShardsFromFinalize(input.tieredShards),
   };

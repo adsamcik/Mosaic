@@ -1049,11 +1049,6 @@ export function createEpochKeyHandle(account_key_handle: bigint, epoch_id: numbe
 export function createIdentityHandle(account_key_handle: bigint): IdentityHandleResult;
 
 /**
- * Creates a share-link handle and first wrapped tier through WASM.
- */
-export function createLinkShareHandle(album_id: string, epoch_handle: bigint, tier_byte: number): CreateLinkShareHandleResult;
-
-/**
  * v2 binding variant of `createLinkShareHandle` (batch 4c - A1).
  */
 export function createLinkShareHandleV2(album_id: string, epoch_handle: bigint, tier_byte: number): CreateLinkShareHandleResult;
@@ -1299,6 +1294,11 @@ export function listShardTiers(): any[];
 export function manifestTranscriptBytes(album_id: Uint8Array, epoch_id: number, encrypted_meta: Uint8Array, encoded_shards: Uint8Array): BytesResult;
 
 /**
+ * Builds the canonical v2 manifest transcript with its signed freshness sequence.
+ */
+export function manifestTranscriptBytesV2(album_id: Uint8Array, epoch_id: number, manifest_seq: bigint, encrypted_meta: Uint8Array, encoded_shards: Uint8Array): BytesResult;
+
+/**
  * Mints a link-tier handle from a raw 32-byte tier key through WASM.
  */
 export function mintLinkTierHandleFromRawKey(raw_key: Uint8Array): LinkTierHandleResult;
@@ -1505,12 +1505,7 @@ export function verifyShardIntegrityV1(envelope: Uint8Array, expected_hash: Uint
 export function wrapLinkTierBlob(handle: bigint, plaintext: Uint8Array): BytesResult;
 
 /**
- * Wraps an epoch tier for an existing share-link handle through WASM.
- */
-export function wrapLinkTierHandle(link_share_handle: bigint, epoch_handle: bigint, tier_byte: number): WrappedTierKeyResult;
-
-/**
- * v2 binding variant of `wrapLinkTierHandle` (batch 4c - A1).
+ * Wraps an epoch tier with AAD bound to link, tier, and epoch through WASM.
  */
 export function wrapLinkTierHandleV2(link_share_handle: bigint, epoch_handle: bigint, tier_byte: number): WrappedTierKeyResult;
 
@@ -1588,7 +1583,6 @@ export interface InitOutput {
     readonly createAccount: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly createEpochKeyHandle: (a: bigint, b: number) => number;
     readonly createIdentityHandle: (a: bigint) => number;
-    readonly createLinkShareHandle: (a: number, b: number, c: bigint, d: number) => number;
     readonly createLinkShareHandleV2: (a: number, b: number, c: bigint, d: number) => number;
     readonly createLinkTierWrapHandle: (a: number) => void;
     readonly createSessionCacheWrapHandle: (a: number) => void;
@@ -1698,6 +1692,7 @@ export interface InitOutput {
     readonly loadsnapshotresult_schemaVersionLoaded: (a: number) => number;
     readonly loadsnapshotresult_snapshotCbor: (a: number, b: number) => void;
     readonly manifestTranscriptBytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+    readonly manifestTranscriptBytesV2: (a: number, b: number, c: number, d: bigint, e: number, f: number, g: number, h: number) => number;
     readonly mediatierdimensions_height: (a: number) => number;
     readonly mediatierdimensions_tier: (a: number) => number;
     readonly mediatierdimensions_width: (a: number) => number;
@@ -1788,7 +1783,6 @@ export interface InitOutput {
     readonly videoinspectresult_videoCodec: (a: number, b: number) => void;
     readonly videoinspectresult_widthPx: (a: number) => number;
     readonly wrapLinkTierBlob: (a: bigint, b: number, c: number) => number;
-    readonly wrapLinkTierHandle: (a: bigint, b: bigint, c: number) => number;
     readonly wrapLinkTierHandleV2: (a: bigint, b: bigint, c: number) => number;
     readonly wrapSessionCacheBlob: (a: bigint, b: number, c: number) => number;
     readonly wrapWithAccountHandle: (a: bigint, b: number, c: number) => number;

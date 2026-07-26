@@ -72,7 +72,7 @@ describe('processTieredUpload metadata stripping fail-closed behavior', () => {
     mocks.getCryptoClient.mockResolvedValue({
       encryptShardWithEpochHandle: mocks.encryptShardWithEpochHandle,
     });
-    mocks.encryptShardWithEpochHandle.mockResolvedValue(new Uint8Array([9]));
+    mocks.encryptShardWithEpochHandle.mockResolvedValue(new Uint8Array([0x53, 0x47, 0x7a, 0x6b, 3, 9]));
     mocks.generateTieredImages.mockResolvedValue({
       thumbnail: { data: new Uint8Array([1]), width: 100, height: 75, tier: 1 },
       preview: { data: new Uint8Array([2]), width: 800, height: 600, tier: 2 },

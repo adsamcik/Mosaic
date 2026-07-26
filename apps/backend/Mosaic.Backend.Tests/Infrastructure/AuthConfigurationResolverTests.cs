@@ -82,6 +82,76 @@ public class AuthConfigurationResolverTests
         Assert.Null(exception);
     }
 
+    [Theory]
+    [InlineData("0.0.0.0/0")]
+    [InlineData("::/0")]
+    [InlineData("  0.0.0.0/0  ")]
+    [InlineData("192.0.2.123/0")]
+    [InlineData("2001:db8::1234/0")]
+    public void ValidateForStartup_Throws_WhenProductionTrustsEveryAddress(string unsafeNetwork)
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Auth:LocalAuthEnabled"] = "false",
+            ["Auth:ProxyAuthEnabled"] = "true",
+            ["Auth:TrustedProxies:0"] = unsafeNetwork,
+            ["Auth:ServerSecret"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+        });
+
+        var environment = CreateEnvironment(Environments.Production);
+        var authConfiguration = AuthConfigurationResolver.Resolve(configuration);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => AuthConfigurationResolver.ValidateForStartup(configuration, environment, authConfiguration));
+
+        Assert.Contains("unrestricted network", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("0.0.0.0/0")]
+    [InlineData("::/0")]
+    public void ValidateForStartup_AllowsBroadTrustOnlyOutsideProduction(string network)
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Auth:LocalAuthEnabled"] = "false",
+            ["Auth:ProxyAuthEnabled"] = "true",
+            ["Auth:TrustedProxies:0"] = network
+        });
+
+        var environment = CreateEnvironment(Environments.Development);
+        var authConfiguration = AuthConfigurationResolver.Resolve(configuration);
+
+        var exception = Record.Exception(
+            () => AuthConfigurationResolver.ValidateForStartup(configuration, environment, authConfiguration));
+
+        Assert.Null(exception);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("not-a-cidr")]
+    [InlineData("10.0.0.0/33")]
+    [InlineData("2001:db8::/129")]
+    public void ValidateForStartup_Throws_WhenTrustedProxyCidrIsInvalid(string invalidCidr)
+    {
+        var configuration = CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Auth:LocalAuthEnabled"] = "false",
+            ["Auth:ProxyAuthEnabled"] = "true",
+            ["Auth:TrustedProxies:0"] = invalidCidr
+        });
+
+        var environment = CreateEnvironment(Environments.Development);
+        var authConfiguration = AuthConfigurationResolver.Resolve(configuration);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => AuthConfigurationResolver.ValidateForStartup(configuration, environment, authConfiguration));
+
+        Assert.Contains("invalid CIDR", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void ValidateForStartup_Throws_WhenDualModeEnabledWithoutExplicitOptIn()
     {

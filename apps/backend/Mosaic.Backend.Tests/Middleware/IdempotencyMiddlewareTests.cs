@@ -29,8 +29,8 @@ public class IdempotencyMiddlewareTests
             await context.Response.WriteAsync($$"""{"id":"manifest-{{calls}}"}""");
         });
 
-        var first = CreateContext("/api/v1/manifests", "POST", """{"albumId":"a","shardIds":["s"]}""", "same-key");
-        var second = CreateContext("/api/v1/manifests", "POST", """{"albumId":"a","shardIds":["s"]}""", "same-key");
+        var first = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", """{"albumId":"a","shardIds":["s"]}""", "same-key");
+        var second = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", """{"albumId":"a","shardIds":["s"]}""", "same-key");
 
         await middleware.InvokeAsync(first, db, new MockCurrentUserService(db));
         await middleware.InvokeAsync(second, db, new MockCurrentUserService(db));
@@ -54,8 +54,8 @@ public class IdempotencyMiddlewareTests
             await context.Response.WriteAsync($$"""{"id":"manifest-{{calls}}"}""");
         });
 
-        var first = CreateContext("/api/v1/manifests", "POST", """{"albumId":"a"}""", "same-key");
-        var second = CreateContext("/api/v1/manifests", "POST", """{"albumId":"b"}""", "same-key");
+        var first = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", """{"albumId":"a"}""", "same-key");
+        var second = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", """{"albumId":"b"}""", "same-key");
 
         await middleware.InvokeAsync(first, db, new MockCurrentUserService(db));
         await middleware.InvokeAsync(second, db, new MockCurrentUserService(db));
@@ -77,8 +77,8 @@ public class IdempotencyMiddlewareTests
             await context.Response.WriteAsync($$"""{"id":"manifest-{{calls}}"}""");
         });
 
-        await middleware.InvokeAsync(CreateContext("/api/v1/manifests", "POST", "{}", "key-one"), db, new MockCurrentUserService(db));
-        await middleware.InvokeAsync(CreateContext("/api/v1/manifests", "POST", "{}", "key-two"), db, new MockCurrentUserService(db));
+        await middleware.InvokeAsync(CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", "{}", "key-one"), db, new MockCurrentUserService(db));
+        await middleware.InvokeAsync(CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", "{}", "key-two"), db, new MockCurrentUserService(db));
 
         Assert.Equal(2, calls);
         Assert.Equal(2, db.IdempotencyRecords.Count());
@@ -98,12 +98,12 @@ public class IdempotencyMiddlewareTests
             await context.Response.WriteAsync($$"""{"id":"manifest-{{calls}}"}""");
         }, timeProvider);
 
-        await middleware.InvokeAsync(CreateContext("/api/v1/manifests", "POST", "{}", "expiring-key"), db, new MockCurrentUserService(db));
+        await middleware.InvokeAsync(CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", "{}", "expiring-key"), db, new MockCurrentUserService(db));
         var record = db.IdempotencyRecords.Single();
         record.CreatedAt = now.AddHours(-25);
         await db.SaveChangesAsync();
 
-        var replay = CreateContext("/api/v1/manifests", "POST", "{}", "expiring-key");
+        var replay = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", "{}", "expiring-key");
         await middleware.InvokeAsync(replay, db, new MockCurrentUserService(db));
 
         Assert.Equal(2, calls);
@@ -112,32 +112,100 @@ public class IdempotencyMiddlewareTests
     }
 
     [Fact]
-    public async Task TusPost_SameKeyAndSameUploadHeaders_ReturnsCachedInitHandshake()
+    public async Task TusPost_WithIdempotencyKey_IsRejectedBeforeUploadCreation()
     {
         using var db = TestDbContextFactory.Create();
         var calls = 0;
         var middleware = CreateMiddleware(context =>
         {
             calls++;
-            context.Response.StatusCode = StatusCodes.Status201Created;
-            context.Response.Headers.Location = $"/api/v1/files/upload-{calls}";
             return Task.CompletedTask;
         });
 
-        var first = CreateContext("/api/v1/files", "POST", string.Empty, "tus-key");
-        first.Request.Headers["Tus-Resumable"] = "1.0.0";
-        first.Request.Headers["Upload-Length"] = "1024";
-        var second = CreateContext("/api/v1/files", "POST", string.Empty, "tus-key");
-        second.Request.Headers["Tus-Resumable"] = "1.0.0";
-        second.Request.Headers["Upload-Length"] = "1024";
+        var context = CreateContext("/api/v1/files", "POST", string.Empty, "tus-key");
+        context.Request.Headers["Tus-Resumable"] = "1.0.0";
+        context.Request.Headers["Upload-Length"] = "1024";
+
+        await middleware.InvokeAsync(context, db, new MockCurrentUserService(db));
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal(0, calls);
+        Assert.Contains("supported for", ReadResponse(context), StringComparison.Ordinal);
+        Assert.Empty(db.IdempotencyRecords);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/albums", "POST")]
+    [InlineData("/api/v1/albums/11111111-1111-7111-8111-111111111111/share-links", "POST")]
+    public async Task IntrinsicallySafeCreateRoute_WithIdempotencyKey_IsCached(string path, string method)
+    {
+        using var db = TestDbContextFactory.Create();
+        var calls = 0;
+        var middleware = CreateMiddleware(async context =>
+        {
+            calls++;
+            context.Response.StatusCode = StatusCodes.Status201Created;
+            context.Response.Headers.Location = $"{path}/created";
+            await context.Response.WriteAsync("{\"created\":true}");
+        });
+
+        var first = CreateContext(path, method, "{}", "supported-key");
+        var replay = CreateContext(path, method, "{}", "supported-key");
 
         await middleware.InvokeAsync(first, db, new MockCurrentUserService(db));
-        await middleware.InvokeAsync(second, db, new MockCurrentUserService(db));
+        await middleware.InvokeAsync(replay, db, new MockCurrentUserService(db));
 
         Assert.Equal(1, calls);
-        Assert.Equal(StatusCodes.Status201Created, second.Response.StatusCode);
-        Assert.Equal("/api/v1/files/upload-1", second.Response.Headers.Location.ToString());
-        Assert.Equal("true", second.Response.Headers["Idempotency-Replayed"].ToString());
+        Assert.Equal(StatusCodes.Status201Created, replay.Response.StatusCode);
+        Assert.Equal($"{path}/created", replay.Response.Headers.Location.ToString());
+        Assert.Equal("{\"created\":true}", ReadResponse(replay));
+        Assert.Equal("true", replay.Response.Headers["Idempotency-Replayed"].ToString());
+        Assert.Single(db.IdempotencyRecords);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/albums", "POST")]
+    [InlineData("/api/v1/albums/11111111-1111-7111-8111-111111111111/share-links", "POST")]
+    public async Task RequiredCreateRoute_WithoutIdempotencyKey_FailsClosed(string path, string method)
+    {
+        using var db = TestDbContextFactory.Create();
+        var calls = 0;
+        var middleware = CreateMiddleware(context =>
+        {
+            calls++;
+            return Task.CompletedTask;
+        });
+        var context = CreateContext(path, method, "{}", "remove-me");
+        context.Request.Headers.Remove(IdempotencyMiddleware.HeaderName);
+
+        await middleware.InvokeAsync(context, db, new MockCurrentUserService(db));
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal(0, calls);
+        Assert.Contains("required", ReadResponse(context), StringComparison.Ordinal);
+        Assert.Empty(db.IdempotencyRecords);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/users/me", "PUT")]
+    public async Task NonReplaySafeRoute_WithIdempotencyKey_FailsClosed(string path, string method)
+    {
+        using var db = TestDbContextFactory.Create();
+        var calls = 0;
+        var middleware = CreateMiddleware(context =>
+        {
+            calls++;
+            return Task.CompletedTask;
+        });
+
+        var context = CreateContext(path, method, "{}", "unsupported-key");
+
+        await middleware.InvokeAsync(context, db, new MockCurrentUserService(db));
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Equal(0, calls);
+        Assert.Contains("supported for", ReadResponse(context), StringComparison.Ordinal);
+        Assert.Empty(db.IdempotencyRecords);
     }
 
     [Fact]
@@ -182,7 +250,7 @@ public class IdempotencyMiddlewareTests
         var tasks = Enumerable.Range(0, requestCount).Select(async _ =>
         {
             await using var db = new MosaicDbContext(options);
-            var context = CreateContext("/api/v1/manifests", "POST", """{"albumId":"a","shardIds":["s"]}""", "concurrent-key");
+            var context = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", """{"albumId":"a","shardIds":["s"]}""", "concurrent-key");
 
             await middleware.InvokeAsync(context, db, new MockCurrentUserService(db));
 
@@ -216,8 +284,8 @@ public class IdempotencyMiddlewareTests
             await context.Response.WriteAsync($$"""{"error":"unavailable-{{calls}}"}""");
         });
 
-        var first = CreateContext("/api/v1/manifests", "POST", "{}", "server-error-key");
-        var second = CreateContext("/api/v1/manifests", "POST", "{}", "server-error-key");
+        var first = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", "{}", "server-error-key");
+        var second = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", "{}", "server-error-key");
 
         await middleware.InvokeAsync(first, db, new MockCurrentUserService(db));
         await middleware.InvokeAsync(second, db, new MockCurrentUserService(db));
@@ -241,8 +309,8 @@ public class IdempotencyMiddlewareTests
             await context.Response.WriteAsync($$"""{"error":"bad-request-{{calls}}"}""");
         });
 
-        var first = CreateContext("/api/v1/manifests", "POST", "{}", "client-error-key");
-        var second = CreateContext("/api/v1/manifests", "POST", "{}", "client-error-key");
+        var first = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", "{}", "client-error-key");
+        var second = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", "{}", "client-error-key");
 
         await middleware.InvokeAsync(first, db, new MockCurrentUserService(db));
         await middleware.InvokeAsync(second, db, new MockCurrentUserService(db));
@@ -274,7 +342,7 @@ public class IdempotencyMiddlewareTests
             await context.Response.WriteAsync("""{"id":"manifest-1"}""");
         });
 
-        var ctx = CreateContext("/api/v1/manifests", "POST", """{"albumId":"a"}""", "atomic-key");
+        var ctx = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", """{"albumId":"a"}""", "atomic-key");
 
         await middleware.InvokeAsync(ctx, db, new MockCurrentUserService(db));
 
@@ -301,7 +369,7 @@ public class IdempotencyMiddlewareTests
             return Task.CompletedTask;
         });
 
-        var ctx = CreateContext("/api/v1/manifests", "POST", "{}", new string('k', 256));
+        var ctx = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", "{}", new string('k', 256));
 
         await middleware.InvokeAsync(ctx, db, new MockCurrentUserService(db));
 
@@ -322,7 +390,7 @@ public class IdempotencyMiddlewareTests
             return Task.CompletedTask;
         });
 
-        var ctx = CreateContext("/api/v1/manifests", "POST", "{}", new string('k', 255));
+        var ctx = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", "{}", new string('k', 255));
 
         await middleware.InvokeAsync(ctx, db, new MockCurrentUserService(db));
 
@@ -341,7 +409,7 @@ public class IdempotencyMiddlewareTests
             return Task.CompletedTask;
         });
 
-        var ctx = CreateContext("/api/v1/manifests", "POST", "{}", "size-key");
+        var ctx = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", "{}", "size-key");
         ctx.Request.ContentLength = IdempotencyMiddleware.MaxBodyBytes + 1;
 
         await middleware.InvokeAsync(ctx, db, new MockCurrentUserService(db));
@@ -365,7 +433,7 @@ public class IdempotencyMiddlewareTests
         var oversized = new byte[IdempotencyMiddleware.MaxBodyBytes + 1024];
         var ctx = new DefaultHttpContext();
         ctx.Items["AuthSub"] = AuthSub;
-        ctx.Request.Path = "/api/v1/manifests";
+        ctx.Request.Path = "/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize";
         ctx.Request.Method = "POST";
         ctx.Request.Headers[IdempotencyMiddleware.HeaderName] = "chunked-key";
         ctx.Request.Body = new MemoryStream(oversized);

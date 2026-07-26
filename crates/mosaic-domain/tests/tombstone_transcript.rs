@@ -14,8 +14,9 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use mosaic_domain::{
-    MANIFEST_SIGN_CONTEXT, TOMBSTONE_SIGN_CONTEXT, TOMBSTONE_TRANSCRIPT_VERSION,
-    TombstoneTranscript, canonical_tombstone_transcript_bytes,
+    MANIFEST_SIGN_CONTEXT, TOMBSTONE_SIGN_CONTEXT, TOMBSTONE_SIGN_CONTEXT_V2,
+    TOMBSTONE_TRANSCRIPT_VERSION, TOMBSTONE_TRANSCRIPT_VERSION_V2, TombstoneTranscript,
+    canonical_tombstone_transcript_bytes, canonical_tombstone_transcript_bytes_v2,
 };
 
 const ALBUM_A: [u8; 16] = [
@@ -64,6 +65,33 @@ fn tombstone_transcript_has_stable_64_byte_layout() {
     assert_eq!(&bytes[cursor..cursor + 8], &42_i64.to_le_bytes());
     cursor += 8;
     assert_eq!(cursor, bytes.len(), "no trailing bytes");
+}
+
+#[test]
+fn tombstone_v2_transcript_binds_the_server_issued_sequence() {
+    let transcript = TombstoneTranscript::new(ALBUM_A, 7_u32, PHOTO_X, 42_i64);
+    let bytes = canonical_tombstone_transcript_bytes_v2(&transcript, 99_i64);
+
+    assert_eq!(bytes.len(), 72, "v2 tombstone transcript must be 72 bytes");
+    assert_eq!(
+        &bytes[..TOMBSTONE_SIGN_CONTEXT_V2.len()],
+        TOMBSTONE_SIGN_CONTEXT_V2
+    );
+    assert_eq!(
+        bytes[TOMBSTONE_SIGN_CONTEXT_V2.len()],
+        TOMBSTONE_TRANSCRIPT_VERSION_V2
+    );
+
+    let sequence_offset = TOMBSTONE_SIGN_CONTEXT_V2.len() + 1 + 16 + 4;
+    assert_eq!(
+        &bytes[sequence_offset..sequence_offset + 8],
+        &99_i64.to_le_bytes()
+    );
+    assert_ne!(
+        bytes,
+        canonical_tombstone_transcript_bytes_v2(&transcript, 100_i64),
+        "tombstone sequence must be signature-bound"
+    );
 }
 
 #[test]

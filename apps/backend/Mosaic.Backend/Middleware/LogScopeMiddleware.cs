@@ -24,7 +24,7 @@ public class LogScopeMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         var correlationId = context.GetCorrelationId() ?? Guid.NewGuid().ToString();
-        var path = context.Request.Path.Value ?? "/";
+        var path = SafeRequestPath.ForLogging(context);
         var method = context.Request.Method;
 
         // Create base scope with request info

@@ -43,20 +43,19 @@ interface MockImage {
 function installImageStub(): ImageCtor | undefined {
   const original = globalThis.Image;
   globalThis.Image = vi.fn().mockImplementation(function (this: MockImage) {
-    const self = this;
-    self.naturalWidth = 2;
-    self.naturalHeight = 2;
-    self.onload = null;
-    self.onerror = null;
-    Object.defineProperty(self, 'src', {
-      set(_value: string) {
-        queueMicrotask(() => self.onload?.());
+    this.naturalWidth = 2;
+    this.naturalHeight = 2;
+    this.onload = null;
+    this.onerror = null;
+    Object.defineProperty(this, 'src', {
+      set: (_value: string) => {
+        queueMicrotask(() => this.onload?.());
       },
       get() {
         return '';
       },
     });
-    return self as unknown as HTMLImageElement;
+    return this as unknown as HTMLImageElement;
   }) as unknown as ImageCtor;
   return original;
 }
@@ -182,20 +181,19 @@ describe('safeCreateImageBitmap <img>-element fallback (WebP/BMP)', () => {
     expect(oversizedSide * oversizedSide).toBeGreaterThan(MAX_DECODED_PIXELS);
 
     globalThis.Image = vi.fn().mockImplementation(function (this: MockImage) {
-      const self = this;
-      self.naturalWidth = oversizedSide;
-      self.naturalHeight = oversizedSide;
-      self.onload = null;
-      self.onerror = null;
-      Object.defineProperty(self, 'src', {
-        set(_value: string) {
-          queueMicrotask(() => self.onload?.());
+      this.naturalWidth = oversizedSide;
+      this.naturalHeight = oversizedSide;
+      this.onload = null;
+      this.onerror = null;
+      Object.defineProperty(this, 'src', {
+        set: (_value: string) => {
+          queueMicrotask(() => this.onload?.());
         },
         get() {
           return '';
         },
       });
-      return self as unknown as HTMLImageElement;
+      return this as unknown as HTMLImageElement;
     }) as unknown as ImageCtor;
 
     const createImageBitmapMock = vi.fn().mockRejectedValueOnce(
@@ -223,12 +221,11 @@ describe('safeCreateImageBitmap <img>-element fallback (WebP/BMP)', () => {
     // models a stuck decoder (corrupt header, libvpx hang, etc.) that
     // would otherwise stall the upload pipeline indefinitely.
     globalThis.Image = vi.fn().mockImplementation(function (this: MockImage) {
-      const self = this;
-      self.naturalWidth = 0;
-      self.naturalHeight = 0;
-      self.onload = null;
-      self.onerror = null;
-      Object.defineProperty(self, 'src', {
+      this.naturalWidth = 0;
+      this.naturalHeight = 0;
+      this.onload = null;
+      this.onerror = null;
+      Object.defineProperty(this, 'src', {
         set(_value: string) {
           /* deliberately no-op: simulate a stuck decode */
         },
@@ -236,7 +233,7 @@ describe('safeCreateImageBitmap <img>-element fallback (WebP/BMP)', () => {
           return '';
         },
       });
-      return self as unknown as HTMLImageElement;
+      return this as unknown as HTMLImageElement;
     }) as unknown as ImageCtor;
 
     const createImageBitmapMock = vi.fn().mockRejectedValueOnce(

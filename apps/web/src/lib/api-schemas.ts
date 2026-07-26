@@ -284,6 +284,13 @@ export const ManifestRecordSchema = z.object({
   // re-deleted with a signed transcript).
   tombstoneSignature: Base64Schema.nullish(),
   tombstoneSignerEpochId: z.number().int().nonnegative().nullish(),
+  tombstoneProtocolVersion: z.literal(2).nullish(),
+  tombstoneSeq: z.number().int().positive()
+    .max(Number.MAX_SAFE_INTEGER)
+    .nullish(),
+  tombstoneVersionCreated: z.number().int().nonnegative()
+    .max(Number.MAX_SAFE_INTEGER)
+    .nullish(),
   // A3 audit "crypto-correctness H-1": optional monotonic freshness seq
   // tied to the v2 manifest signing transcript. The sync engine enforces
   // strictly monotonic seq per `(albumId, signerPubkey)` to reject
@@ -296,11 +303,13 @@ export const ManifestRecordSchema = z.object({
 });
 export type ManifestRecord = z.infer<typeof ManifestRecordSchema>;
 
-export const ManifestCreatedSchema = z.object({
-  id: UuidSchema,
-  version: z.number().int().nonnegative(),
-});
-export type ManifestCreated = z.infer<typeof ManifestCreatedSchema>;
+export const ManifestSequenceReservationSchema = z.object({
+  reservationId: UuidSchema,
+  manifestSeq: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+}).strict();
+export type ManifestSequenceReservation = z.infer<
+  typeof ManifestSequenceReservationSchema
+>;
 
 export const ManifestFinalizeResponseSchema = z.object({
   protocolVersion: z.literal(1),

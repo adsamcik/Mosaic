@@ -5,6 +5,25 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # publish.yml calls this workflow at the exact release-tag commit. Keeping
+  # the supported web/backend checks in one reusable definition prevents the
+  # release path from quietly drifting to a smaller test subset.
+  workflow_call:
+    inputs:
+      include_android:
+        description: Run Android foundation checks (preview-only surface)
+        required: false
+        type: boolean
+        default: false
+
+      release_assurance:
+        description: Invoke the complete supported-surface stable-release gate
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
 
 jobs:
   unit-tests:
@@ -22,18 +41,21 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: |
+            package-lock.json
             libs/crypto/package-lock.json
             apps/web/package-lock.json
+            tests/integration/package-lock.json
+            tests/e2e/package-lock.json
       
       - name: npm audit (high-severity gate across npm workspaces)
         # v1.0.1 s15: fail the build if any npm workspace has a high-severity
         # CVE in its locked dependency tree. Runs BEFORE install/test so a
-        # vulnerable dependency cannot reach the test step. Covers all four
-        # npm workspaces in the repo: libs/crypto, apps/web,
-        # tests/integration, tests/e2e.
+        # vulnerable dependency cannot reach the test step. Covers all five
+        # npm projects in the repo: root tooling, libs/crypto, apps/web,
+        # tests/integration, and tests/e2e.
         run: |
           set -e
-          for dir in libs/crypto apps/web tests/integration tests/e2e; do
+          for dir in . libs/crypto apps/web tests/integration tests/e2e; do
             echo "::group::npm audit $dir"
             (cd "$dir" && npm audit --audit-level=high)
             echo "::endgroup::"
@@ -129,10 +151,10 @@ jobs:
       - name: Run API integration tests
         run: docker compose -f docker-compose.test.yml run --rm api-tests
 
-      - name: Backend integration tests
+      - name: Full backend test suite
         run: |
           dotnet restore apps/backend/Mosaic.Backend.Tests/Mosaic.Backend.Tests.csproj --locked-mode
-          dotnet test apps/backend/Mosaic.Backend.Tests/Mosaic.Backend.Tests.csproj --no-restore --filter "Category=Integration"
+          dotnet test apps/backend/Mosaic.Backend.Tests/Mosaic.Backend.Tests.csproj --no-restore --configuration Release
       
       - name: Show logs on failure
         if: failure()
@@ -393,11 +415,52 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       
+      - name: Restore locked .NET solution
+        run: dotnet restore Mosaic.slnx --locked-mode
+
+      - name: NuGet vulnerability gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/nuget-vulnerabilities.json"
+          dotnet list Mosaic.slnx package --vulnerable --include-transitive --format json --output-version 1 --no-restore > "$report"
+          python3 - "$report" << "PY"
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              payload = json.load(handle)
+
+          projects = payload.get("projects")
+          if payload.get("version") != 1 or not isinstance(projects, list) or not projects:
+              raise SystemExit("::error::NuGet vulnerability report is missing the expected project inventory.")
+
+          findings = []
+
+          def walk(node):
+              if isinstance(node, dict):
+                  vulnerabilities = node.get("vulnerabilities")
+                  if isinstance(vulnerabilities, list) and vulnerabilities:
+                      findings.append(node)
+                  for value in node.values():
+                      walk(value)
+              elif isinstance(node, list):
+                  for value in node:
+                      walk(value)
+
+          walk(payload)
+          if findings:
+              print("::error::NuGet vulnerability gate found vulnerable direct or transitive packages.")
+              for finding in findings:
+                  print(json.dumps(finding, sort_keys=True))
+              raise SystemExit(1)
+
+          print(f"NuGet vulnerability gate: {len(projects)} projects checked; no vulnerable direct or transitive packages.")
+          PY
+
       - name: Build backend
         working-directory: apps/backend/Mosaic.Backend
-        run: |
-          dotnet restore --locked-mode
-          dotnet build --no-restore --configuration Release
+        run: dotnet build --no-restore --configuration Release
 
       - name: OpenAPI drift gate
         # v1.0.1 s23: regenerate docs/openapi.json from the running OpenAPI
@@ -449,6 +512,15 @@ jobs:
 
       - name: Run dotnet-no-crypto-bypass architecture guard
         run: bash ./tests/architecture/dotnet-no-crypto-bypass.sh
+
+      - name: Run release-publication-gates architecture guard
+        run: bash ./tests/architecture/release-publication-gates.sh
+
+      - name: Run backup-pairing-gates architecture guard
+        run: bash ./tests/architecture/backup-pairing-gates.sh
+
+      - name: Run production-hardening-gates architecture guard
+        run: bash ./tests/architecture/production-hardening-gates.sh
 
       - name: Install wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.118 --locked
@@ -585,6 +657,10 @@ jobs:
     name: Android Shell (JVM)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Android is a developer-preview surface. Direct CI continues to exercise
+    # it, but stable Docker publication deliberately does not treat it as a
+    # required product artifact or release gate.
+    if: ${{ !inputs.release_assurance || inputs.include_android }}
     # Android shell is intentionally self-contained: do not depend on
     # build-check's cargo-deny / WASM api-shape gates, which are orthogonal to
     # Kotlin foundation compilation and previously hid Android regressions.
@@ -620,6 +696,9 @@ jobs:
     name: Android Main (Gradle)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # See android-shell above: keep preview coverage in normal CI while
+    # excluding Android from the stable supported-surface release contract.
+    if: ${{ !inputs.release_assurance || inputs.include_android }}
     # We deliberately do NOT depend on build-check (cargo-deny + WASM
     # api-shape lock) because the Android bridge requires only Rust-core
     # compilation and UniFFI binding generation, both of which are exercised by
@@ -671,7 +750,7 @@ jobs:
 
       - name: Upload APK artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: android-main-debug-apk
           path: apps/android-main/build/outputs/apk/debug/android-main-debug.apk
@@ -702,3 +781,32 @@ jobs:
           cargo deny check
           cargo audit
           cargo vet --locked --no-registry-suggestions
+
+
+  # This is intentionally a single, explicit release gate for the reusable
+  # invocation. A successful caller job therefore means every currently
+  # supported web/backend release check below passed against the *tagged*
+  # source, not merely against an earlier main-branch run.
+  release-assurance:
+    name: Stable Release Assurance
+    if: ${{ inputs.release_assurance }}
+    needs:
+      - build-check
+      - unit-tests
+      - integration-tests
+      - e2e-tests
+      - e2e-tests-proxyauth
+      - wasm-rebuild-invariance
+      - rust-supply-chain
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Record supported-surface assurance result
+        run: |
+          {
+            echo "## Stable release assurance"
+            echo
+            echo "Passed complete supported web/backend test, integration, local-auth E2E, ProxyAuth E2E, Rust/WASM invariance, and Rust supply-chain checks at ${GITHUB_SHA}."
+            echo "Android is intentionally excluded because it is a developer-preview surface and no stable Android artifact is published."
+          } >> "$GITHUB_STEP_SUMMARY"

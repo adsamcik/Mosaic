@@ -1,10 +1,11 @@
 package org.mosaic.android.main
 
 import android.app.Application
-import androidx.work.Logger
 import org.mosaic.android.main.bridge.AndroidRustCoreLibraryLoader
 import org.mosaic.android.main.crypto.EnvelopeLayoutMigrator
 import org.mosaic.android.main.db.UploadQueueDatabase
+import org.mosaic.android.main.diagnostics.PrivacySafeDiagnosticEvent
+import org.mosaic.android.main.diagnostics.PrivacySafeLogger
 import org.mosaic.android.main.privacy.PrivacyAuditPeriodicWorker
 import org.mosaic.android.main.work.AutoImportRuntime
 import org.mosaic.android.main.work.AutoImportWorkScheduler
@@ -29,17 +30,17 @@ open class MosaicApplication : Application() {
     super.onCreate()
     rustCoreWarmUp()
     runCatching { ShellStubRecordMigration.clearOnFirstLaunch(this) }
-      .onFailure { Logger.get().warning(TAG, "A-pre-1 cleanup failed", it) }
+      .onFailure { PrivacySafeLogger.record(PrivacySafeDiagnosticEvent.FIRST_LAUNCH_CLEANUP_FAILED) }
     runCatching { migrateEnvelopeLayout(this) }
-      .onFailure { Logger.get().warning(TAG, "Envelope layout migration scheduling failed", it) }
+      .onFailure {
+        PrivacySafeLogger.record(PrivacySafeDiagnosticEvent.ENVELOPE_LAYOUT_MIGRATION_SCHEDULING_FAILED)
+      }
     installAutoImportRuntime(this)
     enqueueAutoImportIfPolicyAllows(this)
     enqueuePrivacyAuditDaily(this)
   }
 
   companion object {
-    private const val TAG = "MosaicApplication"
-
     internal var rustCoreWarmUp: () -> Unit = AndroidRustCoreLibraryLoader::warmUp
     internal var migrateEnvelopeLayout: (MosaicApplication) -> Unit = { application ->
       val database = UploadQueueDatabase.create(application)
@@ -57,7 +58,7 @@ open class MosaicApplication : Application() {
     }
     internal var enqueuePrivacyAuditDaily: (MosaicApplication) -> Unit = { application ->
       runCatching { PrivacyAuditPeriodicWorker.enqueueDaily(application) }
-        .onFailure { Logger.get().warning(TAG, "Privacy audit daily enqueue failed", it) }
+        .onFailure { PrivacySafeLogger.record(PrivacySafeDiagnosticEvent.PRIVACY_AUDIT_SCHEDULING_FAILED) }
     }
 
     internal fun resetTestHooks() {
@@ -78,7 +79,7 @@ open class MosaicApplication : Application() {
       }
       enqueuePrivacyAuditDaily = { application ->
         runCatching { PrivacyAuditPeriodicWorker.enqueueDaily(application) }
-          .onFailure { Logger.get().warning(TAG, "Privacy audit daily enqueue failed", it) }
+          .onFailure { PrivacySafeLogger.record(PrivacySafeDiagnosticEvent.PRIVACY_AUDIT_SCHEDULING_FAILED) }
       }
     }
   }

@@ -2,6 +2,8 @@ import {
   WorkerCryptoErrorCode,
   type DecryptedManifest,
   type EpochHandleId,
+  type ManifestReplayCheckpoint,
+  type ManifestSeqHighWaterMark,
   type PhotoMeta,
 } from '../workers/types';
 import { ApiError, fromBase64, getApi } from './api';
@@ -16,6 +18,7 @@ import {
   getEpochKey,
   invalidateAlbum as invalidateAlbumEpochKeys,
   setEpochKey as storeEpochKey,
+  type EpochKeyBundle,
 } from './epoch-key-store';
 import { createLogger } from './logger';
 import { purgeLocalPhoto } from './local-purge';
@@ -23,7 +26,10 @@ import {
   manifestShardIdsMatchTranscript,
   manifestTranscriptInputForPhotoMeta,
 } from './manifest-transcript';
-import { buildTombstoneTranscriptBytes } from './tombstone-transcript';
+import {
+  buildTombstoneTranscriptBytes,
+  buildTombstoneTranscriptBytesV2,
+} from './tombstone-transcript';
 import type {
   ContentConflictEventDetail,
   SyncEventDetail,
@@ -68,6 +74,90 @@ function hasValidSigningKey(pubkey: Uint8Array): boolean {
   return pubkey.length === 32 && pubkey.some((byte) => byte !== 0);
 }
 
+function findUniqueEpochBundleForSigner(
+  bundles: readonly EpochKeyBundle[],
+  signerPubkey: Uint8Array,
+): EpochKeyBundle | null {
+  let match: EpochKeyBundle | null = null;
+  for (const bundle of bundles) {
+    if (
+      !hasValidSigningKey(bundle.signPublicKey) ||
+      !keysMatch(bundle.signPublicKey, signerPubkey)
+    ) {
+      continue;
+    }
+    if (match !== null && match.epochId !== bundle.epochId) {
+      return null;
+    }
+    match = bundle;
+  }
+  return match;
+}
+
+function signingKeyHighWaterKey(pubkey: Uint8Array): string {
+  // This is a stable identifier for a public key, not secret material.
+  return Array.from(pubkey, (byte) => byte.toString(16).padStart(2, '0')).join(
+    '',
+  );
+}
+
+type ManifestSeqHighWaterCandidate = ManifestSeqHighWaterMark & {
+  readonly versionCreated: number;
+};
+
+type ManifestReplayCheckpointCandidate = ManifestReplayCheckpoint & {
+  readonly versionCreated: number;
+};
+
+function signatureFingerprint(signature: Uint8Array): string {
+  if (signature.length !== 64) {
+    throw new Error(
+      `Ed25519 signature must be 64 bytes, got ${signature.length}`,
+    );
+  }
+  return Array.from(signature, (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
+}
+
+function isExactReplayCheckpoint(
+  checkpoint: ManifestReplayCheckpoint | null,
+  input: {
+    readonly epochId: number;
+    readonly signerKey: string;
+    readonly manifestSeq: number;
+    readonly operationKind: 'Live' | 'Tombstone';
+    readonly signatureFingerprint: string;
+  },
+): boolean {
+  return (
+    checkpoint !== null &&
+    checkpoint.epochId === input.epochId &&
+    checkpoint.signerKey === input.signerKey &&
+    checkpoint.manifestSeq === input.manifestSeq &&
+    checkpoint.operationKind === input.operationKind &&
+    checkpoint.signatureFingerprint === input.signatureFingerprint
+  );
+}
+
+function canSupersedeReplayCheckpoint(
+  current: ManifestReplayCheckpoint | null,
+  candidate: ManifestReplayCheckpoint,
+): boolean {
+  if (!current) return true;
+  if (candidate.epochId > current.epochId) return true;
+  if (candidate.epochId < current.epochId) return false;
+  if (candidate.signerKey !== current.signerKey) return false;
+  if (candidate.manifestSeq > current.manifestSeq) return true;
+  return isExactReplayCheckpoint(current, {
+    epochId: candidate.epochId,
+    signerKey: candidate.signerKey,
+    manifestSeq: candidate.manifestSeq,
+    operationKind: candidate.operationKind,
+    signatureFingerprint: candidate.signatureFingerprint,
+  });
+}
+
 function isHandleLifecycleError(error: unknown): boolean {
   const code = (error as { code?: unknown }).code;
   return (
@@ -97,18 +187,27 @@ async function verifyTombstoneOrReason(
     isDeleted: boolean;
     tombstoneSignature?: string | null;
     tombstoneSignerEpochId?: number | null;
+    tombstoneProtocolVersion?: 2 | null;
+    tombstoneSeq?: number | null;
+    tombstoneVersionCreated?: number | null;
   },
   albumId: string,
   deps: {
     fetchEpochKey: (
       albumId: string,
       epochId: number,
-    ) => Promise<{ signPublicKey: Uint8Array }>;
+    ) => Promise<{ epochId: number; signPublicKey: Uint8Array }>;
     verifySignature: (
       transcriptBytes: Uint8Array,
       signature: Uint8Array,
       pubkey: Uint8Array,
     ) => Promise<boolean>;
+    onVerifiedV2?: (
+      signerPubkey: Uint8Array,
+      signerEpochId: number,
+      tombstoneSeq: number,
+      signature: Uint8Array,
+    ) => void;
   },
 ): Promise<string | null> {
   if (!manifest.tombstoneSignature || manifest.tombstoneSignerEpochId == null) {
@@ -125,7 +224,7 @@ async function verifyTombstoneOrReason(
     return 'tombstone-bad-length';
   }
 
-  let signerEpochBundle: { signPublicKey: Uint8Array };
+  let signerEpochBundle: { epochId: number; signPublicKey: Uint8Array };
   try {
     signerEpochBundle = await deps.fetchEpochKey(
       albumId,
@@ -137,15 +236,52 @@ async function verifyTombstoneOrReason(
   if (!hasValidSigningKey(signerEpochBundle.signPublicKey)) {
     return 'tombstone-empty-signer-pubkey';
   }
+  if (signerEpochBundle.epochId !== manifest.tombstoneSignerEpochId) {
+    return 'tombstone-signer-epoch-mismatch';
+  }
 
   let transcriptBytes: Uint8Array;
+  let verifiedTombstoneSeq: number | undefined;
   try {
-    transcriptBytes = buildTombstoneTranscriptBytes({
-      albumId: manifest.albumId,
-      epochId: manifest.tombstoneSignerEpochId,
-      photoId: manifest.id,
-      versionCreated: manifest.versionCreated,
-    });
+    if (manifest.tombstoneProtocolVersion === 2) {
+      const tombstoneSeq = manifest.tombstoneSeq;
+      const signedVersion = manifest.tombstoneVersionCreated;
+      if (
+        typeof tombstoneSeq !== 'number' ||
+        !Number.isSafeInteger(tombstoneSeq) ||
+        tombstoneSeq <= 0
+      ) {
+        return 'tombstone-invalid-seq';
+      }
+      if (
+        typeof signedVersion !== 'number' ||
+        !Number.isSafeInteger(signedVersion) ||
+        signedVersion < 0
+      ) {
+        return 'tombstone-invalid-signed-version';
+      }
+      verifiedTombstoneSeq = tombstoneSeq;
+      transcriptBytes = buildTombstoneTranscriptBytesV2({
+        albumId: manifest.albumId,
+        epochId: manifest.tombstoneSignerEpochId,
+        tombstoneSeq,
+        photoId: manifest.id,
+        versionCreated: signedVersion,
+      });
+    } else if (
+      manifest.tombstoneProtocolVersion == null &&
+      manifest.tombstoneSeq == null &&
+      manifest.tombstoneVersionCreated == null
+    ) {
+      transcriptBytes = buildTombstoneTranscriptBytes({
+        albumId: manifest.albumId,
+        epochId: manifest.tombstoneSignerEpochId,
+        photoId: manifest.id,
+        versionCreated: manifest.versionCreated,
+      });
+    } else {
+      return 'tombstone-protocol-mismatch';
+    }
   } catch {
     return 'tombstone-transcript-build-failed';
   }
@@ -160,7 +296,18 @@ async function verifyTombstoneOrReason(
   } catch {
     return 'tombstone-verify-error';
   }
-  return isValid ? null : 'tombstone-signature-invalid';
+  if (!isValid) {
+    return 'tombstone-signature-invalid';
+  }
+  if (verifiedTombstoneSeq !== undefined) {
+    deps.onVerifiedV2?.(
+      signerEpochBundle.signPublicKey,
+      signerEpochBundle.epochId,
+      verifiedTombstoneSeq,
+      signatureBytes,
+    );
+  }
+  return null;
 }
 
 function createDeletedManifestTombstone(manifest: {
@@ -172,7 +319,8 @@ function createDeletedManifestTombstone(manifest: {
   createdAt?: string;
   updatedAt?: string;
 }): DecryptedManifest {
-  const timestamp = manifest.updatedAt ?? manifest.createdAt ?? new Date(0).toISOString();
+  const timestamp =
+    manifest.updatedAt ?? manifest.createdAt ?? new Date(0).toISOString();
   return {
     id: manifest.id,
     albumId: manifest.albumId,
@@ -264,15 +412,19 @@ class SyncEngine extends EventTarget {
       const signal = this.syncAbortController.signal;
 
       let sinceVersion = await db.getAlbumVersion(albumId);
+      const isFullRebuild = sinceVersion === 0;
+      const retainedReplayHeads = isFullRebuild
+        ? await db.listManifestReplayCheckpoints(albumId)
+        : [];
+      // Completion requires each retained exact current head to be observed
+      // exactly or superseded under the epoch-aware transition rules below.
+      const rebuiltManifestIds = new Set<string>();
       let iterationCount = 0;
-      // 6e — A3 audit "crypto-correctness H-1": per-(albumId, signerPubkey)
-      // max manifest_seq observed during this syncAlbum invocation. Declared
-      // OUTSIDE the pagination loop so the monotonicity check spans every
-      // page returned by the server in a single call (a malicious server
-      // can re-order signed manifests across pages just as easily as
-      // within one page). Cross-call persistence (writing this back to
-      // the album row) is a follow-up; in-call enforcement is the floor.
+      // Per-(album, signing public key) maximum v2 sequence. Each signer is
+      // initialized lazily from the durable local floor, then retained across
+      // pagination so reordering cannot bypass the replay check.
       const maxManifestSeqBySigner = new Map<string, number>();
+      let authenticatedEpochBundles: readonly EpochKeyBundle[] | null = null;
 
       while (true) {
         throwIfAborted(signal);
@@ -340,8 +492,68 @@ class SyncEngine extends EventTarget {
             `Missing valid epoch signing key for album ${albumId} epoch ${response.currentEpochId}`,
           );
         }
+        if (epochBundle.epochId !== response.currentEpochId) {
+          throw new Error(
+            'Fetched epoch bundle does not match the server epoch',
+          );
+        }
+
+        const currentSignerKey = signingKeyHighWaterKey(
+          epochBundle.signPublicKey,
+        );
+        const persistedEpochFloor = await db.getAlbumEpochHighWater(albumId);
+        if (
+          persistedEpochFloor &&
+          response.currentEpochId < persistedEpochFloor.epochId
+        ) {
+          throw new Error(
+            `Album signing epoch regressed from ${String(persistedEpochFloor.epochId)} to ${String(response.currentEpochId)}`,
+          );
+        }
+        if (
+          persistedEpochFloor?.epochId === response.currentEpochId &&
+          persistedEpochFloor.signerKey !== currentSignerKey
+        ) {
+          throw new Error('Album signing epoch is bound to a different key');
+        }
+        const albumEpochHighWater = {
+          albumId,
+          epochId: response.currentEpochId,
+          signerKey: currentSignerKey,
+        } as const;
+        const resolveManifestEpochBundle = async (
+          signerPubkey: Uint8Array,
+        ): Promise<EpochKeyBundle | null> => {
+          if (keysMatch(signerPubkey, epochBundle.signPublicKey)) {
+            return epochBundle;
+          }
+          authenticatedEpochBundles ??= await fetchAndUnwrapEpochKeys(albumId);
+          return findUniqueEpochBundleForSigner(
+            authenticatedEpochBundles,
+            signerPubkey,
+          );
+        };
 
         const decrypted: DecryptedManifest[] = [];
+        const manifestSeqHighWaterCandidates: ManifestSeqHighWaterCandidate[] =
+          [];
+        const manifestReplayCheckpointCandidates: ManifestReplayCheckpointCandidate[] =
+          [];
+        const stagedPurges: Array<{ albumId: string; photoId: string }> = [];
+        const replaySatisfiedManifestIds = new Set<string>();
+        const getCurrentReplayHead = async (
+          manifestId: string,
+        ): Promise<ManifestReplayCheckpoint | null> => {
+          for (
+            let index = manifestReplayCheckpointCandidates.length - 1;
+            index >= 0;
+            index -= 1
+          ) {
+            const candidate = manifestReplayCheckpointCandidates[index];
+            if (candidate?.manifestId === manifestId) return candidate;
+          }
+          return db.getManifestReplayCheckpoint(albumId, manifestId);
+        };
         // Audit "sync C1": every continue path below is a SKIP that
         // historically advanced the cursor past the skipped manifest,
         // making it permanently invisible. We now collect every skip
@@ -351,18 +563,67 @@ class SyncEngine extends EventTarget {
         const skippedIds: string[] = [];
         const skipReasonCounts: Record<string, number> = {};
         let minSkippedVersion: number | null = null;
-        const recordSkip = (manifestId: string, versionCreated: number, reason: string): void => {
+        const recordSkip = (
+          manifestId: string,
+          versionCreated: number,
+          reason: string,
+        ): void => {
           skippedIds.push(manifestId);
           skipReasonCounts[reason] = (skipReasonCounts[reason] ?? 0) + 1;
-          if (minSkippedVersion === null || versionCreated < minSkippedVersion) {
+          if (
+            minSkippedVersion === null ||
+            versionCreated < minSkippedVersion
+          ) {
             minSkippedVersion = versionCreated;
           }
         };
         let failedVerifyCount = 0;
         for (const manifest of response.manifests) {
           throwIfAborted(signal);
+          if (manifest.albumId !== albumId) {
+            log.error('Manifest album does not match requested sync album', {
+              requestedAlbumId: albumId,
+              manifestAlbumId: manifest.albumId,
+              manifestId: manifest.id,
+            });
+            recordSkip(
+              manifest.id,
+              manifest.versionCreated,
+              'manifest-album-mismatch',
+            );
+            continue;
+          }
 
           if (manifest.isDeleted) {
+            const existingHead = await getCurrentReplayHead(manifest.id);
+            if (
+              manifest.tombstoneProtocolVersion !== 2 &&
+              existingHead !== null
+            ) {
+              log.error('Legacy tombstone cannot replace a retained v2 head', {
+                albumId,
+                manifestId: manifest.id,
+              });
+              recordSkip(
+                manifest.id,
+                manifest.versionCreated,
+                'tombstone-v1-downgrade',
+              );
+              continue;
+            }
+            if (
+              manifest.tombstoneSignerEpochId != null &&
+              (!Number.isSafeInteger(manifest.tombstoneSignerEpochId) ||
+                manifest.tombstoneSignerEpochId <= 0 ||
+                manifest.tombstoneSignerEpochId > response.currentEpochId)
+            ) {
+              recordSkip(
+                manifest.id,
+                manifest.versionCreated,
+                'tombstone-epoch-mismatch',
+              );
+              continue;
+            }
             // Audit "sync C2" (batch 5c — A2): an unsigned tombstone is
             // suspicious. A malicious or compromised server could fabricate
             // `isDeleted: true` rows to purge local state. We therefore
@@ -372,15 +633,34 @@ class SyncEngine extends EventTarget {
             // recorded as skips so the cursor does not advance past the
             // suspicious row — the next sync run will retry, and the UI
             // can surface "{N} pending deletions need re-authorization".
-            const reason = await verifyTombstoneOrReason(
-              manifest,
-              albumId,
-              {
-                fetchEpochKey: getOrFetchEpochKey,
-                verifySignature: (transcript, signature, pubkey) =>
-                  crypto.verifySignatureWithEpoch(transcript, signature, pubkey),
+            // Reservation-backed v2 tombstones share the durable sequence
+            // floor with live manifests for the same signing public key.
+            let verifiedV2Sequence:
+              | {
+                  signerPubkey: Uint8Array;
+                  signerEpochId: number;
+                  tombstoneSeq: number;
+                  signatureFingerprint: string;
+                }
+              | undefined;
+            const reason = await verifyTombstoneOrReason(manifest, albumId, {
+              fetchEpochKey: getOrFetchEpochKey,
+              verifySignature: (transcript, signature, pubkey) =>
+                crypto.verifySignatureWithEpoch(transcript, signature, pubkey),
+              onVerifiedV2: (
+                signerPubkey,
+                signerEpochId,
+                tombstoneSeq,
+                signature,
+              ) => {
+                verifiedV2Sequence = {
+                  signerPubkey,
+                  signerEpochId,
+                  tombstoneSeq,
+                  signatureFingerprint: signatureFingerprint(signature),
+                };
               },
-            );
+            });
             if (reason !== null) {
               log.warn('Refusing to purge on unsigned/invalid tombstone', {
                 albumId: manifest.albumId,
@@ -391,31 +671,163 @@ class SyncEngine extends EventTarget {
               recordSkip(manifest.id, manifest.versionCreated, reason);
               continue;
             }
-            await purgeLocalPhoto({
+            if (verifiedV2Sequence !== undefined) {
+              const signerKey = signingKeyHighWaterKey(
+                verifiedV2Sequence.signerPubkey,
+              );
+              if (
+                verifiedV2Sequence.signerEpochId === response.currentEpochId &&
+                signerKey !== currentSignerKey
+              ) {
+                recordSkip(
+                  manifest.id,
+                  manifest.versionCreated,
+                  'tombstone-signer-epoch-mismatch',
+                );
+                continue;
+              }
+              const tombstoneSeq = verifiedV2Sequence.tombstoneSeq;
+              const checkpointCandidate: ManifestReplayCheckpointCandidate = {
+                albumId,
+                epochId: verifiedV2Sequence.signerEpochId,
+                signerKey,
+                manifestId: manifest.id,
+                manifestSeq: tombstoneSeq,
+                operationKind: 'Tombstone',
+                signatureFingerprint: verifiedV2Sequence.signatureFingerprint,
+                versionCreated: manifest.versionCreated,
+              };
+              let prevMax = maxManifestSeqBySigner.get(signerKey);
+              if (prevMax === undefined) {
+                const persistedMax = await db.getManifestSeqHighWater(
+                  albumId,
+                  signerKey,
+                );
+                if (persistedMax !== null) {
+                  prevMax = persistedMax;
+                  maxManifestSeqBySigner.set(signerKey, persistedMax);
+                }
+              }
+              if (prevMax !== undefined && tombstoneSeq <= prevMax) {
+                if (
+                  !isExactReplayCheckpoint(existingHead, {
+                    epochId: verifiedV2Sequence.signerEpochId,
+                    signerKey,
+                    manifestSeq: tombstoneSeq,
+                    operationKind: 'Tombstone',
+                    signatureFingerprint:
+                      verifiedV2Sequence.signatureFingerprint,
+                  })
+                ) {
+                  log.error('Tombstone seq is stale and not an exact head', {
+                    albumId,
+                    manifestId: manifest.id,
+                    seq: tombstoneSeq,
+                    prevMax,
+                  });
+                  recordSkip(
+                    manifest.id,
+                    manifest.versionCreated,
+                    'tombstone-stale-seq',
+                  );
+                  continue;
+                }
+              } else {
+                if (
+                  !canSupersedeReplayCheckpoint(
+                    existingHead,
+                    checkpointCandidate,
+                  )
+                ) {
+                  recordSkip(
+                    manifest.id,
+                    manifest.versionCreated,
+                    'tombstone-head-regression',
+                  );
+                  continue;
+                }
+                maxManifestSeqBySigner.set(signerKey, tombstoneSeq);
+                manifestSeqHighWaterCandidates.push({
+                  albumId,
+                  signerKey,
+                  manifestSeq: tombstoneSeq,
+                  versionCreated: manifest.versionCreated,
+                });
+                manifestReplayCheckpointCandidates.push(checkpointCandidate);
+              }
+              replaySatisfiedManifestIds.add(manifest.id);
+            }
+            stagedPurges.push({
               albumId: manifest.albumId,
               photoId: manifest.id,
-              reason: 'sync-deleted',
             });
             decrypted.push(createDeletedManifestTombstone(manifest));
             continue;
           }
 
           try {
+            const manifestSeq = manifest.manifestSeq ?? undefined;
+            const existingHead = await getCurrentReplayHead(manifest.id);
+            if (manifestSeq === undefined && existingHead !== null) {
+              log.error('Legacy manifest cannot replace a retained v2 head', {
+                albumId,
+                manifestId: manifest.id,
+              });
+              recordSkip(
+                manifest.id,
+                manifest.versionCreated,
+                'manifest-v1-downgrade',
+              );
+              continue;
+            }
             const encryptedMeta = fromBase64(manifest.encryptedMeta);
             const signature = fromBase64(manifest.signature);
             const serverSignerPubkey = fromBase64(manifest.signerPubkey);
 
-            if (!hasValidSigningKey(serverSignerPubkey)) {
-              log.warn(`Manifest ${manifest.id} has empty signer pubkey`);
-              recordSkip(manifest.id, manifest.versionCreated, 'empty-signer-pubkey');
+            if (signature.length !== 64) {
+              log.error('Manifest signature has an invalid length', {
+                albumId,
+                manifestId: manifest.id,
+                signatureLength: signature.length,
+              });
+              recordSkip(
+                manifest.id,
+                manifest.versionCreated,
+                'signature-bad-length',
+              );
               continue;
             }
 
-            if (!keysMatch(serverSignerPubkey, epochBundle.signPublicKey)) {
-              log.warn(
-                `Manifest ${manifest.id} signer pubkey mismatch for album ${albumId}`,
+            if (!hasValidSigningKey(serverSignerPubkey)) {
+              log.warn(`Manifest ${manifest.id} has empty signer pubkey`);
+              recordSkip(
+                manifest.id,
+                manifest.versionCreated,
+                'empty-signer-pubkey',
               );
-              recordSkip(manifest.id, manifest.versionCreated, 'signer-pubkey-mismatch');
+              continue;
+            }
+
+            const manifestEpochBundle =
+              await resolveManifestEpochBundle(serverSignerPubkey);
+            if (manifestEpochBundle === null) {
+              log.warn(
+                'Manifest signer pubkey is not bound to a unique authenticated album epoch',
+                { albumId, manifestId: manifest.id },
+              );
+              recordSkip(
+                manifest.id,
+                manifest.versionCreated,
+                'signer-pubkey-mismatch',
+              );
+              continue;
+            }
+            if (manifestEpochBundle.epochId > response.currentEpochId) {
+              recordSkip(
+                manifest.id,
+                manifest.versionCreated,
+                'manifest-epoch-ahead',
+              );
               continue;
             }
 
@@ -423,7 +835,8 @@ class SyncEngine extends EventTarget {
             // Slice 4 — manifest decryption now routes through the Rust
             // epoch handle. The thumb-tier key is derived inside Rust;
             // the seed and the per-epoch sign-secret never cross Comlink.
-            const epochHandleId = epochBundle.epochHandleId as EpochHandleId;
+            const epochHandleId =
+              manifestEpochBundle.epochHandleId as EpochHandleId;
             const plaintextBytes = await crypto.decryptManifestWithEpoch(
               epochHandleId,
               encryptedMeta,
@@ -432,24 +845,106 @@ class SyncEngine extends EventTarget {
 
             let meta: PhotoMeta;
             try {
-              meta = JSON.parse(new TextDecoder().decode(plaintextBytes)) as PhotoMeta;
+              meta = JSON.parse(
+                new TextDecoder().decode(plaintextBytes),
+              ) as PhotoMeta;
             } catch (parseErr) {
               log.warn(`Manifest ${manifest.id} JSON parse failed`, {
-                error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+                error:
+                  parseErr instanceof Error
+                    ? parseErr.message
+                    : String(parseErr),
               });
               recordSkip(manifest.id, manifest.versionCreated, 'json-parse');
               continue;
             }
 
-            const transcriptInput = manifestTranscriptInputForPhotoMeta(meta, encryptedMeta);
-            if (!manifestShardIdsMatchTranscript(manifest.shardIds, transcriptInput)) {
-              failedVerifyCount += 1;
-              log.error('Manifest signed shard list does not match sync payload', {
-                albumId,
-                manifestId: manifest.id,
-                failedVerifyCount,
+            if (meta.id !== manifest.id) {
+              log.error('Signed manifest identity does not match server row', {
+                signedManifestId: meta.id,
+                serverManifestId: manifest.id,
               });
-              recordSkip(manifest.id, manifest.versionCreated, 'transcript-mismatch');
+              recordSkip(
+                manifest.id,
+                manifest.versionCreated,
+                'manifest-id-mismatch',
+              );
+              continue;
+            }
+            if (meta.albumId !== albumId || meta.albumId !== manifest.albumId) {
+              log.error('Signed manifest album does not match server row', {
+                requestedAlbumId: albumId,
+                signedAlbumId: meta.albumId,
+                serverAlbumId: manifest.albumId,
+                manifestId: manifest.id,
+              });
+              recordSkip(
+                manifest.id,
+                manifest.versionCreated,
+                'signed-album-mismatch',
+              );
+              continue;
+            }
+            if (meta.epochId !== manifestEpochBundle.epochId) {
+              log.error(
+                'Signed manifest epoch does not match verified signer epoch',
+                {
+                  manifestId: manifest.id,
+                  signedEpochId: meta.epochId,
+                  responseEpochId: response.currentEpochId,
+                  verifiedEpochId: manifestEpochBundle.epochId,
+                },
+              );
+              recordSkip(
+                manifest.id,
+                manifest.versionCreated,
+                'manifest-epoch-mismatch',
+              );
+              continue;
+            }
+
+            if (
+              manifestSeq !== undefined &&
+              (!Number.isSafeInteger(manifestSeq) || manifestSeq <= 0)
+            ) {
+              log.error(
+                'Manifest sequence is outside the browser-safe integer range',
+                {
+                  albumId,
+                  manifestId: manifest.id,
+                },
+              );
+              recordSkip(
+                manifest.id,
+                manifest.versionCreated,
+                'manifest-invalid-seq',
+              );
+              continue;
+            }
+            const transcriptInput = {
+              ...manifestTranscriptInputForPhotoMeta(meta, encryptedMeta),
+              ...(manifestSeq === undefined ? {} : { manifestSeq }),
+            };
+            if (
+              !manifestShardIdsMatchTranscript(
+                manifest.shardIds,
+                transcriptInput,
+              )
+            ) {
+              failedVerifyCount += 1;
+              log.error(
+                'Manifest signed shard list does not match sync payload',
+                {
+                  albumId,
+                  manifestId: manifest.id,
+                  failedVerifyCount,
+                },
+              );
+              recordSkip(
+                manifest.id,
+                manifest.versionCreated,
+                'transcript-mismatch',
+              );
               continue;
             }
 
@@ -457,7 +952,7 @@ class SyncEngine extends EventTarget {
             const isValid = await crypto.verifyManifestWithEpoch(
               transcriptInput,
               signature,
-              epochBundle.signPublicKey,
+              manifestEpochBundle.signPublicKey,
             );
 
             if (!isValid) {
@@ -467,33 +962,89 @@ class SyncEngine extends EventTarget {
                 manifestId: manifest.id,
                 failedVerifyCount,
               });
-              recordSkip(manifest.id, manifest.versionCreated, 'signature-invalid');
+              recordSkip(
+                manifest.id,
+                manifest.versionCreated,
+                'signature-invalid',
+              );
               continue;
             }
 
-            // 6e — A3 audit "crypto-correctness H-1": v2 transcript binds
-            // `manifest_seq` into the signed bytes. The server-emitted
-            // `manifest.manifestSeq` therefore matches the signed value
-            // (signature verified above) — anything else would have
-            // failed verify. Now enforce strict monotonicity per signer
-            // pubkey: a malicious server replaying an older signed
-            // manifest with the same epoch's signing key would surface
-            // here as `manifest-stale-seq` and the cursor would NOT
-            // advance past it. Pre-A3 rows (null seq) skip the guard.
-            if (manifest.manifestSeq != null) {
-              const signerKey = manifest.signerPubkey;
-              const prevMax = maxManifestSeqBySigner.get(signerKey);
-              if (prevMax != null && manifest.manifestSeq <= prevMax) {
-                log.error('Manifest seq is not strictly monotonic', {
+            // A v2 `manifestSeq` is included in the Rust-built transcript
+            // above, so a server cannot alter it without invalidating the
+            // signature. Compare it with the durable local floor before
+            // accepting this manifest into the local snapshot.
+            if (manifestSeq !== undefined) {
+              const signerKey = signingKeyHighWaterKey(serverSignerPubkey);
+              const fingerprint = signatureFingerprint(signature);
+              const checkpointCandidate: ManifestReplayCheckpointCandidate = {
+                albumId,
+                epochId: manifestEpochBundle.epochId,
+                signerKey,
+                manifestId: manifest.id,
+                manifestSeq,
+                operationKind: 'Live',
+                signatureFingerprint: fingerprint,
+                versionCreated: manifest.versionCreated,
+              };
+              let prevMax = maxManifestSeqBySigner.get(signerKey);
+              if (prevMax === undefined) {
+                const persistedMax = await db.getManifestSeqHighWater(
                   albumId,
-                  manifestId: manifest.id,
-                  seq: manifest.manifestSeq,
-                  prevMax,
-                });
-                recordSkip(manifest.id, manifest.versionCreated, 'manifest-stale-seq');
-                continue;
+                  signerKey,
+                );
+                if (persistedMax !== null) {
+                  prevMax = persistedMax;
+                  maxManifestSeqBySigner.set(signerKey, persistedMax);
+                }
               }
-              maxManifestSeqBySigner.set(signerKey, manifest.manifestSeq);
+              if (prevMax !== undefined && manifestSeq <= prevMax) {
+                if (
+                  !isExactReplayCheckpoint(existingHead, {
+                    epochId: manifestEpochBundle.epochId,
+                    signerKey,
+                    manifestSeq,
+                    operationKind: 'Live',
+                    signatureFingerprint: fingerprint,
+                  })
+                ) {
+                  log.error('Manifest seq is stale and not an exact head', {
+                    albumId,
+                    manifestId: manifest.id,
+                    seq: manifestSeq,
+                    prevMax,
+                  });
+                  recordSkip(
+                    manifest.id,
+                    manifest.versionCreated,
+                    'manifest-stale-seq',
+                  );
+                  continue;
+                }
+              } else {
+                if (
+                  !canSupersedeReplayCheckpoint(
+                    existingHead,
+                    checkpointCandidate,
+                  )
+                ) {
+                  recordSkip(
+                    manifest.id,
+                    manifest.versionCreated,
+                    'manifest-head-regression',
+                  );
+                  continue;
+                }
+                maxManifestSeqBySigner.set(signerKey, manifestSeq);
+                manifestSeqHighWaterCandidates.push({
+                  albumId,
+                  signerKey,
+                  manifestSeq,
+                  versionCreated: manifest.versionCreated,
+                });
+                manifestReplayCheckpointCandidates.push(checkpointCandidate);
+              }
+              replaySatisfiedManifestIds.add(manifest.id);
             }
 
             decrypted.push({
@@ -510,20 +1061,16 @@ class SyncEngine extends EventTarget {
             }
 
             log.warn(`Failed to process manifest ${manifest.id}`, {
-              error: decryptErr instanceof Error ? decryptErr.message : String(decryptErr),
+              error:
+                decryptErr instanceof Error
+                  ? decryptErr.message
+                  : String(decryptErr),
             });
             recordSkip(manifest.id, manifest.versionCreated, 'decrypt-error');
           }
         }
 
         throwIfAborted(signal);
-        if (decrypted.length > 0) {
-          await db.insertManifests(decrypted);
-          this.dispatchSyncEvent('sync-progress', {
-            albumId,
-            count: decrypted.length,
-          });
-        }
 
         // Audit "sync C1 + C3": cursor advance is the riskiest line in
         // the engine. The new contract:
@@ -535,10 +1082,96 @@ class SyncEngine extends EventTarget {
         //     (clamp to `max(sinceVersion, …)`). Combined with the
         //     server-regression guard above, this makes silent drift
         //     impossible.
-        const desiredAdvance = minSkippedVersion !== null
-          ? Math.max(sinceVersion, minSkippedVersion - 1)
-          : Math.max(sinceVersion, response.albumVersion);
-        await db.setAlbumVersion(albumId, desiredAdvance);
+        const desiredAdvance =
+          minSkippedVersion !== null
+            ? Math.max(sinceVersion, minSkippedVersion - 1)
+            : Math.max(sinceVersion, response.albumVersion);
+        // Apply only the contiguous verified prefix. A later valid row must
+        // not reach cache or security state when an earlier version was
+        // skipped, because the next request must replay that whole suffix.
+        const committableDecrypted = decrypted.filter(
+          (manifest) => manifest.versionCreated <= desiredAdvance,
+        );
+        const committableManifestIds = new Set(
+          committableDecrypted.map((manifest) => manifest.id),
+        );
+        const manifestReplayCheckpoints =
+          manifestReplayCheckpointCandidates.filter(
+            (candidate) => candidate.versionCreated <= desiredAdvance,
+          );
+        const manifestSeqHighWatersBySigner = new Map<
+          string,
+          ManifestSeqHighWaterMark
+        >();
+        for (const candidate of manifestSeqHighWaterCandidates) {
+          if (candidate.versionCreated > desiredAdvance) continue;
+          const existing = manifestSeqHighWatersBySigner.get(
+            candidate.signerKey,
+          );
+          if (!existing || candidate.manifestSeq > existing.manifestSeq) {
+            manifestSeqHighWatersBySigner.set(candidate.signerKey, candidate);
+          }
+        }
+        const manifestSeqHighWaters = [
+          ...manifestSeqHighWatersBySigner.values(),
+        ];
+        const committablePurges = stagedPurges.filter((purge) =>
+          committableManifestIds.has(purge.photoId),
+        );
+        // Keep the cursor behind a staged purge until that purge succeeds.
+        // Live v2 pages may checkpoint cursor+cache atomically after security.
+        const manifestSyncCheckpoint =
+          !isFullRebuild &&
+          committablePurges.length === 0 &&
+          manifestSeqHighWaters.length > 0
+            ? { albumId, albumVersion: desiredAdvance }
+            : undefined;
+        const persistManifestSyncCheckpoint =
+          committableDecrypted.length > 0 &&
+          manifestSyncCheckpoint !== undefined;
+
+        const shouldPersistVerifiedEpoch =
+          committableDecrypted.length > 0 ||
+          (response.manifests.length === 0 && skippedIds.length === 0);
+        if (shouldPersistVerifiedEpoch) {
+          await db.insertManifests(
+            committableDecrypted,
+            manifestSeqHighWaters,
+            manifestSyncCheckpoint,
+            manifestReplayCheckpoints,
+            [albumEpochHighWater],
+          );
+          for (const manifestId of replaySatisfiedManifestIds) {
+            if (committableManifestIds.has(manifestId)) {
+              rebuiltManifestIds.add(manifestId);
+            }
+          }
+          if (committableDecrypted.length > 0) {
+            this.dispatchSyncEvent('sync-progress', {
+              albumId,
+              count: committableDecrypted.length,
+            });
+          }
+
+          // Deletion side effects run only after the replay floor, exact head,
+          // and cache tombstone are durable. A failed security write therefore
+          // cannot purge local content.
+          for (const purge of committablePurges) {
+            const purgeResult = await purgeLocalPhoto({
+              ...purge,
+              reason: 'sync-deleted',
+            });
+            if (purgeResult.blockers.length > 0) {
+              throw new Error(
+                `Local purge did not complete for manifest ${purge.photoId}: ${purgeResult.blockers.join(', ')}`,
+              );
+            }
+          }
+        }
+
+        if (!isFullRebuild && !persistManifestSyncCheckpoint) {
+          await db.setAlbumVersion(albumId, desiredAdvance);
+        }
         sinceVersion = desiredAdvance;
 
         if (skippedIds.length > 0) {
@@ -553,6 +1186,31 @@ class SyncEngine extends EventTarget {
         throwIfAborted(signal);
 
         if (!response.hasMore) {
+          if (isFullRebuild) {
+            const missingHeads = retainedReplayHeads.filter(
+              (checkpoint) => !rebuiltManifestIds.has(checkpoint.manifestId),
+            );
+            if (missingHeads.length > 0) {
+              const missingManifestIds = [
+                ...new Set(missingHeads.map((head) => head.manifestId)),
+              ];
+              const error = new Error(
+                `Full rebuild omitted ${missingManifestIds.length} retained signed manifest head(s)`,
+              );
+              log.error(error.message, { albumId, missingManifestIds });
+              throw error;
+            }
+            if (
+              retainedReplayHeads.length > 0 &&
+              (skippedIds.length > 0 ||
+                desiredAdvance !== response.albumVersion)
+            ) {
+              throw new Error(
+                'Full rebuild did not reach a fully verified terminal state',
+              );
+            }
+            await db.setAlbumVersion(albumId, desiredAdvance);
+          }
           break;
         }
 
@@ -561,7 +1219,15 @@ class SyncEngine extends EventTarget {
         // sinceVersion would return the same skipped manifests and the
         // pagination-no-advance guard above would error. Wait for the
         // next sync pass to retry the skipped IDs.
-        if (minSkippedVersion !== null && desiredAdvance < response.albumVersion) {
+        if (
+          minSkippedVersion !== null &&
+          desiredAdvance < response.albumVersion
+        ) {
+          if (isFullRebuild) {
+            throw new Error(
+              'Full rebuild stopped before a terminal server page',
+            );
+          }
           break;
         }
       }
@@ -573,13 +1239,19 @@ class SyncEngine extends EventTarget {
       // revoked / soft-deleted), drop every cached epoch handle for it so
       // we cannot serve decrypts off stale keys and so the cache cannot
       // grow unbounded with handles for albums we can no longer touch.
-      if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+      if (
+        error instanceof ApiError &&
+        (error.status === 403 || error.status === 404)
+      ) {
         try {
           invalidateAlbumEpochKeys(albumId);
         } catch (invalidateErr) {
           log.warn('invalidateAlbum (post-403/404) threw', {
             albumId,
-            error: invalidateErr instanceof Error ? invalidateErr.message : String(invalidateErr),
+            error:
+              invalidateErr instanceof Error
+                ? invalidateErr.message
+                : String(invalidateErr),
           });
         }
       }

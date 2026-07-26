@@ -21,7 +21,7 @@ public class ShardExpirationAccessTests
         };
 
     [Fact]
-    public async Task Download_ReturnsNotFound_WhenOnlyManifestReferenceIsExpired()
+    public async Task Download_AllowsMember_WhenOnlyLegacyManifestExpirationHasElapsed()
     {
         using var db = TestDbContextFactory.Create();
         var storage = new MockStorageService();
@@ -37,7 +37,7 @@ public class ShardExpirationAccessTests
 
         var result = await CreateController(db, storage, new FakeTimeProvider(now)).Download(shard.Id);
 
-        Assert.IsType<NotFoundResult>(result);
+        Assert.IsType<FileStreamResult>(result);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public class ShardExpirationAccessTests
     }
 
     [Fact]
-    public async Task Download_ReturnsForbidForNonMember_WhenOnlyManifestReferenceIsExpired()
+    public async Task Download_ReturnsNotFoundForNonMember_WhenOnlyManifestReferenceIsExpired()
     {
         using var db = TestDbContextFactory.Create();
         var storage = new MockStorageService();
@@ -77,15 +77,15 @@ public class ShardExpirationAccessTests
 
         var result = await CreateController(db, storage, new FakeTimeProvider(now), "expired-shard-outsider").Download(shard.Id);
 
-        Assert.IsType<ForbidResult>(result);
+        Assert.IsType<NotFoundResult>(result);
     }
 
     [Theory]
-    [InlineData(false, false, "forbid")]
-    [InlineData(false, true, "forbid")]
-    [InlineData(true, false, "not-found")]
+    [InlineData(false, false, "not-found")]
+    [InlineData(false, true, "not-found")]
+    [InlineData(true, false, "file")]
     [InlineData(true, true, "file")]
-    public async Task Download_PreservesMemberReferenceAndExpirationSemantics(
+    public async Task Download_IgnoresLegacyPhotoExpirationButStillRequiresMembership(
         bool hasMemberReference,
         bool hasUnexpiredAccess,
         string expectedResult)
@@ -113,9 +113,6 @@ public class ShardExpirationAccessTests
 
         switch (expectedResult)
         {
-            case "forbid":
-                Assert.IsType<ForbidResult>(result);
-                break;
             case "not-found":
                 Assert.IsType<NotFoundResult>(result);
                 break;

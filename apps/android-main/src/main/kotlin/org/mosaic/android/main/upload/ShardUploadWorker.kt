@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
-import androidx.work.Logger
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import java.io.File
@@ -13,6 +12,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import org.mosaic.android.main.crypto.ShardEncryptionWorker
+import org.mosaic.android.main.crypto.ShardBlobFormatVersions
+import org.mosaic.android.main.crypto.ShardEnvelopeVersions
+import org.mosaic.android.main.diagnostics.PrivacySafeDiagnosticEvent
+import org.mosaic.android.main.diagnostics.PrivacySafeLogger
 import org.mosaic.android.main.net.dto.ShardId
 import org.mosaic.android.main.net.dto.UploadJobId
 import org.mosaic.android.main.staging.AppPrivateStagingManager
@@ -28,7 +31,7 @@ class ShardUploadWorker internal constructor(
   private val tusSessionFactory: ShardTusSessionFactory,
   private val stagingCleaner: ShardStagingCleaner,
   private val manifestStore: ShardUploadManifestStore,
-  private val warningSink: (String) -> Unit,
+  private val warningSink: (PrivacySafeDiagnosticEvent) -> Unit,
 ) : CoroutineWorker(appContext, workerParams) {
   constructor(
     appContext: Context,
@@ -39,7 +42,7 @@ class ShardUploadWorker internal constructor(
     DefaultShardTusSessionFactory(appContext),
     AppPrivateShardStagingCleaner(AppPrivateStagingManager(appContext)),
     FileShardUploadManifestStore(appContext),
-    { message -> Logger.get().warning(LOG_TAG, message) },
+    PrivacySafeLogger::record,
   )
 
   override suspend fun getForegroundInfo(): ForegroundInfo =
@@ -52,9 +55,25 @@ class ShardUploadWorker internal constructor(
     val shardId = inputData.getString(KEY_SHARD_ID) ?: return failure(FAILURE_MISSING_INPUT)
     val tusEndpoint = inputData.getString(KEY_TUS_ENDPOINT) ?: return failure(FAILURE_MISSING_INPUT)
     val metadataSignature = inputData.getString(KEY_METADATA_SIGNATURE)
+    val blobFormatVersion = inputData.getInt(KEY_BLOB_FORMAT_VERSION, 0)
+    if (blobFormatVersion != ShardBlobFormatVersions.CURRENT) {
+      return failure(FAILURE_UNSUPPORTED_BLOB_FORMAT)
+    }
+    val declaredEnvelopeVersion = inputData.getInt(KEY_ENVELOPE_VERSION, 0)
+    if (!ShardEnvelopeVersions.isSupported(declaredEnvelopeVersion)) {
+      return failure(FAILURE_MISSING_INPUT)
+    }
 
     return try {
       val stagedEnvelope = envelopeUri.toStagedFile(shardId)
+      val actualEnvelopeVersion = try {
+        stagedEnvelope.file.inputStream().use(ShardEnvelopeVersions::readVersion)
+      } catch (_: IllegalArgumentException) {
+        return failure(FAILURE_INVALID_ENVELOPE)
+      }
+      if (actualEnvelopeVersion != declaredEnvelopeVersion) {
+        return failure(FAILURE_ENVELOPE_VERSION_MISMATCH)
+      }
       val localSha256 = stagedEnvelope.file.sha256Hex()
       if (!localSha256.equals(expectedSha256, ignoreCase = true)) {
         return failure(FAILURE_SHA256_MISMATCH)
@@ -64,7 +83,13 @@ class ShardUploadWorker internal constructor(
       val uploadResult = withContext(Dispatchers.IO) {
         session.upload(
           stagedEnvelope,
-          buildMetadata(shardId, expectedSha256, metadataSignature),
+          buildMetadata(
+            shardId,
+            expectedSha256,
+            metadataSignature,
+            blobFormatVersion,
+            actualEnvelopeVersion,
+          ),
           UploadJobId(uploadJobId),
           ShardId(shardId),
         )
@@ -79,6 +104,8 @@ class ShardUploadWorker internal constructor(
         sha256 = uploadResult.sha256,
         sizeBytes = uploadResult.sizeBytes,
         uploadedBytes = uploadResult.uploadedBytes,
+        envelopeVersion = actualEnvelopeVersion,
+        blobFormatVersion = blobFormatVersion,
       )
       manifestStore.persist(manifestEntry)
       cleanStaging(stagedEnvelope)
@@ -88,6 +115,8 @@ class ShardUploadWorker internal constructor(
           KEY_SHARD_ID to shardId,
           KEY_TUS_LOCATION to uploadResult.uploadUrl,
           KEY_FINAL_SHA256 to uploadResult.sha256,
+          KEY_ENVELOPE_VERSION to actualEnvelopeVersion,
+          KEY_BLOB_FORMAT_VERSION to blobFormatVersion,
         ),
       )
     } catch (e: TusUploadException.OffsetMismatch) {
@@ -109,10 +138,14 @@ class ShardUploadWorker internal constructor(
     shardId: String,
     expectedSha256: String,
     metadataSignature: String?,
+    blobFormatVersion: Int,
+    envelopeVersion: Int,
   ): Map<String, String> = buildMap {
     put("shardId", shardId)
     put("expectedSha256", expectedSha256)
     put("content-sha256", expectedSha256.lowercase(Locale.ROOT))
+    put("blob-format-version", blobFormatVersion.toString())
+    put("envelope-version", envelopeVersion.toString())
     if (!metadataSignature.isNullOrBlank()) {
       put("metadataSignature", metadataSignature)
     }
@@ -121,8 +154,8 @@ class ShardUploadWorker internal constructor(
   private fun cleanStaging(stagedEnvelope: StagedFile) {
     try {
       stagingCleaner.unstage(stagedEnvelope)
-    } catch (e: Exception) {
-      warningSink("Shard upload succeeded but staging cleanup failed for ${stagedEnvelope.id}: ${e.message}")
+    } catch (_: Exception) {
+      warningSink(PrivacySafeDiagnosticEvent.SHARD_STAGING_CLEANUP_FAILED)
     }
   }
 
@@ -163,6 +196,8 @@ class ShardUploadWorker internal constructor(
   companion object {
     const val KEY_ENVELOPE_URI: String = ShardEncryptionWorker.KEY_ENVELOPE_URI
     const val KEY_SHA256: String = ShardEncryptionWorker.KEY_SHA256_HEX
+    const val KEY_ENVELOPE_VERSION: String = ShardEncryptionWorker.KEY_ENVELOPE_VERSION
+    const val KEY_BLOB_FORMAT_VERSION: String = ShardEncryptionWorker.KEY_BLOB_FORMAT_VERSION
     const val KEY_UPLOAD_JOB_ID: String = "upload_job_id"
     const val KEY_SHARD_ID: String = "shard_id"
     const val KEY_TUS_ENDPOINT: String = "tus_endpoint"
@@ -174,10 +209,12 @@ class ShardUploadWorker internal constructor(
     const val FAILURE_MISSING_INPUT: String = "missing-input"
     const val FAILURE_RETRY_EXHAUSTED: String = "retry-exhausted"
     const val FAILURE_SHA256_MISMATCH: String = "sha256-mismatch"
+    const val FAILURE_ENVELOPE_VERSION_MISMATCH: String = "envelope-version-mismatch"
+    const val FAILURE_INVALID_ENVELOPE: String = "invalid-envelope"
+    const val FAILURE_UNSUPPORTED_BLOB_FORMAT: String = "unsupported-blob-format"
     const val FAILURE_NON_RETRYABLE_UPLOAD: String = "non-retryable-upload"
     const val MAX_RETRIES: Int = 5
 
-    private const val LOG_TAG = "ShardUploadWorker"
   }
 }
 
@@ -237,6 +274,8 @@ internal class FileShardUploadManifestStore(
         "sha256=${entry.sha256}",
         "sizeBytes=${entry.sizeBytes}",
         "uploadedBytes=${entry.uploadedBytes}",
+        "envelopeVersion=${entry.envelopeVersion}",
+        "blobFormatVersion=${entry.blobFormatVersion}",
       ).joinToString(separator = "\n"),
     )
   }
@@ -248,6 +287,8 @@ data class ShardUploadManifestEntry(
   val sha256: String,
   val sizeBytes: Long,
   val uploadedBytes: Long,
+  val envelopeVersion: Int,
+  val blobFormatVersion: Int,
 )
 
 private fun uploadStateId(shardId: String): String =

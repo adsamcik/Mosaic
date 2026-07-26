@@ -18,6 +18,9 @@ public class Manifest
     public required string Signature { get; set; }
     [MaxLength(128)]
     public required string SignerPubkey { get; set; }
+    [MaxLength(32)]
+    public byte[]? FinalizeRequestHash { get; set; }
+    public long? FinalizeMetadataVersion { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
@@ -39,6 +42,18 @@ public class Manifest
     /// verify against. NULL when no tombstone signature is present.
     /// </summary>
     public int? TombstoneSignerEpochId { get; set; }
+
+    /// <summary>V2 tombstone transcript version; NULL for historical v1 rows.</summary>
+    public int? TombstoneProtocolVersion { get; set; }
+
+    /// <summary>
+    /// Positive server-issued sequence bound into the v2 tombstone transcript.
+    /// It is separate from the prior live manifest sequence.
+    /// </summary>
+    public long? TombstoneSeq { get; set; }
+
+    /// <summary>Manifest version bound into the signed tombstone before the row advances to its deletion cursor.</summary>
+    public long? TombstoneVersionCreated { get; set; }
 
     /// <summary>
     /// Monotonic freshness sequence for the manifest signing transcript v2

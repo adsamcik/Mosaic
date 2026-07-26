@@ -9,9 +9,9 @@
  *   2. `init(bridge)` round-trips a v4 snapshot through the bridge:
  *      `[u8 SNAPSHOT_VERSION][...account-handle wrap blob...]`.
  *   3. A snapshot whose leading version byte does not match
- *      `SNAPSHOT_VERSION` is silently discarded and the DB worker
- *      reinitializes from an empty database — the migration policy that
- *      "existing OPFS snapshots are invalidated at the cutover boundary".
+ *      `SNAPSHOT_VERSION` is rebuilt only after the independent replay-
+ *      security sidecar authenticates. A missing or corrupt sidecar fails
+ *      closed and requires explicit Clear Local Data.
  *
  * Uses a stubbed bridge whose wrap/unwrap are XOR-based — sufficient to
  * exercise the persistence codepath without booting the real crypto
@@ -22,42 +22,42 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('comlink', () => ({
   expose: vi.fn(),
   transferHandlers: new Map(),
 }));
 
-const { sqlBootstrap } = vi.hoisted(() => ({
-  sqlBootstrap: `
-function initSqlJs() {
-  return Promise.resolve({
+vi.mock('fts5-sql-bundle', () => ({
+  default: vi.fn(async () => ({
     Database: class Database {
       close() {}
       run() {}
-      exec() { return []; }
-      export() { return new Uint8Array([1, 2, 3, 4]); }
+      exec() {
+        return [];
+      }
+      export() {
+        return new Uint8Array([1, 2, 3, 4]);
+      }
       prepare() {
         return { run() {}, free() {} };
       }
-    }
-  });
-}
-`,
+    },
+  })),
 }));
 
-vi.mock('../src/generated/sql-wasm-integrity', async () => {
-  const data = new TextEncoder().encode(sqlBootstrap);
-  const hashBuffer = await crypto.subtle.digest('SHA-384', data);
-  const bytes = new Uint8Array(hashBuffer);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return { SQL_WASM_SHA384: 'sha384-' + btoa(binary) };
-});
-
-import { DbWorker, SNAPSHOT_VERSION } from '../src/workers/db.worker';
-import type { DbCryptoBridge } from '../src/workers/types';
+import {
+  DbWorker,
+  DbWorkerErrorCode,
+  SNAPSHOT_VERSION,
+} from '../src/workers/db.worker';
+import type {
+  AlbumEpochHighWaterMark,
+  DbCryptoBridge,
+  ManifestReplayCheckpoint,
+  ManifestSeqHighWaterMark,
+} from '../src/workers/types';
 
 function makePassthroughBridge() {
   return {
@@ -96,18 +96,242 @@ describe('DbWorker — Slice 8 source-level invariants', () => {
   });
 });
 
-describe('DbWorker — OPFS snapshot wrap/unwrap', () => {
-  const originalFetch = global.fetch;
+type ReplaySecurityState = {
+  epochHighWaters: Map<string, AlbumEpochHighWaterMark>;
+  highWaters: Map<string, ManifestSeqHighWaterMark>;
+  checkpoints: Map<string, ManifestReplayCheckpoint>;
+};
 
-  beforeEach(() => {
-    global.fetch = vi.fn().mockResolvedValue({
-      text: () => Promise.resolve(sqlBootstrap),
-    } as Response);
+type ReplaySecurityInternals = {
+  applySecurityCandidates(
+    base: ReplaySecurityState,
+    highWaters: readonly ManifestSeqHighWaterMark[],
+    checkpoints: readonly ManifestReplayCheckpoint[],
+    epochHighWaters: readonly AlbumEpochHighWaterMark[],
+  ): ReplaySecurityState;
+  serializeSecurityState(state: ReplaySecurityState): Uint8Array;
+};
+
+describe('DbWorker — replay-security sidecar state', () => {
+  const albumId = 'album-1';
+  const signerA = 'aa'.repeat(32);
+  const signerB = 'bb'.repeat(32);
+  const epochA = { albumId, epochId: 7, signerKey: signerA } as const;
+  const floorA = { albumId, signerKey: signerA, manifestSeq: 10 } as const;
+  const headA = {
+    albumId,
+    signerKey: signerA,
+    epochId: 7,
+    manifestId: 'manifest-1',
+    manifestSeq: 10,
+    operationKind: 'Live',
+    signatureFingerprint: '11'.repeat(64),
+  } as const;
+
+  function internals(): ReplaySecurityInternals {
+    return new DbWorker() as unknown as ReplaySecurityInternals;
+  }
+
+  function emptyState(): ReplaySecurityState {
+    return {
+      epochHighWaters: new Map(),
+      highWaters: new Map(),
+      checkpoints: new Map(),
+    };
+  }
+
+  it('rejects epoch/key rebinding, global sequence regression, and conflicting exact heads', () => {
+    const worker = internals();
+    const state = worker.applySecurityCandidates(
+      emptyState(),
+      [floorA],
+      [headA],
+      [epochA],
+    );
+
+    expect(() =>
+      worker.applySecurityCandidates(
+        state,
+        [],
+        [],
+        [{ ...epochA, epochId: 6 }],
+      ),
+    ).toThrow(/epoch would regress/i);
+    expect(() =>
+      worker.applySecurityCandidates(
+        state,
+        [],
+        [],
+        [{ ...epochA, signerKey: signerB }],
+      ),
+    ).toThrow(/bound to a different key/i);
+    expect(() =>
+      worker.applySecurityCandidates(
+        state,
+        [{ ...floorA, manifestSeq: 9 }],
+        [],
+        [epochA],
+      ),
+    ).toThrow(/durable high-water/i);
+    expect(() =>
+      worker.applySecurityCandidates(
+        state,
+        [],
+        [{ ...headA, signatureFingerprint: '22'.repeat(64) }],
+        [epochA],
+      ),
+    ).toThrow(/different signed state/i);
   });
 
+  it('accepts an exact head and lets a higher authenticated epoch supersede it', () => {
+    const worker = internals();
+    const initial = worker.applySecurityCandidates(
+      emptyState(),
+      [floorA],
+      [headA],
+      [epochA],
+    );
+    const exact = worker.applySecurityCandidates(
+      initial,
+      [],
+      [headA],
+      [epochA],
+    );
+    const epochB = { albumId, epochId: 8, signerKey: signerB } as const;
+    const floorB = { albumId, signerKey: signerB, manifestSeq: 1 } as const;
+    const headB = {
+      ...headA,
+      epochId: 8,
+      signerKey: signerB,
+      manifestSeq: 1,
+      signatureFingerprint: '33'.repeat(64),
+    } as const;
+    const advanced = worker.applySecurityCandidates(
+      exact,
+      [floorB],
+      [headB],
+      [epochB],
+    );
+
+    expect(advanced.epochHighWaters.get(albumId)).toEqual(epochB);
+    expect(
+      advanced.checkpoints.get(`${albumId}\u0000${headA.manifestId}`),
+    ).toEqual(headB);
+    expect(
+      JSON.parse(
+        new TextDecoder().decode(worker.serializeSecurityState(advanced)),
+      ),
+    ).toMatchObject({
+      magic: 'MOSAIC_SECURITY_STATE',
+      version: 1,
+    });
+  });
+  it('accepts historical checkpoints under a newer album floor without regressing it', () => {
+    const worker = internals();
+    const epochB = { albumId, epochId: 8, signerKey: signerB } as const;
+    const current = worker.applySecurityCandidates(
+      emptyState(),
+      [],
+      [],
+      [epochB],
+    );
+    const withHistoricalHead = worker.applySecurityCandidates(
+      current,
+      [floorA],
+      [headA],
+      [],
+    );
+
+    expect(withHistoricalHead.epochHighWaters.get(albumId)).toEqual(epochB);
+    expect(
+      withHistoricalHead.checkpoints.get(`${albumId}\u0000${headA.manifestId}`),
+    ).toEqual(headA);
+    expect(() =>
+      worker.applySecurityCandidates(
+        withHistoricalHead,
+        [],
+        [{ ...headA, manifestId: 'future', epochId: 9 }],
+        [],
+      ),
+    ).toThrow(/authenticated album epoch floor/i);
+    expect(() =>
+      worker.applySecurityCandidates(
+        withHistoricalHead,
+        [],
+        [{ ...headA, manifestId: 'rebound', epochId: 8 }],
+        [],
+      ),
+    ).toThrow(/authenticated album epoch floor/i);
+  });
+});
+
+describe('DbWorker — OPFS snapshot wrap/unwrap', () => {
   afterEach(() => {
-    global.fetch = originalFetch;
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('does not misclassify a cache read failure as an absent cache', async () => {
+    const worker = new DbWorker();
+    const internal = worker as unknown as {
+      loadFromOPFS: () => Promise<Uint8Array | null>;
+    };
+    const readFailure = new Error('OPFS access denied');
+    readFailure.name = 'SecurityError';
+    vi.stubGlobal('navigator', {
+      storage: {
+        getDirectory: vi.fn().mockRejectedValue(readFailure),
+      },
+    });
+
+    await expect(internal.loadFromOPFS()).rejects.toBe(readFailure);
+  });
+
+  it('requires Web Locks whenever persistent OPFS is available', async () => {
+    const worker = new DbWorker();
+    const internal = worker as unknown as {
+      withSecurityStateLock<T>(operation: () => Promise<T>): Promise<T>;
+    };
+    const operation = vi.fn(async () => 'unlocked');
+    vi.stubGlobal('navigator', {
+      storage: {
+        getDirectory: vi.fn(),
+      },
+    });
+
+    await expect(internal.withSecurityStateLock(operation)).rejects.toThrow(
+      /Web Locks are required/i,
+    );
+    expect(operation).not.toHaveBeenCalled();
+  });
+
+  it('takes an exclusive cross-worker lock for persistent security state', async () => {
+    const worker = new DbWorker();
+    const internal = worker as unknown as {
+      withSecurityStateLock<T>(operation: () => Promise<T>): Promise<T>;
+    };
+    const request = vi.fn(
+      async (
+        _name: string,
+        _options: LockOptions,
+        operation: () => Promise<string>,
+      ) => operation(),
+    );
+    vi.stubGlobal('navigator', {
+      storage: {
+        getDirectory: vi.fn(),
+      },
+      locks: { request },
+    });
+
+    await expect(
+      internal.withSecurityStateLock(async () => 'locked'),
+    ).resolves.toBe('locked');
+    expect(request).toHaveBeenCalledWith(
+      'mosaic-security-state-v1',
+      { mode: 'exclusive' },
+      expect.any(Function),
+    );
   });
 
   it('init() with no existing snapshot calls neither wrap nor unwrap on the bridge', async () => {
@@ -162,7 +386,7 @@ describe('DbWorker — OPFS snapshot wrap/unwrap', () => {
     const worker = new DbWorker();
     const internal = worker as unknown as {
       loadFromOPFS: () => Promise<Uint8Array | null>;
-      deleteFromOPFS: () => Promise<void>;
+      saveToOPFS: () => Promise<void>;
       runMigrations: () => Promise<void>;
     };
 
@@ -172,8 +396,8 @@ describe('DbWorker — OPFS snapshot wrap/unwrap', () => {
     v1Snapshot[0] = 0x99;
     vi.spyOn(internal, 'loadFromOPFS').mockResolvedValue(v1Snapshot);
 
-    const deleteSpy = vi
-      .spyOn(internal, 'deleteFromOPFS')
+    const saveSpy = vi
+      .spyOn(internal, 'saveToOPFS')
       .mockResolvedValue(undefined);
     const runMigrationsSpy = vi
       .spyOn(internal, 'runMigrations')
@@ -183,19 +407,18 @@ describe('DbWorker — OPFS snapshot wrap/unwrap', () => {
 
     await expect(worker.init(bridge)).resolves.toBeUndefined();
 
-    // Hard-migration policy: discard the stale snapshot, run migrations
-    // against an empty DB, never invoke the bridge unwrap (the version
-    // mismatch short-circuits decryption).
-    expect(deleteSpy).toHaveBeenCalledTimes(1);
+    // The authenticated security sidecar makes this file disposable.
+    expect(saveSpy).toHaveBeenCalledTimes(1);
     expect(runMigrationsSpy).toHaveBeenCalledTimes(1);
     expect(bridge.unwrap).not.toHaveBeenCalled();
   });
 
-  it('keeps the SNAPSHOT_DECRYPT_FAILED fail-closed path for a current-version snapshot whose unwrap rejects', async () => {
-    const { DbWorkerErrorCode } = await import('../src/workers/db.worker');
+  it('rebuilds a current-version cache whose unwrap rejects', async () => {
     const worker = new DbWorker();
     const internal = worker as unknown as {
       loadFromOPFS: () => Promise<Uint8Array | null>;
+      runMigrations: () => Promise<void>;
+      saveToOPFS: () => Promise<void>;
     };
 
     // Properly-versioned envelope but the bridge's unwrap rejects (e.g.
@@ -203,6 +426,11 @@ describe('DbWorker — OPFS snapshot wrap/unwrap', () => {
     const versionedSnapshot = new Uint8Array(64);
     versionedSnapshot[0] = SNAPSHOT_VERSION;
     vi.spyOn(internal, 'loadFromOPFS').mockResolvedValue(versionedSnapshot);
+
+    vi.spyOn(internal, 'runMigrations').mockResolvedValue(undefined);
+    const saveSpy = vi
+      .spyOn(internal, 'saveToOPFS')
+      .mockResolvedValue(undefined);
 
     const bridge = {
       wrap: vi.fn(async (b: Uint8Array) => b),
@@ -214,9 +442,46 @@ describe('DbWorker — OPFS snapshot wrap/unwrap', () => {
       unwrap: ReturnType<typeof vi.fn>;
     };
 
-    await expect(worker.init(bridge)).rejects.toMatchObject({
-      code: DbWorkerErrorCode.SNAPSHOT_DECRYPT_FAILED,
-    });
+    await expect(worker.init(bridge)).resolves.toBeUndefined();
     expect(bridge.unwrap).toHaveBeenCalledTimes(1);
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when a cache exists but its security sidecar is missing', async () => {
+    const worker = new DbWorker();
+    const internal = worker as unknown as {
+      loadFromOPFS: () => Promise<Uint8Array | null>;
+      readSecurityStateFromOPFS: () => Promise<unknown>;
+      decryptBlob: (data: Uint8Array) => Promise<Uint8Array>;
+    };
+    vi.spyOn(internal, 'loadFromOPFS').mockResolvedValue(
+      new Uint8Array([SNAPSHOT_VERSION, 1, 2, 3]),
+    );
+    vi.spyOn(internal, 'readSecurityStateFromOPFS').mockResolvedValue(null);
+    const decryptSpy = vi.spyOn(internal, 'decryptBlob');
+
+    await expect(worker.init(makePassthroughBridge())).rejects.toMatchObject({
+      code: DbWorkerErrorCode.RESET_REQUIRED,
+    });
+    expect(decryptSpy).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before cache recovery when the security sidecar is corrupt', async () => {
+    const worker = new DbWorker();
+    const internal = worker as unknown as {
+      loadFromOPFS: () => Promise<Uint8Array | null>;
+      readSecurityStateFromOPFS: () => Promise<unknown>;
+      runMigrations: () => Promise<void>;
+    };
+    vi.spyOn(internal, 'loadFromOPFS').mockResolvedValue(null);
+    vi.spyOn(internal, 'readSecurityStateFromOPFS').mockRejectedValue(
+      new Error('security authentication failed'),
+    );
+    const migrationSpy = vi.spyOn(internal, 'runMigrations');
+
+    await expect(worker.init(makePassthroughBridge())).rejects.toMatchObject({
+      code: DbWorkerErrorCode.RESET_REQUIRED,
+    });
+    expect(migrationSpy).not.toHaveBeenCalled();
   });
 });

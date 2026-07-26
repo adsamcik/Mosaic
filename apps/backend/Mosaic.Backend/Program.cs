@@ -44,6 +44,25 @@ var auditRetentionDays = builder.Configuration.GetValue<int?>("Audit:RetainedFil
 // size-based rollover keeps files manageable while still rolling daily.
 var auditFileSizeLimitBytes = builder.Configuration.GetValue<long?>("Audit:FileSizeLimitBytes") ?? 104857600L; // 100 MB
 
+// Audit evidence is a required production control. Probe the configured
+// directory before Kestrel starts so an absent mount, bad ownership, or a
+// read-only path fails startup instead of silently dropping audit events.
+var auditLogFullPath = Path.GetFullPath(auditLogPath);
+var auditLogDirectory = Path.GetDirectoryName(auditLogFullPath)
+    ?? throw new InvalidOperationException("Audit:LogPath must include a writable directory.");
+Directory.CreateDirectory(auditLogDirectory);
+var auditProbePath = Path.Combine(auditLogDirectory, $".mosaic-audit-probe-{Environment.ProcessId}-{Guid.NewGuid():N}");
+using (var auditProbe = new FileStream(auditProbePath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+{
+    auditProbe.WriteByte(0);
+    auditProbe.Flush(flushToDisk: true);
+}
+File.Delete(auditProbePath);
+
+// The lifecycle hook attaches this monitor to each actual active/rolled file
+// stream so readiness verifies the sink handle, not just its parent directory.
+var auditSinkWriteMonitor = new AuditSinkWriteMonitor();
+
 // security-review-2026-05-24-04: surface Serilog sink failures (disk full,
 // permission denied, rollover errors) to stderr instead of swallowing them.
 // Without SelfLog enabled, audit-write failures are invisible — operators
@@ -79,7 +98,7 @@ Log.Logger = new LoggerConfiguration()
             // ASP.NET process, so multi-writer sharing is not required;
             // we prefer the chmod-on-open hook
             // (security-review-2026-05-24-05) over shared-writer support.
-            hooks: new RestrictivePermissionsHook(),
+            hooks: new RestrictivePermissionsHook(auditSinkWriteMonitor),
             outputTemplate:
                 "{Timestamp:o} {Level:u3} {Message:lj} {Properties:j}{NewLine}"))
     .CreateLogger();
@@ -116,6 +135,9 @@ builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IEpochKeyRotationService, EpochKeyRotationService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<MosaicMetrics>();
+builder.Services.AddSingleton(auditSinkWriteMonitor);
+builder.Services.AddSingleton<IAuditSinkHealthProbe>(
+    new FileAuditSinkHealthProbe(auditLogDirectory, auditSinkWriteMonitor));
 builder.Services.AddSingleton<Mosaic.Backend.Security.KdfPolicy>();
 builder.Services.AddOptions<IdempotencyOptions>()
     .Bind(builder.Configuration.GetSection("Idempotency"))
@@ -159,12 +181,18 @@ builder.Services.Configure<Microsoft.AspNetCore.Builder.RequestLocalizationOptio
 });
 builder.Services.AddScoped<Mosaic.Backend.Localization.ProblemDetailsLocalizationFilter>();
 
-// Sidecar Beacon: in-memory WebSocket signaling relay (no DB persistence, no auth).
+// Sidecar Beacon is experimental and must be explicitly enabled server-side.
+// Disabled mode registers neither relay state nor routes, so hiding the UI is
+// not relied upon as an access-control boundary.
+var sidecarEnabled = builder.Configuration.GetValue("SidecarSignaling:Enabled", false);
 builder.Services.Configure<SidecarSignalingOptions>(
     builder.Configuration.GetSection("SidecarSignaling"));
-builder.Services.AddSingleton<RoomManager>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<RoomManager>());
-builder.Services.AddSingleton<SidecarRateLimiter>();
+if (sidecarEnabled)
+{
+    builder.Services.AddSingleton<RoomManager>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<RoomManager>());
+    builder.Services.AddSingleton<SidecarRateLimiter>();
+}
 builder.Services.AddSingleton<Mosaic.Backend.Services.ShareLinkAttemptTracker>();
 
 // Controllers with camelCase JSON to match JavaScript conventions
@@ -217,7 +245,7 @@ builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options 
 
         var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
             .CreateLogger("ModelValidation");
-        logger.LogWarning("Model validation failed for {Path}: {@Errors}", context.HttpContext.Request.Path, errors);
+        logger.LogWarning("Model validation failed for {Path}: {@Errors}", SafeRequestPath.ForLogging(context.HttpContext), errors);
 
         return builtInFactory(context);
     };
@@ -326,24 +354,6 @@ if (serverSecretMissing)
     app.Logger.LogInformation("Auth:ServerSecret not configured - using auto-generated random secret for this session");
 }
 
-// Validate proxy trust configuration in Production.
-// Broad catch-all CIDRs (0.0.0.0/0 or ::/0) are only appropriate for test environments.
-// If they appear in Production the entire X-Forwarded-For trust model is broken, enabling
-// rate-limit bypass and auth spoofing via a spoofed X-Forwarded-For header.
-if (app.Environment.IsProduction())
-{
-    var productionProxies = app.Configuration.GetSection("Auth:TrustedProxies").Get<string[]>() ?? [];
-    var broadCidrs = productionProxies.Where(c => c is "0.0.0.0/0" or "::/0").ToList();
-    if (broadCidrs.Count > 0)
-    {
-        app.Logger.LogCritical(
-            "⛔ SECURITY MISCONFIGURATION: Auth:TrustedProxies contains {Cidrs} in Production. " +
-            "This trusts ALL IP addresses to set X-Forwarded-For, enabling rate-limit bypass " +
-            "and auth spoofing. Restrict TrustedProxies to your actual reverse proxy addresses.",
-            string.Join(", ", broadCidrs));
-    }
-}
-
 // Security environment validation
 if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 {
@@ -367,7 +377,8 @@ if (authConfiguration.UsesLegacyMode)
 }
 
 // Middleware order matters:
-// 0. ForwardedHeaders - process X-Forwarded-* headers from reverse proxy (must be first)
+// 0. SocketPeerCapture - retain the immediate TCP peer for ProxyAuth trust
+// 1. ForwardedHeaders - process X-Forwarded-* headers from a trusted reverse proxy
 // 1. RateLimiter - global rate limiting (100 req/min per IP)
 // 2. ExceptionHandler - handle database concurrency exceptions gracefully
 // 3. GlobalExceptionMiddleware - catch all other errors
@@ -375,6 +386,7 @@ if (authConfiguration.UsesLegacyMode)
 // 5. LogScopeMiddleware - create logging scope with request context
 // 6. RequestTimingMiddleware - log request timing
 // 7. Auth middleware - authenticate user
+app.UseMiddleware<SocketPeerCaptureMiddleware>();
 app.UseForwardedHeaders();
 // v1.0.1 s29: select request culture from Accept-Language so that
 // ProblemDetailsLocalizationFilter can translate error titles/details.
@@ -415,8 +427,8 @@ app.UseAuthorization();
 // Admin auth must come after regular auth
 app.UseAdminAuth();
 
-// Idempotency-Key replay cache for authenticated state-changing requests.
-// Tus PATCH chunks intentionally bypass replay caching; Tus POST upload init is cached.
+// Replay cache only for album/share-link creation and manifest finalization.
+// Tus PATCH uses its offset contract; keys on every other route are rejected.
 app.UseMiddleware<IdempotencyMiddleware>();
 
 // Tus 2.0 client rejection (v1.0.1 s23). Returns 412 + Tus-Version: 1.0.0 for
@@ -520,21 +532,21 @@ app.MapTus("/api/v1/files", async httpContext => new tusdotnet.Models.DefaultTus
     }
 });
 
-app.MapSidecarSignaling();
-app.MapSidecarTelemetry();
+if (sidecarEnabled)
+{
+    app.MapSidecarSignaling();
+    app.MapSidecarTelemetry();
+}
 app.MapControllers();
 
 // Localhost-only Prometheus-text metrics endpoint (v1.0.1 s25).
 // Operational surface, intentionally NOT under /api/v1/* — never exposed
 // externally. The loopback guard belt-and-suspenders rejects any request
-// whose connection origin isn't 127.0.0.1 / ::1; reverse proxies must
-// terminate before forwarding here. Forwarded-headers are NOT consulted
-// (RemoteIpAddress reflects the real socket peer after UseForwardedHeaders
-// rewrites it, so a spoofed X-Forwarded-For from an untrusted source
-// cannot bypass the check — KnownProxies is the gate).
+// whose immediate socket peer isn't 127.0.0.1 / ::1; reverse proxies must
+// terminate before forwarding here. Forwarded-headers are not consulted.
 app.MapGet("/metrics", (HttpContext ctx, MosaicMetrics metrics) =>
 {
-    var remoteIp = ctx.Connection.RemoteIpAddress;
+    var remoteIp = SocketPeerCaptureMiddleware.GetSocketPeerAddress(ctx);
     // Permit:
     //   * null (in-process call — TestServer / WebApplicationFactory)
     //   * any loopback address (127.0.0.0/8, ::1)
@@ -556,8 +568,11 @@ app.MapGet("/metrics", (HttpContext ctx, MosaicMetrics metrics) =>
     return Results.Text(metrics.RenderPrometheusText(), "text/plain; version=0.0.4; charset=utf-8");
 });
 
-// Apply migrations on startup (dev mode or RUN_MIGRATIONS=true)
-var runMigrations = app.Environment.IsDevelopment() ||
+// Production deploys run migrations as an explicit one-shot command:
+// `docker compose run --rm backend --migrate-only`. The serving container
+// starts with RUN_MIGRATIONS=false so schema changes have a rollback boundary.
+var migrateOnly = args.Contains("--migrate-only", StringComparer.Ordinal);
+var runMigrations = migrateOnly || app.Environment.IsDevelopment() ||
     string.Equals(builder.Configuration["RUN_MIGRATIONS"], "true", StringComparison.OrdinalIgnoreCase);
 
 if (runMigrations)
@@ -577,6 +592,12 @@ if (runMigrations)
         await db.Database.MigrateAsync();
         app.Logger.LogInformation("PostgreSQL migrations applied");
     }
+}
+
+if (migrateOnly)
+{
+    app.Logger.LogInformation("Migration-only command completed; exiting before Kestrel startup");
+    return;
 }
 
 app.Run();

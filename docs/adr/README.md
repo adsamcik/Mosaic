@@ -16,7 +16,7 @@ The records are intentionally scoped to decisions that unblock the Android encry
 | [ADR-008](ADR-008-media-processing-gate.md) | Gate Rust media processing behind cross-platform prototype results |
 | [ADR-009](ADR-009-android-sharing-shell-not-backup.md) | Build Android as an image-sharing upload/import shell, not a backup product |
 | [ADR-010](ADR-010-reject-plaintext-protocol-inbox.md) | Reject generic plaintext protocol import inboxes |
-| [ADR-011](ADR-011-timed-expiration.md) | Support opt-in server-enforced timed album and photo expiration |
+| [ADR-011](ADR-011-timed-expiration.md) | Support timed album expiration; per-photo portion amended and deferred pending a signed ordered lifecycle |
 | [ADR-012](ADR-012-android-internet-trust-boundary.md) | Grant INTERNET on Android with TLS-only, no-body-logging, static-guard constraints |
 | [ADR-013](ADR-013-streaming-shard-aead.md) | Freeze streaming shard AEAD framing in v1; ship vectors but defer production wiring to v1.x |
 | [ADR-014](ADR-014-codec-choice-parity-strictness.md) | Codec choice: platform codecs with Rust-side deterministic strip + sidecar (closes ADR-008) |
@@ -27,7 +27,7 @@ The records are intentionally scoped to decisions that unblock the Android encry
 | [ADR-019](ADR-019-android-cert-pinning.md) | Public-key pin to operator CA + backup pin in release; disabled in dev/E2E |
 | [ADR-020](ADR-020-supply-chain-amendment.md) | Amend ADR-005 supply-chain posture for media + transport crates |
 | [ADR-021](ADR-021-legacy-raw-key-fallback-sunset.md) | Retain legacy raw-key shard fallback in v1; telemetry-gated sunset in v1.x |
-| [ADR-022](ADR-022-manifest-finalization-shape.md) | Manifest finalization shape: `tieredShards` canonical write, legacy `shardIds` read-only |
+| [ADR-022](ADR-022-manifest-finalization-shape.md) | Historical v1 shape, amended by the reservation-backed ordered v2 producer contract |
 | [ADR-023](ADR-023-persisted-snapshot-schema.md) | Snapshot persistence: CBOR canonical encoding, schema_version migration coordinate |
 | [ADR-024](ADR-024-video-preview-tier-policy.md) | Video assets ship tier 1 + tier 3; tier 2 forbidden for video |
 | [ADR-025](ADR-025-account-salt-sidecar-kdf-parameters.md) | KDF parameters for LocalAuth account-salt (HMAC-SHA-256) and Sidecar room ID (HKDF-SHA-256) |

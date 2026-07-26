@@ -16,7 +16,7 @@ namespace Mosaic.Backend.Tests.Services;
 public class AlbumExpirationServiceTests
 {
     [Fact]
-    public async Task SweepExpiredManifests_UsesInjectedServerClockAndDetachesOpaqueShardContent()
+    public async Task SweepExpiredManifests_IsNoOpAndPreservesSignedManifestState()
     {
         using var db = TestDbContextFactory.Create();
         var now = new DateTimeOffset(2026, 4, 28, 12, 0, 0, TimeSpan.Zero);
@@ -37,16 +37,16 @@ public class AlbumExpirationServiceTests
         var atDeadline = await service.SweepExpiredManifestsAsync();
 
         Assert.Equal(0, beforeDeadline);
-        Assert.Equal(1, atDeadline);
-        var expiredManifest = db.Manifests.IgnoreQueryFilters().Single(m => m.Id == manifest.Id);
-        Assert.True(expiredManifest.IsDeleted);
-        Assert.Empty(expiredManifest.EncryptedMeta);
-        Assert.Empty(db.ManifestShards.Where(ms => ms.ManifestId == manifest.Id));
-        Assert.Equal(ShardStatus.TRASHED, db.Shards.Single(s => s.Id == shard.Id).Status);
-        Assert.Equal(4, db.Albums.Single(a => a.Id == album.Id).CurrentVersion);
+        Assert.Equal(0, atDeadline);
+        var storedManifest = db.Manifests.IgnoreQueryFilters().Single(m => m.Id == manifest.Id);
+        Assert.False(storedManifest.IsDeleted);
+        Assert.NotEmpty(storedManifest.EncryptedMeta);
+        Assert.NotEmpty(db.ManifestShards.Where(ms => ms.ManifestId == manifest.Id));
+        Assert.Equal(ShardStatus.ACTIVE, db.Shards.Single(s => s.Id == shard.Id).Status);
+        Assert.Equal(3, db.Albums.Single(a => a.Id == album.Id).CurrentVersion);
         var limits = db.AlbumLimits.Single(al => al.AlbumId == album.Id);
-        Assert.Equal(0, limits.CurrentPhotoCount);
-        Assert.Equal(0, limits.CurrentSizeBytes);
+        Assert.Equal(1, limits.CurrentPhotoCount);
+        Assert.Equal(2048, limits.CurrentSizeBytes);
     }
 
     [Fact]
@@ -162,69 +162,34 @@ public class AlbumExpirationServiceTests
     }
 
     [Fact]
-    public async Task EnforceManifestExpirationAsync_IsIdempotent_WhenConcurrentWorkersDeleteSameExpiredPhoto()
+    public async Task EnforceManifestExpirationAsync_DoesNotCreateUnsignedTombstone()
     {
-        using var database = new SharedSqliteDatabase();
+        using var db = TestDbContextFactory.Create();
         var now = new DateTimeOffset(2026, 4, 28, 12, 0, 0, TimeSpan.Zero);
         var time = new FakeTimeProvider(now);
+        var builder = new TestDataBuilder(db);
+        var owner = await builder.CreateUserAsync("expired-manifest-owner");
+        var album = await builder.CreateAlbumAsync(owner, currentVersion: 7);
+        db.AlbumLimits.Add(new AlbumLimits { AlbumId = album.Id, CurrentPhotoCount = 1, CurrentSizeBytes = 2048 });
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE, sizeBytes: 2048);
+        var manifest = await builder.CreateManifestAsync(album, [shard], encryptedMeta: TestDataBuilder.GenerateRandomBytes(32));
+        manifest.ExpiresAt = now.AddMinutes(-1);
+        await db.SaveChangesAsync();
+        var service = new AlbumExpirationService(db, time, NullLogger<AlbumExpirationService>.Instance);
 
-        Guid albumId;
-        Guid manifestId;
-        Guid shardId;
+        var result = await service.EnforceManifestExpirationAsync(manifest.Id);
 
-        await using (var seedDb = database.CreateContext())
-        {
-            var builder = new TestDataBuilder(seedDb);
-            var owner = await builder.CreateUserAsync("concurrent-expired-manifest-owner");
-            var album = await builder.CreateAlbumAsync(owner, currentVersion: 7);
-            seedDb.AlbumLimits.Add(new AlbumLimits { AlbumId = album.Id, CurrentPhotoCount = 1, CurrentSizeBytes = 2048 });
-            var shard = await builder.CreateShardAsync(owner, ShardStatus.ACTIVE, sizeBytes: 2048);
-            var manifest = await builder.CreateManifestAsync(album, [shard], encryptedMeta: TestDataBuilder.GenerateRandomBytes(32));
-            manifest.ExpiresAt = now.AddMinutes(-1);
-            await seedDb.SaveChangesAsync();
-
-            albumId = album.Id;
-            manifestId = manifest.Id;
-            shardId = shard.Id;
-        }
-
-        var gate = new ConcurrentSaveChangesGate(participantCount: 2);
-        await using var workerDb1 = database.CreateContext(gate);
-        await using var workerDb2 = database.CreateContext(gate);
-        var service1 = new AlbumExpirationService(workerDb1, time, NullLogger<AlbumExpirationService>.Instance);
-        var service2 = new AlbumExpirationService(workerDb2, time, NullLogger<AlbumExpirationService>.Instance);
-
-        var results = await Task.WhenAll(
-            service1.EnforceManifestExpirationAsync(manifestId),
-            service2.EnforceManifestExpirationAsync(manifestId));
-
-        Assert.Equal(1, results.Count(deleted => deleted));
-
-        await using var verifyDb = database.CreateContext();
-        var expiredManifest = await verifyDb.Manifests.IgnoreQueryFilters().SingleAsync(m => m.Id == manifestId);
-        Assert.True(expiredManifest.IsDeleted);
-        Assert.Empty(expiredManifest.EncryptedMeta);
-        Assert.Null(expiredManifest.ExpiresAt);
-        Assert.Empty(await verifyDb.ManifestShards.Where(ms => ms.ManifestId == manifestId).ToListAsync());
-        Assert.Equal(ShardStatus.TRASHED, (await verifyDb.Shards.SingleAsync(s => s.Id == shardId)).Status);
-        Assert.Equal(8, (await verifyDb.Albums.SingleAsync(a => a.Id == albumId)).CurrentVersion);
-        var limits = await verifyDb.AlbumLimits.SingleAsync(al => al.AlbumId == albumId);
-        Assert.Equal(0, limits.CurrentPhotoCount);
-        Assert.Equal(0, limits.CurrentSizeBytes);
-
-        var repeatService = new AlbumExpirationService(verifyDb, time, NullLogger<AlbumExpirationService>.Instance);
-        Assert.False(await repeatService.EnforceManifestExpirationAsync(manifestId));
-
-        var storage = new MockStorageService();
-        storage.AddFile((await verifyDb.Shards.SingleAsync(s => s.Id == shardId)).StorageKey);
-        var controller = new ShardsController(verifyDb, storage, new MockCurrentUserService(verifyDb), timeProvider: time)
-        {
-            ControllerContext = new ControllerContext
-            {
-                HttpContext = TestHttpContext.Create("concurrent-expired-manifest-owner")
-            }
-        };
-        Assert.IsType<NotFoundResult>(await controller.Download(shardId));
+        Assert.False(result);
+        var storedManifest = await db.Manifests.IgnoreQueryFilters().SingleAsync(m => m.Id == manifest.Id);
+        Assert.False(storedManifest.IsDeleted);
+        Assert.Equal(manifest.ExpiresAt, storedManifest.ExpiresAt);
+        Assert.NotEmpty(storedManifest.EncryptedMeta);
+        Assert.NotEmpty(await db.ManifestShards.Where(ms => ms.ManifestId == manifest.Id).ToListAsync());
+        Assert.Equal(ShardStatus.ACTIVE, (await db.Shards.SingleAsync(s => s.Id == shard.Id)).Status);
+        Assert.Equal(7, (await db.Albums.SingleAsync(a => a.Id == album.Id)).CurrentVersion);
+        var limits = await db.AlbumLimits.SingleAsync(al => al.AlbumId == album.Id);
+        Assert.Equal(1, limits.CurrentPhotoCount);
+        Assert.Equal(2048, limits.CurrentSizeBytes);
     }
 
     private sealed class SharedSqliteDatabase : IDisposable

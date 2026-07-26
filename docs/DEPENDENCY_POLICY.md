@@ -1,7 +1,9 @@
 # Dependency Policy
 
-Status: active v1.0.x. Updated when a CVE-fast-path, version-bump, or
-review-cadence rule actually changes.
+Status: active source policy. Historical `v1.0.x` workstream labels in
+this document are not release identifiers. Updated when a CVE fast path,
+version bump, or review-cadence rule actually changes. See
+[RELEASE_STATE.md](RELEASE_STATE.md) for artifact maturity.
 
 This document captures the deliberate dependency-management posture used
 across the Mosaic Rust workspace, the .NET backend, the web frontend, and
@@ -12,11 +14,14 @@ patch a CVE without violating the freeze.
 
 ## Philosophy
 
-Mosaic prefers a **slow, audited, exact-pinned** dependency tree over a
-fast, lockfile-resolved, range-pinned one. Reasons:
+Mosaic prefers deliberate, reviewed dependency changes and committed
+lockfiles over automatic manifest-wide updates. Package manifests may use
+bounded semver ranges; reproducibility is enforced by committed lockfiles and
+locked or frozen CI install modes. Reasons:
 
-1. **Reproducibility.** A rebuild years from now must produce identical
-   artifacts. Floating ranges (`^1.2.3`, `>=2`) break that.
+1. **Reproducibility.** Builds resolve the committed `Cargo.lock`,
+   `package-lock.json`, and `packages.lock.json` files. A manifest range never
+   authorizes unreviewed lockfile churn.
 2. **Cryptographic supply chain.** The Rust crypto crates and the WASM
    payload are reproducibility-critical. Any unaudited transitive change
    could compromise the zero-knowledge boundary.
@@ -33,7 +38,7 @@ fast, lockfile-resolved, range-pinned one. Reasons:
 | Ecosystem | Pinning style | Lockfile committed | Notes |
 |---|---|---|---|
 | Cargo (Rust workspace) | Exact `=X.Y.Z` for security-critical crates; default semver for utility crates. `cargo deny` + `cargo vet` + `cargo audit` gated in CI. | `Cargo.lock` — yes | `cargo update` is **not** part of routine flow. Run it only as part of a deliberate version-bump or CVE-fast-path; commit the resulting lockfile churn in its own commit. |
-| npm (web, crypto lib) | Exact `X.Y.Z` (no `^`/`~`) on top-level deps. `package-lock.json` is the source of truth. | `package-lock.json` — yes | `npm install <name>` to add; never blanket `npm update`. CI runs `npm audit --omit=dev` (see CI workflow) for advisory visibility. |
+| npm (root tooling, web, crypto lib, integration, E2E) | Bounded semver ranges are allowed in `package.json`; the committed lockfile is the exact resolution. | `package-lock.json` — yes | Use `npm ci` in CI and never blanket `npm update`. CI runs `npm audit --audit-level=high` across all five npm projects, including production and development dependencies. |
 | NuGet (.NET backend) | Exact `Version="X.Y.Z"` in each `*.csproj`. | `packages.lock.json` per project — yes | `dotnet add package` for additions only. CVE-driven bumps are explicit and reviewed. |
 | Gradle (Android) | Versions live in `gradle/libs.versions.toml` (catalog). Direct version literals in `build.gradle.kts` are a smell — file an item to migrate. | `gradle/verification-metadata.xml` — yes | Single-source bumps: edit the catalog, not the build script. |
 
@@ -77,8 +82,8 @@ this policy avoids.
 ## What this policy forbids
 
 - Blind `cargo update` or `npm update` outside a planned bump window.
-- Adding `^` or `~` ranges to top-level dependencies to "make CVE patches
-  automatic". They don't; they make rebuilds non-reproducible.
+- Adding wildcard or unbounded ranges, or changing a bounded range without
+  reviewing and committing the resulting lockfile diff.
 - Bumping a dependency to pick up an unrelated feature mid-release. File a
   separate item.
 - Disabling `cargo deny`, `cargo audit`, or the npm audit CI gate to land
@@ -91,8 +96,11 @@ this policy avoids.
 The CI pipeline enforces this policy through:
 
 - `.github/workflows/tests.yml` → cargo `audit` + `deny` + `vet`.
-- `.github/workflows/tests.yml` → `npm audit --omit=dev --audit-level=high`
-  (see v1.0.1 s15 commit landing this gate).
+- `.github/workflows/tests.yml` → `npm audit --audit-level=high` across all five
+  npm projects, including the root tooling lockfile and all production and
+  development dependencies.
+- `.github/workflows/tests.yml` → fail-closed `dotnet list Mosaic.slnx package
+  --vulnerable --include-transitive` JSON inspection after locked restore.
 - `tests/architecture/dotnet-no-crypto-bypass.ps1`,
   `tests/architecture/android-rust-core-protocol-completeness.sh`,
   `tests/architecture/web-rust-core-protocol-completeness.ps1` —

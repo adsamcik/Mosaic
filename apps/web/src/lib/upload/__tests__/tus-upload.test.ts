@@ -39,6 +39,16 @@ vi.mock('tus-js-client', () => ({
 }));
 
 import { tusUpload } from '../tus-upload';
+function encryptedEnvelope(
+  version = 3,
+  payload: readonly number[] = [1, 2, 3],
+): Uint8Array {
+  return Uint8Array.of(
+    'S'.charCodeAt(0), 'G'.charCodeAt(0), 'z'.charCodeAt(0), 'k'.charCodeAt(0),
+    version,
+    ...payload,
+  );
+}
 
 describe('tusUpload metadata', () => {
   beforeEach(() => {
@@ -48,7 +58,7 @@ describe('tusUpload metadata', () => {
   it('sends client-computed ciphertext SHA-256 as lowercase hex content-sha256 metadata', async () => {
     const shardId = await tusUpload(
       'album-001',
-      new Uint8Array([1, 2, 3]),
+      encryptedEnvelope(3, [1, 2, 3]),
       'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
       7,
     );
@@ -60,19 +70,34 @@ describe('tusUpload metadata', () => {
       shardIndex: '7',
       'content-sha256': '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
       'blob-format-version': '1',
+      'envelope-version': '3',
     });
   });
 
   it('always stamps the current blob storage-format version', async () => {
     await tusUpload(
       'album-002',
-      new Uint8Array([9]),
+      encryptedEnvelope(4, [9]),
       'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
       0,
     );
     expect(tusMock.uploads).toHaveLength(1);
     const meta = tusMock.uploads[0]!.options.metadata as Record<string, string>;
     expect(meta['blob-format-version']).toBe('1');
+    expect(meta['envelope-version']).toBe('4');
+  });
+
+  it('rejects malformed envelopes before creating a Tus upload', async () => {
+    await expect(tusUpload(
+      'album-003',
+      new Uint8Array([1, 2, 3]),
+      'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
+      0,
+    )).rejects.toMatchObject({
+      messageKey: 'upload.errors.invalidEnvelope',
+    });
+
+    expect(tusMock.uploads).toHaveLength(0);
   });
 });
 
@@ -84,7 +109,7 @@ describe('tusUpload retry classification', () => {
   async function captureOnShouldRetry(): Promise<NonNullable<CapturedTusUpload['options']['onShouldRetry']>> {
     await tusUpload(
       'album-001',
-      new Uint8Array([1, 2, 3]),
+      encryptedEnvelope(),
       'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
       7,
     );

@@ -2,6 +2,10 @@
 
 This guide covers how to build, deploy, and run Mosaic using Docker containers.
 
+> **Preview status:** This checkout is not production-ready. This guide
+> describes the candidate deployment contract, not proof of a released
+> artifact. See [RELEASE_STATE.md](RELEASE_STATE.md).
+
 ## Table of Contents
 
 - [Quick Start](#quick-start)
@@ -14,8 +18,7 @@ This guide covers how to build, deploy, and run Mosaic using Docker containers.
 - [Persistent Storage](#persistent-storage)
 - [Monitoring & Logs](#monitoring--logs)
 - [Troubleshooting](#troubleshooting)
-- [Container Registry](#container-registry)
-- [GitHub Actions CI/CD](#github-actions-cicd)
+- [Container Registry and Release Artifacts](#container-registry-and-release-artifacts)
 - [Security Considerations](#security-considerations)
 
 ---
@@ -31,12 +34,16 @@ cd Mosaic
 
 # 2. Configure environment
 cp .env.example .env
-# Edit .env and set a strong POSTGRES_PASSWORD
+# Edit .env and set strong POSTGRES_PASSWORD and AUTH_SERVER_SECRET values.
 
-# 3. Build and start
+# 3. Start PostgreSQL and apply the schema explicitly
+docker compose up -d postgres
+docker compose run --rm backend --migrate-only
+
+# 4. Build and start the serving containers
 docker compose up -d
 
-# 4. Check status
+# 5. Check status
 docker compose ps
 docker compose logs -f
 ```
@@ -74,7 +81,7 @@ Mosaic consists of three Docker containers:
 |------------|------------------|-----------------------------------|
 | `frontend` | `mosaic-frontend`| React SPA served by nginx         |
 | `backend`  | `mosaic-backend` | .NET API for storage and metadata |
-| `postgres` | `postgres:17`    | PostgreSQL database               |
+| `postgres` | Digest-pinned `postgres:17-alpine` | PostgreSQL database |
 
 ---
 
@@ -91,11 +98,11 @@ Mosaic consists of three Docker containers:
 # Build specific service
 .\scripts\docker-build.ps1 -Service backend
 
-# Build with custom tag
-.\scripts\docker-build.ps1 -Tag v1.0.0
+# Build with an explicitly non-stable local tag
+.\scripts\docker-build.ps1 -Tag dev-example
 
-# Build and push to registry
-.\scripts\docker-build.ps1 -Registry ghcr.io/your-org -Tag v1.0.0
+# Build and push an operator-owned preview image
+.\scripts\docker-build.ps1 -Registry ghcr.io/your-org -Tag dev-example
 
 # Build without cache
 .\scripts\docker-build.ps1 -NoCache
@@ -113,11 +120,11 @@ Mosaic consists of three Docker containers:
 # Build specific service
 ./scripts/docker-build.sh -s backend
 
-# Build with custom tag
-./scripts/docker-build.sh -t v1.0.0
+# Build with an explicitly non-stable local tag
+./scripts/docker-build.sh -t dev-example
 
-# Build and push to registry
-./scripts/docker-build.sh -r ghcr.io/your-org -t v1.0.0
+# Build and push an operator-owned preview image
+./scripts/docker-build.sh -r ghcr.io/your-org -t dev-example
 
 # Build without cache
 ./scripts/docker-build.sh --no-cache
@@ -147,7 +154,7 @@ docker compose build backend
 | Option          | Description                                   |
 |-----------------|-----------------------------------------------|
 | `-Service`      | Build `backend`, `frontend`, or `all`         |
-| `-Tag`          | Docker image tag (default: `latest`)          |
+| `-Tag`          | Local/preview tag (default `latest`; not a stable release claim) |
 | `-Registry`     | Container registry URL                        |
 | `-NoPush`       | Tag but don't push to registry               |
 | `-NoCache`      | Build without Docker layer cache             |
@@ -185,10 +192,13 @@ For a single server deployment with all services:
 ```bash
 # Configure environment
 cp .env.example .env
-nano .env  # Set strong POSTGRES_PASSWORD
+nano .env  # Set strong POSTGRES_PASSWORD and AUTH_SERVER_SECRET values
 
-# Build and start
-docker compose up -d --build
+# Build, apply the schema once, then start serving
+docker compose build
+docker compose up -d postgres
+docker compose run --rm backend --migrate-only
+docker compose up -d --wait
 ```
 
 **Important:** Put a reverse proxy in front for TLS termination. See [Reverse Proxy Setup](#reverse-proxy-setup).
@@ -201,17 +211,19 @@ If images are published to a container registry:
 # docker-compose.override.yml
 services:
   backend:
-    image: ghcr.io/your-org/mosaic-backend:v1.0.0
+    image: ghcr.io/your-org/mosaic-backend@sha256:<backend-digest-from-release>
     build: !reset null
     
   frontend:
-    image: ghcr.io/your-org/mosaic-frontend:v1.0.0
+    image: ghcr.io/your-org/mosaic-frontend@sha256:<frontend-digest-from-release>
     build: !reset null
 ```
 
 ```bash
 docker compose pull
-docker compose up -d
+docker compose up -d postgres
+docker compose run --rm backend --migrate-only
+docker compose up -d --wait
 ```
 
 ### Scenario 4: Running Tests
@@ -228,54 +240,56 @@ docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
 
 ## Configuration Reference
 
-### Environment Variables
+### Compose environment overrides
 
-Configure via `.env` file or environment:
+The shipped `docker-compose.yml` consumes these operator overrides. Values not
+listed here are fixed by the candidate deployment contract and should be
+changed only in a reviewed Compose override.
 
-| Variable               | Description                          | Default              |
-|------------------------|--------------------------------------|----------------------|
-| `POSTGRES_PASSWORD`    | PostgreSQL password (required)       | `changeme`           |
-| `FRONTEND_PORT`        | Host port for frontend               | `8080`               |
-| `DEFAULT_QUOTA_BYTES`  | Default storage quota per user       | `10737418240` (10GB) |
-| `DOMAIN`               | Domain name for production           | -                    |
-| `ACME_EMAIL`           | Email for Let's Encrypt certificates | -                    |
+| Variable | Purpose | Default |
+|---|---|---|
+| `POSTGRES_PASSWORD` | PostgreSQL password; required | none |
+| `AUTH_SERVER_SECRET` | Stable LocalAuth server secret; required | none |
+| `FRONTEND_PORT` | Published frontend port | `8080` |
+| `DEFAULT_QUOTA_BYTES` | Default per-user quota | `10737418240` (10 GiB) |
+| `LOCAL_AUTH_ENABLED` | Enable LocalAuth | `true` |
+| `PROXY_AUTH_ENABLED` | Enable trusted-header authentication | `false` |
+| `POSTGRES_PIDS_LIMIT` | PostgreSQL PID ceiling | `256` |
+| `POSTGRES_MEMORY_LIMIT` | PostgreSQL memory ceiling | `1g` |
+| `POSTGRES_CPU_LIMIT` | PostgreSQL CPU ceiling | `2.0` |
+| `BACKEND_PIDS_LIMIT` | Backend PID ceiling | `256` |
+| `BACKEND_MEMORY_LIMIT` | Backend memory ceiling | `1g` |
+| `BACKEND_CPU_LIMIT` | Backend CPU ceiling | `2.0` |
+| `FRONTEND_PIDS_LIMIT` | Frontend PID ceiling | `128` |
+| `FRONTEND_MEMORY_LIMIT` | Frontend memory ceiling | `256m` |
+| `FRONTEND_CPU_LIMIT` | Frontend CPU ceiling | `1.0` |
+| `LOG_MAX_SIZE` | Maximum json-file log segment | `10m` |
+| `LOG_MAX_FILE` | Retained json-file segments per service | `3` |
 
-### Backend Environment
+`RUN_MIGRATIONS` is deliberately fixed to `false` for the serving backend.
+Apply schema changes with `docker compose run --rm backend --migrate-only`
+before starting a new candidate. ProxyAuth also remains off by default; when
+it is enabled, configure only the exact proxy addresses and follow
+[AUTHELIA.md](AUTHELIA.md).
 
-Set in `docker-compose.yml` or via environment:
+### Runtime hardening
 
-| Variable                       | Description                         |
-|--------------------------------|-------------------------------------|
-| `ASPNETCORE_ENVIRONMENT`       | Runtime environment                 |
-| `ConnectionStrings__Default`   | PostgreSQL connection string        |
-| `Storage__Path`                | Path for blob storage               |
-| `Auth__TrustedProxies__0`      | Trusted proxy CIDR for auth headers |
-| `Quota__DefaultMaxBytes`       | Default storage quota               |
+The production Compose file already applies the routine container controls; an
+extra `deploy.resources` override is not required:
 
-### Resource Limits
+- PostgreSQL uses the digest-pinned multi-architecture
+  `postgres:17-alpine` OCI index, `no-new-privileges`, and bounded CPU, memory,
+  PIDs, and json-file log growth. Its database volume remains writable.
+- Backend and frontend root filesystems are read-only, drop every Linux
+  capability, set `no-new-privileges`, and enforce the limits listed above.
+- Backend writes temporary files only to a `64m` `/tmp` tmpfs. Persistent
+  writes are limited to the mounted blob and audit volumes.
+- Frontend writable paths are bounded tmpfs mounts: `/tmp` (`16m`),
+  `/var/cache/nginx` (`32m`), `/var/log/nginx` (`16m`), and `/var/run` (`4m`).
 
-Add resource limits for production:
-
-```yaml
-# docker-compose.override.yml
-services:
-  backend:
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-          
-  postgres:
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-```
+Raise a limit only after measuring the workload and document the override in
+deployment change control. A read-only-root or limit failure is an operational
+signal to investigate, not a reason to remove the control globally.
 
 ---
 
@@ -283,8 +297,10 @@ services:
 
 Mosaic requires a reverse proxy for:
 - TLS termination (HTTPS)
-- Authentication header forwarding (`Remote-User`)
 - Proper security headers
+
+The shipped Compose stack uses LocalAuth and its frontend clears all
+`Remote-*` identity headers. A TLS-only proxy must do the same.
 
 ### Caddy (Recommended)
 
@@ -293,11 +309,13 @@ Caddy automatically provisions TLS certificates:
 ```caddyfile
 # Caddyfile
 photos.example.com {
-    reverse_proxy localhost:8080
-    
-    # Forward authentication header from your auth provider
-    # (e.g., Authelia, Authentik, oauth2-proxy)
-    header_up Remote-User {http.request.header.X-Forwarded-User}
+    route {
+        request_header -Remote-*
+        request_header -X-Auth-Request-*
+        request_header -X-Forwarded-*
+        request_header -Forwarded
+        reverse_proxy localhost:8080
+    }
 }
 ```
 
@@ -332,8 +350,12 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
-        # Forward auth header
-        proxy_set_header Remote-User $http_x_forwarded_user;
+        # LocalAuth/TLS-only mode: never translate a client-controlled header
+        # into Mosaic identity.
+        proxy_set_header Remote-User "";
+        proxy_set_header Remote-Groups "";
+        proxy_set_header Remote-Email "";
+        proxy_set_header Remote-Name "";
         
         # Tus upload support
         proxy_request_buffering off;
@@ -342,34 +364,22 @@ server {
 }
 ```
 
-### Authentication Integration
+### ProxyAuth Candidate
 
-Mosaic uses the `Remote-User` header for authentication. Your reverse proxy must:
+ProxyAuth is not enabled safely by forwarding `X-Forwarded-User` or another
+browser-supplied header. The current candidate path is the exact Caddy +
+Authelia topology in [AUTHELIA.md](AUTHELIA.md). It:
 
-1. Authenticate users via an external provider
-2. Set the `Remote-User` header with the authenticated username
-3. Forward requests to Mosaic
+1. publishes only Caddy on ports 80/443;
+2. deletes spoofable identity headers before every public or protected route;
+3. copies only Authelia's `Remote-User` result after successful auth;
+4. restricts the frontend to Caddy's fixed `172.31.0.5` address;
+5. restricts backend trust to the frontend's fixed `172.30.0.4/32` address; and
+6. mounts `nginx.proxyauth-deployment.conf`, never the test-only
+   `nginx.proxyauth.conf`.
 
-**Supported Providers:**
-
-| Provider | Integration Guide |
-|----------|-------------------|
-| **Authelia** | [Full integration guide](AUTHELIA.md) |
-| **Authentik** | Use nginx outpost with forward auth |
-| **oauth2-proxy** | Set `--pass-user-headers=true` |
-| **Keycloak** | Use Gatekeeper or nginx auth_request |
-
-**Quick Authelia Example (Caddy):**
-
-```caddyfile
-photos.example.com {
-    forward_auth authelia:9091 {
-        uri /api/v1/authz/forward-auth
-        copy_headers Remote-User Remote-Groups Remote-Email Remote-Name
-    }
-    reverse_proxy mosaic-frontend:8080
-}
-```
+This remains candidate-only until real ProxyAuth boundary evidence is approved
+for the exact release commit.
 
 **Backend Configuration:**
 
@@ -378,10 +388,12 @@ photos.example.com {
 environment:
   Auth__LocalAuthEnabled: "false"      # Disable password auth
   Auth__ProxyAuthEnabled: "true"       # Enable header auth
-  Auth__TrustedProxies__0: "172.16.0.0/12"  # Docker networks
+  # Valid only with the exact app-network address in AUTHELIA.md.
+  Auth__TrustedProxies__0: "172.30.0.4/32"
 ```
 
-> **Security:** Only accept `Remote-User` from trusted proxy IPs. See [AUTHELIA.md](AUTHELIA.md) for complete setup.
+Do not broaden that `/32` to a private range. See [AUTHELIA.md](AUTHELIA.md)
+for the complete candidate topology and its explicit stable-release blocker.
 
 ---
 
@@ -393,24 +405,33 @@ Mosaic uses Docker volumes for persistent data:
 |----------------|---------------------------|----------------------------|
 | `postgres_data`| `/var/lib/postgresql/data`| PostgreSQL database        |
 | `blob_data`    | `/app/data/blobs`         | Encrypted photo shards     |
+| `audit_data`   | `/app/data/audit`         | Persistent audit-log sink  |
 
-### Backup Strategy
+### Paired Backup and Restore
+
+Never dump PostgreSQL and copy the blob volume as independent operations. Use
+the canonical helper, which stops a running backend during capture, hash-binds
+the database and blob archives, and rehearses the pair in isolated resources:
 
 ```bash
-# Backup PostgreSQL
-docker compose exec postgres pg_dump -U mosaic mosaic > backup.sql
-
-# Backup blob storage
-docker run --rm -v mosaic_blob_data:/data -v $(pwd):/backup alpine \
-    tar czf /backup/blobs-$(date +%Y%m%d).tar.gz -C /data .
-
-# Restore PostgreSQL
-docker compose exec -T postgres psql -U mosaic mosaic < backup.sql
-
-# Restore blob storage
-docker run --rm -v mosaic_blob_data:/data -v $(pwd):/backup alpine \
-    tar xzf /backup/blobs-20240101.tar.gz -C /data
+./scripts/mosaic.sh backup
+./scripts/mosaic.sh verify-backup backups/<timestamp>
+./scripts/mosaic.sh restore backups/<timestamp>
 ```
+
+```powershell
+.\scripts\mosaic.ps1 backup
+.\scripts\mosaic.ps1 verify-backup backups\<timestamp>
+.\scripts\mosaic.ps1 restore backups\<timestamp>
+```
+
+Retain and copy the complete timestamped directory as one unit. Bash and
+PowerShell both write the identical two-line `manifest.sha256` contract, so the
+complete directory is portable between the canonical helpers. Restore refuses
+a mixed or corrupt pair and verifies every active shard file against database
+length and SHA-256 before reporting success. See
+[BACKUP_DR_RUNBOOK.md](BACKUP_DR_RUNBOOK.md) and
+[operations/BACKUP.md](operations/BACKUP.md) for retention and drill evidence.
 
 ### External Storage
 
@@ -577,169 +598,97 @@ docker volume prune
 - **Notable features:**
   - Tus resumable upload support
   - Health check endpoint
-  - Database migration on startup
+  - Serving process runs with migrations disabled
+  - Explicit one-shot `--migrate-only` schema boundary
+  - Read-only root with persistent blob/audit mounts and bounded `/tmp`
 
 ---
 
-## Container Registry
+## Container Registry and Release Artifacts
 
-### GitHub Container Registry
+Local build helpers create operator-owned preview images. Use an explicitly
+non-stable tag such as `dev-<commit>`; a local or manually pushed image is not a
+Mosaic stable release.
 
-```bash
-# Login
-echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+Stable web/backend images are published only by `.github/workflows/publish.yml`
+to:
 
-# Build and push
-./scripts/docker-build.sh -r ghcr.io/adsamcik -t v1.0.0
-```
+- `ghcr.io/OWNER/mosaic-backend`
+- `ghcr.io/OWNER/mosaic-frontend`
 
-### Docker Hub
+### Immutable stable publication contract
 
-```bash
-# Login
-docker login
+A tag push publishes only when all of these conditions pass:
 
-# Build and push
-./scripts/docker-build.sh -r your-username -t v1.0.0
-```
+1. The tagged tree sets `.github/release-readiness.json`
+   `stable_publication_enabled` to `true` and contains all eight required
+   `passed`, publicly downloadable, digest-verified, source-bound, unexpired
+   external evidence records. It is currently `false`, so stable publication
+   is blocked.
+2. The ref is an annotated exact `vMAJOR.MINOR.PATCH` tag whose peeled commit
+   is a non-merge child of the assessed source commit, changes only the
+   readiness manifest, and is reachable from `main`.
+3. The complete reusable release-assurance workflow succeeds for the tagged
+   commit, including supported web/backend unit, integration, build, security,
+   and E2E gates.
+4. Backend and frontend candidates are built for `linux/amd64` and
+   `linux/arm64`, pushed by digest, and receive registry SBOM/provenance plus
+   retained SPDX SBOM artifacts and signed GitHub build provenance.
+5. A clean consumer pulls the exact digests, verifies labels, attestations,
+   registry evidence, and container health, then completes registration, album
+   creation, upload, reload-persistence, and logout against those images.
+6. The workflow creates or confirms one immutable exact-version tag and a
+   GitHub Release that records both image digests and retains the verified
+   external-evidence bundle plus its SHA-256.
 
-### Self-hosted Registry
+The workflow does not create `latest`, moving major/minor tags, or a manual
+stable channel. A manual dispatch can build signed Android developer-preview
+artifacts only; those artifacts are never attached to a stable release.
 
-```bash
-./scripts/docker-build.sh -r registry.example.com:5000 -t v1.0.0
-```
+### Verify and consume a published release
 
----
-
-## GitHub Actions CI/CD
-
-Mosaic includes GitHub Actions workflows for automated testing, building, and publishing Docker images.
-
-### Workflows Overview
-
-| Workflow | Trigger | Purpose |
-|----------|---------|---------|
-| `tests.yml` | Push, PR | Run all unit, integration, and E2E tests |
-| `build.yml` | PR | Validate Docker builds without pushing |
-| `publish.yml` | Tag `v*`, Manual | Build and publish images to GHCR |
-
-### Publishing Docker Images
-
-Images are automatically published to GitHub Container Registry when you push a version tag:
-
-```bash
-# Create and push a release tag
-git tag v1.0.0
-git push origin v1.0.0
-
-# This triggers:
-# 1. Full test suite runs
-# 2. Backend image: ghcr.io/OWNER/mosaic-backend:v1.0.0
-# 3. Frontend image: ghcr.io/OWNER/mosaic-frontend:v1.0.0
-# 4. GitHub Release created with release notes
-```
-
-### Image Tagging Strategy
-
-Each release produces multiple tags for flexible version pinning:
-
-| Push Tag | Generated Tags |
-|----------|----------------|
-| `v1.2.3` | `1.2.3`, `1.2`, `1`, `latest` |
-| `v2.0.0` | `2.0.0`, `2.0`, `2`, `latest` |
-| `v1.2.4` | `1.2.4`, `1.2`, `1` |
-
-**Recommendations:**
-- **Production:** Pin to specific version (`:1.2.3`)
-- **Staging:** Use minor version (`:1.2`)
-- **Development:** Use `:latest` with caution
-
-### Multi-Architecture Support
-
-Published images support multiple architectures:
-- `linux/amd64` (Intel/AMD)
-- `linux/arm64` (Apple Silicon, ARM servers, Raspberry Pi)
-
-Docker automatically pulls the correct architecture for your platform.
-
-### Manual Publishing
-
-Trigger publishing without a tag via GitHub UI:
-
-1. Go to **Actions** → **Publish Docker Images**
-2. Click **Run workflow**
-3. Enter a version (e.g., `1.0.0`)
-4. Click **Run workflow**
-
-### Pulling Published Images
+Copy both digests from the GitHub Release, then verify the immutable subjects:
 
 ```bash
-# Authenticate to GitHub Container Registry
-echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+gh attestation verify oci://ghcr.io/OWNER/mosaic-backend@sha256:<backend-digest> --repo OWNER/Mosaic
+gh attestation verify oci://ghcr.io/OWNER/mosaic-frontend@sha256:<frontend-digest> --repo OWNER/Mosaic
 
-# Pull specific version
-docker pull ghcr.io/OWNER/mosaic-backend:1.0.0
-docker pull ghcr.io/OWNER/mosaic-frontend:1.0.0
-
-# Pull latest
-docker pull ghcr.io/OWNER/mosaic-backend:latest
-docker pull ghcr.io/OWNER/mosaic-frontend:latest
+docker buildx imagetools inspect ghcr.io/OWNER/mosaic-backend@sha256:<backend-digest>
+docker buildx imagetools inspect ghcr.io/OWNER/mosaic-frontend@sha256:<frontend-digest>
 ```
 
-### Using Published Images in Compose
-
-Create a `docker-compose.override.yml` to use published images:
+Use the same digest references in a Compose override:
 
 ```yaml
-# docker-compose.override.yml
 services:
   backend:
-    image: ghcr.io/OWNER/mosaic-backend:1.0.0
+    image: ghcr.io/OWNER/mosaic-backend@sha256:<backend-digest>
     build: !reset null
-    
   frontend:
-    image: ghcr.io/OWNER/mosaic-frontend:1.0.0
+    image: ghcr.io/OWNER/mosaic-frontend@sha256:<frontend-digest>
     build: !reset null
 ```
 
-Then deploy:
+With the digest override saved in a Compose file loaded by `docker compose`,
+apply the candidate through the canonical update helper:
 
 ```bash
-docker compose pull
-docker compose up -d
+./scripts/mosaic.sh update
 ```
 
-### Required Repository Secrets
+```powershell
+.\scripts\mosaic.ps1 update
+```
 
-The publish workflow uses these automatically available secrets:
+The helper rehearses a matched backup before pulling, quiesces the backend,
+runs the one-shot migration, and requires healthy recreation. A failure after
+quiesce leaves frontend and backend stopped rather than serving a partial
+upgrade.
 
-| Secret | Description |
-|--------|-------------|
-| `GITHUB_TOKEN` | Auto-provided, used for GHCR and releases |
-
-No additional configuration required—GitHub Actions automatically has push access to your repository's container registry.
-
-### Package Visibility
-
-By default, packages inherit repository visibility. To make images public:
-
-1. Go to **Packages** (from your profile or org)
-2. Select the package (e.g., `mosaic-backend`)
-3. Click **Package settings**
-4. Under **Danger Zone**, click **Change visibility**
-5. Select **Public**
-
-### PR Build Validation
-
-Pull requests that modify Docker-related files automatically trigger build validation:
-
-- Changed paths: `apps/backend/**`, `apps/web/**`, `libs/crypto/**`, `**/Dockerfile`, `docker-compose*.yml`
-- Builds both images (without pushing)
-- Runs integration test: starts containers and verifies `/health` endpoint
-
-This catches build issues before merging.
-
----
+If the tag, GitHub Release, digest pair, attestation, or clean-consumer run is
+missing, treat the image as an unsupported preview. See
+[RELEASE_STATE.md](RELEASE_STATE.md) and [RELEASE.md](RELEASE.md) for the full
+evidence and operator release checklist.
 
 ## Security Considerations
 
@@ -747,5 +696,5 @@ This catches build issues before merging.
 2. **Non-root containers**: Both frontend and backend run as non-root users
 3. **Network isolation**: Services communicate on an internal Docker network
 4. **TLS termination**: Always use a reverse proxy with TLS in production
-5. **Authentication**: Configure your reverse proxy to set the `Remote-User` header
-6. **Trusted proxies**: Backend only accepts auth headers from configured CIDR ranges
+5. **Authentication**: LocalAuth is the default; ProxyAuth requires the candidate boundary in [AUTHELIA.md](AUTHELIA.md)
+6. **Trusted proxies**: Use only the exact immediate frontend `/32`, never a whole private range

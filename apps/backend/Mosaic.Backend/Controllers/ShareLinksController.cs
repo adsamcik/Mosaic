@@ -1,8 +1,13 @@
+using System.ComponentModel.DataAnnotations;
+using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using Mosaic.Backend.Data;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Extensions;
+using Mosaic.Backend.Middleware;
 using Mosaic.Backend.Models;
 using Mosaic.Backend.Models.ShareLinks;
 using Mosaic.Backend.Services;
@@ -35,9 +40,24 @@ public class ShareLinksController : ControllerBase
     /// <summary>
     /// Create a new share link for an album (owner only)
     /// </summary>
+    /// <param name="albumId">Album that owns the share link.</param>
+    /// <param name="request">The client-addressed link ID, wrapped keys, and access policy.</param>
+    /// <param name="idempotencyKey">Required identifier for this logical create. Reuse it only when retrying the same payload; an exact retry returns the original 201 response and a changed payload returns 409.</param>
     [HttpPost("api/v1/albums/{albumId}/share-links")]
-    public async Task<IActionResult> Create(Guid albumId, [FromBody] CreateShareLinkRequest request)
+    [ProducesResponseType<ShareLinkResponse>(StatusCodes.Status201Created)]
+    public async Task<IActionResult> Create(
+        Guid albumId,
+        [FromBody] CreateShareLinkRequest request,
+        [FromHeader(Name = IdempotencyMiddleware.HeaderName), BindRequired, MaxLength(IdempotencyMiddleware.MaxKeyLength)] string? idempotencyKey = null)
     {
+        idempotencyKey ??= Request.Headers[IdempotencyMiddleware.HeaderName].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            return Problem(
+                detail: $"{IdempotencyMiddleware.HeaderName} is required for share-link creation.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         // Verify album ownership
@@ -46,12 +66,6 @@ public class ShareLinksController : ControllerBase
         if (ownerError != null)
         {
             return ownerError;
-        }
-
-        // Reject creating share links for expired albums
-        if (album!.ExpiresAt.HasValue && album.ExpiresAt.Value <= _timeProvider.GetUtcNow())
-        {
-            return Gone(new { error = "Album has expired" });
         }
 
         // Validate request
@@ -104,13 +118,6 @@ public class ShareLinksController : ControllerBase
             }
         }
 
-        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= _timeProvider.GetUtcNow())
-        {
-            return Problem(
-                detail: "expiresAt must be in the future",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
         if (request.MaxUses.HasValue && request.MaxUses.Value <= 0)
         {
             return Problem(
@@ -118,14 +125,37 @@ public class ShareLinksController : ControllerBase
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
-        // Check if linkId already exists
+        var createRequestHash = ComputeCreateRequestHash(albumId, request);
         var existingLink = await _db.ShareLinks
-            .AnyAsync(sl => sl.LinkId == request.LinkId);
-        if (existingLink)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(sl => sl.LinkId == request.LinkId);
+        if (existingLink != null)
+        {
+            if (IsExactCreateReplay(existingLink, albumId, createRequestHash))
+            {
+                Response.Headers["Idempotency-Replayed"] = "true";
+                return Created(
+                    $"/api/v1/share-links/{existingLink.Id}",
+                    ToCreateResponse(existingLink, request));
+            }
+
+            return Problem(
+                detail: "A link with this ID already exists and is bound to a different create request.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        // Time-dependent validations apply only after an exact retry has had
+        // the opportunity to recover the original response.
+        if (album!.ExpiresAt.HasValue && album.ExpiresAt.Value <= _timeProvider.GetUtcNow())
+        {
+            return Gone(new { error = "Album has expired" });
+        }
+
+        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
             return Problem(
-                detail: "A link with this ID already exists",
-                statusCode: StatusCodes.Status409Conflict);
+                detail: "expiresAt must be in the future",
+                statusCode: StatusCodes.Status400BadRequest);
         }
 
         await using var tx = await _db.Database.BeginTransactionAsync();
@@ -141,7 +171,8 @@ public class ShareLinksController : ControllerBase
                 ExpiresAt = request.ExpiresAt,
                 MaxUses = request.MaxUses,
                 UseCount = 0,
-                IsRevoked = false
+                IsRevoked = false,
+                CreateRequestHash = createRequestHash
             };
             _db.ShareLinks.Add(shareLink);
 
@@ -182,28 +213,79 @@ public class ShareLinksController : ControllerBase
                     });
             }
 
-            return Created($"/api/v1/share-links/{shareLink.Id}", new ShareLinkResponse
+            return Created(
+                $"/api/v1/share-links/{shareLink.Id}",
+                ToCreateResponse(shareLink, request));
+        }
+        catch (DbUpdateException ex) when (DatabaseConstraintErrors.IsUniqueViolation(ex))
+        {
+            // LinkId is the client-addressed identity. If another request won
+            // after our pre-check, roll back every wrapped-key side effect and
+            // recover only that winner's exact fingerprint.
+            await tx.RollbackAsync();
+            _db.ChangeTracker.Clear();
+
+            var racedLink = await _db.ShareLinks
+                .AsNoTracking()
+                .FirstOrDefaultAsync(sl => sl.LinkId == request.LinkId);
+            if (racedLink != null && IsExactCreateReplay(racedLink, albumId, createRequestHash))
             {
-                Id = shareLink.Id,
-                // v1.0.x shares-01: frontend Zod schema (Base64Schema = z.string().base64())
-                // requires standard base64 with `+`/`/`/`=` alphabet. base64url
-                // (with `-`/`_` and no padding) fails validation. Emit standard
-                // base64 here; `Base64UrlHelper.FromBase64Url` on the inbound
-                // path already accepts both encodings.
-                LinkId = Convert.ToBase64String(shareLink.LinkId),
-                AccessTier = shareLink.AccessTier,
-                ExpiresAt = shareLink.ExpiresAt,
-                MaxUses = shareLink.MaxUses,
-                UseCount = shareLink.UseCount,
-                IsRevoked = shareLink.IsRevoked,
-                CreatedAt = shareLink.CreatedAt
-            });
+                Response.Headers["Idempotency-Replayed"] = "true";
+                return Created(
+                    $"/api/v1/share-links/{racedLink.Id}",
+                    ToCreateResponse(racedLink, request));
+            }
+
+            if (racedLink != null)
+            {
+                return Problem(
+                    detail: "A link with this ID already exists and is bound to a different create request.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            throw;
         }
         catch
         {
             await tx.RollbackAsync();
             throw;
         }
+    }
+
+    private static bool IsExactCreateReplay(ShareLink shareLink, Guid albumId, byte[] requestHash)
+    {
+        return shareLink.AlbumId == albumId
+            && shareLink.CreateRequestHash != null
+            && shareLink.CreateRequestHash.Length == requestHash.Length
+            && CryptographicOperations.FixedTimeEquals(shareLink.CreateRequestHash, requestHash);
+    }
+
+    private static byte[] ComputeCreateRequestHash(Guid albumId, CreateShareLinkRequest request)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData("Mosaic_ShareLink_Create_Request_v1"u8);
+        hash.AppendData(albumId.ToByteArray());
+        hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(request));
+        return hash.GetHashAndReset();
+    }
+
+    private static ShareLinkResponse ToCreateResponse(
+        ShareLink shareLink,
+        CreateShareLinkRequest request)
+    {
+        return new ShareLinkResponse
+        {
+            Id = shareLink.Id,
+            // v1.0.x shares-01: frontend Zod schema requires standard
+            // base64 with the +/= alphabet, not unpadded base64url.
+            LinkId = Convert.ToBase64String(request.LinkId),
+            AccessTier = request.AccessTier,
+            ExpiresAt = request.ExpiresAt,
+            MaxUses = request.MaxUses,
+            UseCount = 0,
+            IsRevoked = false,
+            CreatedAt = shareLink.CreatedAt
+        };
     }
 
     /// <summary>
@@ -225,21 +307,33 @@ public class ShareLinksController : ControllerBase
             return ownerError;
         }
 
-        // Note: SQLite doesn't support DateTimeOffset in ORDER BY, so we order client-side
-        var shareLinks = await _db.ShareLinks
+        var query = _db.ShareLinks
             .AsNoTracking()
-            .Where(sl => sl.AlbumId == albumId)
-            .ToListAsync();
+            .Where(sl => sl.AlbumId == albumId);
 
-        var links = shareLinks
-            .OrderByDescending(sl => sl.CreatedAt)
+        var totalCount = await query.CountAsync();
+        var rows = await query
+            .OrderByDescending(sl => sl.CreatedAtUnixMilliseconds)
             .ThenBy(sl => sl.Id)
             .Skip(skip)
             .Take(take)
+            .Select(sl => new
+            {
+                sl.Id,
+                sl.LinkId,
+                sl.AccessTier,
+                sl.ExpiresAt,
+                sl.MaxUses,
+                sl.UseCount,
+                sl.IsRevoked,
+                sl.CreatedAt
+            })
+            .ToListAsync();
+
+        var links = rows
             .Select(sl => new ShareLinkResponse
             {
                 Id = sl.Id,
-                // v1.0.x shares-01: see Create() for rationale.
                 LinkId = Convert.ToBase64String(sl.LinkId),
                 AccessTier = sl.AccessTier,
                 ExpiresAt = sl.ExpiresAt,
@@ -247,10 +341,11 @@ public class ShareLinksController : ControllerBase
                 UseCount = sl.UseCount,
                 IsRevoked = sl.IsRevoked,
                 CreatedAt = sl.CreatedAt
-            }).ToList();
+            })
+            .ToList();
 
-        Response.AddPaginationHeaders(skip, take, shareLinks.Count);
-        return Ok(PagedResult.Create(links, skip, take, shareLinks.Count));
+        Response.AddPaginationHeaders(skip, take, totalCount);
+        return Ok(PagedResult.Create(links, skip, take, totalCount));
     }
 
     /// <summary>
@@ -272,44 +367,36 @@ public class ShareLinksController : ControllerBase
             return ownerError;
         }
 
-        // Only return active (non-revoked, non-expired) links with stored secrets
-        // Note: For SQLite compatibility, we load all links for this album and filter client-side
-        // since SQLite doesn't support DateTimeOffset comparisons in LINQ queries
-        var now = _timeProvider.GetUtcNow();
-        var allLinks = await _db.ShareLinks
+        var nowUnixMilliseconds = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        var query = _db.ShareLinks
             .AsNoTracking()
             .Where(sl => sl.AlbumId == albumId &&
                          !sl.IsRevoked &&
-                         sl.OwnerEncryptedSecret != null)
+                         sl.OwnerEncryptedSecret != null &&
+                         (!sl.ExpiresAtUnixMilliseconds.HasValue ||
+                          sl.ExpiresAtUnixMilliseconds.Value > nowUnixMilliseconds) &&
+                         (!sl.MaxUses.HasValue || sl.UseCount < sl.MaxUses.Value));
+
+        var totalCount = await query.CountAsync();
+        var rows = await query
+            .OrderByDescending(sl => sl.CreatedAtUnixMilliseconds)
+            .ThenBy(sl => sl.Id)
+            .Skip(skip)
+            .Take(take)
             .Select(sl => new
             {
                 sl.Id,
                 sl.LinkId,
                 sl.AccessTier,
                 sl.IsRevoked,
-                sl.OwnerEncryptedSecret,
-                sl.ExpiresAt,
-                sl.MaxUses,
-                sl.UseCount,
-                sl.CreatedAt
+                sl.OwnerEncryptedSecret
             })
             .ToListAsync();
 
-        // Filter for non-expired links client-side
-        var links = allLinks
-            .Where(sl => (!sl.ExpiresAt.HasValue || sl.ExpiresAt.Value > now) &&
-                         (!sl.MaxUses.HasValue || sl.UseCount < sl.MaxUses.Value))
-            .OrderByDescending(sl => sl.CreatedAt)
-            .ThenBy(sl => sl.Id)
-            .ToList();
-
-        var page = links
-            .Skip(skip)
-            .Take(take)
+        var page = rows
             .Select(sl => new ShareLinkWithSecretResponse
             {
                 Id = sl.Id,
-                // v1.0.x shares-01: see Create() for rationale.
                 LinkId = Convert.ToBase64String(sl.LinkId),
                 AccessTier = sl.AccessTier,
                 IsRevoked = sl.IsRevoked,
@@ -317,8 +404,8 @@ public class ShareLinksController : ControllerBase
             })
             .ToList();
 
-        Response.AddPaginationHeaders(skip, take, links.Count);
-        return Ok(PagedResult.Create(page, skip, take, links.Count));
+        Response.AddPaginationHeaders(skip, take, totalCount);
+        return Ok(PagedResult.Create(page, skip, take, totalCount));
     }
 
     /// <summary>

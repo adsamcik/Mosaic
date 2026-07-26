@@ -1,6 +1,10 @@
 import * as tus from 'tus-js-client';
 import { TUS_ENDPOINT } from '../api';
 import { createLogger } from '../logger';
+import {
+  readShardEnvelopeProtocol,
+  SHARD_BLOB_FORMAT_VERSION,
+} from './shard-envelope-protocol';
 
 const log = createLogger('TusUpload');
 const SHA256_HEX_BYTES = 32;
@@ -16,7 +20,7 @@ const SHA256_HEX = /^[0-9a-fA-F]{64}$/;
  * Bump in lockstep with backend `SupportedBlobFormatVersions` and the
  * "Storage Format Versions" register in `docs/ARCHITECTURE.md`.
  */
-export const BLOB_FORMAT_VERSION = 1;
+export const BLOB_FORMAT_VERSION = SHARD_BLOB_FORMAT_VERSION;
 
 /**
  * Default Tus retry budget (~1.5 minutes total across 8 attempts).
@@ -144,6 +148,15 @@ export async function tusUpload(
   sha256: string,
   shardIndex: number,
 ): Promise<string> {
+  let envelopeProtocol;
+  try {
+    envelopeProtocol = readShardEnvelopeProtocol(data);
+  } catch (error) {
+    throw new TusUploadError(
+      error instanceof Error ? error.message : 'Invalid encrypted shard envelope',
+      'upload.errors.invalidEnvelope',
+    );
+  }
   log.info(
     `TUS upload starting: albumId=${albumId}, shardIndex=${shardIndex}, size=${data.byteLength} bytes`,
   );
@@ -160,7 +173,8 @@ export async function tusUpload(
         albumId,
         shardIndex: String(shardIndex),
         'content-sha256': sha256ToTusMetadataHex(sha256),
-        'blob-format-version': String(BLOB_FORMAT_VERSION),
+        'blob-format-version': String(envelopeProtocol.blobFormatVersion),
+        'envelope-version': String(envelopeProtocol.envelopeVersion),
       },
       // Send credentials (cookies) with requests for authentication
       // In tus-js-client v2+, withCredentials is set via onBeforeRequest

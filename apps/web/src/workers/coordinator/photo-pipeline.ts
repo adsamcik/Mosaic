@@ -368,8 +368,7 @@ async function fetchShardsWithMirror(
       }
       return id;
     });
-    let fetched: Uint8Array[];
-    fetched = await deps.fetchShards(missingShardIds, input.signal);
+    const fetched = await deps.fetchShards(missingShardIds, input.signal);
     if (fetched.length !== missingIndices.length) {
       throw new DownloadError('IllegalState', 'fetchShards returned wrong count');
     }

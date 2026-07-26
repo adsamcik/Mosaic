@@ -1,6 +1,8 @@
 # Mosaic — Backup & Disaster Recovery Runbook
 
-> **Status:** Operator runbook. Last reviewed for v1.0.2.
+> **Status:** Current operator procedure for the supplied Compose deployment.
+> **Last reviewed:** 2026-07-26.
+> **Release maturity:** See [RELEASE_STATE.md](RELEASE_STATE.md).
 > **Audience:** Self-hosting operators (≤50-user deployments).
 > **Companion to:** `docs/DEPLOYMENT.md`, `docs/DOCKER.md`, `docs/SECURITY.md`.
 
@@ -20,163 +22,116 @@ The operator never needs (and cannot acquire) plaintext keys to perform DR.
 | Component | What | Where (default Docker compose layout) | Plaintext-sensitive? |
 |---|---|---|---|
 | **PostgreSQL** | All Mosaic tables (users, albums, members, manifests, epoch_keys, share_links, sidecar telemetry counters) | `mosaic_postgres_data` volume | No — all user content is encrypted; the operator-visible metadata (account ids, album ids, sizes, timestamps) is operational and already exposed to the operator at runtime. |
-| **Blob storage** | Per-shard encrypted blobs (one file per shard id) | `mosaic_blobs` volume (or S3-compatible bucket if configured) | No — every byte is `SGzk`-envelope ciphertext (ADR-013, ADR-022). |
+| **Blob storage** | Per-shard encrypted blobs (one file per shard id) | `mosaic_blob_data` volume | No — every byte is `SGzk`-envelope ciphertext (ADR-013, ADR-022). |
+| **Audit logs** | Append-only operational audit sink | `mosaic_audit_data` volume | Potentially sensitive operational identifiers; retain and protect under the deployment audit policy. It is not part of the DB/blob consistency pair. |
 | **Reverse-proxy configuration** | NGINX / Caddy site config including COOP/COEP headers, TLS cert chain, Authelia config | Operator-managed (outside the compose stack) | TLS private key is sensitive; COOP/COEP config is public. |
 | **Compose / orchestrator state** | `docker-compose.yml`, `.env`, container image digests | Operator-managed | The `.env` contains the DB password and trusted-proxy header secrets — sensitive. |
 | **What is NOT backed up** | No plaintext keys, no plaintext photos, no decryption material. The server has none. | n/a | n/a — by design. |
 
 ## Backup procedure
 
-The recommended cadence for a ≤50-user deployment is **daily incremental,
-weekly full**, with a 28-day retention.
+The recommended cadence for a small deployment is daily, with at least 28 days
+of retained recovery points and one off-host copy. Each recovery point is one
+indivisible, hash-bound database/blob directory.
 
-### 1. PostgreSQL
+### 1. Create the matched pair
 
-Use the standard `pg_dump` flow against the running database container:
+Use the repository helper from the directory containing `docker-compose.yml`:
+
+```bash
+./scripts/mosaic.sh backup
+```
 
 ```powershell
-# Windows / PowerShell example
-$ts = Get-Date -Format "yyyyMMdd-HHmmss"
-docker compose exec -T postgres pg_dump -U mosaic -F c -d mosaic |
-    Out-File -FilePath "C:\mosaic-backups\db-$ts.pgdump" -Encoding byte
+.\scripts\mosaic.ps1 backup
 ```
+
+The command serializes maintenance operations, stops a running backend for the
+capture, creates a custom PostgreSQL dump and blob archive, records their
+SHA-256 hashes, resumes the backend, and rehearses the pair in isolated Docker
+resources. Do not copy, expire, rename, or restore either file independently;
+move the complete `backups/<timestamp>` directory as one unit.
+
+If the capture or isolated rehearsal fails, that directory is not a valid
+backup. Investigate it and create a new pair before pruning an older recovery
+point.
+
+### 2. Protect off-host state
+
+Copy the complete verified backup directory to encrypted off-host storage.
+Back up reverse-proxy configuration, TLS/identity-provider state,
+`docker-compose.yml`, `.env`, exact image digests, and the `audit_data` volume
+under the operator backup policy. Those operational artifacts can have their
+own retention schedule, but they must identify which paired content backup and
+release digest they accompany. Protect `.env`, TLS keys, and audit records as
+sensitive data.
+
+### 3. Verify and drill
+
+Repeat the non-destructive isolated rehearsal whenever a retained copy is
+moved or sampled:
 
 ```bash
-# Linux / shell example
-ts=$(date -u +%Y%m%d-%H%M%S)
-docker compose exec -T postgres pg_dump -U mosaic -F c -d mosaic > /var/backups/mosaic/db-$ts.pgdump
+./scripts/mosaic.sh verify-backup backups/<timestamp>
 ```
 
-The `-F c` (custom format) dump is required for the restore procedure below
-and supports parallel restore. Retain ≥ 28 days; older dumps move to
-cold storage if regulatory retention requires it.
-
-### 2. Blob storage
-
-Blobs are append-only and content-addressed at the application layer (per
-ADR-022 + ADR-027), so a simple `rsync`-style snapshot is sufficient:
-
-```bash
-rsync -a --delete /var/lib/docker/volumes/mosaic_blobs/_data/ /var/backups/mosaic/blobs/
+```powershell
+.\scripts\mosaic.ps1 verify-backup backups\<timestamp>
 ```
 
-If the deployment uses an S3-compatible bucket, enable bucket-level
-versioning and lifecycle rules instead — that fulfils the same role with
-better atomicity.
+At least monthly, restore a retained pair on a scratch deployment and use a
+fresh supported web client to sign in and decrypt a designated test album.
+Storage reconciliation cannot prove that usable client key material still
+exists. Record the backup ID, release digest, active-shard count, client
+version, result, RPO, and RTO in the operator log.
 
-### 3. Reverse-proxy + compose state
-
-```bash
-tar czf /var/backups/mosaic/config-$(date -u +%Y%m%d).tgz \
-    /etc/nginx/sites-available/mosaic \
-    /etc/authelia \
-    /opt/mosaic/docker-compose.yml \
-    /opt/mosaic/.env
-```
-
-Encrypt this archive at rest (`age`, `gpg`, or backup-tool-native): it
-contains the DB password and the trusted-proxy header secret.
-
-### Verification (DO NOT SKIP)
-
-A backup that has never been restored is not a backup. Once per quarter:
-
-1. Spin up a scratch host (or `docker compose` namespace).
-2. Restore the latest full backup using the restore procedure below.
-3. Boot the stack against an empty client-side state and confirm a known
-   test user can log in (Authelia / reverse-proxy auth completes) and
-   the album list endpoint returns the expected count of encrypted
-   manifests.
-4. Tear down. Record the verification in the operator log.
-
-## Restore procedure (RPO/RTO targets: 24 h RPO, 4 h RTO)
+## Restore procedure (RPO/RTO objectives: 24 h RPO, 4 h RTO)
 
 ### 0. Pre-flight
 
-- Confirm the new host has the same OS major / `docker engine` major as
-  the source host.
-- Confirm the toolchain versions match the pinned values in
-  `docs/TOOLCHAIN_LIFECYCLE.md` for the release you are restoring.
-- Confirm you have all three artifact classes: DB dump, blob snapshot,
-  config archive. Missing any one means partial restore — see "Partial
-  recovery" below.
+- Keep the source deployment intact until the drill and client smoke test pass.
+- Restore the configuration for the exact release digest being recovered, then
+  adjust only host-specific network and TLS paths.
+- Confirm the selected directory contains `database.dump`, `blobs.tar.gz`, and
+  the canonical `manifest.sha256`. Bash and PowerShell use the same format;
+  never assemble a pair from different
+  timestamps.
+- Start PostgreSQL if necessary; keep the serving backend stopped until the
+  verified restore is complete.
 
-### 1. Bring up infrastructure shell
+### 1. Rehearse and restore the pair
 
-Restore the compose / config archive first:
-
-```bash
-tar xzf /var/backups/mosaic/config-YYYYMMDD.tgz -C /
-```
-
-Edit `.env` to point at the new host's networking / TLS cert paths if
-they changed.
-
-### 2. Start PostgreSQL only
+Run only the canonical helper:
 
 ```bash
-docker compose up -d postgres
-# wait for the container to become healthy
-docker compose exec postgres pg_isready -U mosaic
+./scripts/mosaic.sh restore backups/<timestamp>
 ```
 
-### 3. Restore the database
-
-```bash
-docker compose exec -T postgres dropdb -U mosaic --if-exists mosaic
-docker compose exec -T postgres createdb -U mosaic mosaic
-docker compose exec -T postgres pg_restore -U mosaic -d mosaic --no-owner --clean --if-exists \
-    < /var/backups/mosaic/db-YYYYMMDD-HHMMSS.pgdump
+```powershell
+.\scripts\mosaic.ps1 restore backups\<timestamp>
 ```
 
-Run the schema-integrity check:
+Before asking for destructive confirmation, the helper validates the manifest,
+rejects unsafe archive members, restores into isolated resources, and compares
+every active shard row with the restored file length and SHA-256. It then stops
+the live backend, restores both halves, repeats the active-shard reconciliation
+against the live volumes, and restarts a previously running backend only after
+success. A failed restore leaves the backend stopped; do not bypass that
+fail-closed state or run raw `pg_restore`, archive extraction, or volume-copy
+commands against production.
 
-```bash
-docker compose exec postgres psql -U mosaic -d mosaic -c "SELECT COUNT(*) FROM users;"
-docker compose exec postgres psql -U mosaic -d mosaic -c "SELECT COUNT(*) FROM albums;"
-docker compose exec postgres psql -U mosaic -d mosaic -c "SELECT COUNT(*) FROM manifests;"
-```
+### 2. Smoke test from a known client
 
-The counts should match what the source host reported at the time of the
-backup. A mismatch indicates the dump is corrupt — go to a previous
-backup.
-
-### 4. Restore blob storage
-
-```bash
-rsync -a --delete /var/backups/mosaic/blobs/ /var/lib/docker/volumes/mosaic_blobs/_data/
-```
-
-Set ownership / SELinux labels to match what the backend container
-expects (typically uid `1000`). The deployment doc has the host-specific
-table.
-
-### 5. Bring up the rest of the stack
-
-```bash
-docker compose up -d
-```
-
-Confirm health endpoints:
-
-```bash
-curl -fsS http://localhost:5000/health
-```
-
-### 6. Smoke test from a known client
-
-From a browser that already holds a valid session token from the source
-host (or a fresh login through Authelia):
+From a fresh supported browser session through the configured authentication
+boundary:
 
 - Album list loads with the expected number of albums.
-- Selecting an album streams shards and the client successfully decrypts
-  them (proves blob storage is bit-identical to the source).
-- A new upload completes through TUS resumable upload and the new shard
-  is visible after a refresh.
+- The designated recovery album streams and decrypts successfully.
+- A new upload completes through Tus and is visible after refresh.
+- Audit output remains writable in the persistent audit volume.
 
-If any of these fail, **do not destroy the source host** until the
-failure is understood. A partial restore can be reverted by pointing
-the reverse proxy back at the source.
+If any check fails, keep the restored backend out of service and preserve the
+source deployment and both backup copies for diagnosis.
 
 ## Partial recovery
 
@@ -205,8 +160,8 @@ one half is worse than useless — it gives a false sense of recoverability.
 
 | Test | Frequency | Last verified |
 |---|---|---|
-| DB-only restore against scratch host | Quarterly | (operator log) |
-| Full DR drill (DB + blobs + config) against scratch host | Quarterly | (operator log) |
+| Isolated restore and full active-shard reconciliation of a matched pair | Every backup and before every live restore | (operator log) |
+| Full DR drill (matched DB/blob pair + config + known-client decrypt) | Monthly | (operator log) |
 | Backup encryption-at-rest spot check (random-sample read with the configured key) | Monthly | (operator log) |
 
 Operators are expected to maintain an operator log with the last-verified

@@ -1,4 +1,4 @@
-name: Publish Docker Images
+name: Publish Mosaic Artifacts
 
 on:
   push:
@@ -6,417 +6,542 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Image tag (defaults to git sha)'
-        required: false
-        type: string
-      push:
-        description: 'Push images to registry'
-        required: false
-        type: boolean
-        default: true
-      skip_e2e_only:
-        description: '⚠️ Skip E2E tests only — unit tests ALWAYS run. Provide bypass_reason.'
+      android_preview:
+        description: Build signed Android developer-preview artifacts (never attached to a stable release)
         required: false
         type: boolean
         default: false
-      bypass_reason:
-        description: '📝 REQUIRED when skip_e2e_only is true: justification for skipping E2E tests'
-        required: false
-        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
-  # Images will be: ghcr.io/OWNER/mosaic-backend and ghcr.io/OWNER/mosaic-frontend
   IMAGE_PREFIX: ${{ github.repository_owner }}/mosaic
 
 jobs:
-  # Detect whether the operator has supplied Android signing + cert-pin secrets.
-  # When absent, the android-release job is skipped (not failed) — Android
-  # binaries are optional in the operator-self-host model. Docker images still
-  # publish without Android.
-  detect-android-secrets:
-    name: Detect Android Release Secrets
+  release-contract:
+    name: Validate Stable Release Contract
+    if: ${{ github.event_name == 'push' && github.event.deleted == false && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
-      secrets_present: ${{ steps.check.outputs.secrets_present }}
+      version: ${{ steps.release.outputs.version }}
+      created: ${{ steps.release.outputs.created }}
+      commit: ${{ steps.release.outputs.commit }}
     steps:
-      - name: Probe operator secret presence
-        id: check
-        env:
-          MOSAIC_RELEASE_PINS: ${{ secrets.MOSAIC_RELEASE_PINS }}
-          MOSAIC_RELEASE_KEYSTORE_BASE64: ${{ secrets.MOSAIC_RELEASE_KEYSTORE_BASE64 }}
-          MOSAIC_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.MOSAIC_RELEASE_KEYSTORE_PASSWORD }}
-          MOSAIC_RELEASE_KEY_ALIAS: ${{ secrets.MOSAIC_RELEASE_KEY_ALIAS }}
-          MOSAIC_RELEASE_KEY_PASSWORD: ${{ secrets.MOSAIC_RELEASE_KEY_PASSWORD }}
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Require an exact annotated stable SemVer tag on main
+        id: release
+        shell: bash
         run: |
-          missing=()
-          for name in MOSAIC_RELEASE_PINS MOSAIC_RELEASE_KEYSTORE_BASE64 MOSAIC_RELEASE_KEYSTORE_PASSWORD MOSAIC_RELEASE_KEY_ALIAS MOSAIC_RELEASE_KEY_PASSWORD; do
-            if [ -z "${!name:-}" ]; then
-              missing+=("$name")
-            fi
-          done
-          if [ ${#missing[@]} -eq 0 ]; then
-            echo "secrets_present=true" >> "$GITHUB_OUTPUT"
-            echo "✅ All 5 Android release secrets are present; android-release job will run." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "secrets_present=false" >> "$GITHUB_OUTPUT"
-            echo "## ⏭️ Android Release Skipped" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Operator has not supplied the required Android release secrets:" >> "$GITHUB_STEP_SUMMARY"
-            for name in "${missing[@]}"; do
-              echo "- \`$name\`" >> "$GITHUB_STEP_SUMMARY"
-            done
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Docker images will still publish. Android APK/AAB will not be built/uploaded." >> "$GITHUB_STEP_SUMMARY"
-            echo "See \`docs/RELEASE_NOTES_v0.2.0.md\` for the full secret list." >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Stable publication requires an exact vMAJOR.MINOR.PATCH tag."
+            exit 1
           fi
+          if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != "tag" ]; then
+            echo "::error::Stable publication requires an annotated release tag."
+            exit 1
+          fi
+          release_commit="$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")"
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$release_commit" FETCH_HEAD; then
+            echo "::error::Stable tags must identify a commit reachable from origin/main."
+            exit 1
+          fi
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "created=$(git show -s --format=%cI "$release_commit")" >> "$GITHUB_OUTPUT"
+          echo "commit=$release_commit" >> "$GITHUB_OUTPUT"
 
-  # Validate e2e bypass has a documented reason
-  validate-bypass:
-    name: Validate E2E Bypass
-    runs-on: ubuntu-latest
-    if: ${{ inputs.skip_e2e_only }}
-    steps:
-      - name: Require bypass reason
-        if: ${{ inputs.bypass_reason == '' }}
-        run: |
-          echo "::error::bypass_reason is REQUIRED when skip_e2e_only is true. Please provide a justification."
-          exit 1
-
-      - name: Log bypass to job summary
-        run: |
-          echo "## ⚠️ E2E TEST BYPASS ACTIVE" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Skip E2E only | \`true\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Reason | ${{ inputs.bypass_reason }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Triggered by | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Run ID | [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "⏰ **Timestamp:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-
-  # Unit tests ALWAYS run — there is no bypass for this job
-  unit-tests:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: |
-            libs/crypto/package-lock.json
-            apps/web/package-lock.json
-
-      - name: Install and test crypto library
-        working-directory: libs/crypto
-        run: |
-          npm ci
-          npm test
-
-      - name: Install and test admin frontend
-        working-directory: apps/web
-        run: |
-          npm ci
-          npm run test:run
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Run backend tests
-        working-directory: apps/backend/Mosaic.Backend.Tests
-        run: dotnet test --verbosity normal
-
-  # E2E tests — skippable only via skip_e2e_only on workflow_dispatch with a documented reason
-  e2e-tests:
-    name: E2E Tests
-    runs-on: ubuntu-latest
-    if: ${{ !inputs.skip_e2e_only }}
-    needs: unit-tests
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Setup Rust
-        run: |
-          rustup toolchain install 1.93.1 --profile minimal --target wasm32-unknown-unknown
-          rustup default 1.93.1
-
-      - name: Install wasm-bindgen CLI
-        run: cargo install wasm-bindgen-cli --version 0.2.118 --locked
-
-      - name: Build weak-key WASM for E2E
-        # E2E sets VITE_E2E_WEAK_KEYS=true on the frontend image; the WASM must be
-        # compiled with the matching `weak-kdf` Cargo feature, otherwise the Rust
-        # core rejects weak Argon2 profiles (KdfProfileTooWeak / code 208). Mirrors
-        # the equivalent step in tests.yml (see commit 29bfa5f).
-        # MOSAIC_WASM_OUT_DIR redirects the weak-kdf bytes to the dedicated
-        # test-weak artifact path so they never overwrite the canonical
-        # production WASM (HIGH security-review-2026-05-20-02).
+      - name: Require independent stable-release evidence approval
+        shell: bash
         env:
-          MOSAIC_WASM_CARGO_FEATURES: weak-kdf
-          MOSAIC_WASM_OUT_DIR: apps/web/src/generated/mosaic-wasm-test-weak
-        run: bash ./scripts/build-rust-wasm.sh
-
-      - name: Build and start services
+          RELEASE_COMMIT: ${{ steps.release.outputs.commit }}
         run: |
-          docker compose -f docker-compose.test.yml build
-          docker compose -f docker-compose.test.yml up -d postgres backend frontend
+          set -euo pipefail
+          python3 scripts/validate_release_readiness.py \
+            --repository . \
+            --release-commit "$RELEASE_COMMIT" \
+            --output-directory "$RUNNER_TEMP/release-evidence"
 
-      - name: Wait for services
-        run: |
-          timeout 120 bash -c 'until docker compose -f docker-compose.test.yml ps | grep -q "healthy"; do sleep 2; done'
-
-      - name: Run E2E tests
-        run: docker compose -f docker-compose.test.yml run --rm e2e-tests
-
-      - name: Upload test results
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
+      - name: Retain verified external evidence for release attachment
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: e2e-test-results
-          path: |
-            tests/e2e/results/
-            tests/e2e/playwright-report/
+          name: release-evidence-${{ steps.release.outputs.commit }}
+          path: ${{ runner.temp }}/release-evidence
+          if-no-files-found: error
+          retention-days: 90
 
-      - name: Cleanup
-        if: always()
-        run: docker compose -f docker-compose.test.yml down -v
+  assurance:
+    name: Complete Immutable Release Assurance
+    needs: release-contract
+    if: ${{ needs.release-contract.result == 'success' }}
+    uses: ./.github/workflows/tests.yml
+    with:
+      release_assurance: true
+      include_android: false
+    permissions:
+      contents: read
 
-  # Build and publish backend image — unit tests MUST pass; e2e may be skipped with documented reason
-  publish-backend:
-    name: Publish Backend
+  build-backend-candidate:
+    name: Build Backend Candidate by Digest
+    needs: [release-contract, assurance]
+    if: ${{ always() && needs.release-contract.result == 'success' && needs.assurance.result == 'success' }}
     runs-on: ubuntu-latest
-    needs: [validate-bypass, unit-tests, e2e-tests]
-    if: |
-      always() &&
-      needs.unit-tests.result == 'success' &&
-      (needs.e2e-tests.result == 'success' || needs.e2e-tests.result == 'skipped') &&
-      (needs.validate-bypass.result == 'success' || needs.validate-bypass.result == 'skipped')
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     outputs:
-      image: ${{ steps.meta.outputs.tags }}
+      repository: ${{ steps.subject.outputs.repository }}
       digest: ${{ steps.build.outputs.digest }}
-
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - name: Derive build version
-        id: version
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [ -n "${{ inputs.tag }}" ]; then
-            VERSION="${{ inputs.tag }}"
-            VERSION="${VERSION#v}"
-          fi
-          echo "MOSAIC_BUILD_VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Define immutable subject
+        id: subject
+        run: echo "repository=${REGISTRY}/${IMAGE_PREFIX}-backend" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.11.1
 
-      - name: Log in to Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
+      - name: Generate candidate metadata
         id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.8.0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend
+          images: ${{ steps.subject.outputs.repository }}
+          flavor: latest=false
+          tags: type=raw,value=candidate-${{ github.run_id }}-${{ github.run_attempt }}
           labels: |
-            org.opencontainers.image.tests.e2e-bypassed=${{ inputs.skip_e2e_only || false }}
-            org.opencontainers.image.tests.bypass-reason=${{ inputs.bypass_reason || 'N/A' }}
-            org.opencontainers.image.tests.bypass-actor=${{ inputs.skip_e2e_only && github.actor || 'N/A' }}
-          tags: |
-            # Use input tag if provided via workflow_dispatch
-            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
-            # Tag with version for releases (v1.0.0 -> 1.0.0)
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
-            # Tag with sha for non-release builds
-            type=sha,prefix=,enable=${{ !startsWith(github.ref, 'refs/tags/v') }}
-            # Latest tag for releases only
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            org.opencontainers.image.created=${{ needs.release-contract.outputs.created }}
+            org.opencontainers.image.revision=${{ needs.release-contract.outputs.commit }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.release-contract.outputs.version }}
 
-      - name: Build and push
+      - name: Build and push candidate with registry SBOM and provenance
         id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.18.0
         with:
           context: .
           file: ./apps/backend/Mosaic.Backend/Dockerfile
-          push: ${{ github.event_name == 'push' || inputs.push }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            MOSAIC_BUILD_VERSION=${{ steps.version.outputs.version }}
+          build-args: MOSAIC_BUILD_VERSION=${{ needs.release-contract.outputs.version }}
+          platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          sbom: true
 
-      - name: Generate SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
-        if: ${{ github.event_name == 'push' || inputs.push }}
+      - name: Generate retained SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.20.6
         with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ steps.meta.outputs.version }}
-          artifact-name: sbom-backend.spdx.json
+          image: ${{ steps.subject.outputs.repository }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-backend.spdx.json
+          artifact-name: sbom-backend-${{ needs.release-contract.outputs.commit }}.spdx.json
 
-  # Build and publish frontend image — unit tests MUST pass; e2e may be skipped with documented reason
-  publish-frontend:
-    name: Publish Frontend
+      - name: Sign build provenance for the pushed digest
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ${{ steps.subject.outputs.repository }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  build-frontend-candidate:
+    name: Build Frontend Candidate by Digest
+    needs: [release-contract, assurance]
+    if: ${{ always() && needs.release-contract.result == 'success' && needs.assurance.result == 'success' }}
     runs-on: ubuntu-latest
-    needs: [validate-bypass, unit-tests, e2e-tests]
-    if: |
-      always() &&
-      needs.unit-tests.result == 'success' &&
-      (needs.e2e-tests.result == 'success' || needs.e2e-tests.result == 'skipped') &&
-      (needs.validate-bypass.result == 'success' || needs.validate-bypass.result == 'skipped')
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     outputs:
-      image: ${{ steps.meta.outputs.tags }}
+      repository: ${{ steps.subject.outputs.repository }}
       digest: ${{ steps.build.outputs.digest }}
-
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Define immutable subject
+        id: subject
+        run: echo "repository=${REGISTRY}/${IMAGE_PREFIX}-frontend" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.11.1
 
-      - name: Log in to Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
+      - name: Generate candidate metadata
         id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.8.0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend
+          images: ${{ steps.subject.outputs.repository }}
+          flavor: latest=false
+          tags: type=raw,value=candidate-${{ github.run_id }}-${{ github.run_attempt }}
           labels: |
-            org.opencontainers.image.tests.e2e-bypassed=${{ inputs.skip_e2e_only || false }}
-            org.opencontainers.image.tests.bypass-reason=${{ inputs.bypass_reason || 'N/A' }}
-            org.opencontainers.image.tests.bypass-actor=${{ inputs.skip_e2e_only && github.actor || 'N/A' }}
-          tags: |
-            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
-            type=sha,prefix=,enable=${{ !startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            org.opencontainers.image.created=${{ needs.release-contract.outputs.created }}
+            org.opencontainers.image.revision=${{ needs.release-contract.outputs.commit }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.release-contract.outputs.version }}
 
-      - name: Build and push
+      - name: Build and push candidate with registry SBOM and provenance
         id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.18.0
         with:
           context: .
           file: ./apps/web/Dockerfile
-          push: ${{ github.event_name == 'push' || inputs.push }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            MOSAIC_PRODUCTION_BUILD=1
+          build-args: MOSAIC_PRODUCTION_BUILD=1
+          platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          sbom: true
 
-      - name: Generate SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
-        if: ${{ github.event_name == 'push' || inputs.push }}
+      - name: Generate retained SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.20.6
         with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ steps.meta.outputs.version }}
-          artifact-name: sbom-frontend.spdx.json
+          image: ${{ steps.subject.outputs.repository }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-frontend.spdx.json
+          artifact-name: sbom-frontend-${{ needs.release-contract.outputs.commit }}.spdx.json
 
-  android-release:
-    name: Android Release
+      - name: Sign build provenance for the pushed digest
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ${{ steps.subject.outputs.repository }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  clean-consumer:
+    name: Verify and Smoke Published Candidate Digests
+    needs: [release-contract, build-backend-candidate, build-frontend-candidate]
+    if: ${{ always() && needs.release-contract.result == 'success' && needs.build-backend-candidate.result == 'success' && needs.build-frontend-candidate.result == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: [validate-bypass, unit-tests, e2e-tests, detect-android-secrets]
-    if: |
-      always() &&
-      startsWith(github.ref, 'refs/tags/v') &&
-      needs.detect-android-secrets.result == 'success' &&
-      needs.detect-android-secrets.outputs.secrets_present == 'true' &&
-      needs.unit-tests.result == 'success' &&
-      (needs.e2e-tests.result == 'success' || needs.e2e-tests.result == 'skipped') &&
-      (needs.validate-bypass.result == 'success' || needs.validate-bypass.result == 'skipped')
-
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    env:
+      BACKEND_SUBJECT: ${{ needs.build-backend-candidate.outputs.repository }}@${{ needs.build-backend-candidate.outputs.digest }}
+      FRONTEND_SUBJECT: ${{ needs.build-frontend-candidate.outputs.repository }}@${{ needs.build-frontend-candidate.outputs.digest }}
+      EXPECTED_VERSION: ${{ needs.release-contract.outputs.version }}
+      EXPECTED_COMMIT: ${{ needs.release-contract.outputs.commit }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - name: Derive build version
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.11.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify signed provenance and registry evidence
+        shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "MOSAIC_BUILD_VERSION=$VERSION" >> "$GITHUB_ENV"
+          set -euo pipefail
+          for subject in "$BACKEND_SUBJECT" "$FRONTEND_SUBJECT"; do
+            gh attestation verify "oci://$subject" --repo "$GITHUB_REPOSITORY"
+            sbom="$(docker buildx imagetools inspect "$subject" --format '{{ json .SBOM }}')"
+            provenance="$(docker buildx imagetools inspect "$subject" --format '{{ json .Provenance }}')"
+            if ! grep -q 'spdxVersion' <<< "$sbom"; then
+              echo "::error::Registry SBOM is absent for $subject"
+              exit 1
+            fi
+            if ! grep -q 'buildType' <<< "$provenance"; then
+              echo "::error::Registry provenance is absent for $subject"
+              exit 1
+            fi
+          done
 
-      - name: Inject ADR-019 release pins
+      - name: Pull exact candidate digests and verify source/version labels
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "$BACKEND_SUBJECT"
+          docker pull "$FRONTEND_SUBJECT"
+          for subject in "$BACKEND_SUBJECT" "$FRONTEND_SUBJECT"; do
+            revision="$(docker image inspect "$subject" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+            version="$(docker image inspect "$subject" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
+            test "$revision" = "$EXPECTED_COMMIT"
+            test "$version" = "$EXPECTED_VERSION"
+          done
+
+      - name: Set up Node.js for exact-image smoke journey
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: tests/e2e/package-lock.json
+
+      - name: Install exact-image smoke dependencies
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Start only the pulled images in a clean Compose stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/published-images.yml" <<EOF
+          services:
+            backend:
+              image: $BACKEND_SUBJECT
+            frontend:
+              image: $FRONTEND_SUBJECT
+          EOF
+          docker compose -f docker-compose.test.yml -f "$RUNNER_TEMP/published-images.yml" up -d --no-build postgres backend frontend
+          timeout 180 bash -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" mosaic-test-backend)" = "healthy" ] && [ "$(docker inspect -f "{{.State.Health.Status}}" mosaic-test-frontend)" = "healthy" ]; do sleep 2; done'
+          curl --fail --show-error --silent http://localhost:5000/health > /dev/null
+          curl --fail --show-error --silent http://localhost:8080/health > /dev/null
+
+      - name: Run registration, album, upload, persistence, and logout journey against pulled images
+        working-directory: tests/e2e
+        env:
+          BASE_URL: http://localhost:8080
+          API_URL: http://localhost:5000
+          CI: "true"
+        run: npx playwright test --project=smoke --reporter=list
+
+      - name: Show clean-consumer logs on failure
+        if: failure()
+        run: |
+          if [ -f "$RUNNER_TEMP/published-images.yml" ]; then
+            docker compose -f docker-compose.test.yml -f "$RUNNER_TEMP/published-images.yml" logs --no-color backend frontend postgres
+          fi
+
+      - name: Clean up consumer stack
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/published-images.yml" ]; then
+            docker compose -f docker-compose.test.yml -f "$RUNNER_TEMP/published-images.yml" down -v
+          fi
+
+  promote-stable-tags:
+    name: Promote Verified Digests to One-Time Stable Tags
+    needs: [release-contract, build-backend-candidate, build-frontend-candidate, clean-consumer]
+    if: ${{ always() && needs.clean-consumer.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.release-contract.outputs.version }}
+      BACKEND_REPOSITORY: ${{ needs.build-backend-candidate.outputs.repository }}
+      BACKEND_DIGEST: ${{ needs.build-backend-candidate.outputs.digest }}
+      FRONTEND_REPOSITORY: ${{ needs.build-frontend-candidate.outputs.repository }}
+      FRONTEND_DIGEST: ${{ needs.build-frontend-candidate.outputs.digest }}
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.11.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create or verify immutable exact-version tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          promote() {
+            local repository="$1" expected="$2" target="$1:$VERSION" inspect_output existing actual
+            if inspect_output="$(docker buildx imagetools inspect "$target" 2>&1)"; then
+              existing="$(awk '/^Digest:/ {print $2; exit}' <<< "$inspect_output")"
+              if [ -z "$existing" ]; then
+                echo "::error::Registry returned no digest for existing stable tag $target"
+                return 1
+              fi
+              if [ "$existing" != "$expected" ]; then
+                echo "::error::Refusing to move existing stable tag $target from $existing to $expected"
+                return 1
+              fi
+              echo "$target already identifies the verified digest $expected"
+              return 0
+            else
+              if ! grep -Eqi '(manifest unknown|name unknown|not found)' <<< "$inspect_output"; then
+                echo "::error::Unable to determine whether stable tag $target exists; refusing promotion"
+                echo "$inspect_output" >&2
+                return 1
+              fi
+            fi
+
+            docker buildx imagetools create --tag "$target" "$repository@$expected"
+            actual="$(docker buildx imagetools inspect "$target" | awk '/^Digest:/ {print $2; exit}')"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::Stable tag $target resolved to $actual, expected $expected"
+              return 1
+            fi
+          }
+          promote "$BACKEND_REPOSITORY" "$BACKEND_DIGEST"
+          promote "$FRONTEND_REPOSITORY" "$FRONTEND_DIGEST"
+
+  release:
+    name: Create Digest-Bound GitHub Release
+    needs: [release-contract, build-backend-candidate, build-frontend-candidate, promote-stable-tags]
+    if: ${{ always() && needs.promote-stable-tags.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download verified external evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-evidence-${{ needs.release-contract.outputs.commit }}
+          path: ${{ runner.temp }}/release-evidence
+
+      - name: Package retained external evidence
+        env:
+          VERSION: ${{ needs.release-contract.outputs.version }}
+        run: |
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+            -czf "$RUNNER_TEMP/release-evidence-$VERSION.tar.gz" \
+            -C "$RUNNER_TEMP/release-evidence" .
+          sha256sum "$RUNNER_TEMP/release-evidence-$VERSION.tar.gz" \
+            > "$RUNNER_TEMP/release-evidence-$VERSION.tar.gz.sha256"
+
+      - name: Generate digest-bound release notes
+        env:
+          VERSION: ${{ needs.release-contract.outputs.version }}
+          BACKEND_REPOSITORY: ${{ needs.build-backend-candidate.outputs.repository }}
+          BACKEND_DIGEST: ${{ needs.build-backend-candidate.outputs.digest }}
+          FRONTEND_REPOSITORY: ${{ needs.build-frontend-candidate.outputs.repository }}
+          FRONTEND_DIGEST: ${{ needs.build-frontend-candidate.outputs.digest }}
+        run: |
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          ## Supported artifacts
+
+          This stable release contains the supported web/backend Docker surface only. Android remains a developer preview and is not a stable artifact.
+
+          - Backend: \`$BACKEND_REPOSITORY@$BACKEND_DIGEST\` (tag \`$VERSION\`)
+          - Frontend: \`$FRONTEND_REPOSITORY@$FRONTEND_DIGEST\` (tag \`$VERSION\`)
+
+          Both digests passed the complete tagged-commit assurance workflow, signed GitHub provenance verification, registry SBOM/provenance checks, and a clean exact-image registration, album creation, upload, reload-persistence, and logout journey before the exact-version tags were created.
+
+          Verify provenance with:
+
+          \`\`\`bash
+          gh attestation verify oci://$BACKEND_REPOSITORY@$BACKEND_DIGEST --repo $GITHUB_REPOSITORY
+          gh attestation verify oci://$FRONTEND_REPOSITORY@$FRONTEND_DIGEST --repo $GITHUB_REPOSITORY
+          \`\`\`
+          EOF
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.5.0
+        with:
+          body_path: ${{ runner.temp }}/release-notes.md
+          generate_release_notes: true
+          append_body: true
+          files: |
+            ${{ runner.temp }}/release-evidence-${{ needs.release-contract.outputs.version }}.tar.gz
+            ${{ runner.temp }}/release-evidence-${{ needs.release-contract.outputs.version }}.tar.gz.sha256
+
+  detect-android-preview-secrets:
+    name: Validate Android Preview Secrets
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.android_preview }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Require all preview signing inputs
         env:
           MOSAIC_RELEASE_PINS: ${{ secrets.MOSAIC_RELEASE_PINS }}
-        run: |
-          if [ -z "${MOSAIC_RELEASE_PINS:-}" ]; then
-            echo "::error::Missing required GitHub Actions secret MOSAIC_RELEASE_PINS. Set one sha256/<base64> SPKI pin per line before publishing Android release artifacts."
-            exit 1
-          fi
-          printf '%s\n' "$MOSAIC_RELEASE_PINS" > apps/android-main/src/main/assets/adr019-pins.txt
-
-      - name: Prepare Android release signing
-        env:
           MOSAIC_RELEASE_KEYSTORE_BASE64: ${{ secrets.MOSAIC_RELEASE_KEYSTORE_BASE64 }}
           MOSAIC_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.MOSAIC_RELEASE_KEYSTORE_PASSWORD }}
           MOSAIC_RELEASE_KEY_ALIAS: ${{ secrets.MOSAIC_RELEASE_KEY_ALIAS }}
           MOSAIC_RELEASE_KEY_PASSWORD: ${{ secrets.MOSAIC_RELEASE_KEY_PASSWORD }}
         run: |
-          for name in MOSAIC_RELEASE_KEYSTORE_BASE64 MOSAIC_RELEASE_KEYSTORE_PASSWORD MOSAIC_RELEASE_KEY_ALIAS MOSAIC_RELEASE_KEY_PASSWORD; do
+          set -euo pipefail
+          for name in MOSAIC_RELEASE_PINS MOSAIC_RELEASE_KEYSTORE_BASE64 MOSAIC_RELEASE_KEYSTORE_PASSWORD MOSAIC_RELEASE_KEY_ALIAS MOSAIC_RELEASE_KEY_PASSWORD; do
             if [ -z "${!name:-}" ]; then
-              echo "::error::Missing required GitHub Actions secret $name for Android release signing."
+              echo "::error::Missing required Android preview secret: $name"
               exit 1
             fi
           done
-          KEYSTORE_PATH="$RUNNER_TEMP/mosaic-release.keystore"
+
+  android-preview:
+    name: Android Developer Preview
+    needs: detect-android-preview-secrets
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.android_preview && needs.detect-android-preview-secrets.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Inject preview pins and signing key
+        env:
+          MOSAIC_RELEASE_PINS: ${{ secrets.MOSAIC_RELEASE_PINS }}
+          MOSAIC_RELEASE_KEYSTORE_BASE64: ${{ secrets.MOSAIC_RELEASE_KEYSTORE_BASE64 }}
+          MOSAIC_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.MOSAIC_RELEASE_KEYSTORE_PASSWORD }}
+          MOSAIC_RELEASE_KEY_ALIAS: ${{ secrets.MOSAIC_RELEASE_KEY_ALIAS }}
+          MOSAIC_RELEASE_KEY_PASSWORD: ${{ secrets.MOSAIC_RELEASE_KEY_PASSWORD }}
+        run: |
+          printf '%s\n' "$MOSAIC_RELEASE_PINS" > apps/android-main/src/main/assets/adr019-pins.txt
+          KEYSTORE_PATH="$RUNNER_TEMP/mosaic-preview.keystore"
           printf '%s' "$MOSAIC_RELEASE_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
           echo "MOSAIC_RELEASE_KEYSTORE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
           echo "MOSAIC_RELEASE_KEYSTORE_PASSWORD=$MOSAIC_RELEASE_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
           echo "MOSAIC_RELEASE_KEY_ALIAS=$MOSAIC_RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
           echo "MOSAIC_RELEASE_KEY_PASSWORD=$MOSAIC_RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "MOSAIC_BUILD_VERSION=0.0.0-preview.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
 
-      - name: Setup JDK 17
+      - name: Set up JDK 17
         uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@00854ea68c109d98c75d956347303bf7c45b0277 # v3.2.1
         with:
           packages: "platform-tools platforms;android-35 build-tools;35.0.0 ndk;29.0.14206865"
 
-      - name: Setup Rust
+      - name: Set up Rust and Android build tools
         run: |
-          rustup toolchain install 1.93.1 --profile minimal --component clippy,rustfmt --target aarch64-linux-android,x86_64-linux-android
+          rustup toolchain install 1.93.1 --profile minimal --target aarch64-linux-android,x86_64-linux-android
           rustup default 1.93.1
+          cargo install cargo-ndk --version 4.1.2 --locked
+          cargo install uniffi --version 0.31.1 --bin uniffi-bindgen --features cli --locked
 
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk --version 4.1.2 --locked
-
-      - name: Install uniffi-bindgen
-        run: cargo install uniffi --version 0.31.1 --bin uniffi-bindgen --locked
-
-      - name: Setup Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
         with:
           validate-wrappers: true
@@ -426,71 +551,18 @@ jobs:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
         run: bash ./scripts/build-rust-android.sh
 
-      - name: Build Android release artifacts
+      - name: Test and build signed preview artifacts
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
-        run: ./gradlew :apps:android-main:assembleRelease :apps:android-main:bundleRelease --no-daemon --console=plain -PmosaicVersionName="$MOSAIC_BUILD_VERSION" -PmosaicVersionCode="$GITHUB_RUN_NUMBER"
+        run: ./gradlew :apps:android-main:testDebugUnitTest :apps:android-main:assembleRelease :apps:android-main:bundleRelease --no-daemon --console=plain -PmosaicVersionName="$MOSAIC_BUILD_VERSION" -PmosaicVersionCode="$GITHUB_RUN_NUMBER"
 
-      - name: Upload Android release artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Upload developer-preview artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: android-release-artifacts
+          name: android-developer-preview-${{ github.sha }}
           path: |
             apps/android-main/build/outputs/apk/release/*.apk
             apps/android-main/build/outputs/bundle/release/*.aab
             apps/android-main/build/outputs/mapping/release/mapping.txt
           if-no-files-found: error
-          retention-days: 30
-
-  # Create GitHub Release with image info
-  release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    needs: [publish-backend, publish-frontend, android-release]
-    if: |
-      always() &&
-      startsWith(github.ref, 'refs/tags/v') &&
-      needs.publish-backend.result == 'success' &&
-      needs.publish-frontend.result == 'success' &&
-      (needs.android-release.result == 'success' || needs.android-release.result == 'skipped')
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Generate release notes
-        id: notes
-        run: |
-          cat << 'EOF' > release-notes.md
-          ## Docker Images
-
-          Pull the images from GitHub Container Registry:
-
-          ```bash
-          # Backend API
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-backend:${{ github.ref_name }}
-
-          # Frontend
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-frontend:${{ github.ref_name }}
-          ```
-
-          ## Quick Start
-
-          ```bash
-          # Create docker-compose.yml with the above images, then:
-          docker compose up -d
-          ```
-
-          ## Image Digests
-
-          - Backend: `${{ needs.publish-backend.outputs.digest }}`
-          - Frontend: `${{ needs.publish-frontend.outputs.digest }}`
-          EOF
-
-      - name: Create Release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
-        with:
-          body_path: release-notes.md
-          generate_release_notes: true
-          append_body: true
+          retention-days: 14

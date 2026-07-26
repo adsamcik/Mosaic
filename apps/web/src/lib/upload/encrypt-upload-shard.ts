@@ -1,10 +1,13 @@
 import type { getCryptoClient } from '../crypto-client';
 import type { EpochHandleId } from '../../workers/types';
 import initRustWasm, { sha256OfBytes } from '../../generated/mosaic-wasm/mosaic_wasm.js';
+import { readShardEnvelopeProtocol } from './shard-envelope-protocol';
 
 export interface UploadEncryptedShard {
   envelopeBytes: Uint8Array;
   sha256: string;
+  envelopeVersion: number;
+  blobFormatVersion: number;
 }
 
 type CryptoClient = Awaited<ReturnType<typeof getCryptoClient>>;
@@ -69,8 +72,10 @@ export async function encryptUploadShardWithEpochHandle(
     tier,
     shardIndex,
   );
+  const protocol = readShardEnvelopeProtocol(envelopeBytes);
   return {
     envelopeBytes,
     sha256: await sha256Base64Url(envelopeBytes),
+    ...protocol,
   };
 }

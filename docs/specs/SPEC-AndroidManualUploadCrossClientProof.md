@@ -11,6 +11,23 @@ the Android shell, backend controller, and web Vitest fixture tests
 referenced below. A full device/browser E2E proof remains out of scope here
 and is tracked by the Band 8 final validation matrix.
 
+### Current producer amendment
+
+The checked-in fixture proves the earlier opaque DTO boundary, but its direct
+manifest-create request is not the current routable producer. Current Android,
+web, and backend proofs must additionally cover:
+
+1. a stable client-selected manifest ID and operation ID;
+2. `POST /api/v1/manifests/sequence-reservations` with `operationKind: Create`;
+3. the returned positive `manifestSeq` bound into the v2 Rust transcript and signature;
+4. `POST /api/v1/manifests/{manifestId}/finalize` with the matching
+   `sequenceReservationId`; and
+5. exact retry by manifest ID/request hash. `Idempotency-Key` is optional on
+   finalize and cannot substitute for the signed sequence reservation.
+
+The historical fixture body below is retained for opacity/privacy regression
+coverage. It is not, by itself, proof of the current producer route.
+
 ## Scope
 
 This proof aligns the Android manual upload handoff, Rust client-core upload
@@ -58,14 +75,18 @@ Android Photo Picker grant
        ],
        manifestReceipt: { manifestId, version }
      }
-  -> backend POST /api/v1/manifests
+  -> backend POST /api/v1/manifests/sequence-reservations
+     { albumId, signerPubkey, targetManifestId, operationId, operationKind: Create }
+  -> Rust v2 transcript/signature binds returned positive manifestSeq
+  -> backend POST /api/v1/manifests/{manifestId}/finalize
      {
        albumId,
        encryptedMeta: base64 bytes over JSON transport / byte[] in .NET,
        signature,
        signerPubkey,
-       shardIds,
-       tieredShards?: [{ shardId, tier }]
+       manifestSeq,
+       sequenceReservationId,
+       tieredShards: [{ shardId, tier, shardIndex, sha256, contentLength, envelopeVersion }]
      }
   -> backend stores Manifest.EncryptedMeta byte[] and ManifestShard links only
   -> web sync receives ManifestRecord
@@ -83,7 +104,7 @@ Android Photo Picker grant
   -> web shard service downloads /api/v1/shards/{shardId} as Uint8Array
 ```
 
-The shared fixture pins the concrete proof values:
+The historical shared fixture pins the original opaque-boundary proof values:
 
 ```json
 {
@@ -162,7 +183,7 @@ tests/contracts
 Focused proof gates:
 
 1. `.\scripts\test-android-shell.ps1`
-2. `dotnet test apps\backend\Mosaic.Backend.Tests --filter FullyQualifiedName~ManifestsControllerTests.Create_AcceptsCrossClientManualUploadFixture_AndPreservesOpaqueFields`
+2. `dotnet test apps\backend\Mosaic.Backend.Tests --filter FullyQualifiedName~ManifestProtocolContractTests`
 3. `cd apps\web; npm run test:run -- tests/android-manual-upload-cross-client-contract.test.ts`
 4. `git diff --check`
 
@@ -175,7 +196,7 @@ harness that can:
 2. stage selected media into app-private storage;
 3. run the WorkManager foreground `dataSync` upload drain;
 4. encrypt shards/metadata through generated UniFFI bindings;
-5. upload encrypted shard bytes through Tus and create the manifest;
+5. upload encrypted shard bytes through Tus, reserve a sequence, sign the v2 transcript, and finalize the client-addressed manifest;
 6. open the web app and verify sync renders the uploaded asset.
 
 Those prerequisites are absent in this repository slice, so Band 3 exits with a

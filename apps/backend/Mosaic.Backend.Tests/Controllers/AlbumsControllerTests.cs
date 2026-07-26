@@ -158,6 +158,7 @@ public class AlbumsControllerTests
         };
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "album-create-test-key";
         var result = await controller.Create(request);
 
         // Assert
@@ -168,6 +169,121 @@ public class AlbumsControllerTests
         Assert.Single(db.Albums);
         Assert.Single(db.AlbumMembers);
         Assert.Single(db.EpochKeys);
+    }
+
+    [Fact]
+    public async Task Create_RequiresIdempotencyKey()
+    {
+        using var db = TestDbContextFactory.Create();
+        var controller = new AlbumsController(
+            db,
+            new MockQuotaSettingsService(),
+            new MockCurrentUserService(db),
+            NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+        var request = new CreateAlbumRequest
+        {
+            InitialEpochKey = new InitialEpochKeyRequest
+            {
+                EncryptedKeyBundle = new byte[32],
+                OwnerSignature = new byte[64],
+                SharerPubkey = new byte[32],
+                SignPubkey = new byte[32]
+            }
+        };
+
+        var result = await controller.Create(request);
+
+        var problem = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("Idempotency-Key", ProblemDetailsAssertions.GetDetail(problem));
+        Assert.Empty(db.Albums);
+    }
+
+    [Fact]
+    public async Task Create_ExactRetry_ReturnsOriginalCreatedResponseWithoutRepeatingSideEffects()
+    {
+        using var db = TestDbContextFactory.Create();
+        var controller = new AlbumsController(
+            db,
+            new MockQuotaSettingsService(),
+            new MockCurrentUserService(db),
+            NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+        controller.Request.Headers["Idempotency-Key"] = "album-exact-retry";
+        var request = new CreateAlbumRequest
+        {
+            EncryptedName = "ciphertext-name",
+            ExpirationWarningDays = 5,
+            InitialEpochKey = new InitialEpochKeyRequest
+            {
+                EncryptedKeyBundle = TestDataBuilder.GenerateRandomBytes(32),
+                OwnerSignature = TestDataBuilder.GenerateRandomBytes(64),
+                SharerPubkey = TestDataBuilder.GenerateRandomBytes(32),
+                SignPubkey = TestDataBuilder.GenerateRandomBytes(32)
+            }
+        };
+
+        var first = Assert.IsType<CreatedResult>(await controller.Create(request));
+        var firstBody = JsonSerializer.Serialize(first.Value);
+        var replay = Assert.IsType<CreatedResult>(await controller.Create(request));
+
+        Assert.Equal(first.Location, replay.Location);
+        Assert.Equal(firstBody, JsonSerializer.Serialize(replay.Value));
+        Assert.Equal("true", controller.Response.Headers["Idempotency-Replayed"].ToString());
+        Assert.Single(db.Albums);
+        Assert.Single(db.AlbumMembers);
+        Assert.Single(db.EpochKeys);
+        Assert.Single(db.AlbumLimits);
+        Assert.Equal(32, db.Albums.Single().CreateRequestHash?.Length);
+    }
+
+    [Fact]
+    public async Task Create_ChangedRequestWithSameKey_ReturnsConflictWithoutRepeatingSideEffects()
+    {
+        using var db = TestDbContextFactory.Create();
+        var controller = new AlbumsController(
+            db,
+            new MockQuotaSettingsService(),
+            new MockCurrentUserService(db),
+            NullLoggerFactory.CreateNullLogger<AlbumsController>())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(TestAuthSub)
+            }
+        };
+        controller.Request.Headers["Idempotency-Key"] = "album-conflicting-retry";
+        var request = new CreateAlbumRequest
+        {
+            EncryptedName = "original-ciphertext",
+            InitialEpochKey = new InitialEpochKeyRequest
+            {
+                EncryptedKeyBundle = TestDataBuilder.GenerateRandomBytes(32),
+                OwnerSignature = TestDataBuilder.GenerateRandomBytes(64),
+                SharerPubkey = TestDataBuilder.GenerateRandomBytes(32),
+                SignPubkey = TestDataBuilder.GenerateRandomBytes(32)
+            }
+        };
+
+        Assert.IsType<CreatedResult>(await controller.Create(request));
+        request.EncryptedName = "changed-ciphertext";
+        var replay = await controller.Create(request);
+
+        ProblemDetailsAssertions.AssertConflict(replay);
+        Assert.Single(db.Albums);
+        Assert.Single(db.AlbumMembers);
+        Assert.Single(db.EpochKeys);
+        Assert.Single(db.AlbumLimits);
     }
 
     [Fact]
@@ -190,6 +306,7 @@ public class AlbumsControllerTests
         };
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "album-create-test-key";
         var result = await controller.Create(request);
 
         // Assert
@@ -223,6 +340,7 @@ public class AlbumsControllerTests
         };
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "album-create-test-key";
         var result = await controller.Create(request);
 
         // Assert
@@ -634,6 +752,7 @@ public class AlbumsControllerTests
         };
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "album-create-test-key";
         var result = await controller.Create(request);
 
         // Assert
@@ -673,6 +792,7 @@ public class AlbumsControllerTests
         };
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "album-create-test-key";
         var result = await controller.Create(request);
 
         // Assert
@@ -794,6 +914,7 @@ public class AlbumsControllerTests
         };
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "album-create-test-key";
         var result = await controller.Create(request);
 
         // Assert
@@ -834,6 +955,7 @@ public class AlbumsControllerTests
         };
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "album-create-test-key";
         var result = await controller.Create(request);
 
         // Assert
@@ -874,6 +996,7 @@ public class AlbumsControllerTests
         };
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "album-create-test-key";
         var result = await controller.Create(request);
 
         // Assert
@@ -911,6 +1034,7 @@ public class AlbumsControllerTests
         };
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "album-create-test-key";
         var result = await controller.Create(request);
 
         // Assert
@@ -945,6 +1069,7 @@ public class AlbumsControllerTests
         };
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "album-create-test-key";
         var result = await controller.Create(request);
 
         // Assert

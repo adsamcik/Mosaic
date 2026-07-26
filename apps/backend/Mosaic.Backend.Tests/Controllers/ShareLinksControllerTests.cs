@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
 using Mosaic.Backend.Data;
@@ -102,6 +103,7 @@ public class ShareLinksControllerTests
         var request = CreateValidRequest();
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(album.Id, request);
 
         // Assert
@@ -114,6 +116,86 @@ public class ShareLinksControllerTests
         Assert.Null(response.MaxUses);
 
         // Verify database state
+        Assert.Single(db.ShareLinks);
+        Assert.Single(db.LinkEpochKeys);
+    }
+
+    [Fact]
+    public async Task Create_RequiresIdempotencyKey()
+    {
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var controller = new ShareLinksController(db, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+
+        var result = await controller.Create(album.Id, CreateValidRequest());
+
+        var problem = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Contains("Idempotency-Key", ProblemDetailsAssertions.GetDetail(problem));
+        Assert.Empty(db.ShareLinks);
+    }
+
+    [Fact]
+    public async Task Create_ExactRetry_ReturnsOriginalCreatedResponseWithoutRepeatingSideEffects()
+    {
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var controller = new ShareLinksController(db, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+        controller.Request.Headers["Idempotency-Key"] = "share-link-exact-retry";
+        var request = CreateValidRequest();
+        request.OwnerEncryptedSecret = TestDataBuilder.GenerateRandomBytes(48);
+        request.MaxUses = 3;
+
+        var first = Assert.IsType<CreatedResult>(await controller.Create(album.Id, request));
+        var firstResponse = Assert.IsType<ShareLinkResponse>(first.Value);
+        var replay = Assert.IsType<CreatedResult>(await controller.Create(album.Id, request));
+        var replayResponse = Assert.IsType<ShareLinkResponse>(replay.Value);
+
+        Assert.Equal(first.Location, replay.Location);
+        Assert.Equal(JsonSerializer.Serialize(firstResponse), JsonSerializer.Serialize(replayResponse));
+        Assert.Equal("true", controller.Response.Headers["Idempotency-Replayed"].ToString());
+        Assert.Single(db.ShareLinks);
+        Assert.Single(db.LinkEpochKeys);
+        Assert.Equal(32, db.ShareLinks.Single().CreateRequestHash?.Length);
+    }
+
+    [Fact]
+    public async Task Create_ChangedRequestForSameLinkId_ReturnsConflictWithoutRepeatingSideEffects()
+    {
+        using var db = TestDbContextFactory.Create();
+        var builder = new TestDataBuilder(db);
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var controller = new ShareLinksController(db, new MockCurrentUserService(db))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = TestHttpContext.Create(OwnerAuthSub)
+            }
+        };
+        controller.Request.Headers["Idempotency-Key"] = "share-link-conflicting-retry";
+        var request = CreateValidRequest();
+
+        Assert.IsType<CreatedResult>(await controller.Create(album.Id, request));
+        request.MaxUses = 2;
+        var replay = await controller.Create(album.Id, request);
+
+        ProblemDetailsAssertions.AssertConflict(replay);
         Assert.Single(db.ShareLinks);
         Assert.Single(db.LinkEpochKeys);
     }
@@ -151,6 +233,7 @@ public class ShareLinksControllerTests
         };
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(album.Id, request);
 
         // Assert
@@ -183,6 +266,7 @@ public class ShareLinksControllerTests
         request.MaxUses = 10;
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(album.Id, request);
 
         // Assert
@@ -213,6 +297,7 @@ public class ShareLinksControllerTests
         var request = CreateValidRequest();
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(Guid.NewGuid(), request);
 
         // Assert
@@ -243,6 +328,7 @@ public class ShareLinksControllerTests
         var request = CreateValidRequest();
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(album.Id, request);
 
         // Assert — non-owners get 403
@@ -272,6 +358,7 @@ public class ShareLinksControllerTests
         request.AccessTier = 5;
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(album.Id, request);
 
         // Assert
@@ -300,6 +387,7 @@ public class ShareLinksControllerTests
         request.AccessTier = 2;
         request.WrappedKeys[0].Tier = 3;
 
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(album.Id, request);
 
         var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
@@ -328,6 +416,7 @@ public class ShareLinksControllerTests
         var request = CreateValidRequest(linkId: new byte[8]); // Wrong length
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(album.Id, request);
 
         // Assert
@@ -371,6 +460,7 @@ public class ShareLinksControllerTests
         };
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(album.Id, request);
 
         // Assert
@@ -401,6 +491,7 @@ public class ShareLinksControllerTests
         request.ExpiresAt = DateTimeOffset.UtcNow.AddDays(-1);
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(album.Id, request);
 
         // Assert
@@ -431,6 +522,7 @@ public class ShareLinksControllerTests
         request.MaxUses = 0;
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(album.Id, request);
 
         // Assert
@@ -469,6 +561,7 @@ public class ShareLinksControllerTests
         };
         var request = CreateValidRequest(linkId: linkIdBytes);
 
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(album.Id, request);
 
         var createdResult = Assert.IsType<CreatedResult>(result);
@@ -510,6 +603,7 @@ public class ShareLinksControllerTests
         var request = CreateValidRequest(linkId: existingLinkId);
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(album.Id, request);
 
         // Assert
@@ -2628,6 +2722,7 @@ public class ShareLinksControllerTests
         var request = CreateValidRequest();
 
         // Act
+        controller.Request.Headers["Idempotency-Key"] = "share-link-create-test-key";
         var result = await controller.Create(album.Id, request);
 
         // Assert

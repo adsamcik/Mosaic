@@ -187,9 +187,9 @@ export async function verifyAuth(
     });
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
-      throw new Error('Invalid credentials');
+      throw new Error('Invalid credentials', { cause: error });
     }
-    throw new Error(apiErrorMessage(error));
+    throw new Error(apiErrorMessage(error), { cause: error });
   }
 }
 
@@ -218,9 +218,9 @@ export async function registerUser(params: {
     });
   } catch (error) {
     if (error instanceof ApiError && error.status === 409) {
-      throw new Error('Username already exists');
+      throw new Error('Username already exists', { cause: error });
     }
-    throw new Error(apiErrorMessage(error));
+    throw new Error(apiErrorMessage(error), { cause: error });
   }
 }
 
@@ -611,7 +611,7 @@ export async function devLogin(username: string): Promise<DevLoginResponse> {
       body: { username },
     });
   } catch (error) {
-    throw new Error(apiErrorMessage(error));
+    throw new Error(apiErrorMessage(error), { cause: error });
   }
 }
 
@@ -631,6 +631,6 @@ export async function devUpdateKeys(keys: {
       body: keys,
     });
   } catch (error) {
-    throw new Error(apiErrorMessage(error));
+    throw new Error(apiErrorMessage(error), { cause: error });
   }
 }

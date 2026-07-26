@@ -1,5 +1,17 @@
 # Feature Design: Link Expiration & Album Expiration
 
+> **Status: historical design record.** The implementation checklist and
+> "current state" below describe the repository before album expiration was
+> delivered; they are retained for design traceability and are not the current
+> API contract. The supported surface now includes opt-in album expiration and
+> share-link expiration, including their album-scoped update endpoints.
+> Per-photo expiration is not supported: its former handlers are deliberately
+> non-routable, v2 manifest finalization rejects a non-null photo `expiresAt`,
+> and no automatic photo-expiration sweep runs. Reintroducing it requires a
+> reservation-backed signed lifecycle design. See
+> [Release State and Evidence](RELEASE_STATE.md) and the generated
+> [`openapi.json`](openapi.json) for the current support boundary.
+
 ## Overview
 
 This document describes the design for two related expiration features:
@@ -7,7 +19,7 @@ This document describes the design for two related expiration features:
 1. **Link Expiration (Enhancement)** - Improve the existing share link expiration UI and add ability to extend/modify expiration
 2. **Album Expiration (New)** - Allow owners to set an expiration date on albums, after which the album and all its contents are automatically deleted
 
-## Current State
+## Historical starting state
 
 ### Share Links
 - ✅ `ExpiresAt` field exists on `ShareLink` entity (nullable `DateTimeOffset`)

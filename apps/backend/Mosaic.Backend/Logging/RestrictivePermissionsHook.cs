@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using Mosaic.Backend.Services;
 using Serilog.Sinks.File;
 
 namespace Mosaic.Backend.Logging.Hooks;
@@ -25,6 +26,12 @@ public sealed class RestrictivePermissionsHook : FileLifecycleHooks
 {
     private const UnixFileMode OwnerReadWrite =
         UnixFileMode.UserRead | UnixFileMode.UserWrite;
+    private readonly AuditSinkWriteMonitor? _writeMonitor;
+
+    public RestrictivePermissionsHook(AuditSinkWriteMonitor? writeMonitor = null)
+    {
+        _writeMonitor = writeMonitor;
+    }
 
     public override Stream OnFileOpened(string path, Stream underlyingStream, Encoding encoding)
     {
@@ -45,6 +52,7 @@ public sealed class RestrictivePermissionsHook : FileLifecycleHooks
             }
         }
 
-        return base.OnFileOpened(path, underlyingStream, encoding);
+        var openedStream = base.OnFileOpened(path, underlyingStream, encoding);
+        return _writeMonitor?.Track(path, openedStream) ?? openedStream;
     }
 }

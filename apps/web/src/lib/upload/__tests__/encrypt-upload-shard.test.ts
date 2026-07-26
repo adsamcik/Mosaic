@@ -26,7 +26,17 @@ function base64Url(bytes: Uint8Array): string {
 
 describe('encryptUploadShardWithEpochHandle', () => {
   it('uses Rust SHA-256 bytes for the upload envelope content hash', async () => {
-    const envelopeBytes = new Uint8Array([1, 2, 3, 4]);
+    const envelopeBytes = new Uint8Array([
+      'S'.charCodeAt(0),
+      'G'.charCodeAt(0),
+      'z'.charCodeAt(0),
+      'k'.charCodeAt(0),
+      4,
+      1,
+      2,
+      3,
+      4,
+    ]);
     const crypto = {
       encryptShardWithEpochHandle: vi.fn().mockResolvedValue(envelopeBytes),
     } as unknown as CryptoClient;
@@ -40,6 +50,8 @@ describe('encryptUploadShardWithEpochHandle', () => {
     );
 
     expect(result.envelopeBytes).toBe(envelopeBytes);
+    expect(result.envelopeVersion).toBe(4);
+    expect(result.blobFormatVersion).toBe(1);
     expect(result.sha256).toBe(base64Url(wasmMocks.sha256OfBytes.mock.results[0]!.value));
     expect(wasmMocks.initRustWasm).toHaveBeenCalledTimes(1);
     expect(wasmMocks.sha256OfBytes).toHaveBeenCalledWith(envelopeBytes);

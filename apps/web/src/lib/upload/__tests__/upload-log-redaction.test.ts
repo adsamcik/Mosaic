@@ -37,9 +37,9 @@ const mocks = vi.hoisted(() => ({
   stripExifFromBlob: vi.fn(),
   extractVideoFrame: vi.fn(),
   getCryptoClient: vi.fn().mockResolvedValue({
-    encryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([9, 9, 9])),
+    encryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([0x53, 0x47, 0x7a, 0x6b, 0x03, 9, 9, 9])),
   }),
-  encryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([7, 7, 7])),
+  encryptShardWithEpochHandle: vi.fn().mockResolvedValue(new Uint8Array([0x53, 0x47, 0x7a, 0x6b, 0x03, 7, 7, 7])),
 }));
 
 // ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ describe('M7 — upload pipeline log redaction', () => {
     mocks.getCryptoClient.mockResolvedValue({
       encryptShardWithEpochHandle: mocks.encryptShardWithEpochHandle,
     });
-    mocks.encryptShardWithEpochHandle.mockResolvedValue(new Uint8Array([7, 7, 7]));
+    mocks.encryptShardWithEpochHandle.mockResolvedValue(new Uint8Array([0x53, 0x47, 0x7a, 0x6b, 0x03, 7, 7, 7]));
     mocks.generateThumbnail.mockResolvedValue({
       data: new Uint8Array([4, 5, 6]),
       thumbhash: 'th-base64',

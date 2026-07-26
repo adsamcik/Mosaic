@@ -1,8 +1,14 @@
 # SPEC-EncryptedMetaSidecar
 
-> **Status:** Locked at late-v1 protocol freeze.
-> **Scope:** Wire format of the `encryptedMetaSidecar` field carried on `Manifest` rows and exposed via `POST /api/v1/manifests` and `GET /api/v1/manifests/{id}`.
+> **Status:** Field format locked at late-v1; producer paths amended for the ordered v2 lifecycle.
+> **Scope:** Wire format of `encryptedMetaSidecar` on `Manifest` rows, produced via `POST /api/v1/manifests/{manifestId}/finalize` or the reservation-backed metadata update and read via `GET /api/v1/manifests/{id}`.
 > **Audience:** Backend, frontend, Android, and Rust core implementers; auditors verifying zero-knowledge invariants.
+>
+> The opaque sidecar envelope format is unchanged. Current producers first
+> reserve a sequence, bind the positive `manifestSeq` into the fresh v2
+> signature, and consume the target-bound reservation with finalize/update.
+> The legacy direct `POST /api/v1/manifests` route is non-routable, and an
+> optional finalize `Idempotency-Key` does not replace this sequence binding.
 
 ## Purpose
 

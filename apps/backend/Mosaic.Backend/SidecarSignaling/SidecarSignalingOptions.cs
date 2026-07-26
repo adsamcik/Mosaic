@@ -8,6 +8,9 @@ namespace Mosaic.Backend.SidecarSignaling;
 /// </summary>
 public sealed class SidecarSignalingOptions
 {
+    /// <summary>Server-side kill switch. Disabled means no relay services or routes are registered.</summary>
+    public bool Enabled { get; set; }
+
     /// <summary>Hard wall-clock cap from room creation. After this, both sides are closed.</summary>
     public TimeSpan RoomTtl { get; set; } = TimeSpan.FromSeconds(120);
 

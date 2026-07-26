@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
@@ -36,6 +37,41 @@ public static class ManifestSizeLimits
         SidecarPlaintextMaxBytes + EnvelopeHeaderBytes + Poly1305TagBytes;
 }
 
+/// <summary>
+/// Manifest shard envelope versions accepted during the v0x03/v0x04
+/// compatibility window. The backend stores ciphertext opaquely and persists
+/// this client-reported decoder selector with each manifest-shard link.
+/// </summary>
+public static class ManifestEnvelopeVersions
+{
+    public const int SingleShot = 3;
+    public const int Streaming = 4;
+
+    public static bool IsSupported(int version) => version is SingleShot or Streaming;
+}
+/// <summary>Mutation kinds that share one v2 signer sequence stream.</summary>
+public static class ManifestSequenceOperations
+{
+    public const string Create = "Create";
+    public const string MetadataUpdate = "MetadataUpdate";
+    public const string Tombstone = "Tombstone";
+
+    public static bool IsSupported(string operationKind)
+        => operationKind is Create or MetadataUpdate or Tombstone;
+}
+
+public sealed record ReserveManifestSequenceRequest(
+    Guid AlbumId,
+    [property: MaxLength(128)] string SignerPubkey,
+    Guid TargetManifestId,
+    Guid OperationId,
+    [property: MaxLength(32)] string OperationKind);
+
+public sealed record ManifestSequenceReservationResponse(
+    Guid ReservationId,
+    long ManifestSeq);
+
+
 public record CreateManifestRequest(
     /// <summary>
     /// Manifest wire-format version. ADR-022 freezes v1 at protocolVersion=1.
@@ -61,7 +97,11 @@ public record CreateManifestRequest(
     [property: MaxLength(ManifestSizeLimits.EncryptedMetaSidecarMaxBytes)] byte[]? EncryptedMetaSidecar,
     [MaxLength(256)] string Signature,
     [MaxLength(128)] string SignerPubkey,
-    [MaxLength(1000)] List<string> ShardIds,
+    /// <summary>
+    /// Legacy shard-id projection retained for source compatibility. Routed
+    /// v2 finalization ignores this field; use TieredShards instead.
+    /// </summary>
+    [property: MaxLength(1000)] List<string>? ShardIds = null,
     /// <summary>
     /// Optional tier for all shards. Defaults to 3 (Original) if not provided.
     /// Use TieredShards for per-shard tier assignment.
@@ -71,20 +111,25 @@ public record CreateManifestRequest(
     /// Optional list of shards with per-shard tier assignment.
     /// If provided, takes precedence over ShardIds.
     /// </summary>
-    [MaxLength(1000)] List<TieredShardInfo>? TieredShards = null,
+    [property: Required, MinLength(1), MaxLength(1000)] List<TieredShardInfo>? TieredShards = null,
     /// <summary>
-    /// Optional UTC expiration deadline for this photo. Null means no expiration.
+    /// Legacy compatibility field. Routed v2 finalization currently requires
+    /// this value to be null because per-photo expiration has no signed
+    /// reservation-backed lifecycle mutation yet.
     /// </summary>
+    [property: Description("Reserved for a future signed lifecycle operation. Omit this field or send null; routed v2 finalization rejects a non-null value with HTTP 400.")]
     DateTimeOffset? ExpiresAt = null,
     /// <summary>
-    /// Optional monotonic freshness sequence for the v2 manifest-signing
-    /// transcript (batch 6 — A3, audit <c>crypto-correctness H-1</c>). When
-    /// present, the server enforces strict monotonicity per
-    /// <c>(album_id, signer_pubkey)</c> on finalize so a stale signed
-    /// manifest cannot be replayed under a newer seq value. NULL is
-    /// accepted (pre-A3 clients keep working with the v1 transcript).
+    /// Positive monotonic freshness sequence reserved for this exact v2
+    /// manifest finalization. Required by every routed finalize request; the
+    /// nullable CLR shape exists only for the non-routable legacy adapter.
     /// </summary>
-    long? ManifestSeq = null
+    [property: Required, Range(1, long.MaxValue)] long? ManifestSeq = null,
+    /// <summary>
+    /// Reservation bound to the signer, album, target manifest, operation, and
+    /// manifestSeq. Required by every routed finalize request.
+    /// </summary>
+    [property: Required] Guid? SequenceReservationId = null
 ) {
     [JsonConstructor]
     public CreateManifestRequest(
@@ -92,7 +137,7 @@ public record CreateManifestRequest(
         byte[] EncryptedMeta,
         string Signature,
         string SignerPubkey,
-        List<string> ShardIds,
+        List<string>? ShardIds = null,
         int? Tier = null,
         List<TieredShardInfo>? TieredShards = null,
         DateTimeOffset? ExpiresAt = null,
@@ -123,7 +168,7 @@ public record TieredShardInfo(
     int ShardIndex = 0,
     [MaxLength(64)] string? Sha256 = null,
     long? ContentLength = null,
-    int EnvelopeVersion = 3);
+    int EnvelopeVersion = ManifestEnvelopeVersions.SingleShot);
 
 public sealed class ManifestFinalizeResponse
 {
@@ -146,23 +191,27 @@ public record UpdateManifestExpirationRequest(DateTimeOffset? ExpiresAt);
 public record UpdateManifestMetadataRequest(
     [MaxLength(1048576)] string EncryptedMeta,
     [MaxLength(256)] string Signature,
-    [MaxLength(128)] string SignerPubkey
+    [MaxLength(128)] string SignerPubkey,
+    [property: Required, Range(1, long.MaxValue)] long? ManifestSeq = null,
+    [property: Required] Guid? SequenceReservationId = null
 );
 
 /// <summary>
-/// Optional request body for the soft-delete (tombstone) endpoint
-/// (batch 5b — A2). When present, the client supplies an Ed25519 signature
+/// Signed request body for the routed v2 soft-delete (tombstone) endpoint.
+/// The client supplies an Ed25519 signature
 /// over the canonical tombstone transcript
 /// (<c>Mosaic_Tombstone_v1 || version || album || epoch || photo ||
 /// version_created</c>) computed with the per-epoch signing key. The sync
 /// client verifies the signature against the album's published signing
 /// pubkey for <paramref name="SignerEpochId"/> before purging local state.
 ///
-/// All fields are nullable so pre-A2 clients (no body, or body without
-/// signature) keep working — the server stores NULL and v1 sync responses
-/// are unchanged. Closes audit <c>sync C2 (unauthenticated tombstones)</c>.
+/// Every field is required on the routed v2 endpoint. Nullable CLR fields
+/// remain only for the non-routable legacy in-process adapter.
 /// </summary>
 public record DeleteManifestRequest(
-    [MaxLength(128)] string? TombstoneSignature,
-    int? SignerEpochId
+    [property: Required, MaxLength(128)] string? TombstoneSignature,
+    [property: Required] int? SignerEpochId,
+    [property: Required, Range(1, long.MaxValue)] long? TombstoneSeq = null,
+    [property: Required] Guid? SequenceReservationId = null,
+    [property: Required] long? TombstoneVersionCreated = null
 );

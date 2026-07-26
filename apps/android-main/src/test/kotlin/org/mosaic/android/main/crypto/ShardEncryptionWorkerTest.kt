@@ -57,6 +57,8 @@ class ShardEncryptionWorkerTest {
     assertArrayEquals(crypto.smallEnvelope, envelope)
     assertEquals(sha256Hex(envelope), output.getString(ShardEncryptionWorker.KEY_SHA256_HEX))
     assertEquals(sha256Hex("small-shard".toByteArray()), output.getString(ShardEncryptionWorker.KEY_CONTENT_HASH_HEX))
+    assertEquals(3, output.getInt(ShardEncryptionWorker.KEY_ENVELOPE_VERSION, -1))
+    assertEquals(1, output.getInt("blob_format_version", -1))
     assertEquals(1, crypto.smallCalls)
     assertEquals(0, crypto.streamingCalls)
     assertEquals(listOf(Triple("album-1", 3, 84L)), resolver.opened)
@@ -236,6 +238,7 @@ class ShardEncryptionWorkerTest {
     val plaintext = ByteArray(ShardEncryptionWorker.STREAMING_THRESHOLD_BYTES + 1) { (it % 251).toByte() }
     val staging = stageBytes(plaintext)
     val crypto = RecordingCryptoEngine()
+    crypto.streamingEnvelope = byteArrayOf(0x53, 0x47, 0x7a, 0x6b, 0x04)
     val worker = workerFor(staging, crypto = crypto)
 
     val result = worker.doWork()
@@ -247,6 +250,14 @@ class ShardEncryptionWorkerTest {
     assertEquals(plaintext.size.toLong(), crypto.lastStreamingLength)
     assertArrayEquals(plaintext, crypto.lastStreamingPlaintext)
     assertEquals(sha256Hex(plaintext), output.getString(ShardEncryptionWorker.KEY_CONTENT_HASH_HEX))
+    assertEquals(4, output.getInt(ShardEncryptionWorker.KEY_ENVELOPE_VERSION, -1))
+
+    val cacheReuse = workerFor(staging, crypto = crypto).doWork()
+    assertTrue(cacheReuse is ListenableWorker.Result.Success)
+    val cacheOutput = (cacheReuse as ListenableWorker.Result.Success).outputData
+    assertEquals(4, cacheOutput.getInt(ShardEncryptionWorker.KEY_ENVELOPE_VERSION, -1))
+    assertEquals("cache reuse must retain the header version without re-encryption", 1, crypto.streamingCalls)
+
   }
 
   @Test
@@ -462,8 +473,8 @@ class ShardEncryptionWorkerTest {
   }
 
   private class RecordingCryptoEngine : ShardCryptoEngine {
-    var smallEnvelope: ByteArray = "small-envelope".toByteArray()
-    var streamingEnvelope: ByteArray = "streaming-envelope".toByteArray()
+    var smallEnvelope: ByteArray = byteArrayOf(0x53, 0x47, 0x7a, 0x6b, ShardEnvelopeVersions.V03.toByte()) + "small-envelope".toByteArray()
+    var streamingEnvelope: ByteArray = byteArrayOf(0x53, 0x47, 0x7a, 0x6b, ShardEnvelopeVersions.V04.toByte()) + "streaming-envelope".toByteArray()
     var smallCalls: Int = 0
     var streamingCalls: Int = 0
     val smallEpochHandles = mutableListOf<Long>()
@@ -474,10 +485,10 @@ class ShardEncryptionWorkerTest {
       plaintext: ByteArray,
       tier: Int,
       shardIndex: Int,
-    ): ByteArray {
+    ): EncryptedShardEnvelope {
       smallCalls++
       smallEpochHandles += epochHandleId
-      return smallEnvelope.copyOf()
+      return EncryptedShardEnvelope.fromBytes(smallEnvelope.copyOf())
     }
 
     override fun encryptStreamingShard(
@@ -486,12 +497,12 @@ class ShardEncryptionWorkerTest {
       plaintextLength: Long,
       tier: Int,
       shardIndex: Int,
-    ): ByteArray {
+    ): EncryptedShardEnvelope {
       streamingCalls++
       streamingEpochHandles += epochHandleId
       lastStreamingLength = plaintextLength
       lastStreamingPlaintext = plaintext.readBytes()
-      return streamingEnvelope.copyOf()
+      return EncryptedShardEnvelope.fromBytes(streamingEnvelope.copyOf())
     }
 
     var lastStreamingLength: Long = -1
@@ -499,7 +510,7 @@ class ShardEncryptionWorkerTest {
   }
 
   private object ThrowingCryptoEngine : ShardCryptoEngine {
-    override fun encryptShardWithEpochHandle(epochHandleId: Long, plaintext: ByteArray, tier: Int, shardIndex: Int): ByteArray {
+    override fun encryptShardWithEpochHandle(epochHandleId: Long, plaintext: ByteArray, tier: Int, shardIndex: Int): EncryptedShardEnvelope {
       error("boom")
     }
 
@@ -509,7 +520,7 @@ class ShardEncryptionWorkerTest {
       plaintextLength: Long,
       tier: Int,
       shardIndex: Int,
-    ): ByteArray {
+    ): EncryptedShardEnvelope {
       error("boom")
     }
   }

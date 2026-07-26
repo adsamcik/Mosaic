@@ -2,13 +2,18 @@
 
 ## Status
 
-**Candidate. Final freeze occurs on git tag `v1.0.0`.**
+**Historical candidate inventory; superseded and never frozen by a `v1.0.0`
+tag.** Commit `bd0cd7ba6650933ec5e88ad64c3a953621fdc6cb` and the values below record a
+2026-05-12 pre-release candidate. They are retained for protocol archaeology,
+not as the current producer or release contract.
 
-This document inventories the protocol surfaces that are candidates for v1.0.0. It is not a freeze declaration. The canonical freeze policy is [`SPEC-ReleaseTagFreezePolicy.md`](SPEC-ReleaseTagFreezePolicy.md): protocol surfaces become irreversible when the project owner cuts a release tag for a distributed build.
-
-The current v1 candidate tree is `bd0cd7ba6650933ec5e88ad64c3a953621fdc6cb` (`origin/main`). Until `v1.0.0` is tagged, the surfaces below remain changeable through the standard review, parity, and architecture-guard processes.
-
-Final freeze occurs when the project owner runs `git tag v1.0.0 && git push --tags`; that commit's bytes become the v1 wire/AAD/schema.
+Current HTTP behavior is defined by generated
+[`docs/openapi.json`](../openapi.json) and the current-contract amendment in
+[ADR-022](../adr/ADR-022-manifest-finalization-shape.md). Release maturity and
+tag publication are governed by [Release State and Evidence](../RELEASE_STATE.md)
+and the fail-closed readiness manifest; manually creating a tag does not bypass
+those gates. Where this historical inventory conflicts with the amended rows or
+those authoritative sources, the newer contract controls.
 
 ## Non-goals
 
@@ -16,7 +21,7 @@ Final freeze occurs when the project owner runs `git tag v1.0.0 && git push --ta
 - No edits outside release-engineering protocol documentation and the §11 candidate-register framing.
 - No new user-facing feature documentation; this is release-engineering protocol documentation.
 
-## Candidate source of truth
+## Historical candidate source
 
 - Candidate commit: `bd0cd7ba6650933ec5e88ad64c3a953621fdc6cb`.
 - Candidate date: 2026-05-12.
@@ -57,14 +62,14 @@ The following surfaces are the v1.0.0 freeze candidates. They are what the `v1.0
 | Shard envelope v0x03 | Magic `SGzk`; version `0x03`; 64-byte header; reserved bytes zero; 24-byte nonce; AAD is the exact header bytes. | §11 “Shard envelope wire format”. |
 | Streaming shard envelope v0x04 | Magic `SGzk`; version `0x04`; 64-byte header with tier, 16-byte stream salt, frame count, final frame size, 34 reserved-zero bytes; 64 KiB frames; deterministic per-frame nonce from `(stream_salt, frame_index)`; v0x03 dispatcher compatibility. | §11 “Streaming shard envelope wire format”. |
 | `ShardTier` discriminants | `thumb=1`, `preview=2`, `full=3`; Rust names `Thumbnail`, `Preview`, `Original`. | §11 “`ShardTier` discriminants”. |
-| Manifest transcript context | `Mosaic_Manifest_v1`; byte order, canonical encoding, and transcript inputs are candidates. | §11 “Manifest transcript context”. |
+| Manifest transcript context | Current public producers use byte-distinct `Mosaic_Manifest_v2` / version `0x02` and bind a positive `manifestSeq`; v1 remains legacy-read history. | ADR-022 current-contract amendment and `canonical_manifest_transcript_bytes_v2` lock tests. |
 | Metadata sidecar context | `Mosaic_Metadata_v1`; canonical sidecar byte encoding is candidate-locked. | §11 “Metadata sidecar context”. |
 | KDF labels | `mosaic:root-key:v1`, `mosaic:auth-signing:v1`, `mosaic:tier:thumb:v1`, `mosaic:tier:preview:v1`, `mosaic:tier:full:v1`, `mosaic:tier:content:v1`, `mosaic:db-session-key:v1`. | §11 “KDF labels”. |
 | Auth and bundle contexts | `Mosaic_Auth_Challenge_v1`, `Mosaic_EpochBundle_v1`. | §11 “Auth & bundle contexts”. |
 | Sidecar tag table | Candidate active/forbidden tag behavior; forbidden tags map to `MetadataSidecarError::ForbiddenTag`; complete canonical sidecar cap is `MAX_SIDECAR_TOTAL_BYTES = 65_536`. | §11 “Metadata sidecar total byte cap” and “Forbidden sidecar tag error contract”. |
 | `tieredShards` JSON shape (B2) | Canonical manifest write shape uses `tieredShards` with explicit shard id, tier, index/hash/version semantics; legacy `shardIds` remains read compatibility only per ADR-022. | ADR-022, especially “Decision” and “Compatibility and migration rules”. |
-| Manifest finalization shape (B5/ADR-022) | New clients write `tieredShards`; `protocolVersion` is `1`; idempotent finalization binds canonical request body; read responses preserve compatibility fields. | ADR-022 “Manifest create request”, “Manifest read response”, and “Compatibility and migration rules”. |
-| Idempotency-Key format | `Idempotency-Key: mosaic-finalize-{jobId}` with `{jobId}` as the upload-job UUIDv7 string. | ADR-022; parity lock `crates/mosaic-parity-tests/tests/cross_platform_parity.rs::finalize_idempotency_key_parity`. |
+| Manifest finalization shape | Current producers reserve an operation/target-bound sequence, sign its positive `manifestSeq`, and call `POST /api/v1/manifests/{manifestId}/finalize` with the matching reservation. Exact retries bind the same client-selected ID and request hash. | ADR-022 current-contract amendment; generated `docs/openapi.json`. |
+| Finalize replay-cache header | `Idempotency-Key` is optional on manifest finalize. If a client supplies the historical `mosaic-finalize-{jobId}` helper value it must reuse it only for the same body, but correctness comes from the client-addressed ID/request hash plus signed sequence reservation. | ADR-022 current-contract amendment; backend middleware route-scope tests. |
 | Canonical tier dimensions | Thumbnail `256`, preview `1024`, original/full `4096` canonical tier dimensions for v1 tier generation and manifest expectations. | B2/B5 tiered-shard decision set and ADR-022 tier semantics. |
 | Stable error and FFI contract surfaces | Existing stable numeric error codes, public non-secret DTO names/fields, and raw-secret-output prohibition are candidate-locked. | §11 lock citations and architecture guard `tests/architecture/no-raw-secret-ffi-export.ps1`. |
 

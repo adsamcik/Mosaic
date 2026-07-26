@@ -1,9 +1,11 @@
+using System.Data.Common;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Mosaic.Backend.Data;
@@ -71,10 +73,12 @@ public sealed class TusUploadFlowTests : IDisposable
 
         _db.ChangeTracker.Clear();
         quota = await _db.UserQuotas.FindAsync(user.Id);
-        Assert.Equal(1024, quota!.UsedStorageBytes);
+        Assert.Equal(0, quota!.UsedStorageBytes);
+        Assert.Empty(await _db.TusUploadReservations.ToListAsync());
 
         var fileId = Guid.NewGuid().ToString();
-        var metadata = CreateMetadata(album.Id, ValidContentSha256);
+        var payload = new byte[2048];
+        var metadata = CreateMetadata(album.Id, Sha256Hex(payload));
         var createComplete = CreateContext<CreateCompleteContext>(httpContext, ctx =>
         {
             ctx.FileId = fileId;
@@ -85,9 +89,11 @@ public sealed class TusUploadFlowTests : IDisposable
         await TusEventHandlers.OnCreateCompleteAsync(createComplete, _provider);
         _db.ChangeTracker.Clear();
         Assert.NotNull(await _db.TusUploadReservations.FindAsync(fileId));
+        quota = await _db.UserQuotas.FindAsync(user.Id);
+        Assert.Equal(1024, quota!.UsedStorageBytes);
 
         var store = new FakeTusStore();
-        store.AddFile(fileId, new byte[2048], metadata);
+        store.AddFile(fileId, payload, metadata);
         var fileComplete = CreateContext<FileCompleteContext>(TestHttpContext.Create("tus-owner"), ctx =>
         {
             ctx.FileId = fileId;
@@ -101,6 +107,109 @@ public sealed class TusUploadFlowTests : IDisposable
         Assert.Equal(2048, quota!.UsedStorageBytes);
         Assert.Null(await _db.TusUploadReservations.FindAsync(fileId));
         Assert.Equal(2048, _db.Shards.Single(s => s.Id == Guid.Parse(fileId)).SizeBytes);
+    }
+
+    [Fact]
+    public async Task OnFileComplete_RetainsCompletedBlob_WhenCommitAcknowledgementIsLost()
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync("commit-ambiguity-user");
+        var album = await builder.CreateAlbumAsync(user);
+        var payload = Encoding.UTF8.GetBytes("completed encrypted shard");
+        var fileId = Guid.NewGuid().ToString();
+        var quota = await _db.UserQuotas.FindAsync(user.Id);
+        quota!.UsedStorageBytes = payload.Length;
+        _db.TusUploadReservations.Add(new TusUploadReservation
+        {
+            FileId = fileId,
+            UserId = user.Id,
+            AlbumId = album.Id,
+            ReservedBytes = payload.Length,
+            UploadLength = payload.Length,
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
+        });
+        await _db.SaveChangesAsync();
+
+        var metadata = CreateMetadata(album.Id, Sha256Hex(payload));
+        var store = new FakeTusStore();
+        store.AddFile(fileId, payload, metadata);
+        var fileComplete = CreateContext<FileCompleteContext>(TestHttpContext.Create(user.AuthSub), ctx =>
+        {
+            ctx.FileId = fileId;
+            ctx.Store = store;
+        });
+
+        var services = new ServiceCollection();
+        services.AddDbContext<MosaicDbContext>(opts => opts
+            .UseSqlite(_connection)
+            .AddInterceptors(new ThrowAfterCommitInterceptor()));
+        using var faultingProvider = services.BuildServiceProvider();
+
+        await Assert.ThrowsAsync<CommitAcknowledgementLostException>(
+            () => TusEventHandlers.OnFileCompleteAsync(fileComplete, faultingProvider));
+
+        _db.ChangeTracker.Clear();
+        Assert.True(store.Files.ContainsKey(fileId));
+        Assert.NotNull(await _db.Shards.FindAsync(Guid.Parse(fileId)));
+        Assert.Null(await _db.TusUploadReservations.FindAsync(fileId));
+
+        var lifecycle = await _db.TusUploadLifecycles.FindAsync(fileId);
+        Assert.NotNull(lifecycle);
+        Assert.Equal(TusUploadLifecycleState.COMMITTED, lifecycle!.State);
+
+        // The client may retry after a lost commit acknowledgement. It must
+        // converge on the already-committed shard without deleting the blob
+        // or attempting a duplicate insert.
+        await TusEventHandlers.OnFileCompleteAsync(fileComplete, _provider);
+        Assert.True(store.Files.ContainsKey(fileId));
+        Assert.Single(await _db.Shards.Where(shard => shard.Id == Guid.Parse(fileId)).ToListAsync());
+    }
+
+    [Fact]
+    public async Task OnFileComplete_QuarantinesAndRetainsBlob_WhenDatabaseFailsBeforeCommit()
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync("precommit-failure-user");
+        var album = await builder.CreateAlbumAsync(user);
+        var payload = Encoding.UTF8.GetBytes("completed encrypted shard retained for operator reconciliation");
+        var fileId = Guid.NewGuid().ToString();
+        var quota = await _db.UserQuotas.FindAsync(user.Id);
+        quota!.UsedStorageBytes = payload.Length;
+        _db.TusUploadReservations.Add(new TusUploadReservation
+        {
+            FileId = fileId,
+            UserId = user.Id,
+            AlbumId = album.Id,
+            ReservedBytes = payload.Length,
+            UploadLength = payload.Length,
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
+        });
+        await _db.SaveChangesAsync();
+
+        var store = new FakeTusStore();
+        store.AddFile(fileId, payload, CreateMetadata(album.Id, Sha256Hex(payload)));
+        var fileComplete = CreateContext<FileCompleteContext>(TestHttpContext.Create(user.AuthSub), ctx =>
+        {
+            ctx.FileId = fileId;
+            ctx.Store = store;
+        });
+        var services = new ServiceCollection();
+        services.AddDbContext<MosaicDbContext>(opts => opts
+            .UseSqlite(_connection)
+            .AddInterceptors(new ThrowBeforeShardCommitInterceptor()));
+        using var faultingProvider = services.BuildServiceProvider();
+
+        await Assert.ThrowsAsync<PreCommitFailureException>(
+            () => TusEventHandlers.OnFileCompleteAsync(fileComplete, faultingProvider));
+
+        _db.ChangeTracker.Clear();
+        Assert.True(store.Files.ContainsKey(fileId));
+        Assert.Null(await _db.Shards.FindAsync(Guid.Parse(fileId)));
+        Assert.NotNull(await _db.TusUploadReservations.FindAsync(fileId));
+        var lifecycle = await _db.TusUploadLifecycles.FindAsync(fileId);
+        Assert.NotNull(lifecycle);
+        Assert.Equal(TusUploadLifecycleState.QUARANTINED, lifecycle!.State);
+        Assert.Equal("database-finalization-failed", lifecycle.QuarantineReason);
     }
 
     [Fact]
@@ -138,7 +247,51 @@ public sealed class TusUploadFlowTests : IDisposable
         _db.ChangeTracker.Clear();
         var shard = await _db.Shards.SingleAsync(s => s.Id == Guid.Parse(fileId));
         Assert.Equal(serverSha256Hex, shard.Sha256);
+        Assert.Equal(3, shard.EnvelopeVersion);
         Assert.Null(await _db.TusUploadReservations.FindAsync(fileId));
+    }
+
+    [Fact]
+    public async Task OnFileComplete_RejectsAndCleansUp_WhenContentHashDoesNotMatchBytes()
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync("hash-mismatch-user");
+        var album = await builder.CreateAlbumAsync(user);
+        var payload = Encoding.UTF8.GetBytes("completed encrypted bytes with a different digest");
+        var quota = await _db.UserQuotas.FindAsync(user.Id);
+        quota!.UsedStorageBytes = payload.Length;
+        var fileId = Guid.NewGuid().ToString();
+        _db.TusUploadReservations.Add(new TusUploadReservation
+        {
+            FileId = fileId,
+            UserId = user.Id,
+            AlbumId = album.Id,
+            ReservedBytes = payload.Length,
+            UploadLength = payload.Length,
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
+        });
+        await _db.SaveChangesAsync();
+
+        var store = new FakeTusStore();
+        store.AddFile(fileId, payload, CreateMetadata(album.Id, ValidContentSha256));
+        var fileComplete = CreateContext<FileCompleteContext>(TestHttpContext.Create(user.AuthSub), ctx =>
+        {
+            ctx.FileId = fileId;
+            ctx.Store = store;
+        });
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => TusEventHandlers.OnFileCompleteAsync(fileComplete, _provider));
+
+        Assert.Equal("Tus content-sha256 metadata does not match the completed upload bytes.", error.Message);
+        _db.ChangeTracker.Clear();
+        Assert.DoesNotContain(fileId, store.Files.Keys);
+        Assert.Null(await _db.Shards.FindAsync(Guid.Parse(fileId)));
+        Assert.Null(await _db.TusUploadReservations.FindAsync(fileId));
+        Assert.Equal(0, (await _db.UserQuotas.FindAsync(user.Id))!.UsedStorageBytes);
+        Assert.Equal(
+            TusUploadLifecycleState.CANCELLED,
+            (await _db.TusUploadLifecycles.FindAsync(fileId))!.State);
     }
 
     [Fact]
@@ -180,6 +333,45 @@ public sealed class TusUploadFlowTests : IDisposable
 
         Assert.True(beforeCreate.HasFailed);
         Assert.Equal("Tus metadata 'content-sha256' must be a lowercase 64-character hex SHA-256", beforeCreate.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task OnBeforeCreate_FailsRequest_WhenEnvelopeVersionMissing()
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync($"missing-envelope-ver-{Guid.NewGuid()}");
+        var album = await builder.CreateAlbumAsync(user);
+        var beforeCreate = CreateContext<BeforeCreateContext>(TestHttpContext.Create(user.AuthSub), ctx =>
+        {
+            ctx.UploadLength = 1024;
+            ctx.Metadata = CreateMetadata(album.Id, envelopeVersion: null);
+        });
+
+        await TusEventHandlers.OnBeforeCreateAsync(beforeCreate, _provider);
+
+        Assert.True(beforeCreate.HasFailed);
+        Assert.Equal("Missing Tus metadata 'envelope-version'", beforeCreate.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData("2")]
+    [InlineData("5")]
+    [InlineData("not-a-number")]
+    public async Task OnBeforeCreate_FailsRequest_WhenEnvelopeVersionUnsupportedOrMalformed(string value)
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync($"bad-envelope-ver-{Guid.NewGuid()}");
+        var album = await builder.CreateAlbumAsync(user);
+        var beforeCreate = CreateContext<BeforeCreateContext>(TestHttpContext.Create(user.AuthSub), ctx =>
+        {
+            ctx.UploadLength = 1024;
+            ctx.Metadata = CreateMetadata(album.Id, envelopeVersion: value);
+        });
+
+        await TusEventHandlers.OnBeforeCreateAsync(beforeCreate, _provider);
+
+        Assert.True(beforeCreate.HasFailed);
+        Assert.Contains("envelope-version", beforeCreate.ErrorMessage);
     }
 
     [Fact]
@@ -340,6 +532,61 @@ public sealed class TusUploadFlowTests : IDisposable
     }
 
     [Fact]
+    public async Task OnAuthorize_DeleteDurablyCancelsBeforeTusDeletesBlob()
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync("authorized-deleter");
+        var quota = await _db.UserQuotas.FindAsync(user.Id);
+        quota!.UsedStorageBytes = 4096;
+        var reservation = new TusUploadReservation
+        {
+            FileId = Guid.NewGuid().ToString(),
+            UserId = user.Id,
+            ReservedBytes = 1024,
+            UploadLength = 1024,
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
+        };
+        _db.TusUploadReservations.Add(reservation);
+        _db.TusUploadLifecycles.Add(new TusUploadLifecycle
+        {
+            FileId = reservation.FileId,
+            UserId = user.Id,
+            ReservedBytes = reservation.ReservedBytes,
+            UploadLength = reservation.UploadLength,
+            State = TusUploadLifecycleState.CREATED
+        });
+        await _db.SaveChangesAsync();
+
+        var authorization = CreateContext<AuthorizeContext>(
+            TestHttpContext.Create(user.AuthSub),
+            context =>
+            {
+                context.FileId = reservation.FileId;
+                context.Intent = IntentType.DeleteFile;
+            });
+
+        await TusEventHandlers.OnAuthorizeAsync(authorization, _provider);
+
+        Assert.False(authorization.HasFailed);
+        _db.ChangeTracker.Clear();
+        Assert.Equal(3072, (await _db.UserQuotas.FindAsync(user.Id))!.UsedStorageBytes);
+        Assert.Null(await _db.TusUploadReservations.FindAsync(reservation.FileId));
+        Assert.Equal(
+            TusUploadLifecycleState.CANCELLED,
+            (await _db.TusUploadLifecycles.FindAsync(reservation.FileId))!.State);
+
+        // tusdotnet calls the completion hook after physical deletion; the
+        // callback must be idempotent because authorization already cancelled.
+        var completion = CreateContext<DeleteCompleteContext>(
+            TestHttpContext.Create(user.AuthSub),
+            context => context.FileId = reservation.FileId);
+        await TusEventHandlers.OnDeleteCompleteAsync(completion, _provider);
+
+        _db.ChangeTracker.Clear();
+        Assert.Equal(3072, (await _db.UserQuotas.FindAsync(user.Id))!.UsedStorageBytes);
+    }
+
+    [Fact]
     public async Task OnDeleteComplete_RefundsReservedQuota()
     {
         var builder = new TestDataBuilder(_db);
@@ -372,6 +619,331 @@ public sealed class TusUploadFlowTests : IDisposable
     }
 
     [Fact]
+    public async Task OnDeleteComplete_RollsBackQuotaRefund_WhenReservationDeleteFails()
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync("delete-refund-rollback-user");
+        var quota = await _db.UserQuotas.FindAsync(user.Id);
+        quota!.UsedStorageBytes = 4096;
+        var reservation = new TusUploadReservation
+        {
+            FileId = Guid.NewGuid().ToString(),
+            UserId = user.Id,
+            ReservedBytes = 1024,
+            UploadLength = 1024,
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
+        };
+        _db.TusUploadReservations.Add(reservation);
+        _db.TusUploadLifecycles.Add(new TusUploadLifecycle
+        {
+            FileId = reservation.FileId,
+            UserId = user.Id,
+            ReservedBytes = reservation.ReservedBytes,
+            UploadLength = reservation.UploadLength,
+            State = TusUploadLifecycleState.CREATED
+        });
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+
+        var services = new ServiceCollection();
+        services.AddDbContext<MosaicDbContext>(opts => opts
+            .UseSqlite(_connection)
+            .AddInterceptors(new ThrowBeforeReservationDeleteInterceptor()));
+        using var faultingProvider = services.BuildServiceProvider();
+        var context = CreateContext<DeleteCompleteContext>(TestHttpContext.Create(user.AuthSub), ctx =>
+        {
+            ctx.FileId = reservation.FileId;
+        });
+
+        await Assert.ThrowsAsync<ReservationDeleteFailureException>(
+            () => TusEventHandlers.OnDeleteCompleteAsync(context, faultingProvider));
+
+        _db.ChangeTracker.Clear();
+        Assert.Equal(4096, (await _db.UserQuotas.FindAsync(user.Id))!.UsedStorageBytes);
+        Assert.NotNull(await _db.TusUploadReservations.FindAsync(reservation.FileId));
+        Assert.Equal(
+            TusUploadLifecycleState.CREATED,
+            (await _db.TusUploadLifecycles.FindAsync(reservation.FileId))!.State);
+
+        await TusEventHandlers.OnDeleteCompleteAsync(context, _provider);
+        _db.ChangeTracker.Clear();
+        Assert.Equal(3072, (await _db.UserQuotas.FindAsync(user.Id))!.UsedStorageBytes);
+        Assert.Null(await _db.TusUploadReservations.FindAsync(reservation.FileId));
+        Assert.Equal(
+            TusUploadLifecycleState.CANCELLED,
+            (await _db.TusUploadLifecycles.FindAsync(reservation.FileId))!.State);
+    }
+
+    [Fact]
+    public async Task ConcurrentFileCompleteCalls_ConvergeWithoutQuarantiningCommittedShard()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"mosaic-tus-race-{Guid.NewGuid():N}.db");
+        var connectionString = $"Data Source={databasePath}";
+        try
+        {
+            var options = new DbContextOptionsBuilder<MosaicDbContext>()
+                .UseSqlite(connectionString)
+                .Options;
+            Guid userId;
+            Guid albumId;
+            string authSub;
+            var payload = Encoding.UTF8.GetBytes("concurrently finalized encrypted shard");
+            var fileId = Guid.NewGuid().ToString();
+            await using (var seedDb = new MosaicDbContext(options))
+            {
+                await seedDb.Database.EnsureCreatedAsync();
+                var builder = new TestDataBuilder(seedDb);
+                var user = await builder.CreateUserAsync("concurrent-finalize-user");
+                var album = await builder.CreateAlbumAsync(user);
+                userId = user.Id;
+                albumId = album.Id;
+                authSub = user.AuthSub;
+                var quota = await seedDb.UserQuotas.FindAsync(user.Id);
+                quota!.UsedStorageBytes = payload.Length;
+                seedDb.TusUploadReservations.Add(new TusUploadReservation
+                {
+                    FileId = fileId,
+                    UserId = user.Id,
+                    AlbumId = album.Id,
+                    ReservedBytes = payload.Length,
+                    UploadLength = payload.Length,
+                    ExpiresAt = DateTime.UtcNow.AddHours(1)
+                });
+                seedDb.TusUploadLifecycles.Add(new TusUploadLifecycle
+                {
+                    FileId = fileId,
+                    UserId = user.Id,
+                    AlbumId = album.Id,
+                    ReservedBytes = payload.Length,
+                    UploadLength = payload.Length,
+                    ExpectedContentSha256 = Sha256Hex(payload),
+                    EnvelopeVersion = 3,
+                    State = TusUploadLifecycleState.CREATED
+                });
+                await seedDb.SaveChangesAsync();
+            }
+
+            var services = new ServiceCollection();
+            services.AddDbContext<MosaicDbContext>(opts => opts.UseSqlite(connectionString));
+            using var provider = services.BuildServiceProvider();
+            var store = new FakeTusStore();
+            store.AddFile(fileId, payload, CreateMetadata(albumId, Sha256Hex(payload)));
+            var first = CreateContext<FileCompleteContext>(TestHttpContext.Create(authSub), ctx =>
+            {
+                ctx.FileId = fileId;
+                ctx.Store = store;
+            });
+            var second = CreateContext<FileCompleteContext>(TestHttpContext.Create(authSub), ctx =>
+            {
+                ctx.FileId = fileId;
+                ctx.Store = store;
+            });
+
+            await Task.WhenAll(
+                TusEventHandlers.OnFileCompleteAsync(first, provider),
+                TusEventHandlers.OnFileCompleteAsync(second, provider));
+
+            await using var assertDb = new MosaicDbContext(options);
+            Assert.Single(await assertDb.Shards.Where(shard => shard.Id == Guid.Parse(fileId)).ToListAsync());
+            Assert.Null(await assertDb.TusUploadReservations.FindAsync(fileId));
+            Assert.Equal(payload.Length, (await assertDb.UserQuotas.FindAsync(userId))!.UsedStorageBytes);
+            var lifecycle = await assertDb.TusUploadLifecycles.FindAsync(fileId);
+            Assert.Equal(TusUploadLifecycleState.COMMITTED, lifecycle!.State);
+            Assert.Null(lifecycle.QuarantineReason);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task CleanupExpiredReservations_DoesNotCancelUploadClaimedByFinalizer()
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync("cleanup-finalizer-race-user");
+        var album = await builder.CreateAlbumAsync(user);
+        var payload = Encoding.UTF8.GetBytes("expired reservation completing at the cleanup boundary");
+        var fileId = Guid.NewGuid().ToString();
+        var quota = await _db.UserQuotas.FindAsync(user.Id);
+        quota!.UsedStorageBytes = payload.Length;
+        _db.TusUploadReservations.Add(new TusUploadReservation
+        {
+            FileId = fileId,
+            UserId = user.Id,
+            AlbumId = album.Id,
+            ReservedBytes = payload.Length,
+            UploadLength = payload.Length,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(-1)
+        });
+        _db.TusUploadLifecycles.Add(new TusUploadLifecycle
+        {
+            FileId = fileId,
+            UserId = user.Id,
+            AlbumId = album.Id,
+            ReservedBytes = payload.Length,
+            UploadLength = payload.Length,
+            ExpectedContentSha256 = Sha256Hex(payload),
+            EnvelopeVersion = 3,
+            State = TusUploadLifecycleState.CREATED
+        });
+        await _db.SaveChangesAsync();
+
+        var storagePath = Path.Combine(Path.GetTempPath(), $"mosaic-tus-cleanup-race-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(storagePath);
+        try
+        {
+            var services = new ServiceCollection();
+            services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Storage:Path"] = storagePath
+                })
+                .Build());
+            services.AddDbContext<MosaicDbContext>(options => options.UseSqlite(_connection));
+            using var provider = services.BuildServiceProvider();
+            var readStarted = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var allowRead = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var store = new FakeTusStore
+            {
+                BeforeContentReadAsync = async cancellationToken =>
+                {
+                    readStarted.TrySetResult(true);
+                    await allowRead.Task.WaitAsync(cancellationToken);
+                }
+            };
+            store.AddFile(fileId, payload, CreateMetadata(album.Id, Sha256Hex(payload)));
+            var fileComplete = CreateContext<FileCompleteContext>(TestHttpContext.Create(user.AuthSub), context =>
+            {
+                context.FileId = fileId;
+                context.Store = store;
+            });
+
+            var finalizationTask = TusEventHandlers.OnFileCompleteAsync(fileComplete, provider);
+            await readStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            int cleaned;
+            try
+            {
+                cleaned = await TusEventHandlers.CleanupExpiredReservationsAsync(provider);
+            }
+            finally
+            {
+                allowRead.TrySetResult(true);
+            }
+
+            await finalizationTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Equal(0, cleaned);
+            _db.ChangeTracker.Clear();
+            Assert.NotNull(await _db.Shards.FindAsync(Guid.Parse(fileId)));
+            Assert.Null(await _db.TusUploadReservations.FindAsync(fileId));
+            Assert.Equal(payload.Length, (await _db.UserQuotas.FindAsync(user.Id))!.UsedStorageBytes);
+            Assert.Equal(
+                TusUploadLifecycleState.COMMITTED,
+                (await _db.TusUploadLifecycles.FindAsync(fileId))!.State);
+        }
+        finally
+        {
+            Directory.Delete(storagePath, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteAuthorizationAndCallback_DoNotCancelReservationClaimedByFinalizer()
+    {
+        var builder = new TestDataBuilder(_db);
+        var user = await builder.CreateUserAsync("delete-finalizer-race-user");
+        var album = await builder.CreateAlbumAsync(user);
+        var payload = Encoding.UTF8.GetBytes("termination callback racing completed upload finalization");
+        var fileId = Guid.NewGuid().ToString();
+        var quota = await _db.UserQuotas.FindAsync(user.Id);
+        quota!.UsedStorageBytes = payload.Length;
+        _db.TusUploadReservations.Add(new TusUploadReservation
+        {
+            FileId = fileId,
+            UserId = user.Id,
+            AlbumId = album.Id,
+            ReservedBytes = payload.Length,
+            UploadLength = payload.Length,
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
+        });
+        _db.TusUploadLifecycles.Add(new TusUploadLifecycle
+        {
+            FileId = fileId,
+            UserId = user.Id,
+            AlbumId = album.Id,
+            ReservedBytes = payload.Length,
+            UploadLength = payload.Length,
+            ExpectedContentSha256 = Sha256Hex(payload),
+            EnvelopeVersion = 3,
+            State = TusUploadLifecycleState.CREATED
+        });
+        await _db.SaveChangesAsync();
+
+        var readStarted = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRead = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new FakeTusStore
+        {
+            BeforeContentReadAsync = async cancellationToken =>
+            {
+                readStarted.TrySetResult(true);
+                await allowRead.Task.WaitAsync(cancellationToken);
+            }
+        };
+        store.AddFile(fileId, payload, CreateMetadata(album.Id, Sha256Hex(payload)));
+        var fileComplete = CreateContext<FileCompleteContext>(TestHttpContext.Create(user.AuthSub), context =>
+        {
+            context.FileId = fileId;
+            context.Store = store;
+        });
+        var deleteAuthorization = CreateContext<AuthorizeContext>(TestHttpContext.Create(user.AuthSub), context =>
+        {
+            context.FileId = fileId;
+            context.Intent = IntentType.DeleteFile;
+        });
+        var deleteComplete = CreateContext<DeleteCompleteContext>(TestHttpContext.Create(user.AuthSub), context =>
+        {
+            context.FileId = fileId;
+        });
+
+        var finalizationTask = TusEventHandlers.OnFileCompleteAsync(fileComplete, _provider);
+        await readStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var authorizationTask = TusEventHandlers.OnAuthorizeAsync(deleteAuthorization, _provider);
+        try
+        {
+            Assert.NotSame(
+                authorizationTask,
+                await Task.WhenAny(authorizationTask, Task.Delay(100)));
+        }
+        finally
+        {
+            allowRead.TrySetResult(true);
+        }
+
+        await finalizationTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await authorizationTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(deleteAuthorization.HasFailed);
+        Assert.Equal("Upload is already finalizing or completed", deleteAuthorization.ErrorMessage);
+
+        // A callback that arrives after an already-authorized termination is
+        // also harmless after finalization has consumed the reservation.
+        await TusEventHandlers.OnDeleteCompleteAsync(deleteComplete, _provider);
+
+        _db.ChangeTracker.Clear();
+        Assert.NotNull(await _db.Shards.FindAsync(Guid.Parse(fileId)));
+        Assert.Null(await _db.TusUploadReservations.FindAsync(fileId));
+        Assert.Equal(payload.Length, (await _db.UserQuotas.FindAsync(user.Id))!.UsedStorageBytes);
+        Assert.Equal(
+            TusUploadLifecycleState.COMMITTED,
+            (await _db.TusUploadLifecycles.FindAsync(fileId))!.State);
+    }
+
+    [Fact]
     public async Task OnFileComplete_RefundsAndDeletesUpload_WhenMembershipRevokedBeforeFinalPatch()
     {
         var builder = new TestDataBuilder(_db);
@@ -397,7 +969,8 @@ public sealed class TusUploadFlowTests : IDisposable
         await _db.SaveChangesAsync();
 
         var store = new FakeTusStore();
-        store.AddFile(reservation.FileId, new byte[1024], CreateMetadata(album.Id, ValidContentSha256));
+        var payload = new byte[1024];
+        store.AddFile(reservation.FileId, payload, CreateMetadata(album.Id, Sha256Hex(payload)));
 
         var fileComplete = CreateContext<FileCompleteContext>(TestHttpContext.Create("revoked-user"), ctx =>
         {
@@ -427,11 +1000,15 @@ public sealed class TusUploadFlowTests : IDisposable
         return ctx;
     }
 
+    private static string Sha256Hex(byte[] content)
+        => Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
+
     private static Dictionary<string, tusdotnet.Models.Metadata> CreateMetadata(
         Guid albumId,
         string? contentSha256 = ValidContentSha256,
         IReadOnlyDictionary<string, string>? extraMetadata = null,
-        string? blobFormatVersion = "1")
+        string? blobFormatVersion = "1",
+        string? envelopeVersion = "3")
     {
         var header = $"albumId {Convert.ToBase64String(Encoding.UTF8.GetBytes(albumId.ToString()))}";
         if (contentSha256 != null)
@@ -441,6 +1018,10 @@ public sealed class TusUploadFlowTests : IDisposable
         if (blobFormatVersion != null)
         {
             header += $",blob-format-version {Convert.ToBase64String(Encoding.UTF8.GetBytes(blobFormatVersion))}";
+        }
+        if (envelopeVersion != null)
+        {
+            header += $",envelope-version {Convert.ToBase64String(Encoding.UTF8.GetBytes(envelopeVersion))}";
         }
         if (extraMetadata != null)
         {
@@ -470,13 +1051,65 @@ public sealed class TusUploadFlowTests : IDisposable
             .SetValue(context, httpContext);
     }
 
+    private sealed class ThrowBeforeReservationDeleteInterceptor : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context?.ChangeTracker.Entries<TusUploadReservation>()
+                .Any(entry => entry.State == EntityState.Deleted) == true)
+            {
+                return ValueTask.FromException<InterceptionResult<int>>(new ReservationDeleteFailureException());
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+    }
+
+    private sealed class ReservationDeleteFailureException : Exception;
+
+    private sealed class ThrowBeforeShardCommitInterceptor : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (eventData.Context?.ChangeTracker.Entries<Shard>()
+                .Any(entry => entry.State == EntityState.Added) == true)
+            {
+                return ValueTask.FromException<InterceptionResult<int>>(new PreCommitFailureException());
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+    }
+
+    private sealed class PreCommitFailureException : Exception;
+
+    private sealed class ThrowAfterCommitInterceptor : DbTransactionInterceptor
+    {
+        public override Task TransactionCommittedAsync(
+            DbTransaction transaction,
+            TransactionEndEventData eventData,
+            CancellationToken cancellationToken = default)
+            => eventData.Context?.ChangeTracker.Entries<Shard>().Any() == true
+                ? Task.FromException(new CommitAcknowledgementLostException())
+                : Task.CompletedTask;
+    }
+
+    private sealed class CommitAcknowledgementLostException : Exception;
+
     private sealed class FakeTusStore : ITusStore, ITusReadableStore, ITusTerminationStore
     {
         public Dictionary<string, FakeTusFile> Files { get; } = [];
+        public Func<CancellationToken, Task>? BeforeContentReadAsync { get; init; }
 
         public void AddFile(string fileId, byte[] content, Dictionary<string, tusdotnet.Models.Metadata> metadata)
         {
-            Files[fileId] = new FakeTusFile(fileId, content, metadata);
+            Files[fileId] = new FakeTusFile(fileId, content, metadata, BeforeContentReadAsync);
         }
 
         public Task<long> AppendDataAsync(string fileId, Stream stream, CancellationToken cancellationToken)
@@ -501,14 +1134,25 @@ public sealed class TusUploadFlowTests : IDisposable
         }
     }
 
-    private sealed class FakeTusFile(string id, byte[] content, Dictionary<string, tusdotnet.Models.Metadata> metadata) : ITusFile
+    private sealed class FakeTusFile(
+        string id,
+        byte[] content,
+        Dictionary<string, tusdotnet.Models.Metadata> metadata,
+        Func<CancellationToken, Task>? beforeContentReadAsync) : ITusFile
     {
         public string Id { get; } = id;
         public byte[] Content { get; } = content;
         private readonly Dictionary<string, tusdotnet.Models.Metadata> _metadata = metadata;
 
-        public Task<Stream> GetContentAsync(CancellationToken cancellationToken)
-            => Task.FromResult<Stream>(new MemoryStream(Content, writable: false));
+        public async Task<Stream> GetContentAsync(CancellationToken cancellationToken)
+        {
+            if (beforeContentReadAsync != null)
+            {
+                await beforeContentReadAsync(cancellationToken);
+            }
+
+            return new MemoryStream(Content, writable: false);
+        }
 
         public Task<Dictionary<string, tusdotnet.Models.Metadata>> GetMetadataAsync(CancellationToken cancellationToken)
             => Task.FromResult(_metadata);

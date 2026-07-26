@@ -69,6 +69,10 @@ vi.mock('tus-js-client', () => ({
 }));
 
 import { tusUpload, TusUploadError } from '../tus-upload';
+function encryptedEnvelope(): Uint8Array {
+  return Uint8Array.of(0x53, 0x47, 0x7a, 0x6b, 3, 1, 2, 3);
+}
+
 
 describe('tusUpload quota error mapping', () => {
   beforeEach(() => {
@@ -84,7 +88,7 @@ describe('tusUpload quota error mapping', () => {
 
     const err = await tusUpload(
       'album-001',
-      new Uint8Array([1, 2, 3]),
+      encryptedEnvelope(),
       'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
       7,
     ).then(
@@ -102,7 +106,7 @@ describe('tusUpload quota error mapping', () => {
 
     const err = await tusUpload(
       'album-001',
-      new Uint8Array([1, 2, 3]),
+      encryptedEnvelope(),
       'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
       7,
     ).then(
@@ -127,7 +131,7 @@ describe('tusUpload quota error mapping', () => {
 
     const err = await tusUpload(
       'album-001',
-      new Uint8Array([1, 2, 3]),
+      encryptedEnvelope(),
       'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
       7,
     ).then(
@@ -148,7 +152,7 @@ describe('tusUpload quota error mapping', () => {
 
     const err = await tusUpload(
       'album-001',
-      new Uint8Array([1, 2, 3]),
+      encryptedEnvelope(),
       'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
       7,
     ).then(
@@ -166,7 +170,7 @@ describe('tusUpload quota error mapping', () => {
 
     const err = await tusUpload(
       'album-001',
-      new Uint8Array([1, 2, 3]),
+      encryptedEnvelope(),
       'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
       7,
     ).then(

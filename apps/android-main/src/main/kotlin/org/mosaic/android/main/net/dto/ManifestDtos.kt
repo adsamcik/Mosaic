@@ -40,5 +40,5 @@ data class TieredShardInfo(
   @SerialName("shardIndex") val shardIndex: Int = 0,
   @SerialName("sha256") val sha256: String,
   @SerialName("contentLength") val contentLength: Long,
-  @SerialName("envelopeVersion") val envelopeVersion: Int = 3,
+  @SerialName("envelopeVersion") val envelopeVersion: Int,
 )

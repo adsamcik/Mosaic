@@ -8,6 +8,29 @@ Rust-owned signing key types, and golden-vector coverage. Web Slice 4 cutover
 (`c8f6eaa` `feat(web): migrate manifest sign/verify + sync to Rust handles`)
 routes manifest sign/verify and sync through the Rust handles in production.
 
+### Current v2 amendment
+
+The v1 text below is the historical signing foundation. Current public
+manifest producers must reserve an ordered sequence before signing and call
+`canonical_manifest_transcript_bytes_v2(transcript, manifest_seq)`. That byte
+family begins with `Mosaic_Manifest_v2` and version `0x02`, then binds
+`album_id`, `epoch_id`, the positive little-endian signed `manifest_seq`,
+encrypted metadata, and the canonical contiguous shard references. Changing the
+sequence changes the signature input.
+
+Create, metadata-update, and tombstone flows follow reserve → sign →
+client-addressed mutate and consume a reservation bound to the target, signer,
+operation kind, and sequence. V1 verification may remain for legacy reads, but
+no public write may omit the v2 sequence. Per-photo `expiresAt` is not a current
+producer field.
+
+Receive-side replay state is per logical manifest and belongs in a separate
+encrypted security-state collection. For the same manifest, an older sequence
+or equal sequence with different signed bytes fails closed; a single
+album/signer high-water mark must not discard a different manifest delivered
+out of order. Where the original v1-only scope below conflicts with this
+amendment, this amendment controls.
+
 ## Scope
 
 This slice adds Rust Ed25519 signing and verification for the canonical manifest transcript produced by `mosaic-domain`.

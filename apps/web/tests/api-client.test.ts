@@ -216,6 +216,99 @@ describe('base64 utilities', () => {
   });
 });
 
+describe('creation idempotency keys', () => {
+  const albumResponse = {
+    id: '0190a0d4-cffe-7a55-9b8a-94e4ad9c4e51',
+    ownerId: '0190a0d5-1234-7a55-9b8a-94e4ad9c4e52',
+    currentVersion: 1,
+    currentEpochId: 1,
+    createdAt: '2024-12-25T23:59:59Z',
+  };
+  const shareResponse = {
+    id: '0190a0d6-1234-7a55-9b8a-94e4ad9c4e53',
+    linkId: toBase64(new Uint8Array(16).fill(3)),
+    accessTier: 1 as const,
+    expiresAt: null,
+    maxUses: null,
+    useCount: 0,
+    isRevoked: false,
+    createdAt: '2024-12-25T23:59:59Z',
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => ({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers(),
+        json: () =>
+          Promise.resolve(
+            url.endsWith('/share-links') ? shareResponse : albumResponse,
+          ),
+      } as Response)),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('reuses a signer-derived album key across separate caller retries', async () => {
+    const api = getApi();
+    const request = {
+      initialEpochKey: {
+        encryptedKeyBundle: 'AA==',
+        ownerSignature: 'AA==',
+        sharerPubkey: 'AA==',
+        signPubkey: toBase64(new Uint8Array(32).fill(7)),
+      },
+      encryptedName: 'AQ==',
+    };
+
+    await api.createAlbum(request);
+    await api.createAlbum({ ...request, encryptedName: 'Ag==' });
+
+    const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls;
+    const firstKey = new Headers(calls[0]?.[1]?.headers).get('Idempotency-Key');
+    const retryKey = new Headers(calls[1]?.[1]?.headers).get('Idempotency-Key');
+    expect(firstKey).toMatch(/^album:[A-Za-z0-9_-]{43}$/);
+    expect(retryKey).toBe(firstKey);
+    expect(firstKey?.length).toBeLessThan(255);
+
+    await api.createAlbum({
+      ...request,
+      initialEpochKey: {
+        ...request.initialEpochKey,
+        signPubkey: toBase64(new Uint8Array(32).fill(8)),
+      },
+    });
+    const otherKey = new Headers(calls[2]?.[1]?.headers).get('Idempotency-Key');
+    expect(otherKey).not.toBe(firstKey);
+  });
+
+  it('reuses a canonical link-derived share key with a separate namespace', async () => {
+    const api = getApi();
+    const request = {
+      accessTier: 1 as const,
+      linkId: toBase64(new Uint8Array(16).fill(3)),
+      wrappedKeys: [],
+      maxUses: 5,
+    };
+
+    await api.createShareLink(albumResponse.id, request);
+    await api.createShareLink(albumResponse.id, { ...request, maxUses: 9 });
+
+    const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls;
+    const firstKey = new Headers(calls[0]?.[1]?.headers).get('Idempotency-Key');
+    const retryKey = new Headers(calls[1]?.[1]?.headers).get('Idempotency-Key');
+    expect(firstKey).toBe('share:AwMDAwMDAwMDAwMDAwMDAw');
+    expect(retryKey).toBe(firstKey);
+    expect(firstKey).not.toMatch(/^album:/);
+  });
+});
+
 describe('updateAlbumExpiration', () => {
   const mockAlbumResponse = {
     id: '0190a0d4-cffe-7a55-9b8a-94e4ad9c4e51',
@@ -462,41 +555,5 @@ describe('apiRequest response validation (M2)', () => {
     const apiErr = thrown as ApiError;
     expect(apiErr.status).toBe(403);
     expect(apiErr.statusText).toBe('Forbidden');
-  });
-});
-
-describe('updatePhotoExpiration', () => {
-  beforeEach(() => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 204,
-      }),
-    );
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('uses a dependency-safe PATCH adapter with only lifecycle metadata', async () => {
-    const api = getApi();
-    await api.updatePhotoExpiration('manifest-123', {
-      expiresAt: '2024-12-25T23:59:59Z',
-      expirationWarningDays: 3,
-    });
-
-    expect(fetch).toHaveBeenCalledTimes(1);
-    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
-      string,
-      RequestInit,
-    ];
-    expect(url).toBe('/api/v1/manifests/manifest-123/expiration');
-    expect(init.method).toBe('PATCH');
-    expect(JSON.parse(init.body as string)).toEqual({
-      expiresAt: '2024-12-25T23:59:59Z',
-      expirationWarningDays: 3,
-    });
   });
 });

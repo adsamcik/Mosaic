@@ -1,5 +1,5 @@
 <resources>
-  <string name="app_name">Mosaic</string>
+  <string name="app_name" translatable="false">Mosaic</string>
   <!--
     Auto-import foreground notification strings. Kept deliberately generic so
     that the user-visible notification posted by AutoImportWorker never leaks

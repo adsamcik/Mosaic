@@ -1,4 +1,7 @@
 <resources>
+  <string name="auto_import_notification_channel_name">Automatický import Mosaic</string>
+  <string name="auto_import_notification_title">Automatický import Mosaic</string>
+  <string name="auto_import_notification_text">Šifruji a nahrávám položky ve frontě.</string>
   <!--
     Czech translations for the shard-pipeline foreground notification. Other
     user-visible strings fall back to the default (English) values/ resources

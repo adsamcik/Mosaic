@@ -32,6 +32,10 @@ interface ContractFixture {
   };
   clientCore: {
     epochId: number;
+    sequenceReservation: {
+      reservationId: string;
+      manifestSeq: number;
+    };
     completedShards: ContractShard[];
     manifestReceipt: {
       manifestId: string;
@@ -43,6 +47,8 @@ interface ContractFixture {
     encryptedMetaBase64: string;
     signature: string;
     signerPubkey: string;
+    manifestSeq: number;
+    sequenceReservationId: string;
     shardIds: string[];
     tieredShards: Array<{ shardId: string; tier: number }>;
   };
@@ -221,8 +227,14 @@ describe('Android manual upload cross-client contract', () => {
     const canonicalTranscript = new Uint8Array([1, 3, 3, 7]);
     mocks.manifestTranscriptBytes.mockResolvedValue(canonicalTranscript);
     mocks.signManifestWithEpoch.mockResolvedValue(signature);
-    const finalizeFetch = vi.fn(async () =>
-      new Response(JSON.stringify({
+    const finalizeFetch = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).endsWith('/manifests/sequence-reservations')) {
+        return new Response(
+          JSON.stringify(fixture.clientCore.sequenceReservation),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response(JSON.stringify({
         protocolVersion: 1,
         manifestId: fixture.clientCore.manifestReceipt.manifestId,
         metadataVersion: fixture.clientCore.manifestReceipt.version,
@@ -235,8 +247,8 @@ describe('Android manual upload cross-client contract', () => {
           contentLength: 1,
           envelopeVersion: 3,
         })),
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
-    );
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
 
     await createManifestForUpload(
       fixtureTask(fixture),
@@ -282,6 +294,7 @@ describe('Android manual upload cross-client contract', () => {
     expect(mocks.manifestTranscriptBytes).toHaveBeenCalledWith(expect.objectContaining({
       albumId: fixture.androidHandoff.albumId,
       epochId: fixture.clientCore.epochId,
+      manifestSeq: fixture.clientCore.sequenceReservation.manifestSeq,
       encryptedMeta,
       shards: fixture.clientCore.completedShards.map((shard, chunkIndex) =>
         expect.objectContaining({
@@ -292,18 +305,28 @@ describe('Android manual upload cross-client contract', () => {
         }),
       ),
     }));
-    expect(finalizeFetch).toHaveBeenCalledTimes(1);
+    expect(finalizeFetch).toHaveBeenCalledTimes(2);
     const finalizeCalls = finalizeFetch.mock.calls as unknown as Array<[string, RequestInit]>;
-    expect(finalizeCalls[0]![1].headers).toEqual(expect.objectContaining({
+    const reservationRequest = JSON.parse(String(finalizeCalls[0]![1].body));
+    expect(reservationRequest).toEqual({
+      albumId: fixture.androidHandoff.albumId,
+      signerPubkey: fixture.backendManifestRequest.signerPubkey,
+      targetManifestId: fixture.androidHandoff.assetId,
+      operationId: fixture.androidHandoff.uploadJobId,
+      operationKind: 'Create',
+    });
+    expect(finalizeCalls[1]![1].headers).toEqual(expect.objectContaining({
       'Idempotency-Key': `mosaic-finalize-${fixture.androidHandoff.uploadJobId}`,
     }));
-    const backendRequest = JSON.parse(String(finalizeCalls[0]![1].body));
+    const backendRequest = JSON.parse(String(finalizeCalls[1]![1].body));
     expect(backendRequest).toMatchObject({
       protocolVersion: 1,
       albumId: fixture.backendManifestRequest.albumId,
       encryptedMeta: fixture.backendManifestRequest.encryptedMetaBase64,
       signature: fixture.backendManifestRequest.signature,
       signerPubkey: fixture.backendManifestRequest.signerPubkey,
+      manifestSeq: fixture.backendManifestRequest.manifestSeq,
+      sequenceReservationId: fixture.backendManifestRequest.sequenceReservationId,
       shardIds: [],
       tieredShards: fixture.clientCore.completedShards.map((shard) => ({
         shardId: shard.shardId,
@@ -320,7 +343,9 @@ describe('Android manual upload cross-client contract', () => {
       'assetType',
       'encryptedMeta',
       'encryptedMetaSidecar',
+      'manifestSeq',
       'protocolVersion',
+      'sequenceReservationId',
       'shardIds',
       'signature',
       'signerPubkey',

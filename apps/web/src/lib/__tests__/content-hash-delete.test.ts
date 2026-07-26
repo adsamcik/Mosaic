@@ -11,6 +11,7 @@ import type { AlbumContentHashRecord, UploadQueueDB } from '../upload/types';
 
 const apiMocks = vi.hoisted(() => ({
   deleteManifest: vi.fn<(manifestId: string, body?: unknown) => Promise<void>>(),
+  getManifest: vi.fn(),
 }));
 
 const dbMocks = vi.hoisted(() => ({
@@ -21,10 +22,18 @@ const dedupMocks = vi.hoisted(() => ({
   deleteByPhotoId: vi.fn<() => Promise<void>>(),
 }));
 
+const tombstoneMocks = vi.hoisted(() => ({
+  signTombstone: vi.fn(),
+}));
+
 vi.mock('../api', () => ({
   getApi: () => apiMocks,
 }));
 
+
+vi.mock('../tombstone-sign', () => ({
+  signTombstone: tombstoneMocks.signTombstone,
+}));
 vi.mock('../db-client', () => ({
   getDbClient: async () => dbMocks,
 }));
@@ -91,6 +100,14 @@ describe('ContentHashDedup deletion', () => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
     apiMocks.deleteManifest.mockResolvedValue(undefined);
+    apiMocks.getManifest.mockResolvedValue({ versionCreated: 7 });
+    tombstoneMocks.signTombstone.mockResolvedValue({
+      tombstoneSignature: 'AAAA',
+      signerEpochId: 1,
+      tombstoneSeq: 9,
+      sequenceReservationId: '018f0000-0000-7000-8000-000000000001',
+      tombstoneVersionCreated: 7,
+    });
     dbMocks.deleteManifest.mockResolvedValue(undefined);
     dedupMocks.deleteByPhotoId.mockResolvedValue(undefined);
     records = [

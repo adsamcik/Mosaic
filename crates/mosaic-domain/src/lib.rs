@@ -76,6 +76,17 @@ pub const TOMBSTONE_SIGN_CONTEXT: &[u8] = b"Mosaic_Tombstone_v1";
 /// Current tombstone signing transcript format version.
 pub const TOMBSTONE_TRANSCRIPT_VERSION: u8 = 1;
 
+/// Domain separation context for v2 client-signed tombstone transcripts.
+///
+/// v2 is deliberately a distinct context rather than a trailing extension of
+/// v1. It binds the server-issued monotonic mutation sequence used by clients'
+/// durable replay floors, so a valid v1 delete cannot be reinterpreted as a
+/// fresh v2 delete.
+pub const TOMBSTONE_SIGN_CONTEXT_V2: &[u8] = b"Mosaic_Tombstone_v2";
+
+/// Tombstone transcript format version that binds a mutation sequence.
+pub const TOMBSTONE_TRANSCRIPT_VERSION_V2: u8 = 2;
+
 /// Domain separation context for owner-signed member-roster transcripts.
 /// The byte-distinct prefix prevents cross-protocol signature reuse against
 /// regular manifests or tombstones.
@@ -745,6 +756,42 @@ pub fn canonical_tombstone_transcript_bytes(transcript: &TombstoneTranscript) ->
     bytes.push(TOMBSTONE_TRANSCRIPT_VERSION);
     bytes.extend_from_slice(transcript.album_id());
     bytes.extend_from_slice(&transcript.epoch_id().to_le_bytes());
+    bytes.extend_from_slice(transcript.photo_id());
+    bytes.extend_from_slice(&transcript.version_created().to_le_bytes());
+    bytes
+}
+
+/// Builds deterministic binary bytes for v2 tombstone signing.
+///
+/// A tombstone is a mutation in the same per-`(album, signer)` sequence stream
+/// as creates and metadata updates. `tombstone_seq` is issued by the server
+/// before the editor signs, and is included in the signed bytes so a server
+/// cannot relabel an old delete with a newer sequence.
+///
+/// Layout (72 bytes total):
+/// - `TOMBSTONE_SIGN_CONTEXT_V2` (19 bytes: `Mosaic_Tombstone_v2`)
+/// - `TOMBSTONE_TRANSCRIPT_VERSION_V2` (1 byte: `0x02`)
+/// - `album_id` (16 bytes)
+/// - `epoch_id` (4 bytes, little-endian)
+/// - `tombstone_seq` (8 bytes, little-endian, signed i64)
+/// - `photo_id` (16 bytes)
+/// - `version_created` (8 bytes, little-endian, signed i64)
+///
+/// Callers enforce a positive sequence at the protocol boundary. Keeping this
+/// byte producer total makes it usable by low-level vector and verification
+/// tests while the server/client reject invalid values before signing or
+/// accepting them.
+#[must_use]
+pub fn canonical_tombstone_transcript_bytes_v2(
+    transcript: &TombstoneTranscript,
+    tombstone_seq: i64,
+) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(TOMBSTONE_SIGN_CONTEXT_V2.len() + 1 + 16 + 4 + 8 + 16 + 8);
+    bytes.extend_from_slice(TOMBSTONE_SIGN_CONTEXT_V2);
+    bytes.push(TOMBSTONE_TRANSCRIPT_VERSION_V2);
+    bytes.extend_from_slice(transcript.album_id());
+    bytes.extend_from_slice(&transcript.epoch_id().to_le_bytes());
+    bytes.extend_from_slice(&tombstone_seq.to_le_bytes());
     bytes.extend_from_slice(transcript.photo_id());
     bytes.extend_from_slice(&transcript.version_created().to_le_bytes());
     bytes

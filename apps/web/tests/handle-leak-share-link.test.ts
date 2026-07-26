@@ -10,12 +10,11 @@
  *
  * This test parses `apps/web/src/workers/types.ts` and asserts:
  *
- *   1. `wrapTierKeyForLink`, `unwrapTierKeyFromLink`, `deriveLinkKeys`,
- *      and `generateLinkSecret` are all declared on the Comlink contract.
- *   2. `wrapTierKeyForLink` takes an `EpochHandleId`-typed parameter and
- *      does NOT accept `tierKey: Uint8Array`.
- *   3. None of the methods leak `tierKey:` (with the colon, anchoring on
- *      type-field syntax) in their signatures.
+ *   1. The supported import, v2 wrap, tier import, and decrypt methods are
+ *      declared on the Comlink contract.
+ *   2. Legacy `createLinkShareHandle` and `wrapLinkTierHandle` writers are absent.
+ *   3. `wrapLinkTierHandleV2` takes opaque handle IDs and no raw tier key.
+ *   4. None of the supported methods leak raw tier-key fields.
  *
  * Like the Slice 3 epoch handle-leak test, the boundary is enforced
  * lexically against the public type declaration because that is what
@@ -56,9 +55,8 @@ function extractMethodSignature(
 }
 
 const LINK_HANDLE_METHODS = [
-  'createLinkShareHandle',
   'importLinkShareHandle',
-  'wrapLinkTierHandle',
+  'wrapLinkTierHandleV2',
   'importLinkTierHandle',
   'decryptShardWithLinkTierHandle',
 ] as const;
@@ -89,8 +87,17 @@ describe('P-W7.6 boundary guard — share-link key wrapping', () => {
     });
   }
 
-  it('wrapLinkTierHandle takes opaque handles, not raw tier-key bytes', () => {
-    const sig = extractMethodSignature(typesSource, 'wrapLinkTierHandle');
+  it('legacy v1 share-link writers are absent from the worker contract', () => {
+    expect(
+      extractMethodSignature(typesSource, 'createLinkShareHandle'),
+    ).toBeNull();
+    expect(
+      extractMethodSignature(typesSource, 'wrapLinkTierHandle'),
+    ).toBeNull();
+  });
+
+  it('wrapLinkTierHandleV2 takes opaque handles, not raw tier-key bytes', () => {
+    const sig = extractMethodSignature(typesSource, 'wrapLinkTierHandleV2');
     expect(sig).not.toBeNull();
     // Authoritative input: an EpochHandleId-typed parameter.
     expect(sig).toMatch(/linkShareHandleId\s*:\s*LinkShareHandleId/);
@@ -101,7 +108,7 @@ describe('P-W7.6 boundary guard — share-link key wrapping', () => {
   });
 
   it('link handle wrapping uses protocol tier bytes (1 | 2 | 3)', () => {
-    const sig = extractMethodSignature(typesSource, 'wrapLinkTierHandle');
+    const sig = extractMethodSignature(typesSource, 'wrapLinkTierHandleV2');
     expect(sig).not.toBeNull();
     expect(sig).toMatch(/tier\s*:\s*1\s*\|\s*2\s*\|\s*3/);
   });

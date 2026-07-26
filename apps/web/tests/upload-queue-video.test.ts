@@ -53,10 +53,12 @@ const {
       previewKey: new Uint8Array(32).fill(2),
       fullKey: new Uint8Array(32).fill(3),
     }),
-    mockEncryptShardCrypto: vi.fn().mockResolvedValue({
-      envelopeBytes: new Uint8Array([10, 20, 30]),
-      sha256: 'encrypted-sha256',
-    }),
+    mockEncryptShardCrypto: vi.fn().mockResolvedValue(
+      new Uint8Array([
+        0x53, 0x47, 0x7a, 0x6b, 0x03,
+        10, 20, 30,
+      ]),
+    ),
     mockRustInit: vi.fn().mockResolvedValue(undefined),
     mockRustInitSync: vi.fn(),
     mockComputePlaintextContentHash: vi.fn(fakeHashHex),

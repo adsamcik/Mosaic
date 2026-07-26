@@ -15,7 +15,7 @@ const mockData = vi.hoisted(() => {
   }
   const wasmMock = {
     default: vi.fn(async () => undefined),
-    createLinkShareHandle: vi.fn(() =>
+    createLinkShareHandleV2: vi.fn(() =>
       result({
         handle: state.shareHandle,
         linkId: state.linkId,
@@ -25,10 +25,10 @@ const mockData = vi.hoisted(() => {
         encryptedKey: state.encryptedKey,
       }),
     ),
-    wrapLinkTierHandle: vi.fn(() =>
+    wrapLinkTierHandleV2: vi.fn(() =>
       result({ tier: 2, nonce: state.nonce, encryptedKey: state.encryptedKey }),
     ),
-    importLinkTierHandle: vi.fn(() =>
+    importLinkTierHandleV2: vi.fn(() =>
       result({ handle: state.tierHandle, linkId: state.linkId, tier: 2 }),
     ),
     decryptShardWithLinkTierHandle: vi.fn(() =>
@@ -56,20 +56,21 @@ describe('RustHandleFacade link-share handle round trip', () => {
     const facade = new RustHandleFacade();
     await facade.init();
 
-    const created = facade.createLinkShareHandle('album', 11n, 1);
+    const created = facade.createLinkShareHandleV2('album', 11n, 1);
     expect(created.handle).toBe(mockData.state.shareHandle);
     expect([...created.linkUrlToken]).toEqual([...mockData.state.linkUrlToken]);
     expect([...created.linkId]).toEqual([...mockData.state.linkId]);
 
-    const wrapped = facade.wrapLinkTierHandle(created.handle, 11n, 2);
+    const wrapped = facade.wrapLinkTierHandleV2(created.handle, 11n, 2);
     expect(wrapped.tier).toBe(2);
 
-    const imported = facade.importLinkTierHandle(
+    const imported = facade.importLinkTierHandleV2(
       created.linkUrlToken,
       wrapped.nonce,
       wrapped.encryptedKey,
       'album',
       2,
+      11,
     );
     expect(imported.handle).toBe(mockData.state.tierHandle);
     expect([...imported.linkId]).toEqual([...created.linkId]);
@@ -79,14 +80,15 @@ describe('RustHandleFacade link-share handle round trip', () => {
       new Uint8Array([4, 5, 6]),
     );
     expect([...plaintext]).toEqual([...mockData.state.plaintext]);
-    expect(mockData.wasmMock.createLinkShareHandle).toHaveBeenCalledWith('album', 11n, 1);
-    expect(mockData.wasmMock.wrapLinkTierHandle).toHaveBeenCalledWith(mockData.state.shareHandle, 11n, 2);
-    expect(mockData.wasmMock.importLinkTierHandle).toHaveBeenCalledWith(
+    expect(mockData.wasmMock.createLinkShareHandleV2).toHaveBeenCalledWith('album', 11n, 1);
+    expect(mockData.wasmMock.wrapLinkTierHandleV2).toHaveBeenCalledWith(mockData.state.shareHandle, 11n, 2);
+    expect(mockData.wasmMock.importLinkTierHandleV2).toHaveBeenCalledWith(
       mockData.state.linkUrlToken,
       mockData.state.nonce,
       mockData.state.encryptedKey,
       'album',
       2,
+      11,
     );
     expect(mockData.wasmMock.decryptShardWithLinkTierHandle).toHaveBeenCalledWith(
       mockData.state.tierHandle,

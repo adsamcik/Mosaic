@@ -12,6 +12,8 @@ public class MosaicDbContext : DbContext
     public DbSet<AlbumMember> AlbumMembers => Set<AlbumMember>();
     public DbSet<EpochKey> EpochKeys => Set<EpochKey>();
     public DbSet<Manifest> Manifests => Set<Manifest>();
+    public DbSet<ManifestSequenceState> ManifestSequenceStates => Set<ManifestSequenceState>();
+    public DbSet<ManifestSequenceReservation> ManifestSequenceReservations => Set<ManifestSequenceReservation>();
     public DbSet<Shard> Shards => Set<Shard>();
     public DbSet<ManifestShard> ManifestShards => Set<ManifestShard>();
     public DbSet<UserQuota> UserQuotas => Set<UserQuota>();
@@ -19,6 +21,7 @@ public class MosaicDbContext : DbContext
     public DbSet<LinkEpochKey> LinkEpochKeys => Set<LinkEpochKey>();
     public DbSet<ShareLinkGrant> ShareLinkGrants => Set<ShareLinkGrant>();
     public DbSet<TusUploadReservation> TusUploadReservations => Set<TusUploadReservation>();
+    public DbSet<TusUploadLifecycle> TusUploadLifecycles => Set<TusUploadLifecycle>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<AuthChallenge> AuthChallenges => Set<AuthChallenge>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
@@ -60,6 +63,7 @@ public class MosaicDbContext : DbContext
             e.HasIndex(a => a.ExpiresAt)
                 .HasFilter("expires_at IS NOT NULL");
 
+            e.Property(a => a.CreateRequestHash).HasMaxLength(32);
             e.Property(a => a.RowVersion).IsConcurrencyToken();
         });
 
@@ -132,6 +136,8 @@ public class MosaicDbContext : DbContext
             e.Property(m => m.ProtocolVersion).HasDefaultValue(1);
             e.Property(m => m.AssetType).HasMaxLength(16).HasDefaultValue("Image");
             e.Property(m => m.MetadataVersion).HasDefaultValue(1L);
+            e.Property(m => m.FinalizeRequestHash).HasMaxLength(32);
+            e.Property(m => m.FinalizeMetadataVersion);
 
             // Index for efficient expired photo cleanup queries
             e.HasIndex(m => m.ExpiresAt)
@@ -141,6 +147,48 @@ public class MosaicDbContext : DbContext
             e.HasQueryFilter(m => !m.IsDeleted);
 
             e.Property(m => m.RowVersion).IsConcurrencyToken();
+        });
+
+        // Manifest v2 sequence allocation and reservation ledger.
+        modelBuilder.Entity<ManifestSequenceState>(e =>
+        {
+            e.HasKey(state => new { state.AlbumId, state.SignerPubkey });
+            e.Property(state => state.SignerPubkey).HasMaxLength(128);
+            e.HasOne(state => state.Album)
+                .WithMany()
+                .HasForeignKey(state => state.AlbumId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ManifestSequenceReservation>(e =>
+        {
+            e.Property(reservation => reservation.SignerPubkey).HasMaxLength(128);
+            e.HasKey(reservation => reservation.Id);
+            e.Property(reservation => reservation.OperationKind).HasMaxLength(32);
+            e.HasOne(reservation => reservation.Album)
+                .WithMany()
+                .HasForeignKey(reservation => reservation.AlbumId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(reservation => reservation.OperationId).IsUnique();
+            e.HasIndex(reservation => new
+            {
+                reservation.AlbumId,
+                reservation.SignerPubkey,
+                reservation.OperationKind,
+                reservation.OperationId
+            }).IsUnique();
+            e.HasIndex(reservation => new
+            {
+                reservation.AlbumId,
+                reservation.SignerPubkey,
+                reservation.ManifestSeq
+            }).IsUnique();
+            e.HasIndex(reservation => new
+            {
+                reservation.AlbumId,
+                reservation.TargetManifestId,
+                reservation.OperationKind
+            });
         });
 
         // Shard
@@ -222,7 +270,11 @@ public class MosaicDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             e.HasIndex(sl => sl.LinkId).IsUnique();
-            e.HasIndex(sl => sl.AlbumId);
+            e.HasIndex(sl => new { sl.AlbumId, sl.CreatedAtUnixMilliseconds, sl.Id })
+                .IsDescending(false, true, false)
+                .HasDatabaseName("ix_share_links_album_created_id");
+            e.HasIndex(sl => new { sl.AlbumId, sl.ExpiresAtUnixMilliseconds });
+            e.Property(sl => sl.CreateRequestHash).HasMaxLength(32);
         });
 
         // LinkEpochKey
@@ -265,6 +317,27 @@ public class MosaicDbContext : DbContext
 
             e.HasIndex(r => r.ExpiresAt);
             e.HasIndex(r => r.UserId);
+        });
+
+        // TusUploadLifecycle
+        modelBuilder.Entity<TusUploadLifecycle>(e =>
+        {
+            e.HasKey(l => l.FileId);
+
+            e.Property(l => l.State).HasConversion<string>();
+
+            e.HasOne(l => l.User)
+                .WithMany()
+                .HasForeignKey(l => l.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(l => l.Album)
+                .WithMany()
+                .HasForeignKey(l => l.AlbumId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasIndex(l => new { l.State, l.UpdatedAt });
+            e.HasIndex(l => l.UserId);
         });
 
         // IdempotencyRecord

@@ -212,6 +212,63 @@ public sealed class MigrationTests : IClassFixture<MigrationTests.PostgresFixtur
 
     [DockerRequiredFact]
     [Trait("Category", "Integration")]
+    public async Task Migrations_BackfillNormalizedShareLinkTimestampsBeforeIndexing()
+    {
+        var dbName = await _fixture.CreateEmptyDatabaseAsync();
+        await using var db = _fixture.CreateDbContext(dbName);
+        var migrator = db.Database.GetInfrastructure().GetRequiredService<IMigrator>();
+        await migrator.MigrateAsync("20260522000000_BootstrapIdempotencyRecords");
+
+        var userId = Guid.NewGuid();
+        var albumId = Guid.NewGuid();
+        var linkId = Guid.NewGuid();
+        var createdAt = new DateTimeOffset(2025, 11, 3, 4, 5, 6, 789, TimeSpan.Zero);
+        var expiresAt = createdAt.AddDays(14).AddMilliseconds(321);
+        await db.Database.ExecuteSqlRawAsync(
+            @"INSERT INTO users (id, auth_sub, identity_pubkey, created_at, is_admin, row_version)
+              VALUES ({0}, {1}, {2}, NOW(), false, 1)",
+            userId, $"share-backfill-{userId:N}", new string('b', 64));
+        await db.Database.ExecuteSqlRawAsync(
+            @"INSERT INTO albums (id, owner_id, current_epoch_id, current_version, created_at, updated_at, expiration_warning_days, row_version)
+              VALUES ({0}, {1}, 1, 1, NOW(), NOW(), 0, 1)",
+            albumId, userId);
+        await db.Database.ExecuteSqlRawAsync(
+            @"INSERT INTO share_links
+                (id, link_id, album_id, access_tier, owner_encrypted_secret, expires_at, max_uses, use_count, is_revoked, created_at)
+              VALUES ({0}, {1}, {2}, 3, NULL, {3}, NULL, 0, false, {4})",
+            linkId, new byte[16], albumId, expiresAt, createdAt);
+
+        await migrator.MigrateAsync();
+
+        var connection = (NpgsqlConnection)db.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = @"SELECT created_at_unix_milliseconds, expires_at_unix_milliseconds
+                                    FROM share_links WHERE id = @id";
+            command.Parameters.Add(new NpgsqlParameter("id", linkId));
+            await using var reader = await command.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal(createdAt.ToUnixTimeMilliseconds(), reader.GetInt64(0));
+            Assert.Equal(expiresAt.ToUnixTimeMilliseconds(), reader.GetInt64(1));
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = @"SELECT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE schemaname = 'public'
+                  AND indexname = 'ix_share_links_album_created_id')";
+            Assert.True((bool)(await command.ExecuteScalarAsync() ?? false));
+        }
+    }
+
+    [DockerRequiredFact]
+    [Trait("Category", "Integration")]
     public async Task Backfill_LeavesOrphanRowsWithSentinelDefaults()
     {
         // Orphan case: manifest_shards row whose related shard has no
@@ -395,13 +452,33 @@ public sealed class MigrationTests : IClassFixture<MigrationTests.PostgresFixtur
 
     public sealed class PostgresFixture : IAsyncLifetime
     {
-        private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
-            .WithImage("postgres:16-alpine")
-            .Build();
+        private PostgreSqlContainer? _container;
 
-        public Task InitializeAsync() => _container.StartAsync();
+        private PostgreSqlContainer Container => _container
+            ?? throw new InvalidOperationException("PostgreSQL fixture was not started");
 
-        public async Task DisposeAsync() => await _container.DisposeAsync();
+        public async Task InitializeAsync()
+        {
+            // This class also contains a provider-independent reflection test.
+            // Do not construct Testcontainers when every Docker test is skipped.
+            if (!DockerRequiredFactAttribute.IsDockerAvailable())
+            {
+                return;
+            }
+
+            _container = new PostgreSqlBuilder()
+                .WithImage("postgres:16-alpine")
+                .Build();
+            await _container.StartAsync();
+        }
+
+        public async Task DisposeAsync()
+        {
+            if (_container != null)
+            {
+                await _container.DisposeAsync();
+            }
+        }
 
         /// <summary>
         /// Creates a fresh empty database inside the running container and
@@ -411,7 +488,7 @@ public sealed class MigrationTests : IClassFixture<MigrationTests.PostgresFixtur
         public async Task<string> CreateEmptyDatabaseAsync()
         {
             var dbName = $"mig_{Guid.NewGuid():N}";
-            var adminCs = _container.GetConnectionString();
+            var adminCs = Container.GetConnectionString();
             await using var conn = new NpgsqlConnection(adminCs);
             await conn.OpenAsync();
             await using var cmd = conn.CreateCommand();
@@ -422,7 +499,7 @@ public sealed class MigrationTests : IClassFixture<MigrationTests.PostgresFixtur
 
         public MosaicDbContext CreateDbContext(string dbName)
         {
-            var baseBuilder = new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
+            var baseBuilder = new NpgsqlConnectionStringBuilder(Container.GetConnectionString())
             {
                 Database = dbName
             };

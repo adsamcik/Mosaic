@@ -1,4 +1,8 @@
 
 # cargo-vet audits file
 
-[audits]
+[[audits.anyhow]]
+who = "thumbs-bot <thumbs-bot@local>"
+criteria = "safe-to-deploy"
+delta = "1.0.102 -> 1.0.103"
+notes = "Reviewed the complete 1.0.102..1.0.103 source delta: the only runtime change replaces reference creation from a potentially unaligned packed field with raw address calculation and NonNull construction, with targeted mutable-downcast coverage (RUSTSEC-2026-0190)."

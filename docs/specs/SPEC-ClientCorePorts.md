@@ -2,7 +2,32 @@
 
 ## Status
 
-**Locked at design level.** Trait signatures are advisory until W-A1/A13 materialize them; the *port set* (15 ports) and *contractual semantics* (privacy, blocking, error mapping) are normative as of R-Cl4 commit `95bfa66`. Concrete trait shapes may shift during W-A1/A13 implementation as long as the port-set and semantics are preserved.
+**Historical v1 design lock.** The original 15-port decomposition and its
+privacy/error boundaries remain useful, but manifest-producer idempotency and
+replay clauses are superseded below by the current ordered v2 lifecycle.
+
+### Current producer amendment
+
+Before signing any create, metadata update, or tombstone, the adapter obtains a
+target-bound reservation from
+`POST /api/v1/manifests/sequence-reservations`. It signs the returned positive
+`manifestSeq` and submits it with the matching `sequenceReservationId` to the
+client-addressed finalize/update/delete route. A stable operation-ID retry must
+return the same reservation and must not be rebound.
+
+`CreateManifestPort` is retained as the historical port name, but its current
+operation is finalize-by-client-selected-ID. `Idempotency-Key` is optional on
+that finalize request. Exact retry safety is anchored by manifest ID plus stored
+request hash; a changed request for the same ID conflicts. The optional replay
+cache cannot replace the signed sequence reservation.
+
+Receive adapters keep per-manifest replay checkpoints in a separate encrypted
+security-state collection, never as one album-wide rejection watermark in a
+gallery/sync projection. For the same manifest, an older sequence or equal
+sequence with different signed content fails closed; distinct manifests remain
+valid when delivered out of allocation order.
+
+Where the v1 text below conflicts with this amendment, this amendment controls.
 
 ## Scope
 
@@ -55,7 +80,7 @@ Checklist coverage: all 15 v1 required ports are specified below, including `Epo
 | ADR-006, "Rules" | Raw L0/L1/L2/epoch/signing/link keys never cross WASM/Kotlin/UniFFI boundaries; long-running calls expose cancellation and redacted stable errors. |
 | ADR-013, "API shape" | Streaming AEAD is deferred to v1.x; v1 upload ports use single-shot envelope v3, while `envelope_version` leaves room for v4. |
 | ADR-018, "Telemetry posture" and "What ships to operators" | Diagnostic events are local-ring-buffer-first, opaque-code-only, and contain no PII or IDs. Server upload of aggregates is out of band. |
-| ADR-022, "POST /api/v1/manifests request shape" and "Rules" #11 | Manifest commit uses `Idempotency-Key`; identical key plus identical canonical body returns identical response, body mismatch returns `409 IDEMPOTENCY_CONFLICT`, and expired cache returns `409 IDEMPOTENCY_KEY_EXPIRED`. |
+| ADR-022 current-contract amendment | Manifest producers reserve, sign, and mutate a client-addressed target. Finalize `Idempotency-Key` is optional; exact manifest-ID/body replay returns the original result and a changed body conflicts. |
 | ADR-023, "Single canonical wire format" and "Persistence transactions and CAS" | Snapshots are opaque canonical-CBOR blobs; `update_snapshot(id, expected_revision, new_bytes)` is compare-and-swap; sync apply is one transaction. |
 | `SPEC-ClientCoreStateMachines.md`, "Error, cancellation, and retry model" | Reducers own transition, retry, cancel, and manifest-unknown semantics. |
 | `SPEC-LateV1ProtocolFreeze.md`, "Rust FFI DTOs" and "Opaque blob formats" | Stable error codes are append-only; no raw-secret FFI outputs; shard envelope v3 and manifest transcript surfaces are freeze candidates/frozen by gate status. |
@@ -86,13 +111,14 @@ Checklist coverage: all 15 v1 required ports are specified below, including `Epo
   completion and reducer event commit can be replayed without duplicating
   irreversible work.
 - Ports declare one of three postures:
-  - **idempotent**: identical inputs and idempotency key produce the same output;
+  - **idempotent**: identical stable operation identity and inputs produce the same output;
   - **retryable**: safe to retry with persisted session/output state;
   - **resume-from-persisted-output**: host reuses persisted output rather than
     re-running the effect.
-- `CreateShardUploadPort` and `CreateManifestPort` are idempotent when called
-  with the same persisted key and canonical body. `UploadShardPort` is
-  retryable/resumable. `EncryptShardPort` is
+- `CreateShardUploadPort` uses its persisted Tus operation identity.
+  `CreateManifestPort` is idempotent for the same client-selected manifest ID,
+  consumed reservation, and canonical body hash; its HTTP idempotency header is
+  optional. `UploadShardPort` is retryable/resumable. `EncryptShardPort` is
   resume-from-persisted-output because fresh nonces make re-encryption of the
   same `(shard_id, plaintext)` a distinct ciphertext. Sync fetch/apply is
   resume-from-persisted-output through page hashes and CAS snapshots.
@@ -597,10 +623,13 @@ Tus offsets in GRDB; progress callbacks expose bytes only.
 
 ### 5. CreateManifestPort
 
-**Purpose:** Commit the finalized encrypted manifest body to `/api/v1/manifests`
-with ADR-022 idempotency semantics.
+**Purpose:** Finalize a previously reserved and signed encrypted manifest at
+`POST /api/v1/manifests/{manifestId}/finalize`. The adapter must have already
+persisted the stable operation/target IDs and obtained a `Create` sequence
+reservation. Reservation acquisition is a required producer sub-step even
+though the historical 15-port outline did not name a separate port for it.
 
-**DTO shape:**
+**Illustrative DTO shape:**
 
 ```rust
 pub trait CreateManifestPort {
@@ -613,9 +642,13 @@ pub trait CreateManifestPort {
 pub struct CreateManifestInput {
     pub effect_id: EffectId,
     pub job_id: JobId,
+    pub manifest_id: ManifestId,
+    pub operation_id: Uuid,
     pub album_id: AlbumId,
-    pub idempotency_key: String,
-    pub canonical_body: Vec<u8>, // canonical CBOR or JSON body bytes, no plaintext
+    pub manifest_seq: i64,
+    pub sequence_reservation_id: Uuid,
+    pub idempotency_key: Option<String>,
+    pub canonical_body: Vec<u8>, // encrypted/opaque JSON body bytes
     pub body_hash: String,
     pub now_ms: i64,
 }
@@ -626,41 +659,48 @@ pub enum CreateManifestResult {
 }
 ```
 
-**Async behavior:** Async. Idempotent for identical
-`Idempotency-Key` plus identical canonical body per ADR-022, "Rules" #11. A
-transport failure after request dispatch returns `ManifestCommitOutcomeUnknown`
-instead of retrying blindly. A definite pre-send failure is retryable.
+`manifest_seq` must be positive and already bound into the v2 signature. The
+reservation must match the target manifest, current signer, `Create` operation,
+and sequence. The optional idempotency key is replay-cache assistance only.
 
-**Persistence transaction rules:** The idempotency key and canonical body hash
-must already be persisted in the upload snapshot per ADR-022, "Rules" #12 and
-ADR-023. The port does not CAS-write snapshots; the reducer handles
-`ManifestCreated` or `ManifestOutcomeUnknown`.
+**Async behavior:** Async. An exact retry to the same manifest ID with the same
+canonical request hash returns the original created response, including after
+the reservation was consumed. A changed request for the same manifest ID
+returns conflict. A transport failure after dispatch returns
+`ManifestCommitOutcomeUnknown`; recovery retries the same target, reservation,
+sequence, signature, and body rather than allocating a fresh sequence.
+
+**Persistence transaction rules:** Before dispatch, persist the manifest ID,
+operation ID, positive sequence, reservation ID, signed canonical body/hash, and
+optional idempotency header. The port does not CAS-write reducer snapshots; the
+reducer handles `ManifestCreated` or `ManifestOutcomeUnknown`. Do not rely on a
+24-hour middleware cache for correctness.
 
 **Red-data constraints:** `canonical_body` contains only encrypted manifest
-bytes, signatures, public keys, opaque IDs, tiered shard refs, hashes, lengths,
-and protocol fields. No plaintext metadata, names, URIs, EXIF, GPS, or key bytes.
-Errors must not echo body bytes or HTTP bodies.
+bytes, signatures, public keys, opaque IDs, sequence/reservation identifiers,
+tiered shard refs, hashes, lengths, and protocol fields. No plaintext metadata,
+names, URIs, EXIF, GPS, or key bytes. Errors must not echo request/response
+bodies.
 
-**Conformance trace requirements:** Manifest mock fixtures cover: identical key
-and identical canonical body returns identical `ManifestReceipt`; identical key
-and different body returns `409 IDEMPOTENCY_CONFLICT`; malformed manifest body
-returns `400 BAD_REQUEST`; cache eviction within TTL returns
-`409 IDEMPOTENCY_KEY_EXPIRED`; transport drop after send returns
-`ManifestCommitOutcomeUnknown`; sync recovery detects matching asset/shard set
-and maps an `asset_id` match with a different `shard_set_hash` to
-`ManifestSetConflict`.
+**Conformance trace requirements:** Fixtures cover idempotent reservation retry,
+operation-ID rebinding conflict, positive sequence signature binding, exact
+finalize replay without a header, changed-body conflict for the same manifest
+ID, optional-header replay/body conflict, post-send outcome unknown, and sync
+recovery of the same target. They also prove a `Create` reservation cannot be
+used for metadata update, tombstone, another target, or another signer.
 
 **Failure mapping:** Success -> `Ok`; post-send unknown ->
-`ClientCoreManifestOutcomeUnknown`; `400 BAD_REQUEST` ->
-`ManifestShapeRejected`; `409 IDEMPOTENCY_CONFLICT` ->
-`BackendIdempotencyConflict`; `409 IDEMPOTENCY_KEY_EXPIRED` ->
-`IdempotencyExpired`; manifest-unknown recovery body mismatch where `asset_id`
-matches but `shard_set_hash` differs -> `ManifestSetConflict`; auth failure ->
-`TransportUnauthorized`; malformed response -> `TransportBadResponse`; definite
-pre-send timeout -> `TransportTimeout` retryable.
+`ClientCoreManifestOutcomeUnknown`; malformed/unsigned sequence input ->
+`ManifestShapeRejected`; target/reservation/replay mismatch -> the stable
+backend conflict mapping; optional-header body mismatch ->
+`BackendIdempotencyConflict`; auth failure -> `TransportUnauthorized`;
+malformed response -> `TransportBadResponse`; definite pre-send timeout ->
+`TransportTimeout` retryable. Finalize recovery must not require or expect
+`IDEMPOTENCY_KEY_EXPIRED`.
 
-**iOS mapping:** Use `URLSession` POST with `Idempotency-Key`; store the
-idempotency key and body hash in GRDB before dispatch.
+**iOS mapping:** Use `URLSession` to reserve, sign through the Rust core, and
+finalize the client-addressed target. Persist operation/target/reservation/body
+state in GRDB before dispatch; persist an idempotency header only when supplied.
 
 ### 6. FetchAlbumSyncPagePort
 
@@ -1062,10 +1102,10 @@ or `Failed` terminal phases.
 CAS. The terminal snapshot must be persisted before cleanup starts, so cleanup
 failure does not regress reducer state. On `Confirmed` or `Cancelled`, cleanup
 wipes staging records and may remove the snapshot row. On `Failed`, cleanup
-wipes staging records only and must preserve the snapshot row plus
-`Idempotency-Key` for ADR-022's 30-day TTL window so manifest-unknown recovery
-can replay the same key if the user retries from a fresh upload job that shares
-the same `asset_id`.
+wipes staging records only and preserves unresolved manifest operation state
+(target ID, operation ID, reservation, signed sequence, and body hash) until the
+outcome is reconciled. An optional `Idempotency-Key` may be retained with that
+record, but no 30-day cache guarantee or fresh-job key replay is assumed.
 
 **Red-data constraints:** Cleanup logs and telemetry may include logical record
 counts only. A logical record is a platform-private staging entry, not
@@ -1075,8 +1115,9 @@ filenames, URI fragments, content hashes, shard ids, or plaintext bytes.
 
 **Conformance trace requirements:** Fixtures create plaintext staging,
 encrypted staging, and Tus session rows, then assert idempotent wipe after each
-terminal reason. The idempotency-key-survives-cleanup-after-Failed fixture
-asserts manifest recovery remains viable for the ADR-022 30-day TTL window.
+terminal reason. The failed-cleanup recovery fixture
+asserts the same target/reservation/sequence/body can be reconciled without
+requiring an idempotency header or a long-lived middleware cache.
 Privacy scanners verify cleanup diagnostics contain logical counts only.
 
 **Failure mapping:** Local wipe failure -> `StorageIoFailure`; invalid terminal
@@ -1243,7 +1284,7 @@ valid implementation:
 | Cancellation matrix | Long-running ports | Cooperative cancellation leaves snapshots and staging consistent; cancel-mid-flight and future-drop-without-signal cases are covered. |
 | Panic-firewall matrix | All ports | Injected implementation panic returns `InternalStatePoisoned` with `<panic redacted>`, zeroizes plaintext-bearing buffers in scope, and leaves the worker usable. |
 | Epoch-handle freshness | Encrypt/apply/acquire | Stale handles return `EpochHandleNotFound`; reducer reacquires through `AcquireEpochHandle` and `RetryWaiting` without applying or encrypting with hidden keys. |
-| Cleanup/idempotency TTL | Cleanup/manifest recovery | Cleanup after `Failed` wipes staging only and preserves snapshot plus `Idempotency-Key` for ADR-022's 30-day recovery window. |
+| Cleanup/manifest recovery | Cleanup/manifest recovery | Cleanup after `Failed` wipes staging only and preserves unresolved target/reservation/sequence/body state until exact replay or sync reconciliation. |
 | iOS stub compile checklist Q-final-2 | All ports | Swift/Objective-C adapter can implement every DTO and trait shape without changing Rust core. |
 
 ## Future ports

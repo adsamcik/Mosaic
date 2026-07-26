@@ -47,6 +47,7 @@ public sealed class MosaicMetrics : IDisposable
     private long _authChallengesCleanedTotal;
     private long _gcCount;
     private double _gcDurationSumSeconds;
+    private long _auditSinkHealthy = 1;
 
     public MosaicMetrics()
     {
@@ -171,6 +172,12 @@ public sealed class MosaicMetrics : IDisposable
         _gcDurationHistogram.Record(seconds);
     }
 
+    /// <summary>Record the latest required audit-file sink health probe result.</summary>
+    public void SetAuditSinkHealthy(bool healthy)
+    {
+        Interlocked.Exchange(ref _auditSinkHealthy, healthy ? 1 : 0);
+    }
+
     public long UploadsTotalValue => Interlocked.Read(ref _uploadsTotal);
     public long AuthFailuresTotalValue => Interlocked.Read(ref _authFailuresTotal);
     public long OrphanBlobDeleteFailuresValue => Interlocked.Read(ref _orphanBlobDeleteFailures);
@@ -178,6 +185,7 @@ public sealed class MosaicMetrics : IDisposable
     public long AuthChallengesCleanedTotalValue => Interlocked.Read(ref _authChallengesCleanedTotal);
     public long GcCountValue => Interlocked.Read(ref _gcCount);
     public double GcDurationSumSecondsValue => Volatile.Read(ref _gcDurationSumSeconds);
+    public long AuditSinkHealthyValue => Interlocked.Read(ref _auditSinkHealthy);
 
     /// <summary>
     /// Render the current metric snapshot in Prometheus 0.0.4 text
@@ -215,6 +223,10 @@ public sealed class MosaicMetrics : IDisposable
         sb.AppendLine("# TYPE mosaic_gc_duration_seconds summary");
         sb.Append("mosaic_gc_duration_seconds_sum ").Append(GcDurationSumSecondsValue.ToString("0.000000", ci)).Append('\n');
         sb.Append("mosaic_gc_duration_seconds_count ").Append(GcCountValue.ToString(ci)).Append('\n');
+
+        sb.AppendLine("# HELP mosaic_audit_sink_healthy Whether the required audit file sink is writable (1 healthy, 0 unhealthy).");
+        sb.AppendLine("# TYPE mosaic_audit_sink_healthy gauge");
+        sb.Append("mosaic_audit_sink_healthy ").Append(AuditSinkHealthyValue.ToString(ci)).Append('\n');
 
         return sb.ToString();
     }

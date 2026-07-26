@@ -528,12 +528,28 @@ export class RustHandleFacade {
   manifestTranscriptBytes(input: ManifestTranscriptInput): Uint8Array {
     const albumId = uuidToBytes(input.albumId);
     const encodedShards = encodeManifestTranscriptShards(input.shards);
-    const result = rustWasm.manifestTranscriptBytes(
-      albumId,
-      input.epochId,
-      input.encryptedMeta,
-      encodedShards,
-    );
+    const manifestSeq = input.manifestSeq;
+    if (
+      manifestSeq !== undefined
+      && (!Number.isSafeInteger(manifestSeq) || manifestSeq <= 0)
+    ) {
+      throw new Error('manifestSeq must be a positive safe integer');
+    }
+
+    const result = manifestSeq === undefined
+      ? rustWasm.manifestTranscriptBytes(
+        albumId,
+        input.epochId,
+        input.encryptedMeta,
+        encodedShards,
+      )
+      : rustWasm.manifestTranscriptBytesV2(
+        albumId,
+        input.epochId,
+        BigInt(manifestSeq),
+        input.encryptedMeta,
+        encodedShards,
+      );
     return consumeResult(result, 'manifestTranscriptBytes', (r) =>
       copyBytes(r.bytes),
     );
@@ -686,29 +702,6 @@ export class RustHandleFacade {
     );
   }
 
-  createLinkShareHandle(
-    albumId: string,
-    epochHandle: bigint,
-    tierByte: number,
-  ): {
-    handle: bigint;
-    linkId: Uint8Array;
-    linkUrlToken: Uint8Array;
-    tier: number;
-    nonce: Uint8Array;
-    encryptedKey: Uint8Array;
-  } {
-    const result = rustWasm.createLinkShareHandle(albumId, epochHandle, tierByte);
-    return consumeResult(result, 'createLinkShareHandle', (r) => ({
-      handle: r.handle,
-      linkId: copyBytes(r.linkId),
-      linkUrlToken: copyBytes(r.linkUrlToken),
-      tier: r.tier,
-      nonce: copyBytes(r.nonce),
-      encryptedKey: copyBytes(r.encryptedKey),
-    }));
-  }
-
   // v2 binding variant of createLinkShareHandle (batch 4d - A1).
   // Emits first-tier wrap with AAD bound to (link_id, tier, epoch_id) so a
   // malicious server cannot substitute wrap rows across tiers.
@@ -748,24 +741,7 @@ export class RustHandleFacade {
     }));
   }
 
-  wrapLinkTierHandle(
-    linkShareHandle: bigint,
-    epochHandle: bigint,
-    tierByte: number,
-  ): { tier: number; nonce: Uint8Array; encryptedKey: Uint8Array } {
-    const result = rustWasm.wrapLinkTierHandle(
-      linkShareHandle,
-      epochHandle,
-      tierByte,
-    );
-    return consumeResult(result, 'wrapLinkTierHandle', (r) => ({
-      tier: r.tier,
-      nonce: copyBytes(r.nonce),
-      encryptedKey: copyBytes(r.encryptedKey),
-    }));
-  }
-
-  // v2 binding variant of wrapLinkTierHandle (batch 4d - A1).
+  // The only writer: AAD-bound to link, tier, and epoch.
   wrapLinkTierHandleV2(
     linkShareHandle: bigint,
     epochHandle: bigint,

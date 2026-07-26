@@ -177,6 +177,7 @@ fn wasm_reducer_manifest_and_streaming_exports_are_locked() {
         "export function decryptEnvelope(epoch_handle_id: bigint, envelope: Uint8Array): any;",
         "export function finalizeIdempotencyKey(job_id: string): string;",
         "export function manifestTranscriptBytes(album_id: Uint8Array, epoch_id: number, encrypted_meta: Uint8Array, encoded_shards: Uint8Array): BytesResult;",
+        "export function manifestTranscriptBytesV2(album_id: Uint8Array, epoch_id: number, manifest_seq: bigint, encrypted_meta: Uint8Array, encoded_shards: Uint8Array): BytesResult;",
     ] {
         assert!(
             golden.contains(declaration),
@@ -340,6 +341,62 @@ fn wasm_source_does_not_define_raw_db_session_key_exports() {
         assert!(
             !source.contains(forbidden_export),
             "raw DB session key WASM source export must not be present: {forbidden_export}"
+        );
+    }
+}
+
+#[test]
+fn legacy_v1_link_writers_are_not_exported() {
+    let generated_path = project_root()
+        .join("apps")
+        .join("web")
+        .join("src")
+        .join("generated")
+        .join("mosaic-wasm")
+        .join("mosaic_wasm.d.ts");
+    let generated = fs::read_to_string(&generated_path).unwrap_or_else(|error| {
+        panic!(
+            "failed to read generated wasm-bindgen declarations at {}: {error}. Run scripts/build-rust-wasm.ps1 before this test.",
+            generated_path.display()
+        )
+    });
+
+    for forbidden_export in [
+        "export function createLinkShareHandle(",
+        "readonly createLinkShareHandle:",
+        "export function wrapLinkTierHandle(",
+        "readonly wrapLinkTierHandle:",
+    ] {
+        assert!(
+            !generated.contains(forbidden_export),
+            "legacy v1 link writer must not be exported by production WASM: {forbidden_export}"
+        );
+    }
+    assert!(
+        generated.contains("export function createLinkShareHandleV2("),
+        "AAD-bound v2 share-link creation writer must remain exported"
+    );
+    assert!(
+        generated.contains("export function wrapLinkTierHandleV2("),
+        "AAD-bound v2 link-wrap writer must remain exported"
+    );
+
+    let source_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("lib.rs");
+    let source = fs::read_to_string(&source_path).unwrap_or_else(|error| {
+        panic!(
+            "failed to read WASM source at {}: {error}",
+            source_path.display()
+        )
+    });
+    for forbidden_binding in [
+        "#[wasm_bindgen(js_name = createLinkShareHandle)]",
+        "#[wasm_bindgen(js_name = wrapLinkTierHandle)]",
+    ] {
+        assert!(
+            !source.contains(forbidden_binding),
+            "legacy v1 link writer binding must not be present in WASM source: {forbidden_binding}"
         );
     }
 }

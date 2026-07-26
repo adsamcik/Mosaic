@@ -9,6 +9,21 @@ Signed/verified by `mosaic-crypto` per `SPEC-RustManifestSigning.md` and
 covered by the cross-platform `manifest_transcript.json` corpus in
 `tests/vectors/`.
 
+### Current v2 amendment
+
+The format below is retained only for legacy verification. Every current public
+manifest producer calls
+`canonical_manifest_transcript_bytes_v2(transcript, manifest_seq)`, using the
+byte-distinct `Mosaic_Manifest_v2` context and version `0x02`. The v2 layout
+inserts the signed little-endian `i64 manifest_seq` immediately after
+`epoch_id`; public producer routes require that sequence to be positive and
+backed by the matching target-bound reservation.
+
+Create, metadata-update, and tombstone flows reserve before signing. Receive
+adapters verify v2 and keep the accepted checkpoint per logical manifest in
+separate encrypted security state. V1 input may be verified for legacy reads,
+but must not be emitted by a current write path.
+
 ## Scope
 
 This slice adds a dependency-free Rust domain transcript builder for future manifest signatures. It does not add Ed25519 signing, backend verification, web cutover, Android code, or FFI exports.
@@ -39,7 +54,7 @@ Output:
 canonical_transcript: Vec<u8>
 ```
 
-The future signing slice signs the canonical transcript bytes directly. The current TypeScript path signs only `Mosaic_Manifest_v1 || encryptedMeta`; Rust v1 intentionally strengthens this by binding album, epoch, encrypted metadata, shard order, shard IDs, shard tiers, and shard ciphertext hashes.
+At the time of this original slice, the TypeScript path signed only `Mosaic_Manifest_v1 || encryptedMeta`; the Rust v1 builder strengthened that historical format by binding album, epoch, encrypted metadata, shard order, shard IDs, shard tiers, and shard ciphertext hashes.
 
 ## ZK invariants
 
@@ -48,9 +63,27 @@ The future signing slice signs the canonical transcript bytes directly. The curr
 - The backend still stores opaque encrypted metadata and shard references; it does not parse or verify plaintext.
 - No signing key or decrypted manifest field crosses FFI in this slice.
 
-## Canonical binary format
+## Current v2 canonical binary format
 
-All integers are little-endian. The format is intentionally binary, not JSON, to avoid object field ordering, sparse optional fields, float formatting, Unicode normalization, and base64 variation.
+All integers are little-endian. V2 is additive over the v1 layout and changes
+both its context/version bytes and the signed sequence field:
+
+```text
+magic/context       "Mosaic_Manifest_v2" bytes
+format_version      u8 = 2
+album_id            16 bytes
+epoch_id            u32
+manifest_seq        i64
+# encrypted metadata and canonical shard sequence continue as in v1 below
+```
+
+The public API requires `manifest_seq > 0`; changing it invalidates the Ed25519
+signature. The reservation ID is server validation state and is not itself part
+of these transcript bytes.
+
+## Historical v1 canonical binary format
+
+The legacy format is intentionally binary, not JSON, to avoid object field ordering, sparse optional fields, float formatting, Unicode normalization, and base64 variation.
 
 ```text
 magic/context       "Mosaic_Manifest_v1" bytes
@@ -84,12 +117,15 @@ crates/mosaic-domain
   src/lib.rs
     MANIFEST_SIGN_CONTEXT
     MANIFEST_TRANSCRIPT_VERSION
+    MANIFEST_SIGN_CONTEXT_V2
+    MANIFEST_TRANSCRIPT_VERSION_V2
     ManifestShardRef
     ManifestTranscript
     ManifestTranscriptError
     canonical_manifest_transcript_bytes
-  tests/manifest_transcript.rs
-    vectors, order canonicalization, validation failures
+    canonical_manifest_transcript_bytes_v2
+  tests/manifest_transcript.rs + tests/manifest_transcript_v2.rs
+    vectors, signed-sequence binding, order canonicalization, validation failures
 ```
 
 No `mosaic-crypto`, backend, web, Android, WASM, or UniFFI changes are part of this slice.

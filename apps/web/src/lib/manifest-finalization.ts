@@ -3,14 +3,19 @@ import type { EpochKeyBundle } from './epoch-key-store';
 import type { PhotoMeta, TieredShardIds } from '../workers/types';
 import type { UploadTask } from './upload/types';
 import type { UploadEvent, UploadEffect } from './rust-core/upload-adapter-port';
+import type { ReserveManifestSequenceRequest } from './api-types';
 import { manifestTranscriptInputForFinalize } from './manifest-transcript';
 import { purgeLocalAlbum } from './local-purge';
-import { ManifestFinalizeResponseSchema } from './api-schemas';
+import {
+  ManifestFinalizeResponseSchema,
+  ManifestSequenceReservationSchema,
+} from './api-schemas';
 import { normalizeManifestFilename } from './manifest-filename';
 
 const API_BASE = '/api/v1';
 const SHA256_BYTES = 32;
 const MANIFEST_FINALIZE_TIMEOUT_MS = 30_000;
+const MANIFEST_SEQUENCE_STALE_RETRY_LIMIT = 1;
 
 export const MANIFEST_INVALID_SIGNATURE = 400;
 export const MANIFEST_TRANSCRIPT_MISMATCH = 422;
@@ -18,6 +23,7 @@ export const MANIFEST_AUTH_DENIED = 'AUTH_DENIED';
 export const MANIFEST_TRANSIENT_SERVER_ERROR = 'TRANSIENT_SERVER_ERROR';
 export const MANIFEST_ALBUM_GONE = 'ALBUM_GONE';
 export const MANIFEST_MALFORMED_RESPONSE = 'MALFORMED_FINALIZE_RESPONSE';
+export const MANIFEST_SEQUENCE_STALE = 'MANIFEST_SEQUENCE_STALE';
 
 export interface ManifestFinalizeTieredShard {
   readonly shardId: string;
@@ -59,6 +65,8 @@ export interface FinalizeManifestEffect extends UploadEffect {
   readonly encryptedMetaSidecar?: Uint8Array;
   readonly signature: Uint8Array;
   readonly signerPubkey: Uint8Array;
+  readonly manifestSeq: number;
+  readonly sequenceReservationId: string;
   readonly tieredShards: readonly ManifestFinalizeTieredShard[];
 }
 
@@ -70,6 +78,7 @@ export interface ExecuteManifestFinalizationOptions {
   readonly jobId: string;
   readonly adapter?: ManifestFinalizationAdapter;
   readonly fetchImpl?: typeof fetch;
+  readonly omitIdempotencyKey?: boolean;
 }
 
 export class ManifestFinalizationError extends Error {
@@ -159,42 +168,132 @@ export async function finalizeManifestForUpload(
     plaintextJson,
   );
   const finalizeShards = toFinalizeTieredShards(task);
-  const transcript = await crypto.manifestTranscriptBytes(manifestTranscriptInputForFinalize({
-    albumId: task.albumId,
-    epochId: task.epochId,
-    encryptedMeta: encrypted.envelopeBytes,
-    tieredShards: finalizeShards,
-  }));
-  const signature = await crypto.signManifestWithEpoch(
-    epochKey.epochHandleId,
-    transcript,
-  );
+  const jobId = uploadJobIdForTask(task);
+  const fetchFn = options.fetchImpl ?? fetch;
+  for (let staleRetry = 0; staleRetry <= MANIFEST_SEQUENCE_STALE_RETRY_LIMIT; staleRetry++) {
+    const reservation = await reserveManifestSequenceForFinalize(
+      {
+        albumId: task.albumId,
+        signerPubkey: bytesToBase64(epochKey.signPublicKey),
+        targetManifestId: task.id,
+        operationId: jobId,
+        operationKind: 'Create',
+      },
+      fetchFn,
+    );
 
-  const effect: FinalizeManifestEffect = {
-    kind: 'FinalizeManifest',
-    effectId: task.id,
-    manifestId: task.id,
-    protocolVersion: 1,
-    albumId: task.albumId,
-    assetType: vm ? 'Video' : 'Image',
-    encryptedMeta: encrypted.envelopeBytes,
-    signature,
-    signerPubkey: epochKey.signPublicKey,
-    tieredShards: finalizeShards,
-  };
+    const transcript = await crypto.manifestTranscriptBytes(
+      manifestTranscriptInputForFinalize({
+        albumId: task.albumId,
+        epochId: task.epochId,
+        manifestSeq: reservation.manifestSeq,
+        encryptedMeta: encrypted.envelopeBytes,
+        tieredShards: finalizeShards,
+      }),
+    );
+    const signature = await crypto.signManifestWithEpoch(
+      epochKey.epochHandleId,
+      transcript,
+    );
 
-  return executeManifestFinalizationEffect(effect, {
-    ...options,
-    jobId: uploadJobIdForTask(task),
-  });
+    const effect: FinalizeManifestEffect = {
+      kind: 'FinalizeManifest',
+      effectId: task.id,
+      manifestId: task.id,
+      protocolVersion: 1,
+      albumId: task.albumId,
+      assetType: vm ? 'Video' : 'Image',
+      encryptedMeta: encrypted.envelopeBytes,
+      signature,
+      signerPubkey: epochKey.signPublicKey,
+      manifestSeq: reservation.manifestSeq,
+      sequenceReservationId: reservation.reservationId,
+      tieredShards: finalizeShards,
+    };
+
+    try {
+      return await executeManifestFinalizationEffect(effect, {
+        ...options,
+        jobId,
+        // The retry body contains a freshly signed sequence, so it must not
+        // reuse an optional replay-cache key bound to the first request body.
+        omitIdempotencyKey: options.omitIdempotencyKey || staleRetry > 0,
+      });
+    } catch (error) {
+      if (
+        !isManifestSequenceStaleError(error)
+        || staleRetry === MANIFEST_SEQUENCE_STALE_RETRY_LIMIT
+      ) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error('Manifest sequence retry loop exhausted unexpectedly');
 }
 
+async function reserveManifestSequenceForFinalize(
+  request: ReserveManifestSequenceRequest,
+  fetchFn: typeof fetch,
+): Promise<{ reservationId: string; manifestSeq: number }> {
+  validateUuidString(request.albumId);
+  validateUuidString(request.targetManifestId);
+  validateUuidString(request.operationId);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), MANIFEST_FINALIZE_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetchFn(
+      `${API_BASE}/manifests/sequence-reservations`,
+      {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+        signal: controller.signal,
+      },
+    );
+  } catch (error) {
+    if (isManifestOutcomeUnknownError(error)) {
+      throw new ManifestFinalizationTimeoutError(
+        'Manifest sequence reservation outcome is unknown',
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new ManifestFinalizationError(
+      response.status,
+      response.status,
+      `Manifest sequence reservation failed with HTTP ${String(response.status)}${detail ? `: ${detail}` : ''}`,
+    );
+  }
+
+  const parsed = ManifestSequenceReservationSchema.safeParse(
+    await response.json().catch(() => undefined),
+  );
+  if (!parsed.success) {
+    throw new ManifestFinalizationError(
+      response.status,
+      MANIFEST_MALFORMED_RESPONSE,
+      'Manifest sequence reservation returned a malformed response',
+    );
+  }
+  return parsed.data;
+}
 export async function executeManifestFinalizationEffect(
   effect: FinalizeManifestEffect,
   options: ExecuteManifestFinalizationOptions,
 ): Promise<ManifestFinalizationResult> {
   const fetchFn = options.fetchImpl ?? fetch;
-  const idempotencyKey = await finalizeIdempotencyKey(options.jobId);
+  const idempotencyKey = options.omitIdempotencyKey
+    ? undefined
+    : await finalizeIdempotencyKey(options.jobId);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), MANIFEST_FINALIZE_TIMEOUT_MS);
   let response: Response;
@@ -206,7 +305,7 @@ export async function executeManifestFinalizationEffect(
         credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKey,
+          ...(idempotencyKey === undefined ? {} : { 'Idempotency-Key': idempotencyKey }),
         },
         body: JSON.stringify(toFinalizeRequestBody(effect)),
         signal: controller.signal,
@@ -237,8 +336,20 @@ export async function executeManifestFinalizationEffect(
   }
 
   if (response.status === 409) {
+    // The idempotency middleware also caches deterministic 409 responses. A
+    // replayed MANIFEST_SEQUENCE_STALE response is not a successful finalize,
+    // so inspect the payload before interpreting the replay header.
+    const responseForReplay = response.clone();
+    const errorBody = await response.json().catch(() => ({}));
+    if (manifestFinalizeErrorCode(errorBody) === MANIFEST_SEQUENCE_STALE) {
+      throw new ManifestFinalizationError(
+        response.status,
+        MANIFEST_SEQUENCE_STALE,
+        manifestFinalizeErrorDetail(errorBody),
+      );
+    }
     if (response.headers.get('Idempotency-Replayed') === 'true') {
-      const finalized = await readFinalizeResponseOrSubmitMalformed(response, effect, options.adapter);
+      const finalized = await readFinalizeResponseOrSubmitMalformed(responseForReplay, effect, options.adapter);
       await options.adapter?.submit({
         kind: 'ManifestCreated',
         effectId: effect.effectId,
@@ -248,7 +359,6 @@ export async function executeManifestFinalizationEffect(
       return { kind: 'ManifestCreated', response: finalized };
     }
 
-    const errorBody = await response.json().catch(() => ({}));
     return {
       kind: 'AlreadyFinalized',
       manifestId: manifestFinalizeErrorManifestId(errorBody),
@@ -335,6 +445,12 @@ function isManifestOutcomeUnknownError(error: unknown): boolean {
     || (error instanceof Error && error.name === 'AbortError');
 }
 
+function isManifestSequenceStaleError(error: unknown): error is ManifestFinalizationError {
+  return error instanceof ManifestFinalizationError
+    && error.status === 409
+    && error.code === MANIFEST_SEQUENCE_STALE;
+}
+
 async function manifestFinalizeErrorDetailFromResponse(response: Response): Promise<string> {
   const body = await response.text().catch(() => '');
   if (!body) {
@@ -359,6 +475,8 @@ function toFinalizeRequestBody(effect: FinalizeManifestEffect): Record<string, u
       : bytesToBase64(effect.encryptedMetaSidecar),
     signature: bytesToBase64(effect.signature),
     signerPubkey: bytesToBase64(effect.signerPubkey),
+    manifestSeq: effect.manifestSeq,
+    sequenceReservationId: effect.sequenceReservationId,
     shardIds: [],
     tieredShards: effect.tieredShards.map((shard) => ({
       ...shard,
@@ -427,6 +545,12 @@ function manifestFinalizeErrorManifestId(value: unknown): string {
   if (typeof value !== 'object' || value === null) return '';
   const candidate = value as Record<string, unknown>;
   return typeof candidate.manifestId === 'string' ? candidate.manifestId : '';
+}
+
+function manifestFinalizeErrorCode(value: unknown): string {
+  if (typeof value !== 'object' || value === null) return '';
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.code === 'string' ? candidate.code : '';
 }
 
 function manifestFinalizeErrorDetail(value: unknown): string {

@@ -138,8 +138,12 @@ describe('usePhotoActions', () => {
       createdAt: new Date().toISOString(),
     });
     mocks.tombstoneSign.signTombstone.mockResolvedValue({
-      tombstoneSignature: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+Pw==',
+      tombstoneSignature:
+        'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+Pw==',
       signerEpochId: 1,
+      tombstoneSeq: 9,
+      sequenceReservationId: '018f0000-0000-7000-8000-000000000001',
+      tombstoneVersionCreated: 7,
     });
     mocks.dbClient.deleteManifest.mockResolvedValue(undefined);
     mocks.coverService.getCachedCover.mockReturnValue(null);
@@ -164,11 +168,15 @@ describe('usePhotoActions', () => {
       expect(mocks.api.deleteManifest).toHaveBeenCalledWith('manifest-1', {
         tombstoneSignature: expect.any(String),
         signerEpochId: 1,
+        tombstoneSeq: 9,
+        sequenceReservationId: '018f0000-0000-7000-8000-000000000001',
+        tombstoneVersionCreated: 7,
       });
       expect(mocks.tombstoneSign.signTombstone).toHaveBeenCalledWith({
         albumId: 'album-1',
         photoId: 'manifest-1',
         versionCreated: 7,
+        operationId: expect.any(String),
       });
       expect(mocks.dbClient.deleteManifest).toHaveBeenCalledWith('manifest-1');
       expect(result.error).toBeNull();
@@ -177,22 +185,103 @@ describe('usePhotoActions', () => {
       cleanup();
     });
 
-    it('falls back to unsigned delete when signing fails (fail-open with warning)', async () => {
-      // If the local epoch cache is missing or the worker fails to sign,
-      // the editor's UI should not block the user. The deletion still
-      // propagates to the server, but visitor clients will refuse to
-      // honor it on sync (`tombstone-unsigned`) until it is re-deleted.
+    it('re-reserves and re-signs a tombstone once on a stale-sequence conflict', async () => {
+      const secondSignedBody = {
+        tombstoneSignature:
+          'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==',
+        signerEpochId: 1,
+        tombstoneSeq: 10,
+        sequenceReservationId: '018f0000-0000-7000-8000-000000000002',
+        tombstoneVersionCreated: 7,
+      };
+      mocks.tombstoneSign.signTombstone
+        .mockResolvedValueOnce({
+          tombstoneSignature:
+            'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+Pw==',
+          signerEpochId: 1,
+          tombstoneSeq: 9,
+          sequenceReservationId: '018f0000-0000-7000-8000-000000000001',
+          tombstoneVersionCreated: 7,
+        })
+        .mockResolvedValueOnce(secondSignedBody);
+      mocks.api.deleteManifest
+        .mockRejectedValueOnce({
+          status: 409,
+          problem: { code: 'MANIFEST_SEQUENCE_STALE' },
+        })
+        .mockResolvedValueOnce(undefined);
+      const { result, cleanup } = renderHook();
+
+      await act(async () => {
+        await result.deletePhoto('manifest-1', 'album-1');
+      });
+
+      expect(mocks.api.getManifest).toHaveBeenCalledTimes(1);
+      expect(mocks.tombstoneSign.signTombstone).toHaveBeenCalledTimes(2);
+      const firstSignInput =
+        mocks.tombstoneSign.signTombstone.mock.calls[0]![0];
+      const secondSignInput =
+        mocks.tombstoneSign.signTombstone.mock.calls[1]![0];
+      expect(secondSignInput.operationId).toBe(firstSignInput.operationId);
+      expect(mocks.api.deleteManifest).toHaveBeenCalledTimes(2);
+      expect(mocks.api.deleteManifest.mock.calls[1]).toEqual([
+        'manifest-1',
+        secondSignedBody,
+      ]);
+      expect(mocks.dbClient.deleteManifest).toHaveBeenCalledTimes(1);
+
+      cleanup();
+    });
+
+    it('bounds tombstone stale-sequence retries to one', async () => {
+      const firstStale = {
+        status: 409,
+        problem: { code: 'MANIFEST_SEQUENCE_STALE' },
+      };
+      const secondStale = {
+        status: 409,
+        problem: { code: 'MANIFEST_SEQUENCE_STALE' },
+      };
+      mocks.api.deleteManifest
+        .mockRejectedValueOnce(firstStale)
+        .mockRejectedValueOnce(secondStale);
+      const { result, cleanup } = renderHook();
+      let caughtError: unknown;
+
+      await act(async () => {
+        try {
+          await result.deletePhoto('manifest-1', 'album-1');
+        } catch (error) {
+          caughtError = error;
+        }
+      });
+
+      expect(caughtError).toBeInstanceOf(PhotoDeleteError);
+      expect(mocks.tombstoneSign.signTombstone).toHaveBeenCalledTimes(2);
+      expect(mocks.api.deleteManifest).toHaveBeenCalledTimes(2);
+      expect(mocks.dbClient.deleteManifest).not.toHaveBeenCalled();
+
+      cleanup();
+    });
+
+    it('fails closed without calling delete when tombstone signing fails', async () => {
       mocks.tombstoneSign.signTombstone.mockRejectedValueOnce(
         new Error('no epoch key cached'),
       );
 
       const { result, cleanup } = renderHook();
+      let caughtError: unknown;
       await act(async () => {
-        await result.deletePhoto('manifest-1', 'album-1');
+        try {
+          await result.deletePhoto('manifest-1', 'album-1');
+        } catch (error) {
+          caughtError = error;
+        }
       });
 
-      expect(mocks.api.deleteManifest).toHaveBeenCalledWith('manifest-1', null);
-      expect(result.error).toBeNull();
+      expect(caughtError).toBeInstanceOf(PhotoDeleteError);
+      expect(mocks.api.deleteManifest).not.toHaveBeenCalled();
+      expect(mocks.dbClient.deleteManifest).not.toHaveBeenCalled();
       cleanup();
     });
 
@@ -214,7 +303,9 @@ describe('usePhotoActions', () => {
 
       expect(caught).toBe(true);
       expect(caughtError).toBeInstanceOf(PhotoDeleteError);
-      expect((caughtError as PhotoDeleteError).message).toBe('Failed to delete photo');
+      expect((caughtError as PhotoDeleteError).message).toBe(
+        'Failed to delete photo',
+      );
 
       // After error, isDeleting should be false
       rerender();
@@ -241,7 +332,9 @@ describe('usePhotoActions', () => {
 
       expect(caught).toBe(true);
       expect(caughtError).toBeInstanceOf(PhotoDeleteError);
-      expect((caughtError as PhotoDeleteError).message).toBe('Failed to delete photo');
+      expect((caughtError as PhotoDeleteError).message).toBe(
+        'Failed to delete photo',
+      );
       // API was called first
       expect(mocks.api.deleteManifest).toHaveBeenCalled();
 

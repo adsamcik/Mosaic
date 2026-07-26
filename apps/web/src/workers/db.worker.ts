@@ -1,24 +1,46 @@
 /// <reference lib="webworker" />
 import * as Comlink from 'comlink';
+import initSqlJs from 'fts5-sql-bundle';
 import '../lib/worker-error-transfer';
 import { createLogger } from '../lib/logger';
 import type {
   Bounds,
+  AlbumEpochHighWaterMark,
   DbCryptoBridge,
   DbWorkerApi,
   DecryptedManifest,
+  ManifestReplayCheckpoint,
+  ManifestSyncCheckpoint,
+  ManifestSeqHighWaterMark,
   GeoPoint,
   PhotoMeta,
 } from './types';
 import { buildFtsSearchQuery } from './fts-query';
-import { SQL_WASM_SHA384 } from '../generated/sql-wasm-integrity';
 
 // Create scoped logger for database worker
 const log = createLogger('DbWorker');
 
-// sql.js types - the actual module is loaded dynamically from public folder
 type SqlJsStatic = Awaited<ReturnType<typeof import('sql.js').default>>;
 type DatabaseType = import('sql.js').Database;
+
+const SECURITY_STATE_FILE = 'mosaic.security.enc';
+const SECURITY_STATE_LOCK = 'mosaic-security-state-v1';
+const SECURITY_STATE_MAGIC = 'MOSAIC_SECURITY_STATE';
+const SECURITY_STATE_VERSION = 1 as const;
+
+interface PersistedManifestSecurityState {
+  readonly magic: typeof SECURITY_STATE_MAGIC;
+  readonly version: typeof SECURITY_STATE_VERSION;
+  readonly epochHighWaters: readonly AlbumEpochHighWaterMark[];
+  readonly highWaters: readonly ManifestSeqHighWaterMark[];
+  readonly checkpoints: readonly ManifestReplayCheckpoint[];
+}
+
+interface ManifestSecurityState {
+  readonly epochHighWaters: Map<string, AlbumEpochHighWaterMark>;
+  readonly highWaters: Map<string, ManifestSeqHighWaterMark>;
+  readonly checkpoints: Map<string, ManifestReplayCheckpoint>;
+}
 
 /**
  * On-disk envelope version for the OPFS-persisted SQLite snapshot.
@@ -29,15 +51,15 @@ type DatabaseType = import('sql.js').Database;
  * envelope to v4 because `wrapWithAccountHandle`/`unwrapWithAccountHandle`
  * now bind OPFS data to the `mosaic:account-wrapped-data:v1` AEAD AAD label.
  * v3 snapshots were encrypted with the same wire bytes but no AAD, so they
- * must be discarded instead of decrypted under the new domain.
+ * cannot be decrypted under the new domain.
  *
  * Slice 8 hard cutover: bumped from the legacy un-prefixed
  * `[nonce(24) || ciphertext]` libsodium-secretbox layout to a versioned
- * envelope wrapped via Rust `wrapWithAccountHandle`. Snapshots whose
- * first byte does not match {@link SNAPSHOT_VERSION} are silently
- * discarded on load — the cutover policy is that the server is the
- * source of truth and existing OPFS snapshots are invalidated at the
- * migration boundary.
+ * envelope wrapped via Rust `wrapWithAccountHandle`. After the independent
+ * replay-security sidecar authenticates, snapshots whose first byte does not
+ * match {@link SNAPSHOT_VERSION} are rebuilt as disposable cache. A missing
+ * or corrupt sidecar fails closed instead of trusting cursor or replay state
+ * from this cache.
  *
  * Bumps must always invalidate older versions (not migrate them) — the
  * snapshot is a local cache that the sync engine repopulates from the
@@ -64,10 +86,9 @@ export class DbWorkerError extends Error {
 
 /**
  * Sentinel thrown internally when the persisted snapshot's version byte
- * does not match {@link SNAPSHOT_VERSION}. Callers in `init` translate
- * this to "discard snapshot, reinitialize empty" rather than the
- * `SNAPSHOT_DECRYPT_FAILED` fail-closed path used for genuine
- * authentication failures on a matching-version snapshot.
+ * does not match {@link SNAPSHOT_VERSION}. Once the independent security
+ * sidecar authenticates, callers in `init` translate this to "rebuild the
+ * disposable cache".
  */
 class SnapshotVersionMismatchError extends Error {
   constructor(public readonly observed: number) {
@@ -82,70 +103,18 @@ class SnapshotVersionMismatchError extends Error {
 let cachedSqlJs: SqlJsStatic | null = null;
 
 /**
- * Encode an ArrayBuffer as a standard (non-URL-safe) base64 string.
- * Worker scope provides btoa(); we only call this on small (≤48 byte)
- * digest buffers so the per-character loop is cheap.
- */
-function bufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-}
-
-/**
- * Verify that the SHA-384 digest of `scriptText` matches the pinned
- * `expected` value (in `sha384-<base64>` form, mirroring SRI syntax).
- *
- * Exported so the integrity check seam can be unit-tested without invoking
- * the full sql.js loader. Callers MUST treat a thrown error as fatal:
- * mismatch indicates the upstream bundle or the build-time copy was
- * tampered with, and the script must NOT be evaluated.
- */
-export async function verifyIntegrity(
-  scriptText: string,
-  expected: string,
-): Promise<void> {
-  const data = new TextEncoder().encode(scriptText);
-  const hashBuffer = await crypto.subtle.digest('SHA-384', data);
-  const actual = `sha384-${bufferToBase64(hashBuffer)}`;
-  if (actual !== expected) {
-    throw new Error('sql.js integrity check failed');
-  }
-}
-
-/**
- * Load sql.js from the public folder.
- * This approach avoids Vite's module transformation issues in Workers.
- * sql.js is fetched and evaluated directly, bypassing ESM import issues.
- *
- * Before evaluation the fetched bytes are verified against a SHA-384 digest
- * pinned at build time by `scripts/copy-sql-wasm.cjs`. A mismatch aborts
- * loading so a compromised `fts5-sql-bundle` package or build-time tamper
- * cannot inject code into the DB worker (which holds the session DB key).
+ * Load the pinned FTS5 sql.js package as a build-time module. Vite includes
+ * the JavaScript in the frontend artifact; only the WASM binary is located
+ * at runtime. No fetched source text or dynamic code evaluation is allowed.
  */
 async function loadSqlJs(): Promise<SqlJsStatic> {
   if (cachedSqlJs) return cachedSqlJs;
 
   const timer = log.startTimer('sql.js WASM initialization');
 
-  // Fetch and evaluate sql.js from public folder
-  const response = await fetch('/sql-wasm.js');
-  const scriptText = await response.text();
-
-  // Defense-in-depth: verify the fetched bytes match the digest pinned at
-  // build time before handing them to `new Function`.
-  await verifyIntegrity(scriptText, SQL_WASM_SHA384);
-
-  // sql.js exports initSqlJs as a global - capture it via Function constructor
-  const initSqlJs = new Function(scriptText + '\nreturn initSqlJs;')();
-
-  // Initialize sql.js with WASM file path
-  cachedSqlJs = await initSqlJs({
+  cachedSqlJs = (await initSqlJs({
     locateFile: () => '/sql-wasm.wasm',
-  });
+  })) as unknown as SqlJsStatic;
 
   timer.end();
   log.info('sql.js loaded successfully');
@@ -167,6 +136,10 @@ export class DbWorker implements DbWorkerApi {
    */
   private crypto: DbCryptoBridge | null = null;
   private lastError: DbWorkerError | null = null;
+  /** Account-wrapped anti-replay state, deliberately outside the cache DB. */
+  private securityState: ManifestSecurityState | null = null;
+  /** Serializes this worker's security mutations before the cross-worker lock. */
+  private securityStateChain: Promise<void> = Promise.resolve();
   /**
    * Tail of a per-worker chain of in-flight OPFS writes.
    *
@@ -201,8 +174,42 @@ export class DbWorker implements DbWorkerApi {
     // crypto bridge.
     this.sql = await loadSqlJs();
 
-    // Try to load existing DB from OPFS
+    // Read the cache first so a missing security sidecar cannot be mistaken for
+    // a first run and paired with an existing high unsigned cursor.
     const existingData = await this.loadFromOPFS();
+    try {
+      this.securityState = await this.withSecurityStateLock(async () => {
+        const diskState = await this.readSecurityStateFromOPFS();
+        if (diskState) return diskState;
+        if (existingData) {
+          throw new Error(
+            'Replay-security sidecar is missing while the cache snapshot exists',
+          );
+        }
+        const emptyState = DbWorker.emptySecurityState();
+        if (
+          typeof navigator !== 'undefined' &&
+          navigator.storage !== undefined &&
+          'getDirectory' in navigator.storage
+        ) {
+          // Establish the authenticated pair before any cache snapshot exists.
+          await this.writeSecurityStateToOPFS(emptyState);
+        }
+        return emptyState;
+      });
+    } catch (error) {
+      this.securityState = null;
+      this.markUnavailable(
+        new DbWorkerError(
+          'Failed to load signed-manifest replay security state; explicit Clear Local Data is required',
+          DbWorkerErrorCode.RESET_REQUIRED,
+          error,
+        ),
+      );
+      throw this.lastError;
+    }
+
+    let cacheNeedsRewrite = false;
     if (existingData) {
       log.debug('Found existing database in OPFS', {
         size: existingData.byteLength,
@@ -216,27 +223,14 @@ export class DbWorker implements DbWorkerApi {
         this.lastError = null;
         log.info('Loaded existing database from OPFS');
       } catch (error) {
-        if (error instanceof SnapshotVersionMismatchError) {
-          // Slice 8 hard-migration policy: a snapshot whose envelope
-          // version does not match the current `SNAPSHOT_VERSION` is
-          // silently discarded. The server is the source of truth and
-          // the sync engine will repopulate the local cache.
-          log.warn(
-            `Discarding OPFS snapshot with version ${String(error.observed)} (expected ${String(SNAPSHOT_VERSION)}); reinitializing empty database`,
-          );
-          await this.deleteFromOPFS();
-          this.db = new this.sql.Database();
-          this.lastError = null;
-        } else {
-          this.markUnavailable(
-            new DbWorkerError(
-              'Failed to decrypt existing database snapshot; explicit reset required',
-              DbWorkerErrorCode.SNAPSHOT_DECRYPT_FAILED,
-              error,
-            ),
-          );
-          throw this.lastError;
-        }
+        // The independently authenticated replay state loaded first, so this
+        // file is only a disposable cache. Recreate it without weakening floors.
+        log.warn('Rebuilding unreadable disposable database cache', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        this.db = new this.sql.Database();
+        this.lastError = null;
+        cacheNeedsRewrite = true;
       }
     } else {
       log.debug('No existing database found, creating new one');
@@ -246,6 +240,9 @@ export class DbWorker implements DbWorkerApi {
 
     try {
       await this.runMigrations();
+      if (cacheNeedsRewrite) {
+        await this.saveToOPFS();
+      }
       this.lastError = null;
     } catch (error) {
       this.markUnavailable(
@@ -269,23 +266,51 @@ export class DbWorker implements DbWorkerApi {
         DbWorkerErrorCode.NOT_INITIALIZED,
       );
     }
+    if (!this.securityState) {
+      throw new DbWorkerError(
+        'Cannot rebuild cache without authenticated replay-security state; use Clear Local Data to forget this device',
+        DbWorkerErrorCode.RESET_REQUIRED,
+        this.lastError ?? undefined,
+      );
+    }
 
-    await this.deleteFromOPFS();
+    // Security state lives in mosaic.security.enc and is intentionally not
+    // modified here. Finish all older writes before replacing only the cache.
+    await this.securityStateChain;
+    await this.flushSnapshot();
+    const currentDb = this.db;
+    const priorError = this.lastError;
 
     if (!this.sql) {
       this.sql = await loadSqlJs();
     }
 
-    if (this.db) {
-      this.db.close();
-    }
-
-    this.db = new this.sql.Database();
     this.lastError = null;
-    await this.runMigrations();
+    const replacementDb = new this.sql.Database();
+    this.db = replacementDb;
+    try {
+      await this.runMigrations();
+      await this.saveToOPFS();
+      currentDb?.close();
+    } catch (error) {
+      replacementDb.close();
+      this.db = currentDb;
+      this.lastError = priorError;
+      if (!currentDb) {
+        const resetError = new DbWorkerError(
+          'Failed to rebuild disposable database cache',
+          DbWorkerErrorCode.RESET_REQUIRED,
+          error,
+        );
+        this.markUnavailable(resetError);
+        throw resetError;
+      }
+      throw error;
+    }
   }
 
   async close(): Promise<void> {
+    await this.securityStateChain;
     if (this.db) {
       await this.saveToOPFS();
       this.db.close();
@@ -294,6 +319,7 @@ export class DbWorker implements DbWorkerApi {
     // Slice 8: nothing to wipe — the crypto bridge holds no key bytes.
     // The crypto worker's account handle owns the L2-derived material
     // and is cleared via its own `clear()` lifecycle.
+    this.securityState = null;
     this.crypto = null;
   }
 
@@ -517,9 +543,7 @@ export class DbWorker implements DbWorkerApi {
         db.run(`ALTER TABLE photos ADD COLUMN preview_shard_id TEXT;`);
         db.run(`ALTER TABLE photos ADD COLUMN preview_shard_hash TEXT;`);
         db.run(`ALTER TABLE photos ADD COLUMN original_shard_ids TEXT;`); // JSON array
-        db.run(
-          `ALTER TABLE photos ADD COLUMN original_shard_hashes TEXT;`,
-        ); // JSON array
+        db.run(`ALTER TABLE photos ADD COLUMN original_shard_hashes TEXT;`); // JSON array
 
         this.setSchemaVersion(4);
         log.info('Tier shard columns migration complete');
@@ -634,6 +658,15 @@ export class DbWorker implements DbWorkerApi {
       }
     }
 
+    // Version 9 -> 10: replay-state cutover marker. The actual epoch, signer,
+    // sequence, and exact-head state is account-wrapped in mosaic.security.enc;
+    // it must never live in this disposable cache database.
+    if (this.getSchemaVersion() < 10) {
+      log.info('Running migration: v9 -> v10 (external replay-state cutover)');
+      this.setSchemaVersion(10);
+      log.info('External replay-state cutover complete');
+    }
+
     // Ensure FTS table exists (safety check for corrupted state)
     if (!this.ftsTableExists()) {
       log.warn('FTS table missing despite schema version, recreating...');
@@ -666,86 +699,199 @@ export class DbWorker implements DbWorkerApi {
     await this.saveToOPFS();
   }
 
-  async insertManifests(manifests: DecryptedManifest[]): Promise<void> {
-    const stmt = this.getReadyDb().prepare(`
+  /** Read one durable v2 manifest replay floor. */
+  async getManifestSeqHighWater(
+    albumId: string,
+    signerKey: string,
+  ): Promise<number | null> {
+    const highWater = this.getReadySecurityState().highWaters.get(
+      DbWorker.highWaterKey(albumId, signerKey),
+    );
+    return highWater?.manifestSeq ?? null;
+  }
+
+  async getAlbumEpochHighWater(
+    albumId: string,
+  ): Promise<AlbumEpochHighWaterMark | null> {
+    const value = this.getReadySecurityState().epochHighWaters.get(albumId);
+    return value ? { ...value } : null;
+  }
+
+  async getManifestReplayCheckpoint(
+    albumId: string,
+    manifestId: string,
+  ): Promise<ManifestReplayCheckpoint | null> {
+    const checkpoint = this.getReadySecurityState().checkpoints.get(
+      DbWorker.replayCheckpointKey(albumId, manifestId),
+    );
+    return checkpoint ? { ...checkpoint } : null;
+  }
+
+  async listManifestReplayCheckpoints(
+    albumId: string,
+  ): Promise<readonly ManifestReplayCheckpoint[]> {
+    return [...this.getReadySecurityState().checkpoints.values()]
+      .filter((checkpoint) => checkpoint.albumId === albumId)
+      .map((checkpoint) => ({ ...checkpoint }))
+      .sort((left, right) => left.manifestId.localeCompare(right.manifestId));
+  }
+
+  async insertManifests(
+    manifests: DecryptedManifest[],
+    manifestSeqHighWaters: readonly ManifestSeqHighWaterMark[] = [],
+    manifestSyncCheckpoint?: ManifestSyncCheckpoint,
+    manifestReplayCheckpoints: readonly ManifestReplayCheckpoint[] = [],
+    albumEpochHighWaters: readonly AlbumEpochHighWaterMark[] = [],
+  ): Promise<void> {
+    if (
+      manifestSyncCheckpoint !== undefined &&
+      (!Number.isSafeInteger(manifestSyncCheckpoint.albumVersion) ||
+        manifestSyncCheckpoint.albumVersion < 0)
+    ) {
+      throw new Error('Manifest sync checkpoint version is invalid');
+    }
+
+    const committedManifestKeys = new Set(
+      manifests.map((manifest) => `${manifest.albumId}\u0000${manifest.id}`),
+    );
+    for (const checkpoint of manifestReplayCheckpoints) {
+      if (
+        !committedManifestKeys.has(
+          `${checkpoint.albumId}\u0000${checkpoint.manifestId}`,
+        )
+      ) {
+        throw new Error('Replay checkpoint has no matching cache mutation');
+      }
+    }
+    if (manifestSyncCheckpoint !== undefined) {
+      for (const value of [
+        ...manifestSeqHighWaters,
+        ...manifestReplayCheckpoints,
+        ...albumEpochHighWaters,
+      ]) {
+        if (value.albumId !== manifestSyncCheckpoint.albumId) {
+          throw new Error('Replay security album does not match checkpoint');
+        }
+      }
+    }
+
+    // Security first: a cache/cursor mutation is never visible without its
+    // monotonic signer floor and exact signed-state head already durable.
+    await this.persistManifestSecurityState(
+      manifestSeqHighWaters,
+      manifestReplayCheckpoints,
+      albumEpochHighWaters,
+    );
+
+    const db = this.getReadyDb();
+    db.run('BEGIN IMMEDIATE TRANSACTION');
+    try {
+      const stmt = db.prepare(`
       INSERT OR REPLACE INTO photos 
       (id, asset_id, album_id, filename, mime_type, width, height, taken_at, lat, lng, tags, created_at, updated_at, shard_ids, epoch_id, description, thumbnail, thumb_width, thumb_height, blurhash, thumbnail_shard_id, thumbnail_shard_hash, preview_shard_id, preview_shard_hash, original_shard_ids, original_shard_hashes, thumbhash, is_video, duration, rotation, version_created)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    for (const m of manifests) {
-      if (m.isDeleted) {
-        this.getReadyDb().run('DELETE FROM photos WHERE id = ?', [m.id]);
-      } else {
-        const existing = this.getReadyDb().exec(
-          'SELECT version_created FROM photos WHERE id = ?',
-          [m.id],
-        );
-        const existingVersion =
-          (existing[0]?.values[0]?.[0] as number | undefined) ?? 0;
-        if (existingVersion > m.versionCreated) {
-          log.debug(
-            `Skipping manifest ${m.id}: stale version ${m.versionCreated} <= local ${existingVersion}`,
-          );
-          continue;
+      try {
+        for (const m of manifests) {
+          if (m.isDeleted) {
+            db.run('DELETE FROM photos WHERE id = ?', [m.id]);
+          } else {
+            const existing = db.exec(
+              'SELECT version_created FROM photos WHERE id = ?',
+              [m.id],
+            );
+            const existingVersion =
+              (existing[0]?.values[0]?.[0] as number | undefined) ?? 0;
+            if (existingVersion > m.versionCreated) {
+              log.debug(
+                `Skipping manifest ${m.id}: stale version ${m.versionCreated} <= local ${existingVersion}`,
+              );
+              continue;
+            }
+
+            log.debug('insertManifest', {
+              id: m.id,
+              hasThumbnail: !!m.meta.thumbnail,
+              hasThumbhash: !!m.meta.thumbhash,
+              shardCount: m.meta.shardIds?.length ?? 0,
+              hasTierShards: !!(
+                m.meta.thumbnailShardId ||
+                m.meta.previewShardId ||
+                m.meta.originalShardIds?.length
+              ),
+            });
+
+            // Ensure all values are either defined or null - SQLite cannot bind undefined
+            // Use m.meta.shardIds and m.meta.epochId (from decrypted metadata) for storage
+            stmt.run([
+              m.id,
+              m.meta.assetId ?? null,
+              m.albumId ?? null,
+              m.meta.filename ?? null,
+              m.meta.mimeType ?? null,
+              m.meta.width ?? 0,
+              m.meta.height ?? 0,
+              m.meta.takenAt ?? null,
+              m.meta.lat ?? null,
+              m.meta.lng ?? null,
+              JSON.stringify(m.meta.tags ?? []),
+              m.meta.createdAt ?? null,
+              m.meta.updatedAt ?? null,
+              JSON.stringify(m.meta.shardIds ?? []),
+              m.meta.epochId ?? 0,
+              m.meta.description ?? null,
+              m.meta.thumbnail ?? null,
+              m.meta.thumbWidth ?? null,
+              m.meta.thumbHeight ?? null,
+              m.meta.blurhash ?? null,
+              // Tier-specific shard IDs (v4)
+              m.meta.thumbnailShardId ?? null,
+              m.meta.thumbnailShardHash ?? null,
+              m.meta.previewShardId ?? null,
+              m.meta.previewShardHash ?? null,
+              JSON.stringify(m.meta.originalShardIds ?? []),
+              JSON.stringify(m.meta.originalShardHashes ?? []),
+              // ThumbHash placeholder (v5)
+              m.meta.thumbhash ?? null,
+              // Video support (v6)
+              m.meta.isVideo ? 1 : 0,
+              m.meta.duration ?? null,
+              // Display rotation (v7)
+              m.meta.rotation ?? 0,
+              // Manifest version for stale sync protection (v8)
+              m.versionCreated,
+            ]);
+          }
         }
-
-        log.debug('insertManifest', {
-          id: m.id,
-          hasThumbnail: !!m.meta.thumbnail,
-          hasThumbhash: !!m.meta.thumbhash,
-          shardCount: m.meta.shardIds?.length ?? 0,
-          hasTierShards: !!(
-            m.meta.thumbnailShardId ||
-            m.meta.previewShardId ||
-            m.meta.originalShardIds?.length
-          ),
-        });
-
-        // Ensure all values are either defined or null - SQLite cannot bind undefined
-        // Use m.meta.shardIds and m.meta.epochId (from decrypted metadata) for storage
-        stmt.run([
-          m.id,
-          m.meta.assetId ?? null,
-          m.albumId ?? null,
-          m.meta.filename ?? null,
-          m.meta.mimeType ?? null,
-          m.meta.width ?? 0,
-          m.meta.height ?? 0,
-          m.meta.takenAt ?? null,
-          m.meta.lat ?? null,
-          m.meta.lng ?? null,
-          JSON.stringify(m.meta.tags ?? []),
-          m.meta.createdAt ?? null,
-          m.meta.updatedAt ?? null,
-          JSON.stringify(m.meta.shardIds ?? []),
-          m.meta.epochId ?? 0,
-          m.meta.description ?? null,
-          m.meta.thumbnail ?? null,
-          m.meta.thumbWidth ?? null,
-          m.meta.thumbHeight ?? null,
-          m.meta.blurhash ?? null,
-          // Tier-specific shard IDs (v4)
-          m.meta.thumbnailShardId ?? null,
-          m.meta.thumbnailShardHash ?? null,
-          m.meta.previewShardId ?? null,
-          m.meta.previewShardHash ?? null,
-          JSON.stringify(m.meta.originalShardIds ?? []),
-          JSON.stringify(m.meta.originalShardHashes ?? []),
-          // ThumbHash placeholder (v5)
-          m.meta.thumbhash ?? null,
-          // Video support (v6)
-          m.meta.isVideo ? 1 : 0,
-          m.meta.duration ?? null,
-          // Display rotation (v7)
-          m.meta.rotation ?? 0,
-          // Manifest version for stale sync protection (v8)
-          m.versionCreated,
-        ]);
+      } finally {
+        stmt.free();
       }
+      if (manifestSyncCheckpoint !== undefined) {
+        db.run(
+          `
+          INSERT INTO albums (id, current_version) VALUES (?, ?)
+          ON CONFLICT(id) DO UPDATE SET current_version = ?
+        `,
+          [
+            manifestSyncCheckpoint.albumId,
+            manifestSyncCheckpoint.albumVersion,
+            manifestSyncCheckpoint.albumVersion,
+          ],
+        );
+      }
+      db.run('COMMIT');
+    } catch (error) {
+      try {
+        db.run('ROLLBACK');
+      } catch (rollbackError) {
+        log.error(
+          'Failed to roll back manifest sync transaction',
+          rollbackError,
+        );
+      }
+      throw error;
     }
-
-    stmt.free();
     await this.saveToOPFS();
   }
 
@@ -767,11 +913,19 @@ export class DbWorker implements DbWorkerApi {
     const db = this.getReadyDb();
     db.run(
       'UPDATE photos SET rotation = ?, version_created = ?, updated_at = ? WHERE id = ? AND version_created <= ?',
-      [rotation, versionCreated, new Date().toISOString(), photoId, versionCreated],
+      [
+        rotation,
+        versionCreated,
+        new Date().toISOString(),
+        photoId,
+        versionCreated,
+      ],
     );
     // sql.js exposes getRowsModified at runtime but it isn't part of the
     // shipped TypeScript definitions, hence the narrowing cast.
-    const rowsModified = (db as unknown as { getRowsModified(): number }).getRowsModified();
+    const rowsModified = (
+      db as unknown as { getRowsModified(): number }
+    ).getRowsModified();
     if (rowsModified === 0) {
       log.debug(
         `Skipping local rotation write for ${photoId}: incoming version ${versionCreated} not newer than local`,
@@ -789,9 +943,17 @@ export class DbWorker implements DbWorkerApi {
     const db = this.getReadyDb();
     db.run(
       'UPDATE photos SET description = ?, version_created = ?, updated_at = ? WHERE id = ? AND version_created <= ?',
-      [description, versionCreated, new Date().toISOString(), photoId, versionCreated],
+      [
+        description,
+        versionCreated,
+        new Date().toISOString(),
+        photoId,
+        versionCreated,
+      ],
     );
-    const rowsModified = (db as unknown as { getRowsModified(): number }).getRowsModified();
+    const rowsModified = (
+      db as unknown as { getRowsModified(): number }
+    ).getRowsModified();
     if (rowsModified === 0) {
       log.debug(
         `Skipping local description write for ${photoId}: incoming version ${versionCreated} not newer than local`,
@@ -936,7 +1098,7 @@ export class DbWorker implements DbWorkerApi {
         ) as string[];
       }
       // Convert is_video INTEGER to boolean (v6)
-      obj['isVideo'] = !!(obj['isVideo']);
+      obj['isVideo'] = !!obj['isVideo'];
       // duration is already REAL → number (or null), no conversion needed
       // Keep rotation omitted for zero/default values to match manifest optional fields.
       if (!obj['rotation']) {
@@ -950,6 +1112,513 @@ export class DbWorker implements DbWorkerApi {
     return str.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
   }
 
+  private static highWaterKey(albumId: string, signerKey: string): string {
+    return `${albumId}\u0000${signerKey}`;
+  }
+
+  private static replayCheckpointKey(
+    albumId: string,
+    manifestId: string,
+  ): string {
+    return `${albumId}\u0000${manifestId}`;
+  }
+
+  private static emptySecurityState(): ManifestSecurityState {
+    return {
+      epochHighWaters: new Map(),
+      highWaters: new Map(),
+      checkpoints: new Map(),
+    };
+  }
+
+  private getReadySecurityState(): ManifestSecurityState {
+    if (!this.securityState) {
+      throw new DbWorkerError(
+        'Manifest replay security state is not initialized',
+        DbWorkerErrorCode.NOT_INITIALIZED,
+      );
+    }
+    return this.securityState;
+  }
+
+  private parseEpochHighWater(value: unknown): AlbumEpochHighWaterMark {
+    if (typeof value !== 'object' || value === null) {
+      throw new Error('Album epoch high-water is not an object');
+    }
+    const record = value as Record<string, unknown>;
+    if (
+      typeof record.albumId !== 'string' ||
+      record.albumId.length === 0 ||
+      typeof record.epochId !== 'number' ||
+      !Number.isSafeInteger(record.epochId) ||
+      record.epochId <= 0 ||
+      typeof record.signerKey !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(record.signerKey)
+    ) {
+      throw new Error('Album epoch high-water is invalid');
+    }
+    return {
+      albumId: record.albumId,
+      epochId: record.epochId,
+      signerKey: record.signerKey,
+    };
+  }
+
+  private parseHighWater(value: unknown): ManifestSeqHighWaterMark {
+    if (typeof value !== 'object' || value === null) {
+      throw new Error('Manifest sequence high-water is not an object');
+    }
+    const record = value as Record<string, unknown>;
+    if (
+      typeof record.albumId !== 'string' ||
+      record.albumId.length === 0 ||
+      typeof record.signerKey !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(record.signerKey) ||
+      typeof record.manifestSeq !== 'number' ||
+      !Number.isSafeInteger(record.manifestSeq) ||
+      record.manifestSeq <= 0
+    ) {
+      throw new Error('Manifest sequence high-water is invalid');
+    }
+    return {
+      albumId: record.albumId,
+      signerKey: record.signerKey,
+      manifestSeq: record.manifestSeq,
+    };
+  }
+
+  private parseReplayCheckpoint(value: unknown): ManifestReplayCheckpoint {
+    if (typeof value !== 'object' || value === null) {
+      throw new Error('Manifest replay checkpoint is not an object');
+    }
+    const record = value as Record<string, unknown>;
+    if (
+      typeof record.albumId !== 'string' ||
+      record.albumId.length === 0 ||
+      typeof record.signerKey !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(record.signerKey) ||
+      typeof record.manifestId !== 'string' ||
+      record.manifestId.length === 0 ||
+      typeof record.manifestSeq !== 'number' ||
+      !Number.isSafeInteger(record.manifestSeq) ||
+      record.manifestSeq <= 0 ||
+      typeof record.epochId !== 'number' ||
+      !Number.isSafeInteger(record.epochId) ||
+      record.epochId <= 0 ||
+      (record.operationKind !== 'Live' &&
+        record.operationKind !== 'Tombstone') ||
+      typeof record.signatureFingerprint !== 'string' ||
+      !/^[0-9a-f]{128}$/.test(record.signatureFingerprint)
+    ) {
+      throw new Error('Manifest replay checkpoint is invalid');
+    }
+    return {
+      albumId: record.albumId,
+      signerKey: record.signerKey,
+      manifestId: record.manifestId,
+      manifestSeq: record.manifestSeq,
+      operationKind: record.operationKind,
+      signatureFingerprint: record.signatureFingerprint,
+      epochId: record.epochId,
+    };
+  }
+
+  private deserializeSecurityState(data: Uint8Array): ManifestSecurityState {
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(
+        new TextDecoder('utf-8', { fatal: true }).decode(data),
+      );
+    } catch (error) {
+      throw new Error(
+        'Manifest replay security envelope is not valid UTF-8 JSON',
+        {
+          cause: error,
+        },
+      );
+    }
+    if (typeof decoded !== 'object' || decoded === null) {
+      throw new Error('Manifest replay security envelope is not an object');
+    }
+    const envelope = decoded as Record<string, unknown>;
+    if (
+      envelope.magic !== SECURITY_STATE_MAGIC ||
+      envelope.version !== SECURITY_STATE_VERSION ||
+      !Array.isArray(envelope.epochHighWaters) ||
+      !Array.isArray(envelope.highWaters) ||
+      !Array.isArray(envelope.checkpoints)
+    ) {
+      throw new Error(
+        'Manifest replay security envelope magic/version is invalid',
+      );
+    }
+
+    const state = DbWorker.emptySecurityState();
+    for (const raw of envelope.epochHighWaters) {
+      const epoch = this.parseEpochHighWater(raw);
+      if (state.epochHighWaters.has(epoch.albumId)) {
+        throw new Error(
+          'Manifest replay security envelope has duplicate epoch floors',
+        );
+      }
+      state.epochHighWaters.set(epoch.albumId, epoch);
+    }
+    for (const raw of envelope.highWaters) {
+      const highWater = this.parseHighWater(raw);
+      const key = DbWorker.highWaterKey(highWater.albumId, highWater.signerKey);
+      if (state.highWaters.has(key)) {
+        throw new Error(
+          'Manifest replay security envelope has duplicate high-waters',
+        );
+      }
+      state.highWaters.set(key, highWater);
+    }
+    for (const raw of envelope.checkpoints) {
+      const checkpoint = this.parseReplayCheckpoint(raw);
+      const key = DbWorker.replayCheckpointKey(
+        checkpoint.albumId,
+        checkpoint.manifestId,
+      );
+      if (state.checkpoints.has(key)) {
+        throw new Error(
+          'Manifest replay security envelope has duplicate checkpoints',
+        );
+      }
+      const floor = state.highWaters.get(
+        DbWorker.highWaterKey(checkpoint.albumId, checkpoint.signerKey),
+      );
+      if (!floor || floor.manifestSeq < checkpoint.manifestSeq) {
+        throw new Error('Manifest replay checkpoint exceeds its signer floor');
+      }
+      const epochFloor = state.epochHighWaters.get(checkpoint.albumId);
+      if (
+        !epochFloor ||
+        checkpoint.epochId > epochFloor.epochId ||
+        (checkpoint.epochId === epochFloor.epochId &&
+          checkpoint.signerKey !== epochFloor.signerKey)
+      ) {
+        throw new Error(
+          'Manifest replay checkpoint is not covered by its album epoch floor',
+        );
+      }
+      state.checkpoints.set(key, checkpoint);
+    }
+    return state;
+  }
+
+  private serializeSecurityState(state: ManifestSecurityState): Uint8Array {
+    const envelope: PersistedManifestSecurityState = {
+      magic: SECURITY_STATE_MAGIC,
+      version: SECURITY_STATE_VERSION,
+      epochHighWaters: [...state.epochHighWaters.values()].sort((left, right) =>
+        left.albumId.localeCompare(right.albumId),
+      ),
+      highWaters: [...state.highWaters.values()].sort(
+        (left, right) =>
+          left.albumId.localeCompare(right.albumId) ||
+          left.signerKey.localeCompare(right.signerKey),
+      ),
+      checkpoints: [...state.checkpoints.values()].sort(
+        (left, right) =>
+          left.albumId.localeCompare(right.albumId) ||
+          left.manifestId.localeCompare(right.manifestId),
+      ),
+    };
+    return new TextEncoder().encode(JSON.stringify(envelope));
+  }
+
+  private mergeSecurityStates(
+    ...states: readonly ManifestSecurityState[]
+  ): ManifestSecurityState {
+    const merged = DbWorker.emptySecurityState();
+    for (const state of states) {
+      for (const epoch of state.epochHighWaters.values()) {
+        const existing = merged.epochHighWaters.get(epoch.albumId);
+        if (
+          existing?.epochId === epoch.epochId &&
+          existing.signerKey !== epoch.signerKey
+        ) {
+          throw new Error(
+            'One album epoch is bound to conflicting signing keys',
+          );
+        }
+        if (!existing || epoch.epochId > existing.epochId) {
+          merged.epochHighWaters.set(epoch.albumId, { ...epoch });
+        }
+      }
+      for (const highWater of state.highWaters.values()) {
+        const key = DbWorker.highWaterKey(
+          highWater.albumId,
+          highWater.signerKey,
+        );
+        const existing = merged.highWaters.get(key);
+        if (!existing || highWater.manifestSeq > existing.manifestSeq) {
+          merged.highWaters.set(key, { ...highWater });
+        }
+      }
+      for (const checkpoint of state.checkpoints.values()) {
+        const key = DbWorker.replayCheckpointKey(
+          checkpoint.albumId,
+          checkpoint.manifestId,
+        );
+        const existing = merged.checkpoints.get(key);
+        if (!existing || checkpoint.epochId > existing.epochId) {
+          merged.checkpoints.set(key, { ...checkpoint });
+          continue;
+        }
+        if (checkpoint.epochId < existing.epochId) continue;
+        if (checkpoint.signerKey !== existing.signerKey) {
+          throw new Error(
+            'One manifest epoch is bound to conflicting signing keys',
+          );
+        }
+        if (checkpoint.manifestSeq > existing.manifestSeq) {
+          merged.checkpoints.set(key, { ...checkpoint });
+          continue;
+        }
+        if (
+          checkpoint.manifestSeq === existing.manifestSeq &&
+          (checkpoint.operationKind !== existing.operationKind ||
+            checkpoint.signatureFingerprint !== existing.signatureFingerprint)
+        ) {
+          throw new Error(
+            'Conflicting signed states share one manifest sequence',
+          );
+        }
+      }
+    }
+    for (const checkpoint of merged.checkpoints.values()) {
+      const floor = merged.highWaters.get(
+        DbWorker.highWaterKey(checkpoint.albumId, checkpoint.signerKey),
+      );
+      if (!floor || floor.manifestSeq < checkpoint.manifestSeq) {
+        throw new Error('Merged replay checkpoint exceeds its signer floor');
+      }
+      const epochFloor = merged.epochHighWaters.get(checkpoint.albumId);
+      if (
+        !epochFloor ||
+        checkpoint.epochId > epochFloor.epochId ||
+        (checkpoint.epochId === epochFloor.epochId &&
+          checkpoint.signerKey !== epochFloor.signerKey)
+      ) {
+        throw new Error(
+          'Merged replay checkpoint exceeds its album epoch floor',
+        );
+      }
+    }
+    return merged;
+  }
+
+  private applySecurityCandidates(
+    base: ManifestSecurityState,
+    highWaters: readonly ManifestSeqHighWaterMark[],
+    checkpoints: readonly ManifestReplayCheckpoint[],
+    epochHighWaters: readonly AlbumEpochHighWaterMark[],
+  ): ManifestSecurityState {
+    const next = this.mergeSecurityStates(base);
+    for (const raw of epochHighWaters) {
+      const epoch = this.parseEpochHighWater(raw);
+      const existing = next.epochHighWaters.get(epoch.albumId);
+      if (existing && epoch.epochId < existing.epochId) {
+        throw new Error('Album signing epoch would regress');
+      }
+      if (
+        existing?.epochId === epoch.epochId &&
+        existing.signerKey !== epoch.signerKey
+      ) {
+        throw new Error('Album signing epoch is bound to a different key');
+      }
+      if (!existing || epoch.epochId > existing.epochId) {
+        next.epochHighWaters.set(epoch.albumId, epoch);
+      }
+    }
+    for (const raw of highWaters) {
+      const highWater = this.parseHighWater(raw);
+      const key = DbWorker.highWaterKey(highWater.albumId, highWater.signerKey);
+      const existing = next.highWaters.get(key);
+      if (existing && highWater.manifestSeq < existing.manifestSeq) {
+        throw new Error(
+          'Manifest sequence would regress the durable high-water',
+        );
+      }
+      if (!existing || highWater.manifestSeq > existing.manifestSeq) {
+        next.highWaters.set(key, highWater);
+      }
+    }
+    for (const raw of checkpoints) {
+      const checkpoint = this.parseReplayCheckpoint(raw);
+      const floor = next.highWaters.get(
+        DbWorker.highWaterKey(checkpoint.albumId, checkpoint.signerKey),
+      );
+      if (!floor || floor.manifestSeq < checkpoint.manifestSeq) {
+        throw new Error('Replay checkpoint was not covered by a durable floor');
+      }
+      const epochFloor = next.epochHighWaters.get(checkpoint.albumId);
+      if (
+        !epochFloor ||
+        checkpoint.epochId > epochFloor.epochId ||
+        (checkpoint.epochId === epochFloor.epochId &&
+          checkpoint.signerKey !== epochFloor.signerKey)
+      ) {
+        throw new Error(
+          'Replay checkpoint is not covered by the authenticated album epoch floor',
+        );
+      }
+      const key = DbWorker.replayCheckpointKey(
+        checkpoint.albumId,
+        checkpoint.manifestId,
+      );
+      const existing = next.checkpoints.get(key);
+      if (!existing || checkpoint.epochId > existing.epochId) {
+        next.checkpoints.set(key, checkpoint);
+        continue;
+      }
+      if (checkpoint.epochId < existing.epochId) {
+        throw new Error('Manifest replay checkpoint epoch would regress');
+      }
+      if (checkpoint.signerKey !== existing.signerKey) {
+        throw new Error('Manifest epoch is bound to a different signing key');
+      }
+      if (checkpoint.manifestSeq < existing.manifestSeq) {
+        throw new Error('Manifest replay checkpoint sequence would regress');
+      }
+      if (checkpoint.manifestSeq === existing.manifestSeq) {
+        if (
+          checkpoint.operationKind !== existing.operationKind ||
+          checkpoint.signatureFingerprint !== existing.signatureFingerprint
+        ) {
+          throw new Error(
+            'Manifest sequence is bound to a different signed state',
+          );
+        }
+        continue;
+      }
+      next.checkpoints.set(key, checkpoint);
+    }
+    return next;
+  }
+
+  private async withSecurityStateLock<T>(
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const hasPersistentOpfs =
+      typeof navigator !== 'undefined' &&
+      navigator.storage !== undefined &&
+      'getDirectory' in navigator.storage;
+    const hasWebLocks =
+      typeof navigator !== 'undefined' &&
+      'locks' in navigator &&
+      navigator.locks != null;
+    if (!hasWebLocks) {
+      if (hasPersistentOpfs) {
+        throw new Error(
+          'Web Locks are required for monotonic replay-security persistence',
+        );
+      }
+      // Unit/non-persistent environments have no cross-tab OPFS state to race.
+      return operation();
+    }
+    return navigator.locks.request(
+      SECURITY_STATE_LOCK,
+      { mode: 'exclusive' },
+      () => operation(),
+    );
+  }
+
+  private async readSecurityStateFromOPFS(): Promise<ManifestSecurityState | null> {
+    if (
+      typeof navigator === 'undefined' ||
+      !navigator.storage ||
+      !('getDirectory' in navigator.storage)
+    ) {
+      return DbWorker.emptySecurityState();
+    }
+    try {
+      const root = await navigator.storage.getDirectory();
+      const fileHandle = await root.getFileHandle(SECURITY_STATE_FILE);
+      const file = await fileHandle.getFile();
+      const wrapped = new Uint8Array(await file.arrayBuffer());
+      if (!this.crypto) {
+        throw new Error('Crypto bridge not initialized');
+      }
+      const plaintext = await this.crypto.unwrap(wrapped);
+      return this.deserializeSecurityState(plaintext);
+    } catch (error) {
+      if ((error as { name?: unknown }).name === 'NotFoundError') {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  private async writeSecurityStateToOPFS(
+    state: ManifestSecurityState,
+  ): Promise<void> {
+    if (!this.crypto) {
+      throw new Error('Crypto bridge not initialized');
+    }
+    if (
+      typeof navigator === 'undefined' ||
+      !navigator.storage ||
+      !('getDirectory' in navigator.storage)
+    ) {
+      throw new Error('OPFS is unavailable for replay-security persistence');
+    }
+    const wrapped = await this.crypto.wrap(this.serializeSecurityState(state));
+    const root = await navigator.storage.getDirectory();
+    const fileHandle = await root.getFileHandle(SECURITY_STATE_FILE, {
+      create: true,
+    });
+    const writable = await fileHandle.createWritable();
+    const buffer = new ArrayBuffer(wrapped.byteLength);
+    new Uint8Array(buffer).set(wrapped);
+    await writable.write(buffer);
+    await writable.close();
+  }
+
+  private async persistManifestSecurityState(
+    highWaters: readonly ManifestSeqHighWaterMark[],
+    checkpoints: readonly ManifestReplayCheckpoint[],
+    epochHighWaters: readonly AlbumEpochHighWaterMark[],
+  ): Promise<void> {
+    if (
+      highWaters.length === 0 &&
+      checkpoints.length === 0 &&
+      epochHighWaters.length === 0
+    )
+      return;
+
+    const capturedHighWaters = highWaters.map((value) => ({ ...value }));
+    const capturedCheckpoints = checkpoints.map((value) => ({ ...value }));
+    const capturedEpochHighWaters = epochHighWaters.map((value) => ({
+      ...value,
+    }));
+    const nextWrite = this.securityStateChain.then(() =>
+      this.withSecurityStateLock(async () => {
+        const diskState = await this.readSecurityStateFromOPFS();
+        if (!diskState) {
+          throw new Error(
+            'Replay-security sidecar disappeared after initialization',
+          );
+        }
+        const base = this.mergeSecurityStates(
+          diskState,
+          this.getReadySecurityState(),
+        );
+        const nextState = this.applySecurityCandidates(
+          base,
+          capturedHighWaters,
+          capturedCheckpoints,
+          capturedEpochHighWaters,
+        );
+        await this.writeSecurityStateToOPFS(nextState);
+        this.securityState = nextState;
+      }),
+    );
+    this.securityStateChain = nextWrite.catch(() => undefined);
+    await nextWrite;
+  }
+
   // OPFS persistence (encrypted at rest)
   private async loadFromOPFS(): Promise<Uint8Array | null> {
     try {
@@ -957,9 +1626,14 @@ export class DbWorker implements DbWorkerApi {
       const fileHandle = await root.getFileHandle('mosaic.db.enc');
       const file = await fileHandle.getFile();
       return new Uint8Array(await file.arrayBuffer());
-    } catch {
-      // File doesn't exist yet
-      return null;
+    } catch (error) {
+      if ((error as { name?: unknown }).name === 'NotFoundError') {
+        return null;
+      }
+      // A transient permission/I/O failure is not proof that the cache is
+      // absent. Propagate it so init cannot establish a fresh empty security
+      // sidecar while an existing cache may still be present.
+      throw error;
     }
   }
 
@@ -1023,15 +1697,6 @@ export class DbWorker implements DbWorkerApi {
     }
   }
 
-  private async deleteFromOPFS(): Promise<void> {
-    try {
-      const root = await navigator.storage.getDirectory();
-      await root.removeEntry('mosaic.db.enc');
-    } catch {
-      // Ignore missing file
-    }
-  }
-
   /**
    * Wrap an OPFS snapshot with the crypto bridge's account-handle
    * wrapper. Returns `[u8 SNAPSHOT_VERSION][...account-handle wrap blob...]` —
@@ -1092,7 +1757,9 @@ interface SharedWorkerGlobalScopeWithConnect extends EventTarget {
 function isSharedWorkerContext(
   scope: typeof globalThis,
 ): scope is typeof globalThis & SharedWorkerGlobalScopeWithConnect {
-  return 'onconnect' in scope || scope.constructor.name === 'SharedWorkerGlobalScope';
+  return (
+    'onconnect' in scope || scope.constructor.name === 'SharedWorkerGlobalScope'
+  );
 }
 
 if (isSharedWorkerContext(self)) {

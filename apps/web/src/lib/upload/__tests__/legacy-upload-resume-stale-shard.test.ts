@@ -94,7 +94,9 @@ describe('legacy upload resume skips stale records lacking envelope length', () 
     // Envelope = 64-byte header + ciphertext + 16-byte AEAD tag.
     mocks.encryptShardWithEpochHandle.mockImplementation(
       async (_handle: EpochHandleId, plaintext: Uint8Array) => {
-        return new Uint8Array(64 + plaintext.byteLength + 16);
+        const envelope = new Uint8Array(64 + plaintext.byteLength + 16);
+        envelope.set([0x53, 0x47, 0x7a, 0x6b, 3]);
+        return envelope;
       },
     );
   });

@@ -2,6 +2,10 @@
 
 A beginner-friendly guide to deploying Mosaic, a zero-knowledge encrypted photo gallery.
 
+> **Preview status:** This checkout is not production-ready. This guide
+> describes the candidate deployment contract, not proof of a released
+> artifact. See [RELEASE_STATE.md](RELEASE_STATE.md).
+>
 > **Looking for advanced configuration?** See [DOCKER.md](DOCKER.md) for the complete reference.
 
 ---
@@ -13,7 +17,7 @@ Before you start, you'll need:
 | Requirement | Version | Check Command |
 |-------------|---------|---------------|
 | Docker | 20.10+ | `docker --version` |
-| Docker Compose | 2.0+ | `docker compose version` |
+| Docker Compose plugin | Current; must support `--wait` and `!reset` | `docker compose version` |
 | Git | Any | `git --version` |
 
 **Don't have Docker?**
@@ -66,7 +70,11 @@ FRONTEND_PORT=8080
 ### Step 3: Start Mosaic
 
 ```bash
-docker compose up -d
+# Start the database, apply the schema as an explicit one-shot operation,
+# then start the serving containers.
+docker compose up -d postgres
+docker compose run --rm backend --migrate-only
+docker compose up -d --wait
 ```
 
 Wait about 30 seconds for all services to start.
@@ -123,20 +131,30 @@ docker compose restart
 
 ### Update to Latest Version
 
-```bash
-# Pull latest code
-git pull
+Use the canonical helper for a published-image upgrade:
 
-# Rebuild and restart
-docker compose down
-docker compose up -d --build
+```bash
+./scripts/mosaic.sh update
 ```
+
+```powershell
+.\scripts\mosaic.ps1 update
+```
+
+The helper first creates and rehearses a matched database/blob backup, then
+pulls candidate images, acquires the maintenance lock, stops the serving
+backend, applies the schema once through `--migrate-only`, and recreates all
+services with health checks. If migration or recreation fails after quiesce,
+frontend and backend remain stopped; restore the matched pre-upgrade backup
+before rolling back application images.
 
 ---
 
 ## Windows PowerShell Helper
 
-Windows users can use the helper script for easier management:
+Windows users can use the helper script for the same management contract.
+`start` never applies migrations; use `update` for upgrades so backup rehearsal,
+one-shot migration, health checks, and fail-closed recovery cannot be skipped.
 
 ```powershell
 # Start Mosaic
@@ -144,6 +162,9 @@ Windows users can use the helper script for easier management:
 
 # Check status
 .\scripts\mosaic.ps1 status
+
+# Safely update published images and schema
+.\scripts\mosaic.ps1 update
 
 # View logs
 .\scripts\mosaic.ps1 logs
@@ -159,33 +180,59 @@ Windows users can use the helper script for easier management:
 
 ## Backup & Restore
 
-### Create a Backup
+Database and blob data must always be captured and restored as one quiesced,
+hash-bound pair. The repository helpers stop the backend for the capture,
+serialize backup/restore operations with an exclusive lock, verify both
+hashes, and reconcile active shard rows against blob size and digest before
+declaring a restore successful. Each timestamped directory contains the
+same canonical `manifest.sha256` format on Bash and PowerShell, so a complete
+backup directory can be verified or restored with either helper.
+
+### Linux/macOS
 
 ```bash
-# Backup database
-docker compose exec postgres pg_dump -U mosaic mosaic > backup-$(date +%Y%m%d).sql
-
-# Backup photos (blob storage)
-docker run --rm -v mosaic_blob_data:/data -v $(pwd):/backup alpine \
-    tar czf /backup/photos-$(date +%Y%m%d).tar.gz -C /data .
+./scripts/mosaic.sh backup
+./scripts/mosaic.sh verify-backup ./backups/<backup-directory>
+./scripts/mosaic.sh restore ./backups/<backup-directory>
 ```
 
-### Restore from Backup
+### Windows PowerShell
 
-```bash
-# Restore database
-docker compose exec -T postgres psql -U mosaic mosaic < backup-20260102.sql
-
-# Restore photos
-docker run --rm -v mosaic_blob_data:/data -v $(pwd):/backup alpine \
-    tar xzf /backup/photos-20260102.tar.gz -C /data
+```powershell
+.\scripts\mosaic.ps1 backup
+.\scripts\mosaic.ps1 verify-backup .\backups\<backup-directory>
+.\scripts\mosaic.ps1 restore .\backups\<backup-directory>
 ```
+
+See [operations/BACKUP.md](operations/BACKUP.md) for scheduling, off-host
+retention, restore drills, and the known-client decryption smoke corpus.
+
+---
+
+## Shipped Compose Hardening
+
+The supplied production Compose contract pins the PostgreSQL 17 Alpine image
+by digest. Backend and frontend use read-only root filesystems, drop all Linux
+capabilities, set `no-new-privileges`, and receive only bounded tmpfs writable
+paths. PostgreSQL, backend, and frontend also have default PID, memory, CPU,
+and json-file log-growth limits.
+
+Capacity-tested deployments can override only the documented knobs:
+`POSTGRES_PIDS_LIMIT`, `POSTGRES_MEMORY_LIMIT`, `POSTGRES_CPU_LIMIT`,
+`BACKEND_PIDS_LIMIT`, `BACKEND_MEMORY_LIMIT`, `BACKEND_CPU_LIMIT`,
+`FRONTEND_PIDS_LIMIT`, `FRONTEND_MEMORY_LIMIT`, `FRONTEND_CPU_LIMIT`,
+`LOG_MAX_SIZE`, and `LOG_MAX_FILE`. Preserve the read-only roots, capability
+drops, and tmpfs boundaries. See
+[DOCKER.md](DOCKER.md#runtime-hardening) for defaults and exact writable paths.
+
+The serving backend keeps `RUN_MIGRATIONS=false`; do not enable runtime
+migration as a convenience override.
 
 ---
 
 ## Production Deployment
 
-For production use, you should:
+For a production-candidate deployment, you should:
 
 ### 1. Use Strong Passwords
 
@@ -224,7 +271,9 @@ Caddy will automatically obtain and renew TLS certificates from Let's Encrypt.
 
 The default `docker-compose.yml` configuration uses local username/password authentication (`LOCAL_AUTH_ENABLED=true`, `PROXY_AUTH_ENABLED=false`) so first deploys work without an external identity proxy.
 
-To use trusted reverse-proxy authentication instead, disable local auth and enable proxy auth. Your reverse proxy must set the `Remote-User` header based on your authentication provider.
+ProxyAuth is candidate-only. Do not enable it by copying a client-controlled
+identity header into `Remote-User`; an authenticated upstream must delete
+spoofable identity first and overwrite `Remote-User` itself.
 
 **Common authentication solutions:**
 
@@ -234,25 +283,12 @@ To use trusted reverse-proxy authentication instead, disable local auth and enab
 | [Authentik](https://goauthentik.io/) | Open-source identity provider |
 | [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/) | OAuth2 authentication proxy |
 
-**Quick Caddy + Authelia Example:**
-
-```caddyfile
-# Caddyfile
-
-# Authelia login portal
-auth.yourdomain.com {
-    reverse_proxy authelia:9091
-}
-
-# Mosaic (protected by Authelia)
-photos.yourdomain.com {
-    forward_auth authelia:9091 {
-        uri /api/v1/authz/forward-auth
-        copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
-    }
-    reverse_proxy mosaic-frontend:8080
-}
-```
+The only documented candidate is the split-network Caddy + Authelia topology
+in [AUTHELIA.md](AUTHELIA.md). Only Caddy publishes ports; it has a fixed edge
+address, deletes client identity headers on public and protected routes, and
+copies only Authelia's `Remote-User`. The frontend accepts only that exact
+Caddy peer and mounts `nginx.proxyauth-deployment.conf`, never the test-only
+`nginx.proxyauth.conf`.
 
 **Backend Configuration:**
 
@@ -263,10 +299,16 @@ backend:
   environment:
     Auth__LocalAuthEnabled: "false"      # Disable password auth
     Auth__ProxyAuthEnabled: "true"       # Enable header-based auth
-    Auth__TrustedProxies__0: "172.16.0.0/12"  # Trust Docker networks
+    # Valid only with the exact candidate app-network topology.
+    Auth__TrustedProxies__0: "172.30.0.4/32"
 ```
 
-> **📖 Full Guide:** See [AUTHELIA.md](AUTHELIA.md) for complete Authelia integration with Caddy, nginx, or Traefik.
+Never broaden that `/32` to a Docker/private range. See
+[AUTHELIA.md](AUTHELIA.md) for the complete candidate and
+[RELEASE_STATE.md](RELEASE_STATE.md) for the still-missing real ProxyAuth
+boundary evidence. nginx and Traefik fragments are reference-only until they
+meet the same exact-peer/header-deletion contract and receive their own
+evidence.
 
 ---
 

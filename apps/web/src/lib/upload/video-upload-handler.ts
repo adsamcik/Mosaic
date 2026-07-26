@@ -170,7 +170,7 @@ export async function processVideoUpload(
       sha256: thumbEncrypted.sha256,
       tier: 1,
       contentLength: thumbEncrypted.envelopeBytes.byteLength,
-      envelopeVersion: 3,
+      envelopeVersion: thumbEncrypted.envelopeVersion,
     });
     task.progress = 0.2;
     ctx.onProgress?.(task);
@@ -214,7 +214,7 @@ export async function processVideoUpload(
         sha256: chunkEncrypted.sha256,
         tier: 3,
         contentLength: chunkEncrypted.envelopeBytes.byteLength,
-        envelopeVersion: 3,
+        envelopeVersion: chunkEncrypted.envelopeVersion,
       };
       task.completedShards.push(completedShard);
       originalShards.push(completedShard);

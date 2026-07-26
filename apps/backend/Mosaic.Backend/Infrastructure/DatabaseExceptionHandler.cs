@@ -28,7 +28,7 @@ public class DatabaseExceptionHandler : IExceptionHandler
         {
             _logger.LogWarning(
                 "Concurrency conflict detected. Path: {Path}, Method: {Method}",
-                httpContext.Request.Path,
+                SafeRequestPath.ForLogging(httpContext),
                 httpContext.Request.Method);
 
             httpContext.Response.StatusCode = StatusCodes.Status409Conflict;
@@ -54,7 +54,7 @@ public class DatabaseExceptionHandler : IExceptionHandler
             {
                 _logger.LogWarning(
                     "Unique constraint violation. Path: {Path}, Method: {Method}",
-                    httpContext.Request.Path,
+                    SafeRequestPath.ForLogging(httpContext),
                     httpContext.Request.Method);
 
                 httpContext.Response.StatusCode = StatusCodes.Status409Conflict;

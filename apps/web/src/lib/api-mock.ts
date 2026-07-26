@@ -29,11 +29,11 @@ import type {
   CreateEpochKeyRequest,
   RotateEpochRequest,
   ManifestRecord,
-  CreateManifestRequest,
-  ManifestCreated,
   UpdateManifestMetadataRequest,
   ManifestMetadataUpdated,
-  UpdatePhotoExpirationRequest,
+  ReserveManifestSequenceRequest,
+  ManifestSequenceReservation,
+  DeleteManifestRequest,
   CreateShardRequest,
   ShardCreated,
   ShareLinkResponse,
@@ -68,6 +68,8 @@ interface MockStore {
   members: Map<string, AlbumMember[]>;
   epochKeys: Map<string, EpochKeyRecord[]>;
   manifests: Map<string, ManifestRecord>;
+  sequenceReservations: Map<string, ManifestSequenceReservation>;
+  sequenceHighWaters: Map<string, number>;
   shards: Map<string, Uint8Array>;
 }
 
@@ -203,6 +205,8 @@ function createMockStore(): MockStore {
     members,
     epochKeys: new Map(),
     manifests: new Map(),
+    sequenceReservations: new Map(),
+    sequenceHighWaters: new Map(),
     shards: new Map(),
   };
 }
@@ -691,37 +695,29 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
     // =========================================================================
     // Manifests
     // =========================================================================
-    async createManifest(
-      request: CreateManifestRequest,
-    ): Promise<ManifestCreated> {
+    async reserveManifestSequence(
+      request: ReserveManifestSequenceRequest,
+    ): Promise<ManifestSequenceReservation> {
       await delay();
-      const album = store.albums.get(request.albumId);
-      if (!album) {
+      const existing = store.sequenceReservations.get(request.operationId);
+      if (existing) {
+        return { ...existing };
+      }
+      if (!store.albums.has(request.albumId)) {
         throw new Error(`Album not found: ${request.albumId}`);
       }
 
-      album.currentVersion++;
-      album.updatedAt = new Date().toISOString();
-
-      const id = `manifest-${generateUuid()}`;
-      const manifest: ManifestRecord = {
-        id,
-        albumId: request.albumId,
-        versionCreated: album.currentVersion,
-        isDeleted: false,
-        encryptedMeta: request.encryptedMeta,
-        signature: request.signature,
-        signerPubkey: request.signerPubkey,
-        shardIds: request.shardIds,
-        createdAt: new Date().toISOString(),
+      const signerStream = `${request.albumId}:${request.signerPubkey}`;
+      const manifestSeq = (store.sequenceHighWaters.get(signerStream) ?? 0) + 1;
+      const reservation = {
+        reservationId: generateUuid(),
+        manifestSeq,
       };
-      store.manifests.set(id, manifest);
-
-      return {
-        id,
-        version: album.currentVersion,
-      };
+      store.sequenceHighWaters.set(signerStream, manifestSeq);
+      store.sequenceReservations.set(request.operationId, reservation);
+      return { ...reservation };
     },
+
 
     async getManifest(manifestId: string): Promise<ManifestRecord> {
       await delay();
@@ -753,6 +749,7 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
       manifest.encryptedMeta = request.encryptedMeta;
       manifest.signature = request.signature;
       manifest.signerPubkey = request.signerPubkey;
+      manifest.manifestSeq = request.manifestSeq;
       manifest.versionCreated = album.currentVersion;
       manifest.updatedAt = album.updatedAt;
 
@@ -764,46 +761,28 @@ export function createMockApi(latencyMs: number = 100): MosaicApi {
 
     async deleteManifest(
       manifestId: string,
-      body?: { tombstoneSignature: string; signerEpochId: number } | null,
+      body: DeleteManifestRequest,
     ): Promise<void> {
       await delay();
       const manifest = store.manifests.get(manifestId);
       if (!manifest) {
         throw new Error(`Manifest not found: ${manifestId}`);
       }
-      manifest.isDeleted = true;
-      manifest.updatedAt = new Date().toISOString();
-      // A2: mock stores the signed tombstone so tests can assert it was
-      // threaded through. Real backend persists into
-      // manifests.tombstone_signature / tombstone_signer_epoch_id columns.
-      if (body != null) {
-        (manifest as { tombstoneSignature?: string }).tombstoneSignature =
-          body.tombstoneSignature;
-        (manifest as { tombstoneSignerEpochId?: number }).tombstoneSignerEpochId =
-          body.signerEpochId;
+      const album = store.albums.get(manifest.albumId);
+      if (!album) {
+        throw new Error(`Album not found: ${manifest.albumId}`);
       }
-    },
 
-    async updatePhotoExpiration(
-      manifestId: string,
-      request: UpdatePhotoExpirationRequest,
-    ): Promise<void> {
-      await delay();
-      const manifest = store.manifests.get(manifestId);
-      if (!manifest) {
-        throw new Error(`Manifest not found: ${manifestId}`);
-      }
-      const updated: ManifestRecord = {
-        ...manifest,
-        updatedAt: new Date().toISOString(),
-      };
-      if (request.expiresAt !== undefined) {
-        updated.expiresAt = request.expiresAt;
-      }
-      if (request.expirationWarningDays !== undefined) {
-        updated.expirationWarningDays = request.expirationWarningDays;
-      }
-      store.manifests.set(manifestId, updated);
+      album.currentVersion++;
+      album.updatedAt = new Date().toISOString();
+      manifest.isDeleted = true;
+      manifest.versionCreated = album.currentVersion;
+      manifest.updatedAt = album.updatedAt;
+      manifest.tombstoneSignature = body.tombstoneSignature;
+      manifest.tombstoneSignerEpochId = body.signerEpochId;
+      manifest.tombstoneProtocolVersion = 2;
+      manifest.tombstoneSeq = body.tombstoneSeq;
+      manifest.tombstoneVersionCreated = body.tombstoneVersionCreated;
     },
 
     // =========================================================================

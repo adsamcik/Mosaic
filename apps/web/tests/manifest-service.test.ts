@@ -40,16 +40,27 @@ const mockSignManifestWithEpoch = vi.fn(
   },
 );
 const mockManifestTranscriptBytes = vi.fn(async () => TRANSCRIPT_BYTES);
-const mockCreateManifest = vi.fn(async () => {});
-const mockFetch = vi.fn(async () =>
-  new Response(JSON.stringify({
-    protocolVersion: 1,
-    manifestId: TASK_ID,
-    metadataVersion: 1,
-    createdAt: '2026-05-06T00:00:00.000Z',
-    tieredShards: [],
-  }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
-);
+const RESERVATION_ID = '018f0000-0000-7000-8000-000000000306';
+const MANIFEST_SEQ = 17;
+const mockFetch = vi.fn(async (input: RequestInfo | URL) => {
+  const url = String(input);
+  const payload = url.endsWith('/sequence-reservations')
+    ? {
+        reservationId: RESERVATION_ID,
+        manifestSeq: MANIFEST_SEQ,
+      }
+    : {
+        protocolVersion: 1,
+        manifestId: TASK_ID,
+        metadataVersion: 1,
+        createdAt: '2026-05-06T00:00:00.000Z',
+        tieredShards: [],
+      };
+  return new Response(JSON.stringify(payload), {
+    status: url.endsWith('/sequence-reservations') ? 201 : 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+});
 
 vi.mock('../src/lib/crypto-client', () => ({
   getCryptoClient: vi.fn(() =>
@@ -62,12 +73,6 @@ vi.mock('../src/lib/crypto-client', () => ({
   ),
 }));
 
-vi.mock('../src/lib/api', () => ({
-  getApi: vi.fn(() => ({
-    createManifest: mockCreateManifest,
-  })),
-  toBase64: vi.fn((arr: Uint8Array) => Buffer.from(arr).toString('base64')),
-}));
 
 import { createManifestForUpload } from '../src/lib/manifest-service';
 
@@ -145,17 +150,36 @@ describe('manifest-service', () => {
       );
       expect(capturedSignedBytes).not.toEqual(ENVELOPE_BYTES);
       expect(capturedSignedBytes).toEqual(TRANSCRIPT_BYTES);
+      expect(mockManifestTranscriptBytes).toHaveBeenCalledWith(
+        expect.objectContaining({ manifestSeq: MANIFEST_SEQ }),
+      );
     });
 
     it('publishes the per-epoch sign public key (not a placeholder secret)', async () => {
       const task = makeBaseTask();
       await createManifestForUpload(task, [SHARD_0], epochKey);
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      const request = lastFinalizeBody() as { signerPubkey: string };
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const request = lastFinalizeBody() as {
+        signerPubkey: string;
+        manifestSeq: number;
+        sequenceReservationId: string;
+      };
       expect(Buffer.from(request.signerPubkey, 'base64')).toEqual(
         Buffer.from(SIGN_PUBLIC_KEY),
       );
+      expect(request.manifestSeq).toBe(MANIFEST_SEQ);
+      expect(request.sequenceReservationId).toBe(RESERVATION_ID);
+
+      const [reservationUrl, reservationInit] = mockFetch.mock.calls[0]!;
+      expect(String(reservationUrl)).toBe('/api/v1/manifests/sequence-reservations');
+      expect(JSON.parse(String(reservationInit?.body))).toEqual({
+        albumId: ALBUM_ID,
+        signerPubkey: Buffer.from(SIGN_PUBLIC_KEY).toString('base64'),
+        targetManifestId: TASK_ID,
+        operationId: TASK_ID,
+        operationKind: 'Create',
+      });
     });
   });
 

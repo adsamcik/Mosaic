@@ -58,9 +58,36 @@ public sealed class IdempotencyMiddleware
 
     public async Task InvokeAsync(HttpContext context, MosaicDbContext db, ICurrentUserService currentUserService)
     {
-        if (!ShouldApply(context.Request, out var idempotencyKey))
+        var idempotencyKey = context.Request.Headers[HeaderName].FirstOrDefault() ?? string.Empty;
+        if (IsTusPatch(context.Request))
         {
             await _next(context);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            if (IsIdempotencyRequiredCreate(context.Request))
+            {
+                await WriteProblemAsync(
+                    context,
+                    StatusCodes.Status400BadRequest,
+                    "Missing Idempotency-Key",
+                    "Idempotency-Key is required for album and share-link creation.");
+                return;
+            }
+
+            await _next(context);
+            return;
+        }
+
+        if (!IsReplaySafeRequest(context.Request))
+        {
+            await WriteProblemAsync(
+                context,
+                StatusCodes.Status400BadRequest,
+                "Unsupported Idempotency-Key scope",
+                "Idempotency-Key is supported for album creation, share-link creation, and POST /api/v1/manifests/{manifestId}/finalize. Tus PATCH requests use the Tus offset contract.");
             return;
         }
 
@@ -195,25 +222,15 @@ public sealed class IdempotencyMiddleware
                 var responseBodyHash = SHA256.HashData(responseBody);
                 var headersSubset = SerializeHeaders(context.Response.Headers);
 
-                // Ordering invariant (v1.0.x s47-y3): the controller's domain
-                // transaction (e.g. ManifestsController's BeginTransactionAsync
-                // → INSERT manifest+shards → CommitAsync) has already been
-                // committed by the time we get here — the response status code
-                // is set, and the only thing left is to record the replay
-                // cache entry and flush the response to the client. If this
-                // IdempotencyRecord save fails on a transient backend error
-                // (connection reset, deadlock victim), a client retry of the
-                // same Idempotency-Key would see no replay record and re-run
-                // the controller, creating a duplicate manifest row.
-                //
-                // To kill that race, we wrap the save in the provider's
-                // execution strategy so transient PostgreSQL errors are
-                // automatically retried before we give up. The downstream
-                // controller transaction is NOT inside this scope (it has
-                // already committed) so there is no nested-transaction hazard.
-                // We also defer flushing the response to the client until the
-                // record is durably persisted (line 171 below), so a client
-                // that sees a 200/201 can rely on the replay cache being live.
+                // The replay record is persisted before the response is
+                // flushed, but it is not atomic with the controller's already-
+                // committed domain transaction. For that reason the
+                // middleware is restricted to create actions that also persist
+                // an intrinsic request fingerprint in their domain
+                // transaction. A missing replay record can therefore re-enter
+                // the action without allocating a second resource or applying
+                // its side effects twice. The execution strategy below only
+                // retries persistence of this replay record.
                 var record = new IdempotencyRecord
                 {
                     UserId = userId,
@@ -251,27 +268,60 @@ public sealed class IdempotencyMiddleware
         }
     }
 
-    private static bool ShouldApply(HttpRequest request, out string idempotencyKey)
+    private static bool IsTusPatch(HttpRequest request)
     {
-        idempotencyKey = request.Headers[HeaderName].FirstOrDefault() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        return HttpMethods.IsPatch(request.Method)
+            && request.Path.StartsWithSegments("/api/v1/files", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsIdempotencyRequiredCreate(HttpRequest request)
+    {
+        if (!HttpMethods.IsPost(request.Method))
         {
             return false;
         }
 
-        // v1.0.2 s36: do NOT silently truncate over-length keys here; the caller
-        // checks `idempotencyKey.Length > MaxKeyLength` and returns 400.
+        var segments = (request.Path.Value ?? string.Empty)
+            .Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var isAlbumCreate = segments.Length == 3
+            && string.Equals(segments[0], "api", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(segments[1], "v1", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(segments[2], "albums", StringComparison.OrdinalIgnoreCase);
+        var isShareLinkCreate = segments.Length == 5
+            && string.Equals(segments[0], "api", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(segments[1], "v1", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(segments[2], "albums", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(segments[3], out _)
+            && string.Equals(segments[4], "share-links", StringComparison.OrdinalIgnoreCase);
 
-        if (HttpMethods.IsPatch(request.Method)
-            && request.Path.StartsWithSegments("/api/v1/files", StringComparison.OrdinalIgnoreCase))
+        return isAlbumCreate || isShareLinkCreate;
+    }
+
+    private static bool IsReplaySafeRequest(HttpRequest request)
+    {
+        if (IsIdempotencyRequiredCreate(request))
+        {
+            return true;
+        }
+
+        if (!HttpMethods.IsPost(request.Method))
         {
             return false;
         }
 
-        return HttpMethods.IsPost(request.Method)
-            || HttpMethods.IsPut(request.Method)
-            || HttpMethods.IsPatch(request.Method)
-            || HttpMethods.IsDelete(request.Method);
+        var segments = (request.Path.Value ?? string.Empty)
+            .Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 5
+            && string.Equals(segments[0], "api", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(segments[1], "v1", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(segments[2], "manifests", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(segments[3], out _)
+            && string.Equals(segments[4], "finalize", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static async Task<byte[]> ComputeRequestHashAsync(HttpRequest request)

@@ -1,3 +1,6 @@
+using System.ComponentModel.DataAnnotations;
+using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -6,6 +9,7 @@ using Mosaic.Backend.Models.Manifests;
 using Mosaic.Backend.Data.Entities;
 using Mosaic.Backend.Extensions;
 using Mosaic.Backend.Logging;
+using Mosaic.Backend.Middleware;
 using Mosaic.Backend.Services;
 
 namespace Mosaic.Backend.Controllers;
@@ -28,6 +32,7 @@ public class ManifestsController : ControllerBase
     private readonly ILogger<ManifestsController> _logger;
     private readonly IAlbumExpirationService _expirationService;
     private readonly TimeProvider _timeProvider;
+    private readonly IStorageService? _storageService;
 
     public ManifestsController(
         MosaicDbContext db,
@@ -35,13 +40,15 @@ public class ManifestsController : ControllerBase
         ICurrentUserService currentUserService,
         ILogger<ManifestsController> logger,
         IAlbumExpirationService? expirationService = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IStorageService? storageService = null)
     {
         _db = db;
         _quotaService = quotaService;
         _currentUserService = currentUserService;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _storageService = storageService;
         _expirationService = expirationService ?? new AlbumExpirationService(
             db,
             _timeProvider,
@@ -51,22 +58,198 @@ public class ManifestsController : ControllerBase
 
 
 
+    [HttpPost("sequence-reservations")]
+    [ProducesResponseType<ManifestSequenceReservationResponse>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> ReserveSequence([FromBody] ReserveManifestSequenceRequest request)
+    {
+        if (!ManifestSequenceOperations.IsSupported(request.OperationKind))
+        {
+            return Problem(
+                detail: "operationKind must be Create, MetadataUpdate, or Tombstone",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (request.TargetManifestId == Guid.Empty || request.OperationId == Guid.Empty)
+        {
+            return Problem(
+                detail: "targetManifestId and operationId must be non-empty UUIDs",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (!TryDecodeBase64(request.SignerPubkey, out var signerPubkeyBytes) || signerPubkeyBytes.Length != 32)
+        {
+            return Problem(
+                detail: "signerPubkey must be valid base64 and exactly 32 bytes",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var canonicalSignerPubkey = Convert.ToBase64String(signerPubkeyBytes);
+        var user = await _currentUserService.GetOrCreateAsync(HttpContext);
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            Album? album;
+            if (_db.UsesLiteProvider())
+            {
+                album = await _db.Albums.FindAsync(request.AlbumId);
+            }
+            else
+            {
+                album = await _db.Albums
+                    .FromSqlRaw("SELECT * FROM albums WHERE id = {0} FOR UPDATE", request.AlbumId)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (album == null)
+            {
+                return NotFound();
+            }
+
+            var (_, memberError) = await _db.RequireAlbumEditorAsync(album.Id, user.Id);
+            if (memberError != null)
+            {
+                return memberError;
+            }
+
+            if (_expirationService.IsExpired(album.ExpiresAt))
+            {
+                return StatusCode(StatusCodes.Status410Gone);
+            }
+
+            var signerEpochId = await _db.EpochKeys
+                .Where(key => key.AlbumId == album.Id && key.SignPubkey == signerPubkeyBytes)
+                .Select(key => (int?)key.EpochId)
+                .FirstOrDefaultAsync();
+            if (!signerEpochId.HasValue)
+            {
+                return Problem(
+                    detail: "signerPubkey does not identify an epoch key for this album",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+            if (signerEpochId.Value != album.CurrentEpochId)
+            {
+                return Problem(
+                    detail: "sequence reservations require the current album epoch signer",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var existing = await _db.ManifestSequenceReservations
+                .FirstOrDefaultAsync(reservation => reservation.OperationId == request.OperationId);
+            if (existing != null)
+            {
+                if (existing.AlbumId != album.Id
+                    || existing.TargetManifestId != request.TargetManifestId
+                    || existing.OperationKind != request.OperationKind
+                    || existing.SignerPubkey != canonicalSignerPubkey)
+                {
+                    return Problem(
+                        detail: "operationId is already bound to a different sequence reservation",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+
+                var existingState = await GetOrCreateSequenceStateAsync(
+                    album.Id,
+                    canonicalSignerPubkey);
+                if (!existing.ConsumedAt.HasValue
+                    && existing.ManifestSeq <= existingState.LastConsumedSequence)
+                {
+                    if (existingState.LastAllocatedSequence == long.MaxValue)
+                    {
+                        return Problem(
+                            detail: "manifest sequence space is exhausted for this signer",
+                            statusCode: StatusCodes.Status409Conflict);
+                    }
+
+                    existingState.LastAllocatedSequence++;
+                    existing.ManifestSeq = existingState.LastAllocatedSequence;
+                    existing.CreatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+                }
+
+                // SaveChanges also persists a defensively reconstructed state
+                // row. For a non-stale retry it leaves the reservation intact.
+                await _db.SaveChangesAsync();
+                await tx.CommitAsync();
+                return Ok(new ManifestSequenceReservationResponse(existing.Id, existing.ManifestSeq));
+            }
+
+            var targetExists = await _db.Manifests
+                .IgnoreQueryFilters()
+                .AnyAsync(manifest => manifest.Id == request.TargetManifestId && manifest.AlbumId == album.Id);
+            if (request.OperationKind == ManifestSequenceOperations.Create && targetExists)
+            {
+                return Problem(
+                    detail: "target manifest already exists",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            if (request.OperationKind != ManifestSequenceOperations.Create && !targetExists)
+            {
+                return Problem(
+                    detail: "target manifest does not exist in this album",
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
+            var state = await GetOrCreateSequenceStateAsync(album.Id, canonicalSignerPubkey);
+
+            if (state.LastAllocatedSequence == long.MaxValue)
+            {
+                return Problem(
+                    detail: "manifest sequence space is exhausted for this signer",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var nextSequence = state.LastAllocatedSequence + 1;
+            state.LastAllocatedSequence = nextSequence;
+            var reservation = new ManifestSequenceReservation
+            {
+                Id = Guid.CreateVersion7(),
+                AlbumId = album.Id,
+                SignerPubkey = canonicalSignerPubkey,
+                TargetManifestId = request.TargetManifestId,
+                OperationId = request.OperationId,
+                OperationKind = request.OperationKind,
+                ManifestSeq = nextSequence,
+                CreatedAt = _timeProvider.GetUtcNow().UtcDateTime
+            };
+            _db.ManifestSequenceReservations.Add(reservation);
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+
+            return Ok(new ManifestSequenceReservationResponse(reservation.Id, reservation.ManifestSeq));
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
     /// <summary>
-    /// Create a new finalized manifest (photo) in an album.
+    /// Legacy direct-call adapter retained only for existing in-process tests.
+    /// It is deliberately not an MVC action: production clients must choose a
+    /// manifest ID, reserve a v2 sequence, sign it, and call /{id}/finalize.
     /// </summary>
-    [HttpPost]
+    [NonAction]
     public Task<IActionResult> Create([FromBody] CreateManifestRequest request)
-        => FinalizeManifestCoreAsync(Guid.CreateVersion7(), request);
+        => FinalizeManifestCoreAsync(Guid.CreateVersion7(), request, requireSequenceReservation: false);
 
     /// <summary>
     /// Finalize a client-addressed manifest id using the ADR-022 v1 shape.
     /// </summary>
+    /// <param name="manifestId">Client-selected manifest ID.</param>
+    /// <param name="request">The signed manifest and reserved sequence.</param>
+    /// <param name="idempotencyKey">Optional replay-cache key. Reuse it only for the same payload. Finalization is also intrinsically retry-safe by manifest ID: an exact retry returns the original 201 response and a changed payload returns 409.</param>
     [HttpPost("{manifestId:guid}/finalize")]
-    [ProducesResponseType(StatusCodes.Status201Created)]
-    public Task<IActionResult> Finalize(Guid manifestId, [FromBody] CreateManifestRequest request)
-        => FinalizeManifestCoreAsync(manifestId, request);
+    [ProducesResponseType<ManifestFinalizeResponse>(StatusCodes.Status201Created)]
+    public Task<IActionResult> Finalize(
+        Guid manifestId,
+        [FromBody] CreateManifestRequest request,
+        [FromHeader(Name = IdempotencyMiddleware.HeaderName), MaxLength(IdempotencyMiddleware.MaxKeyLength)] string? idempotencyKey = null)
+        => FinalizeManifestCoreAsync(manifestId, request, requireSequenceReservation: true);
 
-    private async Task<IActionResult> FinalizeManifestCoreAsync(Guid manifestId, CreateManifestRequest request)
+    private async Task<IActionResult> FinalizeManifestCoreAsync(
+        Guid manifestId,
+        CreateManifestRequest request,
+        bool requireSequenceReservation)
     {
         var validationError = ValidateFinalizeRequest(request);
         if (validationError != null)
@@ -74,6 +257,29 @@ public class ManifestsController : ControllerBase
             return validationError;
         }
 
+        if (requireSequenceReservation
+            && (!request.ManifestSeq.HasValue || !request.SequenceReservationId.HasValue))
+        {
+            return Problem(
+                detail: "manifestSeq and sequenceReservationId are required for v2 manifest finalization",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (requireSequenceReservation && request.ManifestSeq <= 0)
+        {
+            return Problem(
+                detail: "manifestSeq must be a positive integer",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (requireSequenceReservation && request.ExpiresAt.HasValue)
+        {
+            return Problem(
+                detail: "Per-photo expiration is deferred until the signed v2 manifest lifecycle supports it",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var finalizeRequestHash = ComputeFinalizeRequestHash(manifestId, request);
         var shardInfoList = request.TieredShards!
             .Select(tieredShard => (
                 Id: Guid.Parse(tieredShard.ShardId),
@@ -117,6 +323,74 @@ public class ManifestsController : ControllerBase
                 return memberError;
             }
 
+            if (!TryDecodeBase64(request.SignerPubkey, out var signerPubkeyBytesForEpochLookup)
+                || signerPubkeyBytesForEpochLookup.Length != 32)
+            {
+                return Problem(
+                    detail: "signerPubkey must be valid base64 and exactly 32 bytes",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var canonicalSignerPubkey = Convert.ToBase64String(signerPubkeyBytesForEpochLookup);
+            var existingManifest = await _db.Manifests
+                .IgnoreQueryFilters()
+                .Include(manifest => manifest.ManifestShards)
+                .FirstOrDefaultAsync(manifest => manifest.Id == manifestId);
+            if (existingManifest != null)
+            {
+                ManifestSequenceReservation? reservation = null;
+                if (request.SequenceReservationId.HasValue)
+                {
+                    reservation = await _db.ManifestSequenceReservations
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(candidate => candidate.Id == request.SequenceReservationId.Value);
+                }
+
+                if (requireSequenceReservation
+                    && IsExactFinalizeReplay(
+                        existingManifest,
+                        reservation,
+                        request,
+                        canonicalSignerPubkey,
+                        finalizeRequestHash))
+                {
+                    var storedShardInfo = existingManifest.ManifestShards
+                        .Select(link => (
+                            Id: link.ShardId,
+                            Tier: link.Tier,
+                            ShardIndex: link.ShardIndex,
+                            Sha256: (string?)link.Sha256,
+                            ContentLength: (long?)link.ContentLength,
+                            EnvelopeVersion: link.EnvelopeVersion))
+                        .ToList();
+
+                    await tx.CommitAsync();
+                    Response.Headers["Idempotency-Replayed"] = "true";
+                    SetManifestETag(existingManifest.FinalizeMetadataVersion ?? 1);
+                    return Created(
+                        $"/api/v1/manifests/{existingManifest.Id}",
+                        ToFinalizeResponse(
+                            existingManifest,
+                            storedShardInfo,
+                            existingManifest.FinalizeMetadataVersion ?? 1));
+                }
+
+                return Conflict(new
+                {
+                    error = "Manifest already finalized",
+                    detail = "The supplied manifest id is bound to a different finalize request or sequence reservation.",
+                    manifestId
+                });
+            }
+
+            if (requireSequenceReservation && _storageService == null)
+            {
+                _logger.LogCritical("Manifest finalization storage verification is unavailable");
+                return Problem(
+                    detail: "Shard storage verification is unavailable",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
             if (_expirationService.IsExpired(album.ExpiresAt))
             {
                 await _expirationService.EnforceAlbumExpirationAsync(album.Id);
@@ -130,71 +404,36 @@ public class ManifestsController : ControllerBase
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            if (await _db.Manifests.IgnoreQueryFilters().AnyAsync(m => m.Id == manifestId))
+            var manifestEpochId = await _db.EpochKeys
+                .Where(ek => ek.AlbumId == album.Id && ek.SignPubkey == signerPubkeyBytesForEpochLookup)
+                .Select(ek => (int?)ek.EpochId)
+                .FirstOrDefaultAsync();
+            if (!manifestEpochId.HasValue)
             {
-                return Conflict(new
-                {
-                    error = "Manifest already finalized",
-                    detail = "The supplied manifest id has already been finalized.",
-                    manifestId
-                });
+                return Problem(
+                    detail: "Manifest signed by an unknown epoch key for this album",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+            if (manifestEpochId.Value != album.CurrentEpochId)
+            {
+                return Problem(
+                    detail: "Manifest signer is not the current album epoch",
+                    statusCode: StatusCodes.Status409Conflict);
             }
 
-            // A5: reject manifests signed by an epoch older than the album's
-            // current epoch. Without this check, a stale client (e.g. a tab
-            // that was kept open across an admin's member-removal + epoch
-            // rotation) can keep uploading new content encrypted under the
-            // OLD epoch — readable by the just-removed member who retained
-            // their copy of the old epoch keys. Identifying the manifest's
-            // epoch from the SignerPubkey is the only ZK-safe option (the
-            // server cannot parse the encrypted manifest envelope itself).
-            if (TryDecodeBase64(request.SignerPubkey, out var signerPubkeyBytesForEpochLookup)
-                && signerPubkeyBytesForEpochLookup.Length == 32)
+            if (!requireSequenceReservation && request.ManifestSeq.HasValue)
             {
-                var manifestEpochId = await _db.EpochKeys
-                    .Where(ek => ek.AlbumId == album.Id && ek.SignPubkey == signerPubkeyBytesForEpochLookup)
-                    .Select(ek => (int?)ek.EpochId)
-                    .FirstOrDefaultAsync();
-                if (manifestEpochId == null)
+                var maxSeqForEpoch = await _db.Manifests
+                    .IgnoreQueryFilters()
+                    .Where(m => m.AlbumId == album.Id
+                        && m.SignerPubkey == canonicalSignerPubkey
+                        && m.ManifestSeq != null)
+                    .MaxAsync(m => (long?)m.ManifestSeq) ?? 0L;
+                if (request.ManifestSeq.Value <= maxSeqForEpoch)
                 {
                     return Problem(
-                        detail: "Manifest signed by an unknown epoch key for this album",
-                        statusCode: StatusCodes.Status400BadRequest);
-                }
-                if (manifestEpochId.Value < album.CurrentEpochId)
-                {
-                    return Problem(
-                        detail: $"Manifest signed by stale epoch ({manifestEpochId.Value}); album is at epoch {album.CurrentEpochId}. Re-encrypt with the current epoch and retry.",
+                        detail: "Manifest sequence is not strictly greater than the current signer maximum",
                         statusCode: StatusCodes.Status409Conflict);
-                }
-
-                // 6d-guard (A3, audit crypto-correctness H-1): when the
-                // client supplied a v2 transcript with a manifest_seq
-                // freshness field, enforce strict monotonicity per
-                // (album_id, signer_pubkey). SignerPubkey uniquely
-                // identifies the epoch (it's the per-epoch
-                // ManifestSigningPubkey), so this is functionally
-                // (album_id, epoch_id) scoping. A malicious or compromised
-                // server cannot replay an older signed manifest under a
-                // newer seq because Ed25519 binds the bytes — the only
-                // freshness lever is the seq stored in the transcript and
-                // the server's max-seq check. Pre-A3 clients omit
-                // ManifestSeq and skip this guard (NULL stays NULL on
-                // disk).
-                if (request.ManifestSeq.HasValue)
-                {
-                    var maxSeqForEpoch = await _db.Manifests
-                        .IgnoreQueryFilters()
-                        .Where(m => m.AlbumId == album.Id
-                            && m.SignerPubkey == request.SignerPubkey
-                            && m.ManifestSeq != null)
-                        .MaxAsync(m => (long?)m.ManifestSeq) ?? 0L;
-                    if (request.ManifestSeq.Value <= maxSeqForEpoch)
-                    {
-                        return Problem(
-                            detail: $"Manifest seq {request.ManifestSeq.Value} is not strictly greater than the current max {maxSeqForEpoch} for this album+epoch. Increment seq and retry.",
-                            statusCode: StatusCodes.Status409Conflict);
-                    }
                 }
             }
 
@@ -225,6 +464,76 @@ public class ManifestsController : ControllerBase
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
+            var shardFileIds = shardGuids.Select(id => id.ToString()).ToList();
+            var nonFinalisableUploadIds = await _db.TusUploadLifecycles
+                .Where(l => shardFileIds.Contains(l.FileId) && l.State != TusUploadLifecycleState.COMMITTED)
+                .Select(l => l.FileId)
+                .ToListAsync();
+            if (nonFinalisableUploadIds.Count > 0)
+            {
+                _logger.LogError(
+                    "Manifest {ManifestId} references non-committed or quarantined Tus uploads: {FileIds}",
+                    manifestId,
+                    string.Join(",", nonFinalisableUploadIds));
+                return Problem(
+                    detail: "Some shards have not reached a committed upload lifecycle",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            if (_storageService != null)
+            {
+                var unreadableShardFileIds = new List<string>();
+                foreach (var shard in shards)
+                {
+                    try
+                    {
+                        await using var blob = await _storageService.OpenReadAsync(shard.StorageKey);
+                        if (!blob.CanRead)
+                        {
+                            unreadableShardFileIds.Add(shard.Id.ToString());
+                        }
+                    }
+                    catch (Exception ex) when (ex is ShardMissingException
+                        or IOException
+                        or UnauthorizedAccessException
+                        or ArgumentException)
+                    {
+                        unreadableShardFileIds.Add(shard.Id.ToString());
+                        _logger.LogError(
+                            ex,
+                            "Manifest {ManifestId} cannot activate shard {ShardId}: backing blob {StorageKey} is unreadable",
+                            manifestId,
+                            shard.Id,
+                            shard.StorageKey);
+                    }
+                }
+
+                if (unreadableShardFileIds.Count > 0)
+                {
+                    var quarantineNow = _timeProvider.GetUtcNow().UtcDateTime;
+                    var lifecycles = await _db.TusUploadLifecycles
+                        .Where(l => unreadableShardFileIds.Contains(l.FileId))
+                        .ToListAsync();
+                    foreach (var lifecycle in lifecycles)
+                    {
+                        lifecycle.State = TusUploadLifecycleState.QUARANTINED;
+                        lifecycle.UpdatedAt = quarantineNow;
+                        lifecycle.QuarantinedAt = quarantineNow;
+                        lifecycle.QuarantineReason = "manifest-finalization-blob-unreadable";
+                    }
+                    await _db.SaveChangesAsync();
+                    await tx.CommitAsync();
+
+                    _logger.LogCritical(
+                        "Manifest {ManifestId} activation blocked because shard blobs are unreadable: {FileIds}",
+                        manifestId,
+                        string.Join(",", unreadableShardFileIds));
+                    return Problem(
+                        detail: "Some shard blobs are missing or unreadable; the uploads were quarantined",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+            }
+
             foreach (var shardInfo in shardInfoList)
             {
                 var shard = shards.Single(s => s.Id == shardInfo.Id);
@@ -239,6 +548,13 @@ public class ManifestsController : ControllerBase
                 {
                     return Problem(
                         detail: "tieredShards contentLength does not match stored shard length",
+                        statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                if (shard.EnvelopeVersion.HasValue && shard.EnvelopeVersion.Value != shardInfo.EnvelopeVersion)
+                {
+                    return Problem(
+                        detail: "tieredShards envelopeVersion does not match authenticated upload metadata",
                         statusCode: StatusCodes.Status400BadRequest);
                 }
             }
@@ -267,6 +583,24 @@ public class ManifestsController : ControllerBase
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
+            // Consume only after every retryable integrity/quota validation has
+            // passed. From this point the sequence watermark, reservation,
+            // manifest, album cursor, shards, and limits commit atomically.
+            if (requireSequenceReservation)
+            {
+                var sequenceError = await ConsumeSequenceReservationAsync(
+                    album.Id,
+                    canonicalSignerPubkey,
+                    manifestId,
+                    ManifestSequenceOperations.Create,
+                    request.SequenceReservationId,
+                    request.ManifestSeq);
+                if (sequenceError != null)
+                {
+                    return sequenceError;
+                }
+            }
+
             var now = DateTimeOffset.UtcNow;
             album.CurrentVersion++;
             album.UpdatedAt = now.UtcDateTime;
@@ -282,7 +616,9 @@ public class ManifestsController : ControllerBase
                 EncryptedMeta = request.EncryptedMeta,
                 EncryptedMetaSidecar = request.EncryptedMetaSidecar,
                 Signature = request.Signature,
-                SignerPubkey = request.SignerPubkey,
+                SignerPubkey = canonicalSignerPubkey,
+                FinalizeRequestHash = finalizeRequestHash,
+                FinalizeMetadataVersion = 1,
                 ExpiresAt = request.ExpiresAt,
                 ManifestSeq = request.ManifestSeq,
                 CreatedAt = now.UtcDateTime,
@@ -338,6 +674,46 @@ public class ManifestsController : ControllerBase
             await tx.RollbackAsync();
             throw;
         }
+    }
+
+    private static bool IsExactFinalizeReplay(
+        Manifest manifest,
+        ManifestSequenceReservation? reservation,
+        CreateManifestRequest request,
+        string canonicalSignerPubkey,
+        byte[] requestHash)
+    {
+        if (manifest.IsDeleted
+            || manifest.FinalizeRequestHash == null
+            || manifest.FinalizeRequestHash.Length != requestHash.Length
+            || !CryptographicOperations.FixedTimeEquals(manifest.FinalizeRequestHash, requestHash))
+        {
+            return false;
+        }
+
+        return manifest.AlbumId == request.AlbumId
+            && manifest.ProtocolVersion == request.ProtocolVersion
+            && reservation != null
+            && reservation.Id == request.SequenceReservationId
+            && reservation.AlbumId == request.AlbumId
+            && reservation.TargetManifestId == manifest.Id
+            && reservation.OperationKind == ManifestSequenceOperations.Create
+            && reservation.SignerPubkey == canonicalSignerPubkey
+            && reservation.ManifestSeq == request.ManifestSeq
+            && reservation.ConsumedAt.HasValue;
+    }
+
+    private static byte[] ComputeFinalizeRequestHash(Guid manifestId, CreateManifestRequest request)
+    {
+        // This fingerprint is stored in the same transaction as the manifest.
+        // It closes the middleware/domain split-commit window without storing
+        // plaintext metadata: the input is already opaque ciphertext and the
+        // persisted value is a one-way SHA-256 digest.
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData("Mosaic_Finalize_Request_v1"u8);
+        hash.AppendData(manifestId.ToByteArray());
+        hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(request));
+        return hash.GetHashAndReset();
     }
 
     private IActionResult? ValidateFinalizeRequest(CreateManifestRequest request)
@@ -415,10 +791,10 @@ public class ManifestsController : ControllerBase
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            if (tieredShard.EnvelopeVersion != 3)
+            if (!ManifestEnvelopeVersions.IsSupported(tieredShard.EnvelopeVersion))
             {
                 return Problem(
-                    detail: "tieredShards envelopeVersion must be 3",
+                    detail: "tieredShards envelopeVersion must be 3 or 4",
                     statusCode: StatusCodes.Status400BadRequest);
             }
         }
@@ -450,12 +826,13 @@ public class ManifestsController : ControllerBase
 
     private static ManifestFinalizeResponse ToFinalizeResponse(
         Manifest manifest,
-        IReadOnlyCollection<(Guid Id, int Tier, int ShardIndex, string? Sha256, long? ContentLength, int EnvelopeVersion)> shardInfoList)
+        IReadOnlyCollection<(Guid Id, int Tier, int ShardIndex, string? Sha256, long? ContentLength, int EnvelopeVersion)> shardInfoList,
+        long? metadataVersion = null)
         => new()
         {
             ProtocolVersion = manifest.ProtocolVersion,
             ManifestId = manifest.Id,
-            MetadataVersion = manifest.MetadataVersion,
+            MetadataVersion = metadataVersion ?? manifest.MetadataVersion,
             CreatedAt = manifest.CreatedAt,
             TieredShards = shardInfoList
                 .OrderBy(shard => shard.Tier)
@@ -473,39 +850,74 @@ public class ManifestsController : ControllerBase
     /// <summary>
     /// Update encrypted metadata for an existing manifest without changing shard references.
     /// </summary>
+    [NonAction]
+    public Task<IActionResult> UpdateMetadata(Guid manifestId, [FromBody] UpdateManifestMetadataRequest request)
+        => UpdateMetadataCoreAsync(manifestId, request, requireSequenceReservation: false);
+
     [HttpPatch("{manifestId:guid}/metadata")]
     [ProducesResponseType<ManifestMetadataUpdateResponse>(StatusCodes.Status200OK)]
-    public async Task<IActionResult> UpdateMetadata(Guid manifestId, [FromBody] UpdateManifestMetadataRequest request)
+    public Task<IActionResult> UpdateMetadataV2(Guid manifestId, [FromBody] UpdateManifestMetadataRequest request)
+        => UpdateMetadataCoreAsync(manifestId, request, requireSequenceReservation: true);
+
+    private async Task<IActionResult> UpdateMetadataCoreAsync(
+        Guid manifestId,
+        UpdateManifestMetadataRequest request,
+        bool requireSequenceReservation)
     {
+        if (requireSequenceReservation
+            && (!request.ManifestSeq.HasValue
+                || request.ManifestSeq.Value <= 0
+                || !request.SequenceReservationId.HasValue))
+        {
+            return Problem(
+                detail: "manifestSeq and sequenceReservationId are required for v2 metadata updates",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
         {
-            var manifest = await _db.Manifests
+            // Resolve only the immutable parent key before acquiring the
+            // serialization lock. Tracking the manifest before FOR UPDATE
+            // would leave this transaction with stale metadata after waiting
+            // for a concurrent mutation to commit.
+            var albumId = await _db.Manifests
                 .IgnoreQueryFilters()
-                .Include(m => m.Album)
-                .FirstOrDefaultAsync(m => m.Id == manifestId);
-
-            if (manifest == null || manifest.IsDeleted)
+                .AsNoTracking()
+                .Where(candidate => candidate.Id == manifestId && !candidate.IsDeleted)
+                .Select(candidate => (Guid?)candidate.AlbumId)
+                .FirstOrDefaultAsync();
+            if (!albumId.HasValue)
             {
                 return NotFound();
             }
 
-            // Lock album row (FOR UPDATE is PostgreSQL-only; SQLite uses simpler locking)
+            // All signed manifest mutations serialize on the album row.
             Album? album;
             if (_db.UsesLiteProvider())
             {
-                album = await _db.Albums.FindAsync(manifest.AlbumId);
+                album = await _db.Albums.FindAsync(albumId.Value);
             }
             else
             {
                 album = await _db.Albums
-                    .FromSqlRaw("SELECT * FROM albums WHERE id = {0} FOR UPDATE", manifest.AlbumId)
+                    .FromSqlRaw("SELECT * FROM albums WHERE id = {0} FOR UPDATE", albumId.Value)
                     .FirstOrDefaultAsync();
             }
 
             if (album == null)
+            {
+                return NotFound();
+            }
+
+            // READ COMMITTED takes a fresh snapshot for this statement after
+            // the lock wait, so validation and mutation use the latest row.
+            var manifest = await _db.Manifests
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(candidate => candidate.Id == manifestId);
+            if (manifest == null || manifest.IsDeleted)
             {
                 return NotFound();
             }
@@ -516,9 +928,9 @@ public class ManifestsController : ControllerBase
                 return memberError;
             }
 
-            if (_expirationService.IsExpired(album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
+            if (_expirationService.IsExpired(album.ExpiresAt))
             {
-                await _expirationService.EnforceManifestExpirationAsync(manifestId);
+                await _expirationService.EnforceAlbumExpirationAsync(album.Id);
                 return StatusCode(StatusCodes.Status410Gone);
             }
 
@@ -566,9 +978,40 @@ public class ManifestsController : ControllerBase
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
+            var canonicalSignerPubkey = Convert.ToBase64String(signerPubkeyBytes);
+            if (requireSequenceReservation)
+            {
+                var isCurrentEpochSigner = await _db.EpochKeys.AnyAsync(key =>
+                    key.AlbumId == album.Id
+                    && key.EpochId == album.CurrentEpochId
+                    && key.SignPubkey == signerPubkeyBytes);
+                if (!isCurrentEpochSigner)
+                {
+                    return Problem(
+                        detail: "metadata updates require the current album epoch signer",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+
+                var sequenceError = await ConsumeSequenceReservationAsync(
+                    album.Id,
+                    canonicalSignerPubkey,
+                    manifest.Id,
+                    ManifestSequenceOperations.MetadataUpdate,
+                    request.SequenceReservationId,
+                    request.ManifestSeq);
+                if (sequenceError != null)
+                {
+                    return sequenceError;
+                }
+            }
+
             manifest.EncryptedMeta = encryptedMeta;
             manifest.Signature = request.Signature;
-            manifest.SignerPubkey = request.SignerPubkey;
+            manifest.SignerPubkey = canonicalSignerPubkey;
+            if (requireSequenceReservation)
+            {
+                manifest.ManifestSeq = request.ManifestSeq;
+            }
             manifest.VersionCreated = album.CurrentVersion + 1;
             manifest.MetadataVersion++;
             manifest.UpdatedAt = DateTime.UtcNow;
@@ -595,10 +1038,12 @@ public class ManifestsController : ControllerBase
     }
 
     /// <summary>
-    /// Update photo expiration settings. Album owners and editors can update photo lifecycle metadata.
+    /// Legacy in-process photo-expiration adapter. Deliberately not routable:
+    /// advancing a manifest sync cursor without a fresh v2 signed sequence can
+    /// make a valid older row fail global replay checks. Restore a public route
+    /// only with a reservation-backed signed producer.
     /// </summary>
-    [HttpPatch("{manifestId:guid}/expiration")]
-    [ProducesResponseType<ManifestExpirationUpdateResponse>(StatusCodes.Status200OK)]
+    [NonAction]
     public async Task<IActionResult> UpdateExpiration(Guid manifestId, [FromBody] UpdateManifestExpirationRequest request)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
@@ -619,9 +1064,9 @@ public class ManifestsController : ControllerBase
             return memberError;
         }
 
-        if (_expirationService.IsExpired(manifest.Album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
+        if (_expirationService.IsExpired(manifest.Album.ExpiresAt))
         {
-            await _expirationService.EnforceManifestExpirationAsync(manifestId);
+            await _expirationService.EnforceAlbumExpirationAsync(manifest.AlbumId);
             return StatusCode(StatusCodes.Status410Gone);
         }
 
@@ -680,9 +1125,9 @@ public class ManifestsController : ControllerBase
             return accessError;
         }
 
-        if (_expirationService.IsExpired(manifest.Album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
+        if (_expirationService.IsExpired(manifest.Album.ExpiresAt))
         {
-            await _expirationService.EnforceManifestExpirationAsync(manifestId);
+            await _expirationService.EnforceAlbumExpirationAsync(manifest.AlbumId);
             return StatusCode(StatusCodes.Status410Gone);
         }
 
@@ -753,34 +1198,75 @@ public class ManifestsController : ControllerBase
     /// the body — the field stays NULL and the legacy unsigned-delete
     /// behavior is preserved during migration.
     /// </summary>
+    [NonAction]
+    public Task<IActionResult> Delete(Guid manifestId, [FromBody] DeleteManifestRequest? request = null)
+        => DeleteCoreAsync(manifestId, request, requireSequenceReservation: false);
+
     [HttpDelete("{manifestId}")]
-    public async Task<IActionResult> Delete(Guid manifestId, [FromBody] DeleteManifestRequest? request = null)
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public Task<IActionResult> DeleteV2(Guid manifestId, [FromBody] DeleteManifestRequest request)
+        => DeleteCoreAsync(manifestId, request, requireSequenceReservation: true);
+
+    private async Task<IActionResult> DeleteCoreAsync(
+        Guid manifestId,
+        DeleteManifestRequest? request,
+        bool requireSequenceReservation)
     {
+        if (requireSequenceReservation
+            && (request == null
+                || string.IsNullOrWhiteSpace(request.TombstoneSignature)
+                || !request.SignerEpochId.HasValue
+                || !request.TombstoneSeq.HasValue
+                || request.TombstoneSeq.Value <= 0
+                || !request.SequenceReservationId.HasValue
+                || !request.TombstoneVersionCreated.HasValue))
+        {
+            return Problem(
+                detail: "A v2 signed tombstone, signer epoch, positive sequence, signed target version, and sequence reservation are required",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
         {
-            var manifest = await _db.Manifests.FindAsync(manifestId);
-            if (manifest == null)
+            // Resolve the immutable parent without tracking the manifest,
+            // then serialize with every other signed mutation on the album.
+            var albumId = await _db.Manifests
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(candidate => candidate.Id == manifestId && !candidate.IsDeleted)
+                .Select(candidate => (Guid?)candidate.AlbumId)
+                .FirstOrDefaultAsync();
+            if (!albumId.HasValue)
             {
                 return NotFound();
             }
 
-            // Lock album (FOR UPDATE is PostgreSQL-only; SQLite uses simpler locking)
             Album? album;
             if (_db.UsesLiteProvider())
             {
-                album = await _db.Albums.FindAsync(manifest.AlbumId);
+                album = await _db.Albums.FindAsync(albumId.Value);
             }
             else
             {
                 album = await _db.Albums
-                    .FromSqlRaw("SELECT * FROM albums WHERE id = {0} FOR UPDATE", manifest.AlbumId)
+                    .FromSqlRaw("SELECT * FROM albums WHERE id = {0} FOR UPDATE", albumId.Value)
                     .FirstOrDefaultAsync();
             }
 
             if (album == null)
+            {
+                return NotFound();
+            }
+
+            // Load after the lock so the signed target version, ETag state,
+            // and deletion decision cannot come from a pre-wait snapshot.
+            var manifest = await _db.Manifests
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(candidate => candidate.Id == manifestId);
+            if (manifest == null || manifest.IsDeleted)
             {
                 return NotFound();
             }
@@ -792,38 +1278,84 @@ public class ManifestsController : ControllerBase
                 return memberError;
             }
 
-            if (_expirationService.IsExpired(album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
+            if (_expirationService.IsExpired(album.ExpiresAt))
             {
-                await _expirationService.EnforceManifestExpirationAsync(manifestId);
+                await _expirationService.EnforceAlbumExpirationAsync(album.Id);
                 return StatusCode(StatusCodes.Status410Gone);
             }
 
-            // A2: persist the signed tombstone transcript when supplied.
-            // Both fields must be present together. We do NOT verify the
-            // signature server-side — the canonical check is the client's
-            // pre-purge verification (zero-knowledge invariant: the server
-            // is never the authority on signature validity). Other client
-            // sessions verify the signature using the album's published
-            // epoch signing pubkey before acting on the tombstone.
-            if (request is not null
-                && !string.IsNullOrEmpty(request.TombstoneSignature)
-                && request.SignerEpochId is int signerEpochId)
+            if (requireSequenceReservation)
             {
-                if (!TryDecodeBase64(request.TombstoneSignature, out var signatureBytes)
-                    || signatureBytes.Length == 0)
+                var v2Request = request!;
+                if (!TryDecodeBase64(v2Request.TombstoneSignature, out var signatureBytes)
+                    || signatureBytes.Length != 64)
                 {
                     return Problem(
-                        detail: "tombstoneSignature must be valid base64 and non-empty",
+                        detail: "tombstoneSignature must be a base64-encoded 64-byte Ed25519 signature",
                         statusCode: StatusCodes.Status400BadRequest);
                 }
-                if (signatureBytes.Length != 64)
+
+                if (v2Request.SignerEpochId != album.CurrentEpochId)
                 {
                     return Problem(
-                        detail: "tombstoneSignature must be a 64-byte Ed25519 signature",
+                        detail: "tombstones require the current album epoch signer",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+
+                if (v2Request.TombstoneVersionCreated != manifest.VersionCreated)
+                {
+                    return Problem(
+                        detail: "tombstoneVersionCreated does not match the current target manifest version",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+
+                var reservedSignerPubkey = await _db.ManifestSequenceReservations
+                    .Where(candidate => candidate.Id == v2Request.SequenceReservationId)
+                    .Select(candidate => candidate.SignerPubkey)
+                    .FirstOrDefaultAsync();
+                if (!TryDecodeBase64(reservedSignerPubkey, out var signerPubkeyBytes)
+                    || signerPubkeyBytes.Length != 32
+                    || !await _db.EpochKeys.AnyAsync(key =>
+                        key.AlbumId == album.Id
+                        && key.EpochId == album.CurrentEpochId
+                        && key.SignPubkey == signerPubkeyBytes))
+                {
+                    return Problem(
+                        detail: "Sequence reservation signer is not the current epoch signing key",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+
+                var sequenceError = await ConsumeSequenceReservationAsync(
+                    album.Id,
+                    reservedSignerPubkey!,
+                    manifest.Id,
+                    ManifestSequenceOperations.Tombstone,
+                    v2Request.SequenceReservationId,
+                    v2Request.TombstoneSeq);
+                if (sequenceError != null)
+                {
+                    return sequenceError;
+                }
+
+                manifest.TombstoneSignature = signatureBytes;
+                manifest.TombstoneSignerEpochId = v2Request.SignerEpochId;
+                manifest.TombstoneProtocolVersion = 2;
+                manifest.TombstoneSeq = v2Request.TombstoneSeq;
+                manifest.TombstoneVersionCreated = v2Request.TombstoneVersionCreated;
+            }
+            else if (request is not null
+                && !string.IsNullOrEmpty(request.TombstoneSignature)
+                && request.SignerEpochId is int legacySignerEpochId)
+            {
+                if (!TryDecodeBase64(request.TombstoneSignature, out var signatureBytes)
+                    || signatureBytes.Length != 64)
+                {
+                    return Problem(
+                        detail: "tombstoneSignature must be a base64-encoded 64-byte Ed25519 signature",
                         statusCode: StatusCodes.Status400BadRequest);
                 }
                 manifest.TombstoneSignature = signatureBytes;
-                manifest.TombstoneSignerEpochId = signerEpochId;
+                manifest.TombstoneSignerEpochId = legacySignerEpochId;
             }
             else if (request is not null
                 && (!string.IsNullOrEmpty(request.TombstoneSignature) ^ request.SignerEpochId.HasValue))
@@ -833,16 +1365,19 @@ public class ManifestsController : ControllerBase
                     statusCode: StatusCodes.Status400BadRequest);
             }
 
-            // Soft delete
+            // Advance the row to a deletion cursor while preserving the
+            // pre-delete version separately for v2 transcript verification.
+            var deletedAt = _timeProvider.GetUtcNow().UtcDateTime;
             manifest.IsDeleted = true;
-            manifest.UpdatedAt = DateTime.UtcNow;
+            manifest.UpdatedAt = deletedAt;
             album.CurrentVersion++;
-            album.UpdatedAt = DateTime.UtcNow;
+            manifest.VersionCreated = album.CurrentVersion;
+            album.UpdatedAt = deletedAt;
 
             var cleanupResult = await ShardReferenceCleanup.DetachManifestShardsAsync(
                 _db,
                 [manifestId],
-                DateTime.UtcNow);
+                deletedAt);
 
             // Update album limits - decrement photo count and size
             var albumLimits = await _db.AlbumLimits.FindAsync(album.Id);
@@ -850,7 +1385,7 @@ public class ManifestsController : ControllerBase
             {
                 albumLimits.CurrentPhotoCount = Math.Max(0, albumLimits.CurrentPhotoCount - 1);
                 albumLimits.CurrentSizeBytes = Math.Max(0, albumLimits.CurrentSizeBytes - cleanupResult.TotalDetachedSizeBytes);
-                albumLimits.UpdatedAt = DateTime.UtcNow;
+                albumLimits.UpdatedAt = deletedAt;
             }
 
             await _db.SaveChangesAsync();
@@ -863,6 +1398,114 @@ public class ManifestsController : ControllerBase
             await tx.RollbackAsync();
             throw;
         }
+    }
+
+    private async Task<ManifestSequenceState> GetOrCreateSequenceStateAsync(
+        Guid albumId,
+        string canonicalSignerPubkey)
+    {
+        var state = await _db.ManifestSequenceStates.FindAsync(albumId, canonicalSignerPubkey);
+        if (state != null)
+        {
+            return state;
+        }
+
+        var priorManifestSequence = await _db.Manifests
+            .IgnoreQueryFilters()
+            .Where(manifest => manifest.AlbumId == albumId
+                && manifest.SignerPubkey == canonicalSignerPubkey
+                && manifest.ManifestSeq.HasValue)
+            .MaxAsync(manifest => (long?)manifest.ManifestSeq) ?? 0L;
+        var priorConsumedReservation = await _db.ManifestSequenceReservations
+            .Where(reservation => reservation.AlbumId == albumId
+                && reservation.SignerPubkey == canonicalSignerPubkey
+                && reservation.ConsumedAt.HasValue)
+            .MaxAsync(reservation => (long?)reservation.ManifestSeq) ?? 0L;
+        var priorAllocatedReservation = await _db.ManifestSequenceReservations
+            .Where(reservation => reservation.AlbumId == albumId
+                && reservation.SignerPubkey == canonicalSignerPubkey)
+            .MaxAsync(reservation => (long?)reservation.ManifestSeq) ?? 0L;
+        var priorConsumedSequence = Math.Max(priorManifestSequence, priorConsumedReservation);
+
+        state = new ManifestSequenceState
+        {
+            AlbumId = albumId,
+            SignerPubkey = canonicalSignerPubkey,
+            LastAllocatedSequence = Math.Max(priorConsumedSequence, priorAllocatedReservation),
+            LastConsumedSequence = priorConsumedSequence
+        };
+        _db.ManifestSequenceStates.Add(state);
+        return state;
+    }
+
+    private async Task<IActionResult?> ConsumeSequenceReservationAsync(
+        Guid albumId,
+        string canonicalSignerPubkey,
+        Guid targetManifestId,
+        string operationKind,
+        Guid? reservationId,
+        long? manifestSeq)
+    {
+        if (!reservationId.HasValue || !manifestSeq.HasValue || manifestSeq.Value <= 0)
+        {
+            return Problem(
+                detail: "A positive signed sequence and sequenceReservationId are required",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var reservation = await _db.ManifestSequenceReservations
+            .FirstOrDefaultAsync(candidate => candidate.Id == reservationId.Value);
+        if (reservation == null)
+        {
+            return Problem(
+                detail: "Sequence reservation was not found",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        if (reservation.AlbumId != albumId
+            || reservation.SignerPubkey != canonicalSignerPubkey
+            || reservation.TargetManifestId != targetManifestId
+            || reservation.OperationKind != operationKind
+            || reservation.ManifestSeq != manifestSeq.Value)
+        {
+            return Problem(
+                detail: "Sequence reservation does not match this signed mutation",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        if (reservation.ConsumedAt.HasValue)
+        {
+            return Problem(
+                detail: "Sequence reservation has already been consumed",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        var state = await _db.ManifestSequenceStates.FindAsync(albumId, canonicalSignerPubkey);
+        if (state == null)
+        {
+            return Problem(
+                detail: "Sequence allocator state was not found; reserve a new sequence and re-sign the mutation",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        if (manifestSeq.Value <= state.LastConsumedSequence)
+        {
+            var problem = new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "Conflict",
+                Detail = "Manifest sequence is stale because a newer reservation already committed; retry the sequence reservation and re-sign the mutation"
+            };
+            problem.Extensions["code"] = "MANIFEST_SEQUENCE_STALE";
+            return new ObjectResult(problem)
+            {
+                StatusCode = StatusCodes.Status409Conflict
+            };
+        }
+
+        state.LastConsumedSequence = manifestSeq.Value;
+        reservation.ConsumedAt = _timeProvider.GetUtcNow().UtcDateTime;
+        return null;
     }
 
     private static bool TryDecodeBase64(string? value, out byte[] bytes)
@@ -886,7 +1529,10 @@ public class ManifestsController : ControllerBase
     }
 
     private void SetManifestETag(Manifest manifest)
-        => Response.Headers["ETag"] = $"\"{manifest.MetadataVersion}\"";
+        => SetManifestETag(manifest.MetadataVersion);
+
+    private void SetManifestETag(long metadataVersion)
+        => Response.Headers["ETag"] = $"\"{metadataVersion}\"";
 
     private IActionResult? ValidateIfMatchOrWarn(Manifest manifest, string endpointName)
     {

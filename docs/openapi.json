@@ -258,6 +258,17 @@
         "tags": [
           "Albums"
         ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -279,8 +290,25 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "OK"
+          "201": {
+            "description": "Created",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumCreateResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumCreateResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumCreateResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -368,75 +396,6 @@
         "responses": {
           "200": {
             "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/albums/{albumId}/photos/{photoId}/expiration": {
-      "patch": {
-        "tags": [
-          "Albums"
-        ],
-        "parameters": [
-          {
-            "name": "albumId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "photoId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateManifestExpirationRequest"
-              }
-            },
-            "text/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateManifestExpirationRequest"
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateManifestExpirationRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/PhotoExpirationUpdateResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PhotoExpirationUpdateResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PhotoExpirationUpdateResponse"
-                }
-              }
-            }
           }
         }
       }
@@ -1137,7 +1096,7 @@
         }
       }
     },
-    "/api/v1/manifests": {
+    "/api/v1/manifests/sequence-reservations": {
       "post": {
         "tags": [
           "Manifests"
@@ -1146,17 +1105,17 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateManifestRequest"
+                "$ref": "#/components/schemas/ReserveManifestSequenceRequest"
               }
             },
             "text/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateManifestRequest"
+                "$ref": "#/components/schemas/ReserveManifestSequenceRequest"
               }
             },
             "application/*+json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateManifestRequest"
+                "$ref": "#/components/schemas/ReserveManifestSequenceRequest"
               }
             }
           },
@@ -1164,7 +1123,24 @@
         },
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestSequenceReservationResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestSequenceReservationResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestSequenceReservationResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1182,6 +1158,14 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
             }
           }
         ],
@@ -1207,7 +1191,24 @@
         },
         "responses": {
           "201": {
-            "description": "Created"
+            "description": "Created",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestFinalizeResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestFinalizeResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManifestFinalizeResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1272,66 +1273,6 @@
         }
       }
     },
-    "/api/v1/manifests/{manifestId}/expiration": {
-      "patch": {
-        "tags": [
-          "Manifests"
-        ],
-        "parameters": [
-          {
-            "name": "manifestId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateManifestExpirationRequest"
-              }
-            },
-            "text/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateManifestExpirationRequest"
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateManifestExpirationRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManifestExpirationUpdateResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManifestExpirationUpdateResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManifestExpirationUpdateResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/manifests/{manifestId}": {
       "get": {
         "tags": [
@@ -1373,45 +1314,25 @@
           "content": {
             "application/json": {
               "schema": {
-                "oneOf": [
-                  {
-                    "nullable": true
-                  },
-                  {
-                    "$ref": "#/components/schemas/DeleteManifestRequest"
-                  }
-                ]
+                "$ref": "#/components/schemas/DeleteManifestRequest"
               }
             },
             "text/json": {
               "schema": {
-                "oneOf": [
-                  {
-                    "nullable": true
-                  },
-                  {
-                    "$ref": "#/components/schemas/DeleteManifestRequest"
-                  }
-                ]
+                "$ref": "#/components/schemas/DeleteManifestRequest"
               }
             },
             "application/*+json": {
               "schema": {
-                "oneOf": [
-                  {
-                    "nullable": true
-                  },
-                  {
-                    "$ref": "#/components/schemas/DeleteManifestRequest"
-                  }
-                ]
+                "$ref": "#/components/schemas/DeleteManifestRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
-          "200": {
-            "description": "OK"
+          "204": {
+            "description": "No Content"
           }
         }
       }
@@ -1901,6 +1822,15 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -1924,8 +1854,25 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "OK"
+          "201": {
+            "description": "Created",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareLinkResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareLinkResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareLinkResponse"
+                }
+              }
+            }
           }
         }
       },
@@ -2421,6 +2368,77 @@
           }
         }
       },
+      "AlbumCreateResponse": {
+        "required": [
+          "id",
+          "ownerId",
+          "currentEpochId",
+          "currentVersion",
+          "createdAt",
+          "encryptedName",
+          "encryptedDescription",
+          "expiresAt",
+          "expirationWarningDays",
+          "memberRosterSignature",
+          "memberRosterSignerEpochId",
+          "memberRosterVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currentEpochId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int32"
+          },
+          "currentVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int64"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "encryptedName": {
+            "type": "string",
+            "nullable": true
+          },
+          "encryptedDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "expirationWarningDays": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int32"
+          },
+          "memberRosterSignature": {
+            "type": "string",
+            "format": "byte",
+            "nullable": true
+          },
+          "memberRosterSignerEpochId": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int32",
+            "nullable": true
+          },
+          "memberRosterVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int64",
+            "nullable": true
+          }
+        }
+      },
       "AlbumDescriptionUpdateResponse": {
         "required": [
           "id",
@@ -2649,7 +2667,9 @@
           "encryptedMeta",
           "signature",
           "signerPubkey",
-          "shardIds"
+          "tieredShards",
+          "manifestSeq",
+          "sequenceReservationId"
         ],
         "type": "object",
         "properties": {
@@ -2689,7 +2709,8 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "nullable": true
           },
           "tier": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
@@ -2698,21 +2719,27 @@
           },
           "tieredShards": {
             "maxItems": 1000,
+            "minItems": 1,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TieredShardInfo"
-            },
-            "nullable": true
+            }
           },
           "expiresAt": {
             "type": "string",
+            "description": "Reserved for a future signed lifecycle operation. Omit this field or send null; routed v2 finalization rejects a non-null value with HTTP 400.",
             "format": "date-time",
             "nullable": true
           },
           "manifestSeq": {
+            "maximum": 9223372036854776000,
+            "minimum": 1,
             "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "format": "int64",
-            "nullable": true
+            "format": "int64"
+          },
+          "sequenceReservationId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -2766,19 +2793,34 @@
       "DeleteManifestRequest": {
         "required": [
           "tombstoneSignature",
-          "signerEpochId"
+          "signerEpochId",
+          "tombstoneSeq",
+          "sequenceReservationId",
+          "tombstoneVersionCreated"
         ],
         "type": "object",
         "properties": {
           "tombstoneSignature": {
             "maxLength": 128,
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
           "signerEpochId": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "format": "int32",
-            "nullable": true
+            "format": "int32"
+          },
+          "tombstoneSeq": {
+            "maximum": 9223372036854776000,
+            "minimum": 1,
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int64"
+          },
+          "sequenceReservationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tombstoneVersionCreated": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int64"
           }
         }
       },
@@ -2975,26 +3017,33 @@
           }
         }
       },
-      "ManifestExpirationUpdateResponse": {
+      "ManifestFinalizeResponse": {
         "required": [
-          "id",
-          "expiresAt",
-          "versionCreated"
+          "tieredShards"
         ],
         "type": "object",
         "properties": {
-          "id": {
+          "protocolVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int32"
+          },
+          "manifestId": {
             "type": "string",
             "format": "uuid"
           },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "versionCreated": {
+          "metadataVersion": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "format": "int64"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tieredShards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TieredShardInfo"
+            }
           }
         }
       },
@@ -3010,6 +3059,23 @@
             "format": "uuid"
           },
           "versionCreated": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int64"
+          }
+        }
+      },
+      "ManifestSequenceReservationResponse": {
+        "required": [
+          "reservationId",
+          "manifestSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "reservationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "manifestSeq": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "format": "int64"
           }
@@ -3117,34 +3183,6 @@
           }
         }
       },
-      "PhotoExpirationUpdateResponse": {
-        "required": [
-          "id",
-          "expiresAt",
-          "versionCreated",
-          "updatedAt"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "versionCreated": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "format": "int64"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
       "PhotoResponse": {
         "required": [
           "encryptedMeta",
@@ -3193,14 +3231,13 @@
             }
           },
           "tieredShards": {
+            "type": "object",
             "oneOf": [
-              {
-                "nullable": true
-              },
               {
                 "$ref": "#/components/schemas/TieredShardsResponse"
               }
-            ]
+            ],
+            "nullable": true
           }
         }
       },
@@ -3296,6 +3333,38 @@
         "properties": {
           "encryptedName": {
             "maxLength": 2048,
+            "type": "string"
+          }
+        }
+      },
+      "ReserveManifestSequenceRequest": {
+        "required": [
+          "albumId",
+          "signerPubkey",
+          "targetManifestId",
+          "operationId",
+          "operationKind"
+        ],
+        "type": "object",
+        "properties": {
+          "albumId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "signerPubkey": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "targetManifestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationKind": {
+            "maxLength": 32,
             "type": "string"
           }
         }
@@ -3653,24 +3722,13 @@
           }
         }
       },
-      "UpdateManifestExpirationRequest": {
-        "required": [
-          "expiresAt"
-        ],
-        "type": "object",
-        "properties": {
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          }
-        }
-      },
       "UpdateManifestMetadataRequest": {
         "required": [
           "encryptedMeta",
           "signature",
-          "signerPubkey"
+          "signerPubkey",
+          "manifestSeq",
+          "sequenceReservationId"
         ],
         "type": "object",
         "properties": {
@@ -3685,6 +3743,16 @@
           "signerPubkey": {
             "maxLength": 128,
             "type": "string"
+          },
+          "manifestSeq": {
+            "maximum": 9223372036854776000,
+            "minimum": 1,
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "format": "int64"
+          },
+          "sequenceReservationId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },

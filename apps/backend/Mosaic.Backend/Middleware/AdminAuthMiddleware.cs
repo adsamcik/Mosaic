@@ -32,7 +32,7 @@ public class AdminAuthMiddleware
         var authSub = context.Items["AuthSub"] as string;
         if (string.IsNullOrEmpty(authSub))
         {
-            _logger.AdminAccessDenied(Guid.Empty, context.Request.Path.Value ?? "/api/v1/admin");
+            _logger.AdminAccessDenied(Guid.Empty, SafeRequestPath.ForLogging(context));
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new { error = "Authentication required" });
             return;
@@ -43,7 +43,7 @@ public class AdminAuthMiddleware
             ?? await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.AuthSub == authSub);
         if (user == null)
         {
-            _logger.AdminAccessDenied(Guid.Empty, context.Request.Path.Value ?? "/api/v1/admin");
+            _logger.AdminAccessDenied(Guid.Empty, SafeRequestPath.ForLogging(context));
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new { error = "User not found" });
             return;
@@ -51,7 +51,7 @@ public class AdminAuthMiddleware
 
         if (!user.IsAdmin)
         {
-            _logger.AdminAccessDenied(user.Id, context.Request.Path.Value ?? "/api/v1/admin");
+            _logger.AdminAccessDenied(user.Id, SafeRequestPath.ForLogging(context));
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             await context.Response.WriteAsJsonAsync(new { error = "Admin privileges required" });
             return;

@@ -1,5 +1,10 @@
 # Mosaic Implementation Plan
 
+> **Status:** Historical design and ticket-planning record dated 2025-12-27.
+> It is not an active roadmap, deployment guide, release declaration, or
+> statement that v1.0 shipped. See [RELEASE_STATE.md](RELEASE_STATE.md) for the
+> current maturity and immutable release-evidence contract.
+
 **Version:** 1.0  
 **Date:** December 27, 2025  
 **Target Scale:** ≤50 users  
@@ -1340,23 +1345,26 @@ DB_PASSWORD=<generate with: openssl rand -base64 32>
 
 ### 5.3 Backup Script
 
+This section originally sketched a database-only dump followed by an unrelated
+blob sync. That historical sketch is unsafe for the implemented manifest/blob
+model and must not be used: a database from one logical instant and blobs from
+another can create manifest rows whose ciphertext files do not exist.
+
+For the supplied Compose deployment, the only supported operator procedure is
+the paired helper:
+
 ```bash
-#!/bin/bash
-# scripts/backup.sh
-set -e
-
-BACKUP_DIR="/backups"
-DATE=$(date +%Y%m%d_%H%M%S)
-
-# Database backup
-docker exec mosaic-postgres pg_dump -U mosaic mosaic | gzip > "$BACKUP_DIR/db_$DATE.sql.gz"
-
-# Keep last 7 days
-find "$BACKUP_DIR" -name "db_*.sql.gz" -mtime +7 -delete
-
-# Sync blobs to offsite (configure rclone separately)
-# rclone sync /data/blobs remote:mosaic-backups/blobs
+./scripts/mosaic.sh backup
+./scripts/mosaic.sh verify-backup backups/<timestamp>
+./scripts/mosaic.sh restore backups/<timestamp>
 ```
+
+PowerShell uses the equivalent `mosaic.ps1` commands. The helpers quiesce the
+backend, capture and hash-bind the database dump and blob archive, rehearse an
+isolated restore, reconcile every active shard's size and digest, and refuse a
+partial or mixed restore. Copy and expire the resulting backup directory as a
+single indivisible unit. Current scheduling and disaster-recovery guidance is
+in [operations/BACKUP.md](operations/BACKUP.md).
 
 ### 5.4 Health Check Endpoint
 

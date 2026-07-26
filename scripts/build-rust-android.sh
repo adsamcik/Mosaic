@@ -78,6 +78,7 @@ rm -rf "$kotlin_out_dir"
 mkdir -p "$kotlin_out_dir"
 uniffi-bindgen generate \
   --language kotlin \
+  --config "$PROJECT_ROOT/crates/mosaic-uniffi/uniffi.toml" \
   --out-dir "$kotlin_out_dir" \
   --no-format \
   --library \

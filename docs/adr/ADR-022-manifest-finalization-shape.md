@@ -2,7 +2,52 @@
 
 ## Status
 
-Accepted. Closes [SPEC-LateV1ProtocolFreeze.md](../specs/SPEC-LateV1ProtocolFreeze.md) explicitly-open item #1.
+Accepted as the historical v1 shape. The producer route, replay, sequence, and
+idempotency details are superseded by the current-contract amendment below.
+This ADR still records why tiered shard metadata and a canonical signed
+transcript are required.
+
+## Current-contract amendment (2026-07-26)
+
+The routable producer is an ordered, reservation-backed v2 lifecycle:
+
+1. Choose a stable `operationId` and target manifest ID, then call
+   `POST /api/v1/manifests/sequence-reservations` with `albumId`, the current
+   epoch `signerPubkey`, the target ID, and `operationKind` equal to `Create`,
+   `MetadataUpdate`, or `Tombstone`.
+2. The backend allocates a strictly increasing positive `manifestSeq` per
+   `(albumId, canonical signerPubkey)`. Retrying the same operation ID with the
+   same binding returns the same reservation; attempting to rebind it returns
+   `409 Conflict`.
+3. Bind the returned sequence into the v2 manifest/update/tombstone signature,
+   then submit the mutation with its `sequenceReservationId`. The reservation
+   must match the album, signer, target, operation kind, and sequence and is
+   consumed atomically with the mutation.
+4. Create uses the client-addressed
+   `POST /api/v1/manifests/{manifestId}/finalize`; metadata update uses
+   `PATCH /api/v1/manifests/{manifestId}/metadata`; deletion uses the signed-v2
+   body on `DELETE /api/v1/manifests/{manifestId}`. The legacy direct
+   `POST /api/v1/manifests` producer is non-routable.
+5. Public finalize and metadata update require a positive `manifestSeq` and a
+   sequence reservation. Tombstones require their positive signed sequence,
+   signed target version, current epoch, and matching `Tombstone` reservation.
+6. `Idempotency-Key` is optional on finalize. Exact retries are intrinsically
+   safe through the client-selected manifest ID and stored finalize-request
+   hash; a changed request for the same ID conflicts. If supplied, the general
+   replay cache uses its current 24-hour retention. Album and share-link create
+   are separate APIs where the header is mandatory.
+7. Clients keep replay checkpoints per logical manifest in a separate encrypted
+   security-state collection. An older sequence for the same manifest, or the
+   same sequence with different signed content, fails closed. A single
+   album-wide receive watermark must not reject a distinct manifest merely
+   because sync delivered it after a higher sequence from the same signer.
+8. Per-photo expiration is not part of the v2 producer: a non-null `expiresAt`
+   is rejected and the old expiration handlers are non-routable.
+
+The canonical HTTP schema is generated at [`docs/openapi.json`](../openapi.json)
+and drift-gated in CI. Where the original frozen-v1 text below conflicts with
+this amendment, the amendment and generated schema control; the older route and
+30-day mandatory-idempotency discussion are retained only as decision history.
 
 ## Context
 

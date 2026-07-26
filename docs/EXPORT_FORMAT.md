@@ -152,6 +152,11 @@ Tombstone-deleted manifests (`IsDeleted: true`) are included so the user
 sees their full history. The `ManifestShards` array is ordered by
 `(ChunkIndex, ShardIndex)`.
 
+`ExpiresAt` is retained only to round-trip historical rows. Current public v2
+finalization rejects a non-null value, the old per-photo mutation handlers are
+non-routable, and automatic per-photo expiration is disabled; the export field
+does not advertise a supported producer capability.
+
 ---
 
 ## Binary files
@@ -244,4 +249,4 @@ written for `1.x` MUST tolerate unknown keys and unknown top-level files.
 
 | Version | Date       | Notes |
 | ------- | ---------- | ----- |
-| `1.0`   | 2025-04-01 | Initial release (v1.0.x s38, GDPR Article 20). |
+| `1.0`   | 2025-04-01 | Initial source implementation (historical workstream s38, GDPR Article 20). |

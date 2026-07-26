@@ -39,6 +39,10 @@ vi.mock('tus-js-client', () => ({
 }));
 
 import { tusUpload } from '../tus-upload';
+function encryptedEnvelope(): Uint8Array {
+  return Uint8Array.of(0x53, 0x47, 0x7a, 0x6b, 3, 1);
+}
+
 
 function makeStatusError(status: number, message = `HTTP ${status}`): TusTestError {
   const err = new Error(message) as TusTestError;
@@ -56,7 +60,7 @@ describe('tusUpload onShouldRetry server-error cap', () => {
     // Kick off upload — we only need the captured options, not completion.
     void tusUpload(
       'album-001',
-      new Uint8Array([1, 2, 3]),
+      encryptedEnvelope(),
       'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8',
       7,
     ).catch(() => {
@@ -73,7 +77,7 @@ describe('tusUpload onShouldRetry server-error cap', () => {
   });
 
   it('caps 503 retries the same way as 500', () => {
-    void tusUpload('a', new Uint8Array([1]), 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8', 0).catch(() => {
+    void tusUpload('a', encryptedEnvelope(), 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8', 0).catch(() => {
       /* swallow */
     });
     const { onShouldRetry } = tusMock.uploads[0]!.options;
@@ -84,7 +88,7 @@ describe('tusUpload onShouldRetry server-error cap', () => {
   });
 
   it('still retries network errors (status === undefined) at every attempt', () => {
-    void tusUpload('a', new Uint8Array([1]), 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8', 0).catch(() => {
+    void tusUpload('a', encryptedEnvelope(), 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8', 0).catch(() => {
       /* swallow */
     });
     const { onShouldRetry } = tusMock.uploads[0]!.options;
@@ -95,7 +99,7 @@ describe('tusUpload onShouldRetry server-error cap', () => {
   });
 
   it('does not retry 4xx errors except the explicit transient set', () => {
-    void tusUpload('a', new Uint8Array([1]), 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8', 0).catch(() => {
+    void tusUpload('a', encryptedEnvelope(), 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8', 0).catch(() => {
       /* swallow */
     });
     const { onShouldRetry } = tusMock.uploads[0]!.options;

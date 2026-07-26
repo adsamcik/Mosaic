@@ -500,12 +500,16 @@ public sealed class SidecarSignalingTests : IClassFixture<SidecarSignalingTests.
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("Auth:ServerSecret", _serverSecret);
+            // Program conditionally registers Sidecar services during top-level
+            // minimal-host construction, so this must be a host setting.
+            builder.UseSetting("SidecarSignaling:Enabled", "true");
             builder.UseEnvironment("Testing");
             builder.ConfigureAppConfiguration((_, config) =>
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["Auth:ServerSecret"] = _serverSecret
+                    ["Auth:ServerSecret"] = _serverSecret,
+                    ["SidecarSignaling:Enabled"] = "true"
                 });
             });
             builder.ConfigureServices(services =>

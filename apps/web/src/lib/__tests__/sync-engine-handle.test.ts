@@ -9,6 +9,10 @@ const mocks = vi.hoisted(() => ({
     getAlbumVersion: vi.fn(),
     insertManifests: vi.fn(),
     setAlbumVersion: vi.fn(),
+    getManifestSeqHighWater: vi.fn(),
+    getAlbumEpochHighWater: vi.fn(),
+    getManifestReplayCheckpoint: vi.fn(),
+    listManifestReplayCheckpoints: vi.fn(),
   },
   crypto: {
     verifyManifestWithEpoch: vi.fn(),
@@ -41,10 +45,11 @@ class MockApiError extends Error {
 vi.mock('../api', () => ({
   getApi: () => mocks.api,
   ApiError: MockApiError,
-  fromBase64: (value: string) =>
-    value === 'signer-pubkey'
-      ? new Uint8Array(32).fill(7)
-      : new TextEncoder().encode(value),
+  fromBase64: (value: string) => {
+    if (value === 'signer-pubkey') return new Uint8Array(32).fill(7);
+    if (value === 'signature') return new Uint8Array(64).fill(8);
+    return new TextEncoder().encode(value);
+  },
 }));
 
 vi.mock('../crypto-client', () => ({
@@ -96,11 +101,15 @@ describe('syncEngine handle-based manifest decryption', () => {
     mocks.db.getAlbumVersion.mockResolvedValue(0);
     mocks.db.insertManifests.mockResolvedValue(undefined);
     mocks.db.setAlbumVersion.mockResolvedValue(undefined);
+    mocks.db.getManifestSeqHighWater.mockResolvedValue(null);
+    mocks.db.getAlbumEpochHighWater.mockResolvedValue(null);
+    mocks.db.getManifestReplayCheckpoint.mockResolvedValue(null);
+    mocks.db.listManifestReplayCheckpoints.mockResolvedValue([]);
     mocks.crypto.verifyManifestWithEpoch.mockResolvedValue(true);
     mocks.crypto.decryptManifestWithEpoch.mockResolvedValue(
       new TextEncoder().encode(
         JSON.stringify({
-          id: 'photo-1',
+          id: 'manifest-1',
           assetId: 'asset-1',
           albumId: 'album-1',
           filename: 'photo.jpg',
@@ -187,5 +196,117 @@ describe('syncEngine handle-based manifest decryption', () => {
       expect.any(Uint8Array),
     );
     expectNoRawSeedBytesThroughWorkerCalls();
+  });
+
+  it('holds the cursor when a manifest sequence is zero', async () => {
+    mocks.api.syncAlbum.mockResolvedValueOnce({
+      albumVersion: 1,
+      currentEpochId: 7,
+      hasMore: false,
+      manifests: [
+        {
+          id: 'manifest-1',
+          albumId: 'album-1',
+          versionCreated: 1,
+          isDeleted: false,
+          encryptedMeta: 'encrypted-meta',
+          signature: 'signature',
+          signerPubkey: 'signer-pubkey',
+          shardIds: ['shard-1'],
+          manifestSeq: 0,
+        },
+      ],
+    });
+
+    const { syncEngine } = await import('../sync-engine');
+
+    await syncEngine.sync('album-1', 'epoch-handle-7' as EpochHandleId);
+
+    expect(mocks.crypto.verifyManifestWithEpoch).not.toHaveBeenCalled();
+    expect(mocks.db.insertManifests).not.toHaveBeenCalled();
+    expect(mocks.db.setAlbumVersion).toHaveBeenLastCalledWith('album-1', 0);
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      'Manifest sequence is outside the browser-safe integer range',
+      expect.objectContaining({ manifestId: 'manifest-1' }),
+    );
+  });
+
+  it('rejects a replay without an exact retained v2 head', async () => {
+    let highWater: number | null = null;
+    let albumVersion = 0;
+    mocks.db.getAlbumVersion.mockImplementation(async () => albumVersion);
+    mocks.db.getManifestSeqHighWater.mockImplementation(async () =>
+      highWater,
+    );
+    mocks.db.insertManifests.mockImplementation(async (
+      _manifests: unknown[],
+      marks: Array<{ manifestSeq: number }> = [],
+      checkpoint?: { albumVersion: number },
+    ) => {
+      highWater = marks[0]?.manifestSeq ?? highWater;
+      if (checkpoint) {
+        albumVersion = checkpoint.albumVersion;
+      }
+    });
+    mocks.db.setAlbumVersion.mockImplementation(async (
+      _albumId: string,
+      version: number,
+    ) => {
+      albumVersion = version;
+    });
+
+    const replayedManifest = {
+      id: 'manifest-1',
+      albumId: 'album-1',
+      versionCreated: 1,
+      isDeleted: false,
+      encryptedMeta: 'encrypted-meta',
+      signature: 'signature',
+      signerPubkey: 'signer-pubkey',
+      shardIds: ['shard-1'],
+      manifestSeq: 17,
+    };
+
+    mocks.api.syncAlbum
+      .mockResolvedValueOnce({
+        albumVersion: 1,
+        currentEpochId: 7,
+        hasMore: false,
+        manifests: [replayedManifest],
+      })
+      .mockResolvedValueOnce({
+        // A compromised server can attach a newer unsigned album cursor
+        // to an old signed row. The durable v2 high-water must reject it.
+        albumVersion: 2,
+        currentEpochId: 7,
+        hasMore: false,
+        manifests: [{ ...replayedManifest, versionCreated: 2 }],
+      });
+
+    const { syncEngine } = await import('../sync-engine');
+
+    await syncEngine.sync('album-1', 'epoch-handle-7' as EpochHandleId);
+    await syncEngine.sync('album-1', 'epoch-handle-7' as EpochHandleId);
+
+    expect(mocks.db.getManifestSeqHighWater).toHaveBeenCalled();
+    expect(mocks.crypto.verifyManifestWithEpoch).toHaveBeenCalledWith(
+      expect.objectContaining({ manifestSeq: 17 }),
+      expect.any(Uint8Array),
+      expect.any(Uint8Array),
+    );
+    expect(mocks.db.insertManifests).toHaveBeenCalledTimes(1);
+    expect(mocks.db.insertManifests).toHaveBeenCalledWith(
+      expect.any(Array),
+      [expect.objectContaining({ manifestSeq: 17 })],
+      undefined,
+      [expect.objectContaining({ epochId: 7, manifestSeq: 17 })],
+      [expect.objectContaining({ epochId: 7 })],
+    );
+    expect(mocks.db.setAlbumVersion).toHaveBeenCalledTimes(2);
+    expect(mocks.db.setAlbumVersion).toHaveBeenLastCalledWith('album-1', 1);
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      'Manifest seq is stale and not an exact head',
+      expect.objectContaining({ seq: 17, prevMax: 17 }),
+    );
   });
 });

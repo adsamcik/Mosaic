@@ -153,7 +153,6 @@ public class ShardsController : ControllerBase
                         && am.UserId == userId
                         && am.RevokedAt == null)),
                 group.Any(ms => !ms.Manifest.IsDeleted
-                    && (ms.Manifest.ExpiresAt == null || ms.Manifest.ExpiresAt > now)
                     && (ms.Manifest.Album.ExpiresAt == null || ms.Manifest.Album.ExpiresAt > now)
                     && _db.AlbumMembers.Any(am =>
                         am.AlbumId == ms.Manifest.AlbumId

@@ -25,6 +25,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import org.mosaic.android.main.diagnostics.PrivacySafeDiagnosticEvent
 import org.mosaic.android.main.staging.AppPrivateStagingManager
 import org.mosaic.android.main.staging.StagedFile
 import org.mosaic.android.main.tus.ShardManifestEntry
@@ -52,7 +53,7 @@ class ShardUploadWorkerTest {
   @Test
   fun happyPathUploadsEnvelopeCleansStagingAndReturnsManifestEntry() {
     server.enqueue(MockResponse().setResponseCode(201).setHeader("Location", "/uploads/shard-1"))
-    server.enqueue(MockResponse().setResponseCode(204).setHeader("Upload-Offset", "14"))
+    server.enqueue(MockResponse().setResponseCode(204).setHeader("Upload-Offset", "19"))
     server.start()
     val envelope = envelopeFile("encrypted-body")
     val sha256 = sha256Hex(envelope.readBytes())
@@ -65,6 +66,8 @@ class ShardUploadWorkerTest {
     assertEquals("shard-1", output.getString(ShardUploadWorker.KEY_SHARD_ID))
     assertEquals(server.url("/uploads/shard-1").toString(), output.getString(ShardUploadWorker.KEY_TUS_LOCATION))
     assertEquals(sha256, output.getString(ShardUploadWorker.KEY_FINAL_SHA256))
+    assertEquals(3, output.getInt(ShardUploadWorker.KEY_ENVELOPE_VERSION, 0))
+    assertEquals(1, output.getInt(ShardUploadWorker.KEY_BLOB_FORMAT_VERSION, 0))
     assertFalse(envelope.exists())
     assertManifestPersisted("shard-1", sha256, server.url("/uploads/shard-1").toString())
 
@@ -75,10 +78,12 @@ class ShardUploadWorkerTest {
     assertEquals("shard-1", decodedMetadata["shardId"])
     assertEquals(sha256, decodedMetadata["expectedSha256"])
     assertEquals(sha256, decodedMetadata["content-sha256"])
+    assertEquals("1", decodedMetadata["blob-format-version"])
+    assertEquals("3", decodedMetadata["envelope-version"])
     assertEquals("signed-metadata", decodedMetadata["metadataSignature"])
     val patch = server.takeRequest()
     assertEquals("PATCH", patch.method)
-    assertEquals("encrypted-body", patch.body.readUtf8())
+    assertEquals("SGzk\u0003encrypted-body", patch.body.readUtf8())
   }
 
   @Test
@@ -181,10 +186,75 @@ class ShardUploadWorkerTest {
   }
 
   @Test
+  fun envelopeVersionMismatchFailsBeforeTusUpload() {
+    val envelope = envelopeFile("mismatched-envelope", version = 4)
+    val worker = workerFor(
+      envelope = envelope,
+      expectedSha256 = sha256Hex(envelope.readBytes()),
+      shardId = "version-mismatch",
+      tusEndpoint = "https://uploads.invalid/files",
+      envelopeVersion = 3,
+    )
+
+    val result = worker.doWorkBlocking()
+
+    assertTrue(result is ListenableWorker.Result.Failure)
+    val output = (result as ListenableWorker.Result.Failure).outputData
+    assertEquals(
+      ShardUploadWorker.FAILURE_ENVELOPE_VERSION_MISMATCH,
+      output.getString(ShardUploadWorker.KEY_FAILURE_REASON),
+    )
+    assertTrue(envelope.exists())
+  }
+
+  @Test
+  fun invalidEnvelopeFailsBeforeTusUpload() {
+    val envelope = envelopeFile("not-an-envelope", includeHeader = false)
+    val worker = workerFor(
+      envelope = envelope,
+      expectedSha256 = sha256Hex(envelope.readBytes()),
+      shardId = "invalid-envelope",
+      tusEndpoint = "https://uploads.invalid/files",
+    )
+
+    val result = worker.doWorkBlocking()
+
+    assertTrue(result is ListenableWorker.Result.Failure)
+    val output = (result as ListenableWorker.Result.Failure).outputData
+    assertEquals(
+      ShardUploadWorker.FAILURE_INVALID_ENVELOPE,
+      output.getString(ShardUploadWorker.KEY_FAILURE_REASON),
+    )
+    assertTrue(envelope.exists())
+  }
+
+  @Test
+  fun unsupportedBlobFormatFailsBeforeTusUpload() {
+    val envelope = envelopeFile("unsupported-blob-format")
+    val worker = workerFor(
+      envelope = envelope,
+      expectedSha256 = sha256Hex(envelope.readBytes()),
+      shardId = "unsupported-blob-format",
+      tusEndpoint = "https://uploads.invalid/files",
+      blobFormatVersion = 2,
+    )
+
+    val result = worker.doWorkBlocking()
+
+    assertTrue(result is ListenableWorker.Result.Failure)
+    val output = (result as ListenableWorker.Result.Failure).outputData
+    assertEquals(
+      ShardUploadWorker.FAILURE_UNSUPPORTED_BLOB_FORMAT,
+      output.getString(ShardUploadWorker.KEY_FAILURE_REASON),
+    )
+    assertTrue(envelope.exists())
+  }
+
+  @Test
   fun stagingCleanupFailureLogsWarningButSucceeds() {
     val envelope = envelopeFile("cleanup-warning")
     val sha256 = sha256Hex(envelope.readBytes())
-    val warnings = mutableListOf<String>()
+    val warnings = mutableListOf<PrivacySafeDiagnosticEvent>()
     val worker = workerFor(
       envelope = envelope,
       expectedSha256 = sha256,
@@ -205,7 +275,7 @@ class ShardUploadWorkerTest {
     val result = worker.doWorkBlocking()
 
     assertTrue(result is ListenableWorker.Result.Success)
-    assertEquals(1, warnings.size)
+    assertEquals(listOf(PrivacySafeDiagnosticEvent.SHARD_STAGING_CLEANUP_FAILED), warnings)
     assertTrue(envelope.exists())
     assertManifestPersisted("cleanup-shard", sha256, "https://uploads.invalid/uploads/cleanup-shard")
   }
@@ -313,9 +383,11 @@ class ShardUploadWorkerTest {
     tusEndpoint: String,
     runAttemptCount: Int = 0,
     metadataSignature: String = "signed-metadata",
+    blobFormatVersion: Int = 1,
+    envelopeVersion: Int = 3,
     tusSessionFactory: ShardTusSessionFactory = RealTestTusSessionFactory(stagingManager),
     stagingCleaner: ShardStagingCleaner = AppPrivateShardStagingCleaner(stagingManager),
-    warningSink: (String) -> Unit = {},
+    warningSink: (PrivacySafeDiagnosticEvent) -> Unit = {},
   ): ShardUploadWorker {
     val input = Data.Builder()
       .putString(ShardUploadWorker.KEY_ENVELOPE_URI, envelope.toURI().toString())
@@ -324,6 +396,8 @@ class ShardUploadWorkerTest {
       .putString(ShardUploadWorker.KEY_SHARD_ID, shardId)
       .putString(ShardUploadWorker.KEY_TUS_ENDPOINT, tusEndpoint)
       .putString(ShardUploadWorker.KEY_METADATA_SIGNATURE, metadataSignature)
+      .putInt(ShardUploadWorker.KEY_BLOB_FORMAT_VERSION, blobFormatVersion)
+      .putInt(ShardUploadWorker.KEY_ENVELOPE_VERSION, envelopeVersion)
       .build()
     return TestListenableWorkerBuilder<ShardUploadWorker>(context)
       .setInputData(input)
@@ -368,9 +442,12 @@ class ShardUploadWorkerTest {
     )
   }
 
-  private fun envelopeFile(value: String): File {
+  private fun envelopeFile(value: String, version: Int = 3, includeHeader: Boolean = true): File {
     val dir = File(context.filesDir, "encrypted-shards").also { it.mkdirs() }
-    return File(dir, "envelope-${System.nanoTime()}.bin").apply { writeText(value) }
+    return File(dir, "envelope-${System.nanoTime()}.bin").apply {
+      val header = if (includeHeader) byteArrayOf('S'.code.toByte(), 'G'.code.toByte(), 'z'.code.toByte(), 'k'.code.toByte(), version.toByte()) else ByteArray(0)
+      writeBytes(header + value.toByteArray(Charsets.UTF_8))
+    }
   }
 
   private fun assertManifestPersisted(shardId: String, sha256: String, tusLocation: String) {
@@ -380,6 +457,8 @@ class ShardUploadWorkerTest {
     assertTrue(text.contains("shardId=$shardId"))
     assertTrue(text.contains("sha256=$sha256"))
     assertTrue(text.contains("tusLocation=$tusLocation"))
+    assertTrue(text.contains("envelopeVersion=3"))
+    assertTrue(text.contains("blobFormatVersion=1"))
   }
 
   private fun sha256Hex(bytes: ByteArray): String =

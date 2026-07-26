@@ -190,7 +190,7 @@ public class ManifestExpirationControllerTests
     }
 
     [Fact]
-    public async Task Get_ReturnsGoneAndRemovesOpaquePhotoContent_WhenServerClockReachesDeadline()
+    public async Task Get_IgnoresLegacyPhotoExpirationWithoutCreatingUnsignedTombstone()
     {
         using var db = TestDbContextFactory.Create();
         var config = TestConfiguration.Create();
@@ -209,13 +209,17 @@ public class ManifestExpirationControllerTests
 
         var result = await controller.Get(manifest.Id);
 
-        var gone = Assert.IsType<StatusCodeResult>(result);
-        Assert.Equal(StatusCodes.Status410Gone, gone.StatusCode);
-        var expiredManifest = db.Manifests.IgnoreQueryFilters().Single(m => m.Id == manifest.Id);
-        Assert.True(expiredManifest.IsDeleted);
-        Assert.Empty(expiredManifest.EncryptedMeta);
-        Assert.Empty(db.ManifestShards.Where(ms => ms.ManifestId == manifest.Id));
-        Assert.Equal(ShardStatus.TRASHED, db.Shards.Single(s => s.Id == shard.Id).Status);
+        Assert.IsType<OkObjectResult>(result);
+        var storedManifest = db.Manifests.IgnoreQueryFilters().Single(m => m.Id == manifest.Id);
+        Assert.False(storedManifest.IsDeleted);
+        Assert.Equal(now, storedManifest.ExpiresAt);
+        Assert.NotEmpty(storedManifest.EncryptedMeta);
+        Assert.NotEmpty(db.ManifestShards.Where(ms => ms.ManifestId == manifest.Id));
+        Assert.Equal(ShardStatus.ACTIVE, db.Shards.Single(s => s.Id == shard.Id).Status);
+        Assert.Equal(7, db.Albums.Single(a => a.Id == album.Id).CurrentVersion);
+        var limits = db.AlbumLimits.Single(al => al.AlbumId == album.Id);
+        Assert.Equal(1, limits.CurrentPhotoCount);
+        Assert.Equal(1024, limits.CurrentSizeBytes);
     }
 
     private static T GetResponseProperty<T>(object? response, string propertyName)

@@ -153,68 +153,94 @@ Every encryption generates a fresh 24-byte nonce inside `mosaic-crypto`. Product
 
 ## Encrypted photo manifest shape
 
-The backend manifest-create request carries only server-visible transport/access-control fields:
+The public producer reserves an ordered sequence and then finalizes a
+client-addressed manifest at
+`POST /api/v1/manifests/{manifestId}/finalize`. The request carries only
+server-visible transport/access-control fields and opaque encrypted content:
 
 | Field | Visibility | Notes |
 | --- | --- | --- |
+| `manifestId` | Server-visible opaque ID | Client-selected UUID in the route; exact retries target the same resource |
 | `albumId` | Server-visible opaque ID | Access-control target |
 | `encryptedMeta` | Encrypted opaque bytes | MCEv1 photo metadata encrypted client-side |
-| `signature` | Server-visible public signature | Ed25519 over manifest signing transcript |
-| `signerPubkey` | Server-visible public key | Epoch signing public key |
+| `signature` | Server-visible public signature | Ed25519 over the v2 manifest transcript |
+| `signerPubkey` | Server-visible public key | Current epoch signing public key |
+| `manifestSeq` | Server-visible signed integer | Required positive sequence returned by the reservation endpoint |
+| `sequenceReservationId` | Server-visible opaque ID | Required one-use `Create` reservation bound to this operation and target manifest |
 | `tieredShards` | Server-visible opaque shard links and tier enum | Links uploaded encrypted shards to the manifest |
-| `expiresAtUtc` | Optional server-visible UTC deadline | Only present when photo expiration is enabled |
+
+A non-null photo `expiresAt` is rejected on the public v2 finalization path.
+Per-photo expiration is deferred until lifecycle updates can be represented by
+reservation-backed signed mutations.
 
 Encrypted photo metadata includes filenames, captions, tags, recognized metadata, dimensions, media type, local asset identity, thumbnails/thumbhashes, and any preserved EXIF/IPTC/XMP values. Normalized gallery tier media is metadata-stripped. Preserved metadata lives in encrypted manifest or sidecar records.
 
-The manifest signing transcript is:
+The current manifest signing transcript is the byte-distinct v2 family:
 
 ```text
-MCEv1(
-  version,
-  domain_label = "mosaic.v1.manifest.sign",
+Mosaic_Manifest_v2(
   album_id,
   epoch_id,
+  manifest_seq,
   encrypted_meta_bytes,
-  ordered_tiered_shard_refs,
-  optional_expires_at_utc
+  ordered_shard_refs
 )
 ```
 
-`ordered_tiered_shard_refs` is sorted by:
+The API canonicalizes `tieredShards` by ascending `(tier, shardIndex)` and
+assigns the contiguous `chunk_index` values used by the transcript. Each signed
+reference binds `chunk_index`, `tier`, `shard_id`, and the full encrypted-envelope
+SHA-256. The transcript's positive `manifest_seq` makes a sequence substitution
+invalidate the signature.
 
-1. ascending tier enum (`1=thumbnail`, `2=preview`, `3=original`),
-2. ascending `tier_index` within that tier,
-3. lexicographic shard ID as a deterministic tie-breaker.
+## Ordered manifest mutation lifecycle
 
-Each signed shard reference contains at least `tier`, `tier_index`, `shard_id`, encrypted-envelope SHA-256, and encrypted byte length.
-
-## Upload lifecycle
-
-The MVP upload lifecycle is:
+The public producer lifecycle is:
 
 1. Client obtains a crypto-unlocked interactive session or album upload capability.
 2. Media adapter prepares thumbnail, preview, and original tiers while applying metadata policy.
 3. Rust core encrypts each tier into shard envelopes and returns encrypted bytes plus SHA-256 hashes.
 4. Client uploads encrypted shards through Tus. Backend stores them as `PENDING`.
-5. Client creates and signs the encrypted manifest referencing uploaded shard IDs/hashes/tiers.
-6. Backend validates access-control metadata and links shards to the manifest as active opaque resources.
-7. Client sync sees the manifest, verifies signature and shard hashes, decrypts metadata, downloads/decrypts shards on demand.
+5. Client chooses the target manifest ID and stable operation ID, then calls
+   `POST /api/v1/manifests/sequence-reservations` with the current epoch signer
+   and `operationKind: Create`. An exact operation-ID retry returns the same
+   reservation; rebinding that operation ID conflicts.
+6. Client signs the v2 transcript with the returned positive `manifestSeq` and
+   finalizes the same client-addressed ID with both `manifestSeq` and
+   `sequenceReservationId`.
+7. Backend atomically validates and consumes the matching reservation, advances
+   the signer sequence, activates the verified shards, and creates the manifest.
+8. Metadata updates and tombstones follow the same reserve-then-sign pattern
+   with `MetadataUpdate` and `Tombstone` reservations. They cannot reuse a
+   create reservation or target a different manifest.
+9. Client sync verifies the signed sequence and shard hashes before decrypting
+   metadata or downloading shards.
+
+Finalize does not require `Idempotency-Key`. The header is optional replay-cache
+support; the client-selected manifest ID plus exact finalize-request hash makes
+an identical retry return the original result and a changed retry conflict.
+Tus PATCH retains its offset contract instead of this header.
+
+Clients persist accepted replay checkpoints per logical manifest, not as one
+album-wide rejection watermark. These checkpoints live in a separate encrypted
+security-state collection rather than inside untrusted gallery projections. For
+the same manifest, an older sequence or the same sequence with different signed
+content fails closed; a distinct manifest may still arrive later with a lower
+sequence than another already-delivered manifest from the same signer.
 
 If manifest finalization fails after shard upload, clients retry finalization before re-uploading. Durable Android queue staging keeps encrypted staged shards until manifest finalization succeeds or cleanup policy deletes abandoned encrypted staging.
 
 ## Timed expiration semantics
 
-Expiration is destructive and opt-in:
+Expiration is destructive and opt-in on the supported album and share-link
+surfaces:
 
-- Off by default.
-- Requires explicit destructive confirmation.
-- Uses server-visible UTC deadlines.
-- Album expiration deletes the album and all contained photos.
-- Photo expiration deletes the photo.
-- Earlier deadline wins when both album and photo expiration exist.
-- Backend denies access at or after the effective deadline.
-- Backend cleanup deletes opaque manifests/shards/access-control records without inspecting content.
-- Clients purge local decrypted metadata, thumbnails, queue references, and cached encrypted blobs after sync observes deletion.
+- Album expiration is off by default and requires explicit destructive confirmation.
+- Album and share-link deadlines are server-visible UTC timestamps enforced by the server clock.
+- Album expiration deletes the album and all contained photos; clients purge local decrypted metadata, thumbnails, queue references, keys, and cached blobs after observing deletion.
+- Share-link expiration revokes access through that link.
+- Per-photo expiration is unsupported: the former mutation routes are non-routable, v2 finalization rejects non-null `expiresAt`, and no automatic photo-expiration sweep runs.
+- Backend cleanup handles opaque records and objects without inspecting encrypted content.
 
 ## FFI secret boundary
 

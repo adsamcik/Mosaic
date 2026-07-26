@@ -84,7 +84,7 @@ describe('upload encryption handle cutover', () => {
     });
     mocks.encryptShardWithEpochHandle.mockImplementation(
       async (_handle: EpochHandleId, _plaintext: Uint8Array, tier: number, shardIndex: number) =>
-        new Uint8Array([tier, shardIndex, 99]),
+        new Uint8Array([0x53, 0x47, 0x7a, 0x6b, 3, tier, shardIndex, 99]),
     );
     mocks.generateThumbnail.mockResolvedValue({ data: new Uint8Array([4]), thumbhash: 'thumbhash' });
     mocks.generateTieredImages.mockResolvedValue({

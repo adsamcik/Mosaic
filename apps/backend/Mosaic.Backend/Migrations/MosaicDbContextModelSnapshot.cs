@@ -29,6 +29,11 @@ namespace Mosaic.Backend.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<byte[]>("CreateRequestHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea")
+                        .HasColumnName("create_request_hash");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -526,6 +531,15 @@ namespace Mosaic.Backend.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
+                    b.Property<long?>("FinalizeMetadataVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("finalize_metadata_version");
+
+                    b.Property<byte[]>("FinalizeRequestHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea")
+                        .HasColumnName("finalize_request_hash");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
@@ -563,6 +577,14 @@ namespace Mosaic.Backend.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("signer_pubkey");
 
+                    b.Property<int?>("TombstoneProtocolVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("tombstone_protocol_version");
+
+                    b.Property<long?>("TombstoneSeq")
+                        .HasColumnType("bigint")
+                        .HasColumnName("tombstone_seq");
+
                     b.Property<byte[]>("TombstoneSignature")
                         .HasColumnType("bytea")
                         .HasColumnName("tombstone_signature");
@@ -570,6 +592,10 @@ namespace Mosaic.Backend.Migrations
                     b.Property<int?>("TombstoneSignerEpochId")
                         .HasColumnType("integer")
                         .HasColumnName("tombstone_signer_epoch_id");
+
+                    b.Property<long?>("TombstoneVersionCreated")
+                        .HasColumnType("bigint")
+                        .HasColumnName("tombstone_version_created");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -590,6 +616,95 @@ namespace Mosaic.Backend.Migrations
                         .HasDatabaseName("i_x_manifests_album_id_version_created");
 
                     b.ToTable("manifests");
+                });
+
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.ManifestSequenceReservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AlbumId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("album_id");
+
+                    b.Property<DateTime?>("ConsumedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consumed_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<long>("ManifestSeq")
+                        .HasColumnType("bigint")
+                        .HasColumnName("manifest_seq");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operation_id");
+
+                    b.Property<string>("OperationKind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("operation_kind");
+
+                    b.Property<string>("SignerPubkey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("signer_pubkey");
+
+                    b.Property<Guid>("TargetManifestId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_manifest_id");
+
+                    b.HasKey("Id")
+                        .HasName("p_k_manifest_sequence_reservations");
+
+                    b.HasIndex("OperationId")
+                        .IsUnique()
+                        .HasDatabaseName("i_x_manifest_sequence_reservations_operation_id");
+
+                    b.HasIndex("AlbumId", "SignerPubkey", "ManifestSeq")
+                        .IsUnique()
+                        .HasDatabaseName("i_x_manifest_sequence_reservations_album_id_signer_pubkey_manif~");
+
+                    b.HasIndex("AlbumId", "TargetManifestId", "OperationKind")
+                        .HasDatabaseName("i_x_manifest_sequence_reservations_album_id_target_manifest_id_~");
+
+                    b.HasIndex("AlbumId", "SignerPubkey", "OperationKind", "OperationId")
+                        .IsUnique()
+                        .HasDatabaseName("i_x_manifest_sequence_reservations_album_id_signer_pubkey_opera~");
+
+                    b.ToTable("manifest_sequence_reservations");
+                });
+
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.ManifestSequenceState", b =>
+                {
+                    b.Property<Guid>("AlbumId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("album_id");
+
+                    b.Property<string>("SignerPubkey")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("signer_pubkey");
+
+                    b.Property<long>("LastAllocatedSequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_allocated_sequence");
+
+                    b.Property<long>("LastConsumedSequence")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_consumed_sequence");
+
+                    b.HasKey("AlbumId", "SignerPubkey")
+                        .HasName("p_k_manifest_sequence_states");
+
+                    b.ToTable("manifest_sequence_states");
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.ManifestShard", b =>
@@ -720,6 +835,10 @@ namespace Mosaic.Backend.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<int?>("EnvelopeVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("envelope_version");
+
                     b.Property<DateTime?>("PendingExpiresAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("pending_expires_at");
@@ -785,13 +904,26 @@ namespace Mosaic.Backend.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("album_id");
 
+                    b.Property<byte[]>("CreateRequestHash")
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea")
+                        .HasColumnName("create_request_hash");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<long>("CreatedAtUnixMilliseconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("created_at_unix_milliseconds");
+
                     b.Property<DateTimeOffset?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
+
+                    b.Property<long?>("ExpiresAtUnixMilliseconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("expires_at_unix_milliseconds");
 
                     b.Property<bool>("IsRevoked")
                         .HasColumnType("boolean")
@@ -817,12 +949,16 @@ namespace Mosaic.Backend.Migrations
                     b.HasKey("Id")
                         .HasName("p_k_share_links");
 
-                    b.HasIndex("AlbumId")
-                        .HasDatabaseName("i_x_share_links_album_id");
-
                     b.HasIndex("LinkId")
                         .IsUnique()
                         .HasDatabaseName("i_x_share_links_link_id");
+
+                    b.HasIndex("AlbumId", "ExpiresAtUnixMilliseconds")
+                        .HasDatabaseName("i_x_share_links_album_id_expires_at_unix_milliseconds");
+
+                    b.HasIndex("AlbumId", "CreatedAtUnixMilliseconds", "Id")
+                        .IsDescending(false, true, false)
+                        .HasDatabaseName("ix_share_links_album_created_id");
 
                     b.ToTable("share_links");
                 });
@@ -897,6 +1033,91 @@ namespace Mosaic.Backend.Migrations
                         .HasDatabaseName("i_x_system_settings_updated_by");
 
                     b.ToTable("system_settings");
+                });
+
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.TusUploadLifecycle", b =>
+                {
+                    b.Property<string>("FileId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("file_id");
+
+                    b.Property<Guid?>("AlbumId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("album_id");
+
+                    b.Property<DateTime?>("CommittedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("committed_at");
+
+                    b.Property<DateTime?>("CommittingAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("committing_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int?>("EnvelopeVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("envelope_version");
+
+                    b.Property<string>("ExpectedContentSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("expected_content_sha256");
+
+                    b.Property<string>("QuarantineReason")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("quarantine_reason");
+
+                    b.Property<DateTime?>("QuarantinedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("quarantined_at");
+
+                    b.Property<DateTime?>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at");
+
+                    b.Property<int>("ReconciliationAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("reconciliation_attempts");
+
+                    b.Property<long>("ReservedBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reserved_bytes");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<long>("UploadLength")
+                        .HasColumnType("bigint")
+                        .HasColumnName("upload_length");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("FileId")
+                        .HasName("p_k_tus_upload_lifecycles");
+
+                    b.HasIndex("AlbumId")
+                        .HasDatabaseName("i_x_tus_upload_lifecycles_album_id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("i_x_tus_upload_lifecycles_user_id");
+
+                    b.HasIndex("State", "UpdatedAt")
+                        .HasDatabaseName("i_x_tus_upload_lifecycles_state_updated_at");
+
+                    b.ToTable("tus_upload_lifecycles");
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.TusUploadReservation", b =>
@@ -1203,6 +1424,30 @@ namespace Mosaic.Backend.Migrations
                     b.Navigation("Album");
                 });
 
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.ManifestSequenceReservation", b =>
+                {
+                    b.HasOne("Mosaic.Backend.Data.Entities.Album", "Album")
+                        .WithMany()
+                        .HasForeignKey("AlbumId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("f_k_manifest_sequence_reservations_albums_album_id");
+
+                    b.Navigation("Album");
+                });
+
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.ManifestSequenceState", b =>
+                {
+                    b.HasOne("Mosaic.Backend.Data.Entities.Album", "Album")
+                        .WithMany()
+                        .HasForeignKey("AlbumId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("f_k_manifest_sequence_states_albums_album_id");
+
+                    b.Navigation("Album");
+                });
+
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.ManifestShard", b =>
                 {
                     b.HasOne("Mosaic.Backend.Data.Entities.Manifest", "Manifest")
@@ -1280,6 +1525,26 @@ namespace Mosaic.Backend.Migrations
                         .HasConstraintName("f_k_system_settings__users_updated_by");
 
                     b.Navigation("UpdatedByUser");
+                });
+
+            modelBuilder.Entity("Mosaic.Backend.Data.Entities.TusUploadLifecycle", b =>
+                {
+                    b.HasOne("Mosaic.Backend.Data.Entities.Album", "Album")
+                        .WithMany()
+                        .HasForeignKey("AlbumId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("f_k_tus_upload_lifecycles_albums_album_id");
+
+                    b.HasOne("Mosaic.Backend.Data.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("f_k_tus_upload_lifecycles__users_user_id");
+
+                    b.Navigation("Album");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Mosaic.Backend.Data.Entities.TusUploadReservation", b =>

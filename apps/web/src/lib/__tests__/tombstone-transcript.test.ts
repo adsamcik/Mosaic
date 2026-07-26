@@ -12,7 +12,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   TOMBSTONE_TRANSCRIPT_LENGTH,
+  TOMBSTONE_TRANSCRIPT_V2_LENGTH,
   buildTombstoneTranscriptBytes,
+  buildTombstoneTranscriptBytesV2,
   uuidToRawBytes,
 } from '../tombstone-transcript';
 
@@ -32,6 +34,15 @@ const EXPECTED_HEX_EPOCH7_VERSION42 =
   '01' + // version byte
   'a0a1a2a3a4a5a6a7a8a9aaabacadaeaf' + // ALBUM_A
   '07000000' + // epoch_id u32 LE = 7
+  'c0c1c2c3c4c5c6c7c8c9cacbcccdcecf' + // PHOTO_X
+  '2a00000000000000'; // version_created i64 LE = 42
+
+const EXPECTED_HEX_EPOCH7_SEQ99_VERSION42_V2 =
+  '4d6f736169635f546f6d6273746f6e655f7632' + // "Mosaic_Tombstone_v2"
+  '02' + // version byte
+  'a0a1a2a3a4a5a6a7a8a9aaabacadaeaf' + // ALBUM_A
+  '07000000' + // epoch_id u32 LE = 7
+  '6300000000000000' + // tombstone_seq i64 LE = 99
   'c0c1c2c3c4c5c6c7c8c9cacbcccdcecf' + // PHOTO_X
   '2a00000000000000'; // version_created i64 LE = 42
 
@@ -212,5 +223,55 @@ describe('tombstone-transcript byte parity with Rust canonical producer', () => 
       0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb, 0xcc, 0xcd, 0xce,
       0xcf,
     ]);
+  });
+});
+
+describe('v2 tombstone transcript byte parity with Rust', () => {
+  it('matches the canonical 72-byte Rust vector', () => {
+    const bytes = buildTombstoneTranscriptBytesV2({
+      albumId: ALBUM_A_UUID,
+      epochId: 7,
+      tombstoneSeq: 99,
+      photoId: PHOTO_X_UUID,
+      versionCreated: 42,
+    });
+    expect(bytes.length).toBe(TOMBSTONE_TRANSCRIPT_V2_LENGTH);
+    expect(bytes.length).toBe(72);
+    expect(toHex(bytes)).toBe(EXPECTED_HEX_EPOCH7_SEQ99_VERSION42_V2);
+  });
+
+  it('binds tombstoneSeq at the expected little-endian offset', () => {
+    const input = {
+      albumId: ALBUM_A_UUID,
+      epochId: 7,
+      tombstoneSeq: 99,
+      photoId: PHOTO_X_UUID,
+      versionCreated: 42,
+    };
+    const base = buildTombstoneTranscriptBytesV2(input);
+    const changed = buildTombstoneTranscriptBytesV2({ ...input, tombstoneSeq: 100 });
+    expect(toHex(base)).not.toBe(toHex(changed));
+    expect(Array.from(base.slice(40, 48))).toEqual([99, 0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it('rejects non-positive and unsafe sequences', () => {
+    expect(() =>
+      buildTombstoneTranscriptBytesV2({
+        albumId: ALBUM_A_UUID,
+        epochId: 7,
+        tombstoneSeq: 0,
+        photoId: PHOTO_X_UUID,
+        versionCreated: 42,
+      }),
+    ).toThrow(/positive safe integer/);
+    expect(() =>
+      buildTombstoneTranscriptBytesV2({
+        albumId: ALBUM_A_UUID,
+        epochId: 7,
+        tombstoneSeq: Number.MAX_SAFE_INTEGER + 1,
+        photoId: PHOTO_X_UUID,
+        versionCreated: 42,
+      }),
+    ).toThrow(/positive safe integer/);
   });
 });

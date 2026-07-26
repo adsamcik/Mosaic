@@ -1,6 +1,33 @@
 # Release Process
 
-This document describes how to release a new version of Mosaic.
+This document describes the candidate release procedure and retains historical protocol-freeze records for traceability.
+
+> **Audit status (2026):** This checkout is not approved for production release.
+> The procedures below do not supersede the open production-readiness blockers.
+> [RELEASE_STATE.md](RELEASE_STATE.md) is authoritative for current maturity,
+> supported surfaces, and the evidence required to prove a stable artifact.
+
+## Stable publication is currently disabled
+
+`.github/release-readiness.json` is machine-enforced by the first stable
+release-contract job. It currently has `stable_publication_enabled: false` and
+an empty `external_evidence` object, so every stable tag fails closed before
+tests or image builds.
+
+Do not create a stable tag or flip the flag until all eight required evidence
+records listed in [RELEASE_STATE.md](RELEASE_STATE.md#fail-closed-readiness-manifest)
+have been independently reviewed. Each record must be `passed`, link to a
+publicly retrievable HTTPS artifact, bind its verified lowercase SHA-256,
+identify the same full `assessed_source_commit`, and carry a future
+timezone-aware expiry.
+
+The assessed source commit must be the sole parent of the tagged approval
+commit. That non-merge approval commit may modify only
+`.github/release-readiness.json`; every source, build, workflow, test, and
+documentation byte therefore remains the assessed candidate. The workflow
+downloads and hashes every artifact, enforces that evidence-only diff, and
+attaches the retained evidence bundle to the GitHub Release. Prose, an issue
+reference, or an unbound test result cannot substitute for manifest evidence.
 
 ## Late-v1 Protocol Freeze (declared 2026-04-30)
 
@@ -160,28 +187,25 @@ update.
 - CHANGELOG.md updated with release notes
 - All package versions synchronized
 
-## Required GitHub Actions Secrets (Android Release)
+## Android developer-preview signing secrets
 
-The `android-release` job inside `.github/workflows/publish.yml` builds and signs the Android APK/AAB artifacts. It is **gated** by the `detect-android-secrets` job: when any of the five secrets below is missing, the Android job is **skipped** (Docker images still publish). When all five are present, the secrets are required again at injection time inside the job — a missing or empty value at that point fails the job loudly with `::error::Missing required GitHub Actions secret …`.
+Android is a developer-preview surface and is not part of a stable release. The `android-preview` job inside `.github/workflows/publish.yml` runs only when a maintainer manually dispatches the workflow with `android_preview=true`. It builds and signs preview APK/AAB artifacts only after the five secrets below are present; stable tags never produce Android artifacts.
 
 Operators self-hosting Mosaic must configure these on the repository (or organization) under **Settings → Secrets and variables → Actions → New repository secret**.
 
 | Secret name | Description | How to generate | Consumed by | Failure mode if absent |
 |-------------|-------------|------------------|-------------|------------------------|
-| `MOSAIC_RELEASE_PINS` | ADR-019 SPKI certificate pins for the operator's reverse-proxy TLS chain. One `sha256/<base64>` pin per line. Injected verbatim into `apps/android-main/src/main/assets/adr019-pins.txt` at build time. | `openssl x509 -in cert.pem -pubkey -noout \| openssl pkey -pubin -outform der \| openssl dgst -sha256 -binary \| base64` — repeat per certificate in the chain you want to pin (leaf + at least one backup). | `android-release` (`detect-android-secrets` + `Inject ADR-019 release pins` step) | Job skipped (detect phase) or `::error::Missing required GitHub Actions secret MOSAIC_RELEASE_PINS` (inject phase). |
-| `MOSAIC_RELEASE_KEYSTORE_BASE64` | Base64-encoded JKS/PKCS12 keystore containing the Android release signing key. Decoded into a temporary file under `$RUNNER_TEMP` and exposed to Gradle via `MOSAIC_RELEASE_KEYSTORE`. | `base64 -w0 -i path/to/release.keystore > keystore.b64` (Linux/macOS) or `[Convert]::ToBase64String([IO.File]::ReadAllBytes('release.keystore')) \| Out-File keystore.b64 -Encoding ascii` (PowerShell). Paste the entire file contents into the secret value. | `android-release` (`Prepare Android release signing` step → Gradle signing config) | Job skipped (detect phase) or `::error::Missing required GitHub Actions secret MOSAIC_RELEASE_KEYSTORE_BASE64 for Android release signing` (inject phase). |
-| `MOSAIC_RELEASE_KEYSTORE_PASSWORD` | Password protecting the keystore file itself (the outer password supplied to `keytool` at keystore-creation time). | Whatever password was set with `keytool -genkeypair -storepass …`. Treat as long-lived — losing it locks you out of signing future releases under this key. | `android-release` (Gradle `signingConfigs.release.storePassword`) | Job skipped (detect phase) or `::error::Missing required GitHub Actions secret MOSAIC_RELEASE_KEYSTORE_PASSWORD for Android release signing` (inject phase). |
-| `MOSAIC_RELEASE_KEY_ALIAS` | Alias of the signing key entry inside the keystore (the `-alias` value used when the key was generated). | Whatever alias was set with `keytool -genkeypair -alias …`. Default Mosaic guidance is `mosaic-release`. | `android-release` (Gradle `signingConfigs.release.keyAlias`) | Job skipped (detect phase) or `::error::Missing required GitHub Actions secret MOSAIC_RELEASE_KEY_ALIAS for Android release signing` (inject phase). |
-| `MOSAIC_RELEASE_KEY_PASSWORD` | Password protecting the individual key entry (the `-keypass` value). May equal `MOSAIC_RELEASE_KEYSTORE_PASSWORD` but is configured separately so the operator can rotate key passwords without rotating the keystore password. | Whatever password was set with `keytool -genkeypair -keypass …`. | `android-release` (Gradle `signingConfigs.release.keyPassword`) | Job skipped (detect phase) or `::error::Missing required GitHub Actions secret MOSAIC_RELEASE_KEY_PASSWORD for Android release signing` (inject phase). |
+| `MOSAIC_RELEASE_PINS` | ADR-019 SPKI certificate pins for the operator's reverse-proxy TLS chain. One `sha256/<base64>` pin per line. Injected verbatim into `apps/android-main/src/main/assets/adr019-pins.txt` at build time. | `openssl x509 -in cert.pem -pubkey -noout \| openssl pkey -pubin -outform der \| openssl dgst -sha256 -binary \| base64` — repeat per certificate in the chain you want to pin (leaf + at least one backup). | `android-preview` (`detect-android-preview-secrets` + `Inject preview pins and signing key` step) | Explicit preview dispatch fails before build and names this secret. |
+| `MOSAIC_RELEASE_KEYSTORE_BASE64` | Base64-encoded JKS/PKCS12 keystore containing the Android release signing key. Decoded into a temporary file under `$RUNNER_TEMP` and exposed to Gradle via `MOSAIC_RELEASE_KEYSTORE`. | `base64 -w0 -i path/to/release.keystore > keystore.b64` (Linux/macOS) or `[Convert]::ToBase64String([IO.File]::ReadAllBytes('release.keystore')) \| Out-File keystore.b64 -Encoding ascii` (PowerShell). Paste the entire file contents into the secret value. | `android-preview` (`Inject preview pins and signing key` step → Gradle signing config) | Explicit preview dispatch fails before build and names this secret. |
+| `MOSAIC_RELEASE_KEYSTORE_PASSWORD` | Password protecting the keystore file itself (the outer password supplied to `keytool` at keystore-creation time). | Whatever password was set with `keytool -genkeypair -storepass …`. Treat as long-lived — losing it locks you out of signing future releases under this key. | `android-preview` (Gradle `signingConfigs.release.storePassword`) | Explicit preview dispatch fails before build and names this secret. |
+| `MOSAIC_RELEASE_KEY_ALIAS` | Alias of the signing key entry inside the keystore (the `-alias` value used when the key was generated). | Whatever alias was set with `keytool -genkeypair -alias …`. Default Mosaic guidance is `mosaic-release`. | `android-preview` (Gradle `signingConfigs.release.keyAlias`) | Explicit preview dispatch fails before build and names this secret. |
+| `MOSAIC_RELEASE_KEY_PASSWORD` | Password protecting the individual key entry (the `-keypass` value). May equal `MOSAIC_RELEASE_KEYSTORE_PASSWORD` but is configured separately so the operator can rotate key passwords without rotating the keystore password. | Whatever password was set with `keytool -genkeypair -keypass …`. | `android-preview` (Gradle `signingConfigs.release.keyPassword`) | Explicit preview dispatch fails before build and names this secret. |
 
-### Verifying secret configuration
+### Dispatching a preview build
 
-Before tagging a release, dispatch the publish workflow manually (`workflow_dispatch` on `publish.yml`) and watch the `Detect Android Release Secrets` job. The job step summary reports either:
+To create a preview build, manually dispatch `publish.yml` with `android_preview=true`. The workflow fails before building if any signing or pin secret is absent.
 
-- ✅ **All 5 Android release secrets are present; android-release job will run.**
-- ⏭️ **Android Release Skipped** — followed by a list of the missing secret names.
-
-When the operator intentionally does not ship Android binaries (Docker-only deployment), it is acceptable to leave all five secrets unset; the Docker image jobs still publish and only the Android job is skipped.
+Preview APK/AAB artifacts are not attached to stable GitHub releases and must not be represented as a supported gallery client.
 
 ### Rotating the signing key
 
@@ -196,7 +220,7 @@ Android requires the **same signing key** for every release of a given app insta
 
 ## Backup Consistency Constraint (Operators)
 
-> **v1.0.x s44-y3:** Self-hosting operators MUST treat the Postgres
+> **Current operator requirement (historical workstream s44-y3):** Self-hosting operators MUST treat the Postgres
 > database and the `data/blobs/` filesystem region as a **single
 > point-in-time snapshot pair**. Backing them up at different times
 > produces a logically inconsistent restore.
@@ -250,9 +274,14 @@ Capture both stores at the same logical instant. Three patterns work:
    to the same wall-clock window as a continuous `borg create` of
    `data/blobs/`, then prune both archives to the same checkpoint.
 
-The sample scheduler in `docs/operations/BACKUP.md` (v1.0.x s44-y4)
-implements pattern 2 by default and documents the upgrade path to
-pattern 1.
+For the supplied Docker Compose deployment, the canonical helpers
+`./scripts/mosaic.sh backup` and `./scripts/mosaic.sh restore <dir>`
+implement pattern 2: they stop a running backend, capture a custom
+Postgres dump and blob archive, hash-bind the pair, and refuse a
+restore whose pair does not verify. The PowerShell helper provides the
+same paired-snapshot contract. The systemd template in
+`docs/operations/BACKUP.md` is for customized non-Compose installations
+only.
 
 ### Recovery: dangling manifest entries after a skewed restore
 
@@ -309,34 +338,59 @@ maintained alongside the backup templates in
 
 ### Creating the Release
 
-1. **Create and push the version tag:**
+1. **Create the evidence-only approval commit and push the version tag:**
    ```bash
-   # Ensure you're on main with latest changes
    git checkout main
-   git pull origin main
-   
-   # Create annotated tag
+   git pull --ff-only origin main
+
+   # Record this immutable candidate in every assessed_source_commit field.
+   assessed_source_commit="$(git rev-parse HEAD)"
+   # After independent review, edit only the readiness manifest: add all eight
+   # verified records and set stable_publication_enabled to true.
+   git add .github/release-readiness.json
+   test "$(git diff --cached --name-only)" = ".github/release-readiness.json"
+   git commit -m "chore(release): approve v0.0.1 evidence"
+   test "$(git rev-parse HEAD^)" = "$assessed_source_commit"
+
    git tag -a v0.0.1 -m "Release v0.0.1"
-   
-   # Push the tag
+   git push origin main
    git push origin v0.0.1
    ```
 
 2. **Monitor the publish workflow:**
-   - Go to GitHub Actions → "Publish Docker Images"
+   - Go to GitHub Actions → "Publish Mosaic Artifacts"
    - Verify all jobs complete successfully:
-     - [ ] Test job passes
-     - [ ] Backend image published to ghcr.io
-     - [ ] Frontend image published to ghcr.io
-     - [ ] GitHub Release created
+     - [ ] Annotated exact SemVer tag peels to an evidence-only, non-merge
+       commit on `main` whose sole parent is the assessed source commit
+     - [ ] Every public evidence artifact downloads, hashes correctly, remains
+       unexpired, and is retained for the GitHub Release
+     - [ ] Complete immutable web/backend assurance passes at the tag commit
+     - [ ] Backend and frontend candidates are built by digest with SBOM and provenance
+     - [ ] Signed GitHub attestations and registry evidence verify
+     - [ ] A clean consumer pulls both digests and passes label, health,
+       registration, album creation, upload, reload-persistence, and logout checks
+     - [ ] Exact-version tags are promoted without moving an existing stable tag
+     - [ ] Digest-bound GitHub Release is created
+
+   Stable tags are created only after the external evidence is complete. Image
+   promotion and GitHub Release creation occur only after assurance and the
+   clean-consumer checks pass. There is no stable E2E bypass or manual
+   stable-image publish input.
 
 3. **Verify the release:**
-   - Check the GitHub Release page for correct release notes
-   - Verify Docker images are accessible:
+   - Check that the GitHub Release records both immutable image digests.
+   - Pull the exact version tags:
      ```bash
      docker pull ghcr.io/adsamcik/mosaic-backend:0.0.1
      docker pull ghcr.io/adsamcik/mosaic-frontend:0.0.1
      ```
+   - Verify each digest copied from the release notes:
+     ```bash
+     gh attestation verify oci://ghcr.io/adsamcik/mosaic-backend@sha256:<digest> --repo adsamcik/Mosaic
+     gh attestation verify oci://ghcr.io/adsamcik/mosaic-frontend@sha256:<digest> --repo adsamcik/Mosaic
+     ```
+   - Run the documented deployment smoke test using those digest references,
+     not locally rebuilt substitutes.
 
 ### After Release
 
@@ -361,60 +415,34 @@ During the 0.x.x phase:
 
 ## Docker Image Tags
 
-The publish workflow creates the following tags for each release:
+The publish workflow creates only an exact-version stable tag. Release notes
+also record the immutable digest, which is the preferred deployment reference.
 
-| Tag | Example | Purpose |
-|-----|---------|---------|
-| `version` | `0.0.1` | Specific version |
-| `major.minor` | `0.0` | Latest patch for minor version |
-| `major` | `0` | Latest for major version (not for v0.x) |
-| `latest` | `latest` | Most recent stable release |
-| `sha-xxxxx` | `sha-a1b2c3d` | Specific commit (for non-release builds) |
+| Reference | Example | Purpose |
+|-----------|---------|---------|
+| Exact version | `0.0.1` | Stable tag; may never move to a different digest |
+| Digest | `sha256:…` | Immutable artifact identity used by attestations and release notes |
+
+Temporary `candidate-<run>-<attempt>` tags are non-stable build plumbing and
+must not be used in production deployment configuration.
 
 ## Troubleshooting
 
 ### Publish workflow failed
 
-1. Check the GitHub Actions logs for specific error
+1. Check the GitHub Actions logs for the first failed assurance, evidence, or
+   clean-consumer step.
 2. Common issues:
-   - Tests failed: Fix the failing tests and re-tag
-   - Docker build failed: Fix Dockerfile and re-tag
-   - Authentication failed: Check GITHUB_TOKEN permissions
+   - Tests failed: fix the source on `main` and issue a new patch version.
+   - Candidate build failed: fix the Dockerfile and issue a new patch version.
+   - Attestation failed: restore `id-token`/`attestations` permissions; do not
+     promote the candidate manually.
+   - Existing stable tag points elsewhere: treat this as an integrity incident.
 
-### Re-releasing a version
-
-If you need to re-release the same version (not recommended):
-
-```bash
-# Delete the tag locally and remotely
-git tag -d v0.0.1
-git push origin :refs/tags/v0.0.1
-
-# Delete the GitHub Release (via web UI)
-
-# Re-create the tag
-git tag -a v0.0.1 -m "Release v0.0.1"
-git push origin v0.0.1
-```
-
-### Manual image push (emergency)
-
-If CI is broken but you need to publish:
-
-```bash
-# Login to GHCR
-echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
-
-# Build and push manually
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/adsamcik/mosaic-backend:0.0.1 \
-  -f apps/backend/Mosaic.Backend/Dockerfile \
-  . --push
-
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/adsamcik/mosaic-frontend:0.0.1 \
-  -f apps/web/Dockerfile . --push
-```
+Never delete/re-create a stable Git tag, move a stable image tag, or manually
+push a nominally stable replacement. Emergency artifacts require an explicitly
+non-stable channel and an independently approved incident record; this workflow
+does not provide a stable bypass.
 
 ## Files Updated Per Release
 

@@ -1,4 +1,9 @@
+using System.ComponentModel.DataAnnotations;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mosaic.Backend.Data;
@@ -101,8 +106,13 @@ public class AlbumsController : ControllerBase
     /// <summary>
     /// Create a new album
     /// </summary>
+    /// <param name="request">The encrypted album metadata and initial owner epoch key.</param>
+    /// <param name="idempotencyKey">Required identifier for this logical create. Reuse it only when retrying the same payload; an exact retry returns the original 201 response and a changed payload returns 409.</param>
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateAlbumRequest request)
+    [ProducesResponseType<AlbumCreateResponse>(StatusCodes.Status201Created)]
+    public async Task<IActionResult> Create(
+        [FromBody] CreateAlbumRequest request,
+        [FromHeader(Name = IdempotencyMiddleware.HeaderName), BindRequired, MaxLength(IdempotencyMiddleware.MaxKeyLength)] string? idempotencyKey = null)
     {
         var user = await _currentUserService.GetOrCreateAsync(HttpContext);
 
@@ -142,14 +152,6 @@ public class AlbumsController : ControllerBase
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
-        // Validate expiration if provided
-        if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= _timeProvider.GetUtcNow())
-        {
-            return Problem(
-                detail: "expiresAt must be in the future",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
-
         if (request.ExpirationWarningDays.HasValue && request.ExpirationWarningDays.Value < 0)
         {
             return Problem(
@@ -157,10 +159,48 @@ public class AlbumsController : ControllerBase
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
+        idempotencyKey ??= Request.Headers[IdempotencyMiddleware.HeaderName].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            return Problem(
+                detail: $"{IdempotencyMiddleware.HeaderName} is required for album creation.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var albumId = DeriveIdempotentAlbumId(user.Id, idempotencyKey);
+        var createRequestHash = ComputeCreateRequestHash(user.Id, request);
+
         // Create album, member, and epoch key in single transaction
         await using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
+            var existingAlbum = await _db.Albums
+                .AsNoTracking()
+                .FirstOrDefaultAsync(a => a.Id == albumId);
+            if (existingAlbum != null)
+            {
+                if (!IsExactCreateReplay(existingAlbum, user.Id, createRequestHash))
+                {
+                    return Problem(
+                        detail: "The Idempotency-Key is already bound to a different album create request.",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+
+                await transaction.CommitAsync();
+                Response.Headers["Idempotency-Replayed"] = "true";
+                return Created($"/api/v1/albums/{existingAlbum.Id}", ToCreateResponse(existingAlbum, request));
+            }
+
+            // A matching retry remains valid even if its requested expiry has
+            // since passed; time-dependent validation applies only to a new
+            // domain mutation.
+            if (request.ExpiresAt.HasValue && request.ExpiresAt.Value <= _timeProvider.GetUtcNow())
+            {
+                return Problem(
+                    detail: "expiresAt must be in the future",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
             // Check album count limit inside transaction with row locking to prevent race conditions
             var maxAlbums = await _quotaService.GetEffectiveMaxAlbumsAsync(user.Id);
             UserQuota? quota;
@@ -186,14 +226,15 @@ public class AlbumsController : ControllerBase
 
             var album = new Album
             {
-                Id = Guid.CreateVersion7(),
+                Id = albumId,
                 OwnerId = user.Id,
                 CurrentEpochId = 1,
                 CurrentVersion = 1,
                 EncryptedName = request.EncryptedName,
                 EncryptedDescription = request.EncryptedDescription,
                 ExpiresAt = request.ExpiresAt,
-                ExpirationWarningDays = request.ExpirationWarningDays ?? 7
+                ExpirationWarningDays = request.ExpirationWarningDays ?? 7,
+                CreateRequestHash = createRequestHash
             };
             _db.Albums.Add(album);
 
@@ -238,28 +279,93 @@ public class AlbumsController : ControllerBase
 
             _logger.AlbumCreated(album.Id, user.Id);
 
-            return Created($"/api/v1/albums/{album.Id}", new
+            return Created($"/api/v1/albums/{album.Id}", ToCreateResponse(album, request));
+        }
+        catch (DbUpdateException ex) when (DatabaseConstraintErrors.IsUniqueViolation(ex))
+        {
+            // A concurrent request may have passed the pre-check before this
+            // transaction inserted its deterministic album ID. Roll back all
+            // quota/member/key side effects, discard failed tracked entries,
+            // and recover only the matching committed winner.
+            await transaction.RollbackAsync();
+            _db.ChangeTracker.Clear();
+
+            var racedAlbum = await _db.Albums
+                .AsNoTracking()
+                .FirstOrDefaultAsync(a => a.Id == albumId);
+            if (racedAlbum != null && IsExactCreateReplay(racedAlbum, user.Id, createRequestHash))
             {
-                album.Id,
-                album.OwnerId,
-                album.CurrentEpochId,
-                album.CurrentVersion,
-                album.CreatedAt,
-                album.EncryptedName,
-                album.EncryptedDescription,
-                album.ExpiresAt,
-                album.ExpirationWarningDays,
-                // C2: roster fields are NULL on a freshly-created album.
-                album.MemberRosterSignature,
-                album.MemberRosterSignerEpochId,
-                album.MemberRosterVersion
-            });
+                Response.Headers["Idempotency-Replayed"] = "true";
+                return Created($"/api/v1/albums/{racedAlbum.Id}", ToCreateResponse(racedAlbum, request));
+            }
+
+            if (racedAlbum != null)
+            {
+                return Problem(
+                    detail: "The Idempotency-Key is already bound to a different album create request.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            throw;
         }
         catch
         {
             await transaction.RollbackAsync();
             throw;
         }
+    }
+
+    private static bool IsExactCreateReplay(Album album, Guid ownerId, byte[] requestHash)
+    {
+        return album.OwnerId == ownerId
+            && album.CreateRequestHash != null
+            && album.CreateRequestHash.Length == requestHash.Length
+            && CryptographicOperations.FixedTimeEquals(album.CreateRequestHash, requestHash);
+    }
+
+    private static byte[] ComputeCreateRequestHash(Guid ownerId, CreateAlbumRequest request)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData("Mosaic_Album_Create_Request_v1"u8);
+        hash.AppendData(ownerId.ToByteArray());
+        hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(request));
+        return hash.GetHashAndReset();
+    }
+
+    private static Guid DeriveIdempotentAlbumId(Guid ownerId, string idempotencyKey)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData("Mosaic_Album_Idempotency_Id_v1"u8);
+        hash.AppendData(ownerId.ToByteArray());
+        hash.AppendData(Encoding.UTF8.GetBytes(idempotencyKey));
+
+        var idBytes = hash.GetHashAndReset()[..16];
+        // Preserve RFC 9562 UUID shape for client validators. Guid's byte-array
+        // representation stores the version nibble in byte 7.
+        idBytes[7] = (byte)((idBytes[7] & 0x0f) | 0x80); // UUID version 8
+        idBytes[8] = (byte)((idBytes[8] & 0x3f) | 0x80); // RFC variant
+        return new Guid(idBytes);
+    }
+
+    private static AlbumCreateResponse ToCreateResponse(Album album, CreateAlbumRequest request)
+    {
+        // Use the immutable create inputs (rather than mutable current album
+        // fields) so an intrinsic retry reproduces the original 201 body even
+        // if the album has subsequently been renamed or advanced.
+        return new AlbumCreateResponse(
+            album.Id,
+            album.OwnerId,
+            CurrentEpochId: 1,
+            CurrentVersion: 1L,
+            album.CreatedAt,
+            request.EncryptedName,
+            request.EncryptedDescription,
+            request.ExpiresAt,
+            ExpirationWarningDays: request.ExpirationWarningDays ?? 7,
+            // C2: roster fields are NULL on a freshly-created album.
+            MemberRosterSignature: null,
+            MemberRosterSignerEpochId: null,
+            MemberRosterVersion: null);
     }
 
     /// <summary>
@@ -387,10 +493,12 @@ public class AlbumsController : ControllerBase
     }
 
     /// <summary>
-    /// Update photo expiration settings through the album-scoped route.
+    /// Legacy in-process photo-expiration adapter. Deliberately not routable:
+    /// advancing a manifest sync cursor without a fresh v2 signed sequence can
+    /// make a valid older row fail global replay checks. Restore a public route
+    /// only with a reservation-backed signed producer.
     /// </summary>
-    [HttpPatch("{albumId:guid}/photos/{photoId:guid}/expiration")]
-    [ProducesResponseType<PhotoExpirationUpdateResponse>(StatusCodes.Status200OK)]
+    [NonAction]
     public async Task<IActionResult> UpdatePhotoExpiration(
         Guid albumId,
         Guid photoId,
@@ -414,9 +522,9 @@ public class AlbumsController : ControllerBase
             return memberError;
         }
 
-        if (_expirationService.IsExpired(manifest.Album.ExpiresAt) || _expirationService.IsExpired(manifest.ExpiresAt))
+        if (_expirationService.IsExpired(manifest.Album.ExpiresAt))
         {
-            await _expirationService.EnforceManifestExpirationAsync(photoId);
+            await _expirationService.EnforceAlbumExpirationAsync(manifest.AlbumId);
             return StatusCode(StatusCodes.Status410Gone);
         }
 
@@ -472,8 +580,6 @@ public class AlbumsController : ControllerBase
             return StatusCode(StatusCodes.Status410Gone);
         }
 
-        await _expirationService.SweepExpiredManifestsAsync(albumId);
-
         var manifests = await _db.Manifests
             .IgnoreQueryFilters()
             .AsNoTracking()
@@ -502,6 +608,9 @@ public class AlbumsController : ControllerBase
                 // pre-A2 tombstones.
                 m.TombstoneSignature,
                 m.TombstoneSignerEpochId,
+                m.TombstoneProtocolVersion,
+                m.TombstoneSeq,
+                m.TombstoneVersionCreated,
                 // A3 audit "crypto-correctness H-1": manifest freshness
                 // sequence surfaced so the sync client can detect
                 // non-monotonic manifest streams (a compromised server
@@ -576,7 +685,7 @@ public class AlbumsController : ControllerBase
     }
 
     /// <summary>
-    /// Get non-deleted, non-expired photo metadata for an album member.
+    /// Get non-deleted photo metadata for an album member.
     /// Send Accept: application/vnd.mosaic.tiered-shards+json to include tieredShards.
     /// </summary>
     [HttpGet("{albumId}/photos")]
@@ -607,14 +716,10 @@ public class AlbumsController : ControllerBase
             return StatusCode(StatusCodes.Status410Gone);
         }
 
-        await _expirationService.SweepExpiredManifestsAsync(albumId);
-
-        var now = _timeProvider.GetUtcNow();
         var query = _db.Manifests
             .AsNoTracking()
             .Where(m => m.AlbumId == albumId
-                && !m.IsDeleted
-                && (m.ExpiresAt == null || m.ExpiresAt > now));
+                && !m.IsDeleted);
 
         var totalCount = await query.CountAsync();
         var manifests = await query

@@ -85,6 +85,132 @@ public class ManifestsControllerTests
     }
 
     [Fact]
+    public async Task Create_AcceptsAndPersistsStreamingEnvelopeVersion4()
+    {
+        // A streaming Android shard carries an SGzk/v0x04 envelope. The server
+        // stores ciphertext opaquely, but it must preserve the client-reported
+        // wire version so a reader selects the matching decoder.
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var quotaService = TestConfiguration.CreateQuotaService(db, config);
+        var builder = new TestDataBuilder(db);
+
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shard = await builder.CreateShardAsync(
+            owner,
+            ShardStatus.PENDING,
+            sizeBytes: 256 * 1024 + 1);
+        shard.EnvelopeVersion = 4;
+        await db.SaveChangesAsync();
+        var signerPubkey = Convert.ToBase64String(TestDataBuilder.GenerateRandomBytes(32));
+        await builder.CreateEpochKeyAsync(album, owner, signPubkey: Convert.FromBase64String(signerPubkey));
+        var request = new CreateManifestRequest(
+            AlbumId: album.Id,
+            EncryptedMeta: Encoding.UTF8.GetBytes("opaque-streaming-manifest"),
+            Signature: Convert.ToBase64String(Encoding.UTF8.GetBytes("streaming-signature")),
+            SignerPubkey: signerPubkey,
+            ShardIds: [],
+            TieredShards:
+            [
+                new TieredShardInfo(
+                    shard.Id.ToString(),
+                    (int)ShardTier.Original,
+                    Sha256: shard.Sha256,
+                    ContentLength: shard.SizeBytes,
+                    EnvelopeVersion: 4)
+            ]);
+        var controller = CreateController(db, config, quotaService, OwnerAuthSub);
+
+        // Act
+        var result = await controller.Create(request);
+
+        // Assert
+        var created = Assert.IsType<CreatedResult>(result);
+        var manifestId = GetResponseProperty<Guid>(created.Value, "Id");
+        var manifestShard = await db.ManifestShards.SingleAsync(link => link.ManifestId == manifestId);
+        Assert.Equal(4, manifestShard.EnvelopeVersion);
+    }
+
+    [Fact]
+    public async Task Create_RejectsEnvelopeVersionThatDiffersFromAuthenticatedUploadMetadata()
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var quotaService = TestConfiguration.CreateQuotaService(db, config);
+        var builder = new TestDataBuilder(db);
+        var owner = await builder.CreateUserAsync(OwnerAuthSub);
+        var album = await builder.CreateAlbumAsync(owner);
+        var shard = await builder.CreateShardAsync(owner, ShardStatus.PENDING, sizeBytes: 4096);
+        shard.EnvelopeVersion = 4;
+        var signerPubkey = Convert.ToBase64String(TestDataBuilder.GenerateRandomBytes(32));
+        await builder.CreateEpochKeyAsync(album, owner, signPubkey: Convert.FromBase64String(signerPubkey));
+        await db.SaveChangesAsync();
+        var controller = CreateController(db, config, quotaService, OwnerAuthSub);
+
+        var result = await controller.Create(new CreateManifestRequest(
+            AlbumId: album.Id,
+            EncryptedMeta: Encoding.UTF8.GetBytes("opaque-mislabeled-manifest"),
+            Signature: Convert.ToBase64String(Encoding.UTF8.GetBytes("signature")),
+            SignerPubkey: signerPubkey,
+            ShardIds: [],
+            TieredShards:
+            [
+                new TieredShardInfo(
+                    shard.Id.ToString(),
+                    (int)ShardTier.Original,
+                    Sha256: shard.Sha256,
+                    ContentLength: shard.SizeBytes,
+                    EnvelopeVersion: 3)
+            ]));
+
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Equal(
+            "tieredShards envelopeVersion does not match authenticated upload metadata",
+            ProblemDetailsAssertions.GetDetail(badRequest));
+        Assert.Equal(ShardStatus.PENDING, (await db.Shards.SingleAsync(s => s.Id == shard.Id)).Status);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(5)]
+    public async Task Create_ReturnsBadRequestForUnsupportedEnvelopeVersion(int envelopeVersion)
+    {
+        using var db = TestDbContextFactory.Create();
+        var config = TestConfiguration.Create();
+        var quotaService = TestConfiguration.CreateQuotaService(db, config);
+        var controller = CreateController(db, config, quotaService, OwnerAuthSub);
+
+        var result = await controller.Create(new CreateManifestRequest(
+            AlbumId: Guid.NewGuid(),
+            EncryptedMeta: [],
+            Signature: string.Empty,
+            SignerPubkey: string.Empty,
+            ShardIds: [],
+            TieredShards:
+            [
+                new TieredShardInfo(
+                    Guid.NewGuid().ToString(),
+                    (int)ShardTier.Original,
+                    EnvelopeVersion: envelopeVersion)
+            ]));
+
+        var badRequest = ProblemDetailsAssertions.AssertBadRequest(result);
+        Assert.Equal("tieredShards envelopeVersion must be 3 or 4", ProblemDetailsAssertions.GetDetail(badRequest));
+        Assert.Empty(await db.Manifests.ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(3, true)]
+    [InlineData(4, true)]
+    [InlineData(2, false)]
+    [InlineData(5, false)]
+    public void ManifestEnvelopeVersions_OnlyAcceptsDocumentedV03AndV04(int version, bool expected)
+    {
+        Assert.Equal(expected, ManifestEnvelopeVersions.IsSupported(version));
+    }
+
+    [Fact]
     public async Task Create_AcceptsCrossClientManualUploadFixture_AndPreservesOpaqueFields()
     {
         // Arrange

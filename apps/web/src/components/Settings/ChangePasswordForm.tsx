@@ -65,51 +65,48 @@ export function ChangePasswordForm(): ReactElement {
     [],
   );
 
-  const onSubmit = useCallback(
-    async (e: FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-      setErrorKey(null);
-      setSuccess(false);
+  const onSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
+    e.preventDefault();
+    setErrorKey(null);
+    setSuccess(false);
 
-      if (state.next.length < 12) {
-        setErrorKey('settings.password.tooShortError');
-        return;
-      }
-      if (state.next !== state.confirm) {
-        setErrorKey('settings.password.mismatchError');
-        return;
-      }
-      if (state.next === state.current) {
-        setErrorKey('settings.password.sameAsCurrentError');
-        return;
-      }
+    if (state.next.length < 12) {
+      setErrorKey('settings.password.tooShortError');
+      return;
+    }
+    if (state.next !== state.confirm) {
+      setErrorKey('settings.password.mismatchError');
+      return;
+    }
+    if (state.next === state.current) {
+      setErrorKey('settings.password.sameAsCurrentError');
+      return;
+    }
 
-      setSubmitting(true);
-      try {
-        await rotatePassword({
-          currentPassword: state.current,
-          newPassword: state.next,
-        });
-        setSuccess(true);
-        setState(EMPTY);
-      } catch (err) {
-        if (err instanceof PasswordRotationError) {
-          if (err.reason === 'bad-current') {
-            setErrorKey('settings.password.errorBadCurrent');
-          } else if (err.reason === 'too-short') {
-            setErrorKey('settings.password.tooShortError');
-          } else {
-            setErrorKey('settings.password.errorGeneric');
-          }
+    setSubmitting(true);
+    try {
+      await rotatePassword({
+        currentPassword: state.current,
+        newPassword: state.next,
+      });
+      setSuccess(true);
+      setState(EMPTY);
+    } catch (err) {
+      if (err instanceof PasswordRotationError) {
+        if (err.reason === 'bad-current') {
+          setErrorKey('settings.password.errorBadCurrent');
+        } else if (err.reason === 'too-short') {
+          setErrorKey('settings.password.tooShortError');
         } else {
           setErrorKey('settings.password.errorGeneric');
         }
-      } finally {
-        setSubmitting(false);
+      } else {
+        setErrorKey('settings.password.errorGeneric');
       }
-    },
-    [state],
-  );
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <section

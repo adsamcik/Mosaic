@@ -8,13 +8,14 @@
 #   - Timber.*
 #   - top-level kotlin println / print (or kotlin.io.println explicit imports)
 #
-# These APIs route to logcat / stdout without redaction wrappers. A future
-# centralized logger will own the runtime path; until then any direct call
-# is treated as a privacy regression.
+# These APIs route to logcat / stdout without redaction wrappers. The sole
+# production exception is the exact PrivacySafeLogger.kt boundary, where only
+# Log.i and Log.w are permitted behind a closed, typed event API.
 #
 # Allowed paths (NOT scanned):
 #   - src/test/, src/androidTest/  (test sources may use println for PASS/FAIL)
 #   - generated source under build/generated/ (UniFFI bindings)
+#   - PrivacySafeLogger.kt for its Log import and Log.i/Log.w sink calls only
 #
 # Exit code:
 #   0  no violations
@@ -32,6 +33,13 @@ Set-Location $ProjectRoot
 $Roots = @(
   'apps/android-shell/src/main/kotlin',
   'apps/android-main/src/main/kotlin'
+)
+
+$CentralizedLoggerRelativePath = 'apps/android-main/src/main/kotlin/org/mosaic/android/main/diagnostics/PrivacySafeLogger.kt'
+$CentralizedLoggerAllowedPatterns = @(
+  'android.util.Log import',
+  'Log.i(',
+  'Log.w('
 )
 
 # Ordered patterns. Each entry: name + .NET regex.
@@ -72,6 +80,10 @@ foreach ($root in $Roots) {
     $fullPath = $file.FullName -replace '\\', '/'
     if ($fullPath -match '/src/(test|androidTest)/') { continue }
     if ($fullPath -match '/build/generated/') { continue }
+    $isCentralizedLogger = $fullPath.EndsWith(
+      "/$CentralizedLoggerRelativePath",
+      [System.StringComparison]::Ordinal
+    )
 
     $lineNumber = 0
     foreach ($line in (Get-Content -LiteralPath $file.FullName -ErrorAction SilentlyContinue)) {
@@ -84,6 +96,10 @@ foreach ($root in $Roots) {
       if ([string]::IsNullOrWhiteSpace($codePart)) { continue }
 
       foreach ($pattern in $Patterns) {
+        # The centralized boundary is intentionally the only production code
+        # allowed to import Log and call Log.i/Log.w. Every other logger API
+        # remains forbidden in that file.
+        if ($isCentralizedLogger -and ($CentralizedLoggerAllowedPatterns -contains $pattern.Name)) { continue }
         if ($codePart -match $pattern.Regex) {
           $violations += [pscustomobject]@{
             File    = $fullPath
@@ -113,4 +129,4 @@ if ($violations.Count -gt 0) {
   exit 1
 }
 
-Write-Host 'android-no-direct-log guard: OK (no direct logging in Android production Kotlin sources)'
+Write-Host 'android-no-direct-log guard: OK (production logging is isolated to the privacy-safe boundary)'

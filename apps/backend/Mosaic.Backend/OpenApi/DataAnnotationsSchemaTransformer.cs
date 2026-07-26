@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using System.Text.Json.Serialization.Metadata;
@@ -14,8 +15,9 @@ namespace Mosaic.Backend.OpenApi;
 /// v1.0.2 openapi-newaccountsalt-shape: the .NET 10
 /// <c>Microsoft.AspNetCore.OpenApi</c> generator currently emits
 /// <c>{"type":"string"}</c> for properties decorated with <c>[MinLength]</c>,
-/// <c>[MaxLength]</c>, <c>[StringLength]</c>, <c>[RegularExpression]</c>, or
-/// <c>[Base64String]</c>. Generated clients and contract tests therefore
+/// <c>[MaxLength]</c>, <c>[StringLength]</c>, <c>[RegularExpression]</c>,
+/// <c>[Required]</c>, <c>[Description]</c>, or <c>[Base64String]</c>.
+/// Generated clients and contract tests therefore
 /// cannot detect malformed payloads (e.g. a <c>newAccountSalt</c> that is not
 /// a 24-char base64 token) before they hit the controller runtime validation.
 /// </para>
@@ -34,6 +36,8 @@ namespace Mosaic.Backend.OpenApi;
 ///   <item><description><c>[StringLength(max, MinimumLength = min)]</c> → <c>minLength</c>/<c>maxLength</c>.</description></item>
 ///   <item><description><c>[RegularExpression(p)]</c> → <c>pattern: p</c>.</description></item>
 ///   <item><description><c>[Range(min, max)]</c> → <c>minimum</c>/<c>maximum</c>.</description></item>
+///   <item><description><c>[Required]</c> → <c>nullable: false</c>.</description></item>
+///   <item><description><c>[Description(text)]</c> → <c>description: text</c>.</description></item>
 ///   <item><description><c>[Base64StringAttribute]</c> → <c>format: byte</c>.</description></item>
 /// </list>
 ///
@@ -165,6 +169,20 @@ public sealed class DataAnnotationsSchemaTransformer : IOpenApiSchemaTransformer
 
                 case RangeAttribute range:
                     ApplyRange(schema, range);
+                    break;
+
+                case RequiredAttribute:
+                    if (schema.Type.HasValue)
+                    {
+                        schema.Type &= ~JsonSchemaType.Null;
+                    }
+                    break;
+
+                case DescriptionAttribute description:
+                    if (string.IsNullOrEmpty(schema.Description))
+                    {
+                        schema.Description = description.Description;
+                    }
                     break;
 
                 default:

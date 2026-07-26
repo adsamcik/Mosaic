@@ -1,5 +1,10 @@
 # Mosaic Security Model
 
+> **Status:** Current security-design reference. Sections carrying
+> `v1.0.1`/`v1.0.2` labels are dated review snapshots and internal workstream
+> lineage, not proof of a shipped release or independent audit. See
+> [RELEASE_STATE.md](RELEASE_STATE.md).
+
 ## Trust Model
 
 ### What the Server Knows

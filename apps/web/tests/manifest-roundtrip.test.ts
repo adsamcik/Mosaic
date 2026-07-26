@@ -26,6 +26,8 @@ vi.mock('../src/lib/crypto-client', () => ({
   },
 }));
 
+const RESERVATION_ID = '018f0000-0000-7000-8000-000000000402';
+const MANIFEST_SEQ = 41;
 const ALBUM_ID = '00010203-0405-0607-0809-0a0b0c0d0e0f';
 const MANIFEST_ID = '018f0000-0000-7000-8000-000000000401';
 const SHARD_IDS = [
@@ -42,6 +44,8 @@ const SHARD_HASHES = [
 interface CapturedFinalizeBody {
   albumId: string;
   encryptedMeta: string;
+  manifestSeq: number;
+  sequenceReservationId: string;
   signature: string;
   signerPubkey: string;
   tieredShards: Array<{
@@ -132,6 +136,7 @@ function transcriptInputFromFinalizeBody(body: CapturedFinalizeBody): ManifestTr
   return {
     albumId: body.albumId,
     epochId: 0x42424242,
+    manifestSeq: body.manifestSeq,
     encryptedMeta: fromBase64(body.encryptedMeta),
     shards: body.tieredShards.map((shard, chunkIndex) => ({
       chunkIndex,
@@ -175,7 +180,13 @@ describe('manifest signing canonical round trip', () => {
     };
 
     let finalizeBody: CapturedFinalizeBody | undefined;
-    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith('/manifests/sequence-reservations')) {
+        return new Response(
+          JSON.stringify({ reservationId: RESERVATION_ID, manifestSeq: MANIFEST_SEQ }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
       const captured = JSON.parse(String(init?.body)) as CapturedFinalizeBody;
       finalizeBody = captured;
       return new Response(JSON.stringify({
@@ -194,6 +205,7 @@ describe('manifest signing canonical round trip', () => {
       undefined,
       { fetchImpl },
     );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
 
     if (!finalizeBody) {
       throw new Error('finalize request body was not captured');
@@ -206,6 +218,13 @@ describe('manifest signing canonical round trip', () => {
     await expect(
       cryptoWorker.verifyManifestWithEpoch(input, signature, signerPubkey),
     ).resolves.toBe(true);
+    await expect(
+      cryptoWorker.verifyManifestWithEpoch(
+        { ...input, manifestSeq: MANIFEST_SEQ + 1 },
+        signature,
+        signerPubkey,
+      ),
+    ).resolves.toBe(false);
 
     const tamperedMeta = new Uint8Array(input.encryptedMeta);
     tamperedMeta[0] ^= 0xff;

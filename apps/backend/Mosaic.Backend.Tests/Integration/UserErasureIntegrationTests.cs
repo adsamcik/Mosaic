@@ -596,14 +596,25 @@ public sealed class UserErasureIntegrationTests
 
     public sealed class PostgresFixture : IAsyncLifetime
     {
-        private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
-            .WithImage("postgres:16-alpine")
-            .Build();
+        private PostgreSqlContainer? _container;
 
-        public string ConnectionString => _container.GetConnectionString();
+        private PostgreSqlContainer Container => _container
+            ?? throw new InvalidOperationException("PostgreSQL fixture was not started");
+
+        public string ConnectionString => Container.GetConnectionString();
 
         public async Task InitializeAsync()
         {
+            // This class also contains a provider-independent scrubber test.
+            // Avoid constructing Testcontainers when all Docker facts skip.
+            if (!DockerRequiredFactAttribute.IsDockerAvailable())
+            {
+                return;
+            }
+
+            _container = new PostgreSqlBuilder()
+                .WithImage("postgres:16-alpine")
+                .Build();
             await _container.StartAsync();
             await using var db = CreateDbContext();
             await db.Database.EnsureCreatedAsync();
@@ -611,7 +622,10 @@ public sealed class UserErasureIntegrationTests
 
         public async Task DisposeAsync()
         {
-            await _container.DisposeAsync();
+            if (_container != null)
+            {
+                await _container.DisposeAsync();
+            }
         }
 
         public async Task<MosaicDbContext> CreateFreshDbContextAsync()

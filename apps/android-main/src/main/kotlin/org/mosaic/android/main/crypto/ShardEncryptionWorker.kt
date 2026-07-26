@@ -12,6 +12,13 @@ import org.mosaic.android.main.upload.NoOpContentHashDedup
 import org.mosaic.android.main.upload.RoomContentHashDedup
 import org.mosaic.android.main.upload.ShardWorkerForegroundInfo
 
+private data class ShardEncryptionWorkOutput(
+  val envelopeUri: String,
+  val sha256: String,
+  val envelopeVersion: Int,
+  val blobFormatVersion: Int,
+)
+
 class ShardEncryptionWorker internal constructor(
   appContext: Context,
   workerParams: WorkerParameters,
@@ -95,8 +102,15 @@ class ShardEncryptionWorker internal constructor(
           )
 
           val existingEnvelopeUri = store.existingEnvelopeUri(input)
-          val (envelopeUri, sha256) = if (existingEnvelopeUri != null) {
-            existingEnvelopeUri to store.sha256HexForUri(existingEnvelopeUri)
+          val encrypted = if (existingEnvelopeUri != null) {
+            ShardEncryptionWorkOutput(
+              envelopeUri = existingEnvelopeUri,
+              sha256 = store.sha256HexForUri(existingEnvelopeUri),
+              envelopeVersion = store.openStagingInputStream(existingEnvelopeUri).use { cached ->
+                ShardEnvelopeVersions.readVersion(cached)
+              },
+              blobFormatVersion = ShardBlobFormatVersions.CURRENT,
+            )
           } else {
             val engine = cryptoEngine
             val envelope = if (plaintextLength > STREAMING_THRESHOLD_BYTES) {
@@ -106,17 +120,24 @@ class ShardEncryptionWorker internal constructor(
             } else {
               engine.encryptShardWithEpochHandle(epochHandle.id, requireNotNull(smallPlaintext), tier, shardIndex)
             }
-            val persisted = store.persistEnvelope(input, envelope)
+            val persisted = store.persistEnvelope(input, envelope.bytes)
             if (!photoId.isNullOrBlank()) {
               contentHashDedup.record(albumId, plaintextSha256Hex, photoId)
             }
-            persisted.uri to persisted.sha256Hex
+            ShardEncryptionWorkOutput(
+              envelopeUri = persisted.uri,
+              sha256 = persisted.sha256Hex,
+              envelopeVersion = envelope.envelopeVersion,
+              blobFormatVersion = envelope.blobFormatVersion,
+            )
           }
           Result.success(
             workDataOf(
-              KEY_ENVELOPE_URI to envelopeUri,
-              KEY_SHA256_HEX to sha256,
+              KEY_ENVELOPE_URI to encrypted.envelopeUri,
+              KEY_SHA256_HEX to encrypted.sha256,
               KEY_CONTENT_HASH_HEX to plaintextSha256Hex,
+              KEY_ENVELOPE_VERSION to encrypted.envelopeVersion,
+              KEY_BLOB_FORMAT_VERSION to encrypted.blobFormatVersion,
             ),
           )
         } finally {
@@ -140,6 +161,8 @@ class ShardEncryptionWorker internal constructor(
     const val KEY_ALBUM_CONTENT_HASH_HEX: String = "album_content_hash_hex"
     const val KEY_ENVELOPE_URI: String = "envelope_uri"
     const val KEY_SHA256_HEX: String = "sha256_hex"
+    const val KEY_ENVELOPE_VERSION: String = "envelope_version"
+    const val KEY_BLOB_FORMAT_VERSION: String = "blob_format_version"
     const val KEY_CONTENT_HASH_HEX: String = "content_hash_hex"
     const val KEY_DUPLICATE_PHOTO_ID: String = "duplicate_photo_id"
     const val KEY_DUPLICATE_DATE_ADDED: String = "duplicate_date_added"

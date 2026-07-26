@@ -7,6 +7,9 @@ import type { UploadEvent } from '../../rust-core/upload-adapter-port';
 const mockData = vi.hoisted(() => ({
   initRustWasm: vi.fn(async () => undefined),
   manifestTranscriptBytes: vi.fn(async () => new Uint8Array([9, 8, 7, 6])),
+  encryptManifestWithEpoch: vi.fn(),
+  signManifestWithEpoch: vi.fn(),
+  finalizeIdempotencyKey: vi.fn(),
   getCryptoClient: vi.fn(),
   generateTieredImages: vi.fn(),
   generateThumbnail: vi.fn(),
@@ -50,6 +53,7 @@ import {
   finalizeManifestForUpload,
   ManifestFinalizationError,
   MANIFEST_INVALID_SIGNATURE,
+  MANIFEST_SEQUENCE_STALE,
   MANIFEST_TRANSCRIPT_MISMATCH,
   type FinalizeManifestEffect,
 } from '../../manifest-finalization';
@@ -58,6 +62,8 @@ import { processTieredUpload } from '../tiered-upload-handler';
 const JOB_ID = '018f0000-0000-7000-8000-000000000101';
 const ALBUM_ID = '018f0000-0000-7000-8000-000000000102';
 const SHARD_ID = '018f0000-0000-7000-8000-000000000103';
+const RESERVATION_ID = '018f0000-0000-7000-8000-000000000104';
+const MANIFEST_SEQ = 23;
 const SIGNATURE = new Uint8Array(64).fill(7);
 const SIGNER_PUBKEY = new Uint8Array(32).fill(8);
 const SHA256_HEX = '00'.repeat(32);
@@ -100,6 +106,8 @@ function effect(): FinalizeManifestEffect {
     encryptedMeta: new Uint8Array([1, 2, 3]),
     signature: SIGNATURE,
     signerPubkey: SIGNER_PUBKEY,
+    manifestSeq: MANIFEST_SEQ,
+    sequenceReservationId: RESERVATION_ID,
     tieredShards: finalizeResponse().tieredShards,
   };
 }
@@ -152,17 +160,22 @@ function adapter() {
 describe('manifest finalization cutover', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockData.encryptManifestWithEpoch.mockResolvedValue({
+      envelopeBytes: new Uint8Array([1, 2, 3]),
+      sha256: SHA256_B64URL,
+    });
+    mockData.signManifestWithEpoch.mockResolvedValue(SIGNATURE);
+    mockData.finalizeIdempotencyKey.mockImplementation(
+      async (jobId: string) => `mosaic-finalize-${jobId}`,
+    );
     mockData.getCryptoClient.mockResolvedValue({
-      encryptManifestWithEpoch: vi.fn(async () => ({
-        envelopeBytes: new Uint8Array([1, 2, 3]),
-        sha256: SHA256_B64URL,
-      })),
-      signManifestWithEpoch: vi.fn(async () => SIGNATURE),
+      encryptManifestWithEpoch: mockData.encryptManifestWithEpoch,
+      signManifestWithEpoch: mockData.signManifestWithEpoch,
       manifestTranscriptBytes: mockData.manifestTranscriptBytes,
-      finalizeIdempotencyKey: vi.fn(async (jobId: string) => `mosaic-finalize-${jobId}`),
+      finalizeIdempotencyKey: mockData.finalizeIdempotencyKey,
       encryptShardWithEpochHandle: vi.fn(
         async (_handle: EpochHandleId, _plaintext: Uint8Array, tier: number, shardIndex: number) =>
-          new Uint8Array([tier, shardIndex, 99]),
+          new Uint8Array([0x53, 0x47, 0x7a, 0x6b, 3, tier, shardIndex, 99]),
       ),
     });
     mockData.generateThumbnail.mockResolvedValue({ data: new Uint8Array([4]), thumbhash: 'thumbhash' });
@@ -292,7 +305,12 @@ describe('manifest finalization cutover', () => {
   });
 
   it('runs the Tus upload sequence before the final manifest POST', async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse(finalizeResponse()));
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/manifests/sequence-reservations')) {
+        return jsonResponse({ reservationId: RESERVATION_ID, manifestSeq: MANIFEST_SEQ });
+      }
+      return jsonResponse(finalizeResponse());
+    });
     const calls: string[] = [];
     const uploadTask = task();
     uploadTask.completedShards = [];
@@ -322,17 +340,140 @@ describe('manifest finalization cutover', () => {
     await processTieredUpload(uploadTask, ctx);
 
     expect(ctx.tusUpload).toHaveBeenCalledTimes(3);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(calls).toEqual(['tus', 'tus', 'tus', 'finalize']);
     const fetchCalls = vi.mocked(fetchImpl).mock.calls as unknown as Array<[string, RequestInit]>;
-    const body = JSON.parse(String(fetchCalls[0]![1].body)) as {
+    expect(fetchCalls[0]![0]).toBe('/api/v1/manifests/sequence-reservations');
+    expect(JSON.parse(String(fetchCalls[0]![1].body))).toEqual({
+      albumId: ALBUM_ID,
+      signerPubkey: btoa(String.fromCharCode(...SIGNER_PUBKEY)),
+      targetManifestId: JOB_ID,
+      operationId: JOB_ID,
+      operationKind: 'Create',
+    });
+    const body = JSON.parse(String(fetchCalls[1]![1].body)) as {
+      manifestSeq: number;
+      sequenceReservationId: string;
       tieredShards: Array<{ tier: number; shardIndex: number; contentLength: number; envelopeVersion: number }>;
     };
     expect(body.tieredShards).toEqual([
-      expect.objectContaining({ tier: 1, shardIndex: 0, contentLength: 3, envelopeVersion: 3 }),
-      expect.objectContaining({ tier: 2, shardIndex: 0, contentLength: 3, envelopeVersion: 3 }),
-      expect.objectContaining({ tier: 3, shardIndex: 0, contentLength: 3, envelopeVersion: 3 }),
+      expect.objectContaining({ tier: 1, shardIndex: 0, contentLength: 8, envelopeVersion: 3 }),
+      expect.objectContaining({ tier: 2, shardIndex: 0, contentLength: 8, envelopeVersion: 3 }),
+      expect.objectContaining({ tier: 3, shardIndex: 0, contentLength: 8, envelopeVersion: 3 }),
     ]);
+    expect(body).toMatchObject({
+      manifestSeq: MANIFEST_SEQ,
+      sequenceReservationId: RESERVATION_ID,
+    });
+    expect(mockData.manifestTranscriptBytes).toHaveBeenCalledWith(
+      expect.objectContaining({ manifestSeq: MANIFEST_SEQ }),
+    );
+  });
+
+  it('re-reserves and re-signs once on an explicit stale-sequence conflict', async () => {
+    let reservationCalls = 0;
+    let finalizeCalls = 0;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/manifests/sequence-reservations')) {
+        reservationCalls++;
+        return jsonResponse({
+          reservationId: RESERVATION_ID,
+          manifestSeq: reservationCalls === 1 ? MANIFEST_SEQ : MANIFEST_SEQ + 1,
+        });
+      }
+
+      finalizeCalls++;
+      return finalizeCalls === 1
+        ? jsonResponse({
+            code: MANIFEST_SEQUENCE_STALE,
+            detail: 'reserve a new sequence and re-sign',
+          }, 409, {
+            'Idempotency-Replayed': 'true',
+          })
+        : jsonResponse(finalizeResponse());
+    });
+
+    await expect(finalizeManifestForUpload(
+      task(),
+      [SHARD_ID],
+      epochKey(),
+      undefined,
+      { fetchImpl },
+    )).resolves.toMatchObject({
+      kind: 'ManifestCreated',
+      response: { manifestId: JOB_ID },
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(mockData.encryptManifestWithEpoch).toHaveBeenCalledTimes(1);
+    expect(mockData.manifestTranscriptBytes).toHaveBeenCalledTimes(2);
+    expect(mockData.signManifestWithEpoch).toHaveBeenCalledTimes(2);
+
+    const calls = vi.mocked(fetchImpl).mock.calls as unknown as Array<[string, RequestInit]>;
+    expect(calls.map(([url]) => url)).toEqual([
+      '/api/v1/manifests/sequence-reservations',
+      `/api/v1/manifests/${JOB_ID}/finalize`,
+      '/api/v1/manifests/sequence-reservations',
+      `/api/v1/manifests/${JOB_ID}/finalize`,
+    ]);
+    expect(JSON.parse(String(calls[0]![1].body))).toMatchObject({
+      operationId: JOB_ID,
+    });
+    expect(JSON.parse(String(calls[2]![1].body))).toMatchObject({
+      operationId: JOB_ID,
+    });
+    expect(JSON.parse(String(calls[1]![1].body))).toMatchObject({
+      manifestSeq: MANIFEST_SEQ,
+      sequenceReservationId: RESERVATION_ID,
+    });
+    expect(JSON.parse(String(calls[3]![1].body))).toMatchObject({
+      manifestSeq: MANIFEST_SEQ + 1,
+      sequenceReservationId: RESERVATION_ID,
+    });
+    expect(new Headers(calls[1]![1].headers).get('Idempotency-Key')).toBe(
+      `mosaic-finalize-${JOB_ID}`,
+    );
+    expect(new Headers(calls[3]![1].headers).has('Idempotency-Key')).toBe(false);
+    expect(mockData.manifestTranscriptBytes).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ manifestSeq: MANIFEST_SEQ }),
+    );
+    expect(mockData.manifestTranscriptBytes).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ manifestSeq: MANIFEST_SEQ + 1 }),
+    );
+  });
+
+  it('bounds stale-sequence recovery to one retry', async () => {
+    let reservationCalls = 0;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/manifests/sequence-reservations')) {
+        reservationCalls++;
+        return jsonResponse({
+          reservationId: RESERVATION_ID,
+          manifestSeq: MANIFEST_SEQ + reservationCalls - 1,
+        });
+      }
+      return jsonResponse({
+        code: MANIFEST_SEQUENCE_STALE,
+        detail: 'still stale',
+      }, 409);
+    });
+
+    await expect(finalizeManifestForUpload(
+      task(),
+      [SHARD_ID],
+      epochKey(),
+      undefined,
+      { fetchImpl },
+    )).rejects.toMatchObject({
+      status: 409,
+      code: MANIFEST_SEQUENCE_STALE,
+    } satisfies Partial<ManifestFinalizationError>);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(mockData.encryptManifestWithEpoch).toHaveBeenCalledTimes(1);
+    expect(mockData.signManifestWithEpoch).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the finalize endpoint isolated to manifest-finalization.ts', async () => {

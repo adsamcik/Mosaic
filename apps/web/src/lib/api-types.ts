@@ -2,7 +2,7 @@
  * Mosaic API Types
  *
  * TypeScript types matching the OpenAPI specification.
- * Generated from docs/api/v1/openapi.yaml
+ * Manually aligned with the authoritative docs/openapi.json contract.
  */
 
 // =============================================================================
@@ -174,14 +174,6 @@ export interface CreateAlbumRequest {
 /** Request to update album expiration settings */
 export interface UpdateExpirationRequest {
   /** ISO 8601 date when album expires, or null to remove expiration */
-  expiresAt?: string | null;
-  /** Days before expiration to show warning */
-  expirationWarningDays?: number;
-}
-
-/** Request to update photo expiration settings. Lifecycle metadata only. */
-export interface UpdatePhotoExpirationRequest {
-  /** ISO 8601 date when photo expires, or null to remove expiration */
   expiresAt?: string | null;
   /** Days before expiration to show warning */
   expirationWarningDays?: number;
@@ -551,6 +543,12 @@ export interface ManifestRecord {
    */
   tombstoneSignature?: string | null;
   tombstoneSignerEpochId?: number | null;
+  /** Signed tombstone transcript version. `2` for reservation-backed deletes. */
+  tombstoneProtocolVersion?: 2 | null;
+  /** Monotonic sequence bound into the v2 tombstone signature. */
+  tombstoneSeq?: number | null;
+  /** Pre-delete manifest version bound into the tombstone signature. */
+  tombstoneVersionCreated?: number | null;
   /**
    * A3 audit "crypto-correctness H-1": optional monotonic freshness seq
    * tied to the v2 manifest signing transcript. NULL on pre-A3 manifests.
@@ -566,27 +564,38 @@ export interface ManifestRecord {
   updatedAt?: string;
 }
 
-export interface CreateManifestRequest {
+export type ManifestSequenceOperationKind =
+  | 'Create'
+  | 'MetadataUpdate'
+  | 'Tombstone';
+
+export interface ReserveManifestSequenceRequest {
   albumId: string;
-  encryptedMeta: string;
-  signature: string;
   signerPubkey: string;
-  shardIds: string[];
-  /** Optional tier for all shards (defaults to 3/Original) */
-  tier?: number;
-  /** Optional per-shard tier assignment (takes precedence over shardIds if provided) */
-  tieredShards?: Array<{ shardId: string; tier: number }>;
+  targetManifestId: string;
+  operationId: string;
+  operationKind: ManifestSequenceOperationKind;
 }
 
-export interface ManifestCreated {
-  id: string;
-  version: number;
+export interface ManifestSequenceReservation {
+  reservationId: string;
+  manifestSeq: number;
 }
 
 export interface UpdateManifestMetadataRequest {
   encryptedMeta: string;
   signature: string;
   signerPubkey: string;
+  manifestSeq: number;
+  sequenceReservationId: string;
+}
+
+export interface DeleteManifestRequest {
+  tombstoneSignature: string;
+  signerEpochId: number;
+  tombstoneSeq: number;
+  sequenceReservationId: string;
+  tombstoneVersionCreated: number;
 }
 
 export interface ManifestMetadataUpdated {
@@ -720,7 +729,9 @@ export interface MosaicApi {
   ): Promise<void>;
 
   // Manifests
-  createManifest(request: CreateManifestRequest): Promise<ManifestCreated>;
+  reserveManifestSequence(
+    request: ReserveManifestSequenceRequest,
+  ): Promise<ManifestSequenceReservation>;
   getManifest(manifestId: string): Promise<ManifestRecord>;
   updateManifestMetadata(
     manifestId: string,
@@ -728,11 +739,7 @@ export interface MosaicApi {
   ): Promise<ManifestMetadataUpdated>;
   deleteManifest(
     manifestId: string,
-    body?: { tombstoneSignature: string; signerEpochId: number } | null,
-  ): Promise<void>;
-  updatePhotoExpiration(
-    manifestId: string,
-    request: UpdatePhotoExpirationRequest,
+    body: DeleteManifestRequest,
   ): Promise<void>;
 
   // Shards

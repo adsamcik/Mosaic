@@ -153,7 +153,7 @@ export default defineConfig(({ mode }) => {
         //     and the directive would break module/HMR fetches.
         'Content-Security-Policy': [
           "default-src 'self'",
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'",
+          "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' blob: data: https://*.tile.openstreetmap.org",
           "connect-src 'self' ws: wss:",

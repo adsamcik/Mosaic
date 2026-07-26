@@ -23,7 +23,7 @@ class MosaicApplicationTest {
   }
 
   @Test
-  fun onCreateLogsAndContinuesWhenFirstLaunchCleanupApplyThrows() {
+  fun onCreateLogsRedactedWarningAndContinuesWhenFirstLaunchCleanupApplyThrows() {
     ShadowLog.setupLogging()
     val migrationPreferences = ThrowingApplySharedPreferences()
     val shellStubPreferences = ThrowingApplySharedPreferences(
@@ -45,14 +45,14 @@ class MosaicApplicationTest {
 
     val logs = ShadowLog.getLogsForTag("MosaicApplication")
     val logSummary = logs.joinToString(separator = "\n") { item ->
-      "${item.type}|${item.tag}|${item.msg}|${item.throwable?.javaClass?.name}"
+      "${item.type}|${item.tag}|${item.msg}|throwablePresent=${item.throwable != null}"
     }
     assertTrue(
       "A-pre-1 cleanup failure must be logged as a warning. Logs:\n$logSummary",
       logs.any { item ->
         item.type == Log.WARN &&
           item.msg.contains("A-pre-1 cleanup failed") &&
-          item.throwable is SecurityException
+          item.throwable == null
       },
     )
   }

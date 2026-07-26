@@ -4,6 +4,28 @@
 
 Locked at snapshot schema version v1. Existing integer keys and phase numeric allocations are append-only. UploadJob v1 concrete decode is active post-R-Cl1; AlbumSync concrete CBOR remains pending R-Cl2.
 
+### Current producer and replay amendment
+
+The v1 key registry is preserved, but it must not be read as requiring an
+`Idempotency-Key` on manifest finalize. Key `7` remains an upload-job operation
+identifier used by legacy recovery/Tus helpers and may derive an optional
+finalize replay-cache header; finalize correctness now comes from a stable
+client-selected manifest ID, exact request hash, and a target-bound ordered
+sequence reservation.
+
+Before dispatch, the producer must durably retain the operation ID, target
+manifest ID, positive `manifestSeq`, `sequenceReservationId`, signed canonical
+body/hash, and optional idempotency header if one is used. These values must be
+added through append-only keys/schema migration or persisted with the versioned
+platform effect record; they must never be squeezed into or reinterpret an
+existing key.
+
+Receive-side anti-replay checkpoints are not an `AlbumSyncSnapshot` high-water
+field. They are keyed per logical manifest and stored in a separate encrypted
+security-state collection. An older sequence for the same manifest, or the same
+sequence with a different signed-content hash, fails closed; distinct manifests
+can be applied even when sync delivery order differs from allocation order.
+
 This SPEC is governed by [ADR-023: Persisted snapshot schema strategy](../adr/ADR-023-persisted-snapshot-schema.md) §"Decision" and §"Consequences". CI enforcement lives in `crates/mosaic-client/tests/phase_enum_lock.rs` and `crates/mosaic-client/tests/snapshot_key_registry_lock.rs`.
 
 ## Scope
@@ -23,7 +45,7 @@ Out of scope:
 ## Governance
 
 - **ADR-023** is the source of truth for canonical CBOR, integer map keys, `schema_version`, phase enum representation, validation rules, storage layout, migration obligations, and reversibility posture (ADR-023 §"Single canonical wire format: CBOR canonical encoding via `ciborium`", §"`schema_version: u16` is the single migration coordinate", §"Phase enum representation: numeric `u8` with append-only allocation", §"Validation rules at decode time", and §"Migration test obligations (per R-Cl3)").
-- **ADR-022** binds upload snapshots to manifest finalization by requiring persisted `Idempotency-Key` and `shardId`s for retry/recovery, and by defining `tieredShards` fields referenced by the upload snapshot key registry (ADR-022 §"`POST /api/v1/manifests` request shape (frozen)" and §"Rules").
+- **ADR-022 (amended)** binds current producers to a stable target/operation ID, ordered sequence reservation, signed `manifestSeq`, exact finalize body hash, and `tieredShards`. A finalize `Idempotency-Key` is optional; if used it is persisted with the same operation record.
 - **Lock tests** pin all v1 numeric allocations. Existing rows cannot be reordered, renumbered, renamed with a different meaning, or reused after deprecation.
 - **ADR amendment workflow:** any backward-incompatible change requires a new ADR or ADR-023 amendment, a schema version bump, migration vectors, lock-test updates, and cross-platform fixture proof. Additive fields use the next available integer key.
 
@@ -59,7 +81,7 @@ Current as of the R-Cl1 lock: keys `0..=13` are allocated and keys `14..=127` ar
 | 4 | `retry_count` | `u8`, bounded by `max_retry_count` |
 | 5 | `max_retry_count` | `u8`, `<= MAX_RETRY_COUNT_LIMIT (64)` |
 | 6 | `next_retry_not_before_ms` | `null` or reducer-supplied absolute timestamp in milliseconds |
-| 7 | `idempotency_key` | UUIDv7 bytes for manifest/Tus idempotency |
+| 7 | `idempotency_key` | Historical UUIDv7 upload operation identity used by Tus/recovery helpers; may derive an optional finalize replay-cache key, but does not make that header mandatory |
 | 8 | `tiered_shards` | array of canonical CBOR maps shaped by ADR-022 `tieredShards` |
 | 9 | `shard_set_hash` | `null` or 32 bytes |
 | 10 | `snapshot_revision` | monotonic `u64` CAS coordinate |

@@ -1,9 +1,11 @@
 # Mosaic Feature Documentation
 
-> **Living documentation of implemented features.**
-> 
-> This document is automatically maintained as features are added or modified.
-> Each feature includes its purpose, location, usage, and testing status.
+> **Historical feature and change ledger.**
+>
+> Entries record source-workstream lineage and may contain unreleased
+> `v1.0.1`/`v1.0.2` labels. They are not a current support matrix or artifact
+> inventory. Verify behavior in source/tests and use
+> [RELEASE_STATE.md](RELEASE_STATE.md) for maturity and release evidence.
 
 ---
 
@@ -54,9 +56,12 @@ Auth__ProxyAuthEnabled=false  # Disable ProxyAuth
 
 ---
 
-### Proxy Authentication (Production)
+### Proxy Authentication (deployment-specific candidate)
 
-**Purpose:** Production authentication via trusted reverse proxy (Authelia, Authentik, etc.).
+**Purpose:** Trusted reverse-proxy authentication. It is off by default and is
+not approved for stable use until the exact deployment's real boundary evidence
+passes; see [RELEASE_STATE.md](RELEASE_STATE.md) and
+[AUTHELIA.md](AUTHELIA.md).
 
 **Implementation:**
 | Layer   | Location                                                                                           |
@@ -65,19 +70,23 @@ Auth__ProxyAuthEnabled=false  # Disable ProxyAuth
 
 **Headers:**
 - `Remote-User`: Authenticated username
-- `Remote-Groups`: User group memberships
+- Other client identity headers are deleted and are not part of the candidate
+  backend contract.
 
 **Configuration:**
 ```bash
 Auth__LocalAuthEnabled=false  # Disable LocalAuth
 Auth__ProxyAuthEnabled=true   # Enable ProxyAuth
+Auth__TrustedProxies__0=172.30.0.4/32  # Exact sample frontend peer only
 ```
 
 ---
 
 ### Authentication Mode E2E Tests
 
-**Purpose:** Comprehensive E2E test coverage for both LocalAuth and ProxyAuth modes.
+**Purpose:** Functional E2E coverage for LocalAuth and simulated ProxyAuth
+modes. Client-header injection in this suite does not constitute real
+trusted-proxy boundary evidence.
 
 **Implementation:**
 | Layer        | Location                                                                                |
@@ -240,62 +249,57 @@ npx playwright test auth-modes.spec.ts --project=chromium
 
 ---
 
-### Timed Album and Photo Expiration
+### Timed Album and Share-Link Expiration
 
-**Purpose:** Albums and individual photos can be configured with nullable server-visible UTC deadlines that make expired encrypted content inaccessible and eligible for deletion while preserving zero-knowledge content opacity.
+**Purpose:** Albums and share links can use nullable server-visible UTC
+deadlines. Album expiration makes the album and all encrypted content beneath
+it inaccessible and eligible for deletion; share-link expiration revokes that
+link without exposing album plaintext.
 
 **Implementation:**
-| Layer              | Location                                                                                                                                            |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Backend Entity     | [Album.cs](../apps/backend/Mosaic.Backend/Data/Entities/Album.cs) — `ExpiresAt`, `ExpirationWarningDays`                                            |
-| Backend Entity     | [Manifest.cs](../apps/backend/Mosaic.Backend/Data/Entities/Manifest.cs) — `ExpiresAt`                                                               |
-| Backend Service    | [AlbumExpirationService.cs](../apps/backend/Mosaic.Backend/Services/AlbumExpirationService.cs) — deterministic server-clock enforcement and sweeps  |
-| Backend GC         | [GarbageCollectionService.cs](../apps/backend/Mosaic.Backend/Services/GarbageCollectionService.cs) — invokes album/photo expiration sweeps          |
-| Backend API        | `PATCH /api/v1/albums/{albumId}/expiration`, `POST /api/v1/manifests`, `PATCH /api/v1/manifests/{manifestId}/expiration`                                     |
-| Backend Enforcement| Album, manifest, shard, share-link, and Tus upload endpoints block expired content                                                                  |
-| Frontend API       | [api.ts](../apps/web/src/lib/api.ts) — album and photo expiration request adapters                                                                  |
-| Frontend Settings  | [AlbumExpirationSettings.tsx](../apps/web/src/components/Albums/AlbumExpirationSettings.tsx)                                                        |
-| Frontend Create    | [CreateAlbumDialog.tsx](../apps/web/src/components/Albums/CreateAlbumDialog.tsx)                                                                    |
-| Frontend Display   | [AlbumCard.tsx](../apps/web/src/components/Albums/AlbumCard.tsx) — expiration badges                                                                |
-| Local Purge        | [local-purge.ts](../apps/web/src/lib/local-purge.ts) — local decrypted cache, key, DB, and upload queue cleanup                                     |
+| Layer | Location |
+| --- | --- |
+| Backend entities | [Album.cs](../apps/backend/Mosaic.Backend/Data/Entities/Album.cs) — `ExpiresAt`, `ExpirationWarningDays`; [ShareLink.cs](../apps/backend/Mosaic.Backend/Data/Entities/ShareLink.cs) — `ExpiresAt` |
+| Backend service | [AlbumExpirationService.cs](../apps/backend/Mosaic.Backend/Services/AlbumExpirationService.cs) — deterministic server-clock enforcement and album deletion |
+| Backend GC | [GarbageCollectionService.cs](../apps/backend/Mosaic.Backend/Services/GarbageCollectionService.cs) — album, share-link, and unrelated retention cleanup |
+| Backend API | `PATCH /api/v1/albums/{albumId}/expiration`; share-link creation and `PATCH /api/v1/albums/{albumId}/share-links/{linkId}/expiration` |
+| Backend enforcement | Album, manifest, shard, share-link, and Tus upload endpoints block content beneath an expired album; share-link access also enforces the link deadline |
+| Frontend settings | [AlbumExpirationSettings.tsx](../apps/web/src/components/Albums/AlbumExpirationSettings.tsx), [CreateAlbumDialog.tsx](../apps/web/src/components/Albums/CreateAlbumDialog.tsx), and [AlbumCard.tsx](../apps/web/src/components/Albums/AlbumCard.tsx) |
+| Local purge | [local-purge.ts](../apps/web/src/lib/local-purge.ts) — local decrypted cache, key, DB, and upload queue cleanup after an album disappears |
 
 **Features:**
-- Expiration is opt-in: deadlines default to `null` for albums and photos.
-- Album owners can set/remove album expiration; album owners/editors can set/remove photo expiration.
+- Expiration is opt-in; `null` means no album or share-link deadline.
+- Album owners can set or remove album expiration. Supported share-link flows can set, change, or remove a link deadline.
 - Server `TimeProvider` authority validates future deadlines and decides expiry; client clocks are ignored.
-- Set expiration at album creation (preset durations: 7, 30, 90 days, or custom date)
-- Modify/remove expiration on existing albums via settings
-- Visual badges on album cards (info/warning/expired states)
-- Warning banners when approaching expiration
-- Temporary album creation requires explicit destructive acknowledgement before submit
-- Expired albums are hard-deleted through the expiration service, removing memberships, epoch keys, manifests, album content, and manifest-shard links.
-- Expired photos become deleted tombstones for sync, encrypted metadata is wiped from the active manifest row, and shard links are detached/trash-marked for existing shard cleanup.
-- Expired album/photo shards are not downloadable through direct or share-link routes.
-- Expired albums block sync, share-link access, and Tus uploads.
-- Automatic server-side cleanup via GarbageCollectionService (hourly, batched)
-- Cleanup drains all eligible trashed shards and expired upload reservations across batches in one run
-- Cascade deletion: all photos (shards), manifests, epoch keys, members cleaned up
-- Storage quota reclaimed automatically on expiration
-- Share links blocked for expired albums
-- Upload prevention for expired albums
-- Client-side cleanup (epoch keys wiped, local DB cleared) when album disappears
-- Expired/deleted albums and sync-deleted photos purge local decrypted metadata, thumbnails, cached album keys, queued upload references, and in-memory photo state
-- Photo expiration uses a lifecycle-metadata-only API adapter (`PATCH /api/v1/manifests/{manifestId}/expiration`)
+- Album creation supports preset or custom deadlines with explicit destructive acknowledgement.
+- Expired albums block sync, manifest/shard access, share-link access, and Tus uploads before background deletion runs.
+- Album cleanup removes memberships, epoch keys, manifests, album content, and manifest-shard links; existing trashed-shard cleanup performs final opaque-object deletion and quota reclamation.
+- Clients purge local decrypted metadata, thumbnails, cached album keys, and queued upload references after sync observes album deletion.
 
-**Limitations (v1):**
-- Garbage collection runs hourly, but endpoint-integrated checks also enforce expiry before serving protected backend content.
-- Existing trashed-shard cleanup remains responsible for final storage quota reclamation and opaque blob deletion.
-- The web UI exposes album-level expiration controls only; photo-specific expiration is driven through the API adapter without dedicated per-photo UI.
-- No proactive member notifications — members see warnings only when opening the album
-- GC runs hourly — up to ~60 minute delay before actual deletion
-- Batch processing: max 10 expired albums per GC cycle
-- No minimum TTL enforcement
-- Album expiration/deletion sync is currently observed through 404 cleanup; a dedicated backend deleted-album sync signal is not yet available
-- Local purge removes queued/persisted upload references, but in-flight uploads cannot yet be aborted by album purge
+**Deferred surface:**
+- Per-photo expiration is unsupported. The former album/photo and
+  manifest-expiration handlers are non-routable.
+- Public v2 manifest finalization rejects a non-null photo `expiresAt`, and no
+  automatic per-photo expiration sweep runs.
+- A persisted `Manifest.ExpiresAt` value may appear in historical/export data;
+  it does not establish a supported mutation API.
+- Per-photo expiration can return only with a reservation-backed update that
+  binds the lifecycle change into the signed ordered manifest sequence.
+
+**Limitations:**
+- Garbage collection is asynchronous, but endpoint-integrated checks enforce
+  album/share-link expiry before protected content is served.
+- No proactive member notifications are sent.
+- Album deletion is currently observed through the existing gone/not-found
+  cleanup path rather than a dedicated deleted-album sync event.
+- Local purge removes queued/persisted upload references, but cannot yet abort
+  every already-running upload.
 
 **Tests:**
-- Backend: `AlbumExpirationControllerTests`, `ManifestExpirationControllerTests`, `ShardExpirationAccessTests`, `AlbumExpirationServiceTests`, GC service tests, expiration endpoint tests, and affected controller/service suites.
-- Frontend: `apps/web/tests/` (expiration settings, create dialog, badge formatting, API adapters, sync tombstones, local purge)
+- Backend: album expiration controller/service, share-link expiry/access,
+  garbage collection, and expired-album manifest/shard/Tus access suites.
+- Frontend: expiration settings, create-dialog acknowledgement, badge
+  formatting, and local album purge behavior.
 
 ---
 
@@ -1170,7 +1174,7 @@ ENV_VAR=value
 
 | Date       | Feature                     | Action   | Notes                                                        |
 | ---------- | --------------------------- | -------- | ------------------------------------------------------------ |
-| 2026-05-24 | Audit-event Serilog sink (v1.0.2 audit-event-sink) | Added | Backend now mirrors every `IAuditLogService.WriteAsync` call to a dedicated Serilog file sink (`logs/audit-YYYYMMDD.log`, daily rolling, 90-day retention, `shared=true`) in addition to the existing DB-backed `audit_log` table. Routing uses a `LogContext.PushProperty(Category=Audit)` tag with a `Filter.ByIncludingOnly` sub-logger so non-audit logs stay on the console sink. Mirrored fields are stable identifiers only (event type, outcome, actor user id, target type/id, request id, occurred-at) — `DetailsJson` is intentionally NOT mirrored to bound accidental PII leakage. Operators can override path/retention via `Audit:LogPath` / `Audit:RetainedFileCountLimit` config. Tests: `apps/backend/Mosaic.Backend.Tests/Services/AuditLogSerilogSinkTests.cs` (2 tests; verifies tag round-trips to file AND non-audit logs are excluded). |
+| 2026-05-24 | Audit-event Serilog sink (v1.0.2 audit-event-sink) | Added | Backend now mirrors every `IAuditLogService.WriteAsync` call to a dedicated Serilog file sink (`logs/audit-YYYYMMDD.log`, daily and size-based rolling, 90-day retention, single-process writer with a restrictive file lifecycle hook) in addition to the existing DB-backed `audit_log` table. Routing uses a `LogContext.PushProperty(Category=Audit)` tag with a `Filter.ByIncludingOnly` sub-logger so non-audit logs stay on the console sink. Mirrored fields are stable identifiers only (event type, outcome, actor user id, target type/id, request id, occurred-at) — `DetailsJson` is intentionally NOT mirrored to bound accidental PII leakage. Operators can override path/retention via `Audit:LogPath` / `Audit:RetainedFileCountLimit` config. Readiness flushes and checks the actual active/rolled sink stream and separately tests directory writability for future rollovers; health responses and metrics never expose log contents. Tests: `apps/backend/Mosaic.Backend.Tests/Services/AuditLogSerilogSinkTests.cs` and `AuditSinkHealthProbeTests.cs`. |
 | 2026-05-23 | Anonymous share-link redemption (v1.0.1 shares-anon-redeem) | Fixed | `SharedAlbumViewer` no longer renders "Invalid Share Link / missing secret key" for valid live `#k=...` URLs under React 19 StrictMode. Root cause: the `useShareLinkParams` hook parsed `window.location.hash` inside `useEffect` *and* stripped the fragment via `history.replaceState` in the same effect, so StrictMode's second-pass effect saw an empty hash and overwrote `linkSecret` with `null`. Fix lifts the parse into a `useState` lazy initializer (state survives the StrictMode remount) and isolates the idempotent hash-stripping in a separate effect keyed on the captured secret. Regression coverage: `apps/web/src/components/Shared/__tests__/SharedAlbumViewer.urlParams.test.tsx` (3 tests; 2 fail without the fix). |
 | 2026-05-22 | Right-to-Portability (GDPR Art.20) (v1.0.x s38) | Added | Self-service data export via `GET /api/v1/export` streaming zip; backend writes ciphertext-only archive directly to `Response.Body` (no in-memory buffering, `NoCompression` for shard blobs); archive contains owned albums + manifests + shards + wrapped account/identity keys + salts + KDF params; member-only albums excluded; missing blobs marked with `.missing` sentinels; audit event `user.data.exported` written post-stream; frontend uses anchor-based download to preserve native streaming-to-disk; offline-decryption procedure documented in `docs/EXPORT_FORMAT.md` |
 | 2026-05-21 | Android stack upgrade for v1.0.1 (v1.0.1 s30) | Modified | Coordinated upstream bump across the Android module to close ~1 year of drift. AGP 8.7.3 → 8.10.1 (Gradle wrapper 8.10.2 → 8.11.1; K2 compiler integration). Kotlin 2.0.21 → 2.1.21 (K2 default GA). KSP 2.0.21-1.0.28 → 2.1.21-2.0.2. AndroidX activity 1.9.3 → 1.10.1, appcompat 1.7.0 → 1.7.1, core 1.13.1 → 1.16.0, lifecycle-service 2.8.7 → 2.9.0, exifinterface 1.3.7 → 1.4.1. WorkManager 2.9.1 → 2.10.1 (`setExpedited(RUN_AS_NON_EXPEDITED_WORK_REQUEST)` API surface unchanged; ShardEncryptionScheduler / ShardUploadScheduler / AutoImportWorkScheduler all still expedite). OkHttp 4.12.0 → 5.1.0 GA (no call-site changes — production already uses the `toHttpUrl()` / `toRequestBody()` / `toMediaType()` Kotlin extension API). JNA 5.14.0 → 5.17.0 (UniFFI `uniffi.mosaic_uniffi.*` bindings continue to load via `Native.register`). kotlinx-coroutines 1.9.0 → 1.10.2; kotlinx-serialization-json 1.7.3 → 1.8.1. Netty/Guava resolutionStrategy CVE pin and R8/JNA proguard `-dontwarn` rules preserved. Room 2.6.1 and Robolectric 4.13 intentionally **held back**: Room 2.7 changed suspend-DAO coroutine dispatch in a way that deadlocks against Robolectric's paused looper in `runBlocking` test bodies. Migration requires per-test refactor to `Dispatchers.Unconfined` / `INSTANT_TASK_EXECUTOR` and is tracked as v101-s30 follow-up. 293 unit tests pass; all 5 architecture guards green. |
@@ -1195,8 +1199,8 @@ ENV_VAR=value
 | 2026-04-29 | Sync Conflict Resolution     | Added    | Lane B: deterministic three-way block merge with LWW fallback for album content; expanded rust-cutover boundary guard to per-symbol classification |
 | 2026-04-29 | FFI Debug Redaction (M5)     | Added    | 24 custom `fmt::Debug` impls across `mosaic-{client,crypto,media,uniffi,wasm}` replacing `derive(Debug)` on public FFI surfaces; redacts byte payloads as `<redacted-{N}-bytes>`; 30 mutation-kill tests in `mosaic-client/tests/mutation_kills.rs` |
 | 2026-04-29 | Android Main Module (Rust UniFFI APK) | Added | First real Android Gradle module wiring `mosaic-uniffi` cdylib + JNA Kotlin bindings into a debug APK; closes 11-bridge FFI drift between `apps/android-shell` and `crates/mosaic-uniffi` |
-| 2026-04-28 | Timed Album/Photo Expiration | Modified | Backend adds server-clock album/photo expiry, deterministic sweeps, access enforcement, and focused tests |
-| 2026-04-28 | Temporary Albums (TTL)      | Modified | Added explicit destructive acknowledgement, photo expiration adapter, and local purge wiring for expired/deleted client state |
+| 2026-04-28 | Timed Album/Photo Expiration | Historical, superseded | Recorded an album/photo prototype. The current supported contract keeps album expiration and defers per-photo expiration pending a reservation-backed signed lifecycle |
+| 2026-04-28 | Temporary Albums (TTL)      | Modified | Added explicit destructive acknowledgement and local purge wiring for expired/deleted album state; the former photo-expiration adapter is not a supported route |
 | 2026-04-28 | Photo Description Editing   | Added    | Owners/editors can edit encrypted photo descriptions from the lightbox without exposing plaintext to the server |
 | 2026-04-27 | Share Links / Album Download | Modified | Shared album viewers page through all photos; full-access share links can download all photos as a client-side decrypted ZIP |
 | 2026-04-27 | Gallery / Member Management | Modified | Local photo/search queries and member-management loads drain all pages; bulk download action now respects `canDownload` |

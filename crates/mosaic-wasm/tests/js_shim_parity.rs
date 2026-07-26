@@ -1,6 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
-use mosaic_wasm::{finalize_idempotency_key_js, manifest_transcript_bytes_js};
+use mosaic_wasm::{
+    finalize_idempotency_key_js, manifest_transcript_bytes_js, manifest_transcript_bytes_v2_js,
+};
 use wasm_bindgen_test::wasm_bindgen_test;
 
 const ALBUM_ID_BYTES: [u8; 16] = [
@@ -27,6 +29,28 @@ fn js_shim_manifest_transcript_bytes_matches_parity_vector() {
 
     assert_eq!(result.code(), 0);
     assert_eq!(result.bytes().len(), 156);
+}
+
+#[wasm_bindgen_test]
+fn js_shim_manifest_transcript_bytes_v2_binds_sequence() {
+    let encrypted_meta = vec![0xaa, 0xbb, 0xcc];
+    let v1 = manifest_transcript_bytes_js(
+        ALBUM_ID_BYTES.to_vec(),
+        7,
+        encrypted_meta.clone(),
+        encoded_manifest_shards(),
+    );
+    let v2 = manifest_transcript_bytes_v2_js(
+        ALBUM_ID_BYTES.to_vec(),
+        7,
+        17,
+        encrypted_meta,
+        encoded_manifest_shards(),
+    );
+
+    assert_eq!(v2.code(), 0);
+    assert_eq!(v2.bytes().len(), v1.bytes().len() + 8);
+    assert_ne!(v2.bytes(), v1.bytes(), "v2 must bind the manifest sequence");
 }
 
 fn encoded_manifest_shards() -> Vec<u8> {

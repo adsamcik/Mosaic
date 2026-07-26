@@ -40,6 +40,9 @@ describe('api.deleteManifest wire format (photos-f regression)', () => {
     await api.deleteManifest('manifest-id-1', {
       tombstoneSignature: 'AAAA',
       signerEpochId: 7,
+      tombstoneSeq: 9,
+      sequenceReservationId: '018f0000-0000-7000-8000-000000000001',
+      tombstoneVersionCreated: 3,
     });
 
     expect(lastBody).not.toBeNull();
@@ -48,23 +51,23 @@ describe('api.deleteManifest wire format (photos-f regression)', () => {
     expect(parsed).toEqual({
       tombstoneSignature: 'AAAA',
       signerEpochId: 7,
+      tombstoneSeq: 9,
+      sequenceReservationId: '018f0000-0000-7000-8000-000000000001',
+      tombstoneVersionCreated: 3,
     });
     // Defensive: confirm we are NOT looking at a doubly-stringified value.
     expect(typeof parsed).toBe('object');
   });
 
-  it('omits the body entirely when no signed tombstone is provided', async () => {
-    const api = getApi();
-    await api.deleteManifest('manifest-id-2', null);
-
-    expect(lastBody).toBeNull();
-  });
 
   it('sets Content-Type: application/json when body is provided', async () => {
     const api = getApi();
     await api.deleteManifest('manifest-id-3', {
       tombstoneSignature: 'BBBB',
       signerEpochId: 1,
+      tombstoneSeq: 10,
+      sequenceReservationId: '018f0000-0000-7000-8000-000000000002',
+      tombstoneVersionCreated: 4,
     });
 
     const lastCall = fetchSpy.mock.calls.at(-1);

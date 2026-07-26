@@ -9,8 +9,8 @@ use mosaic_client::ClientErrorCode;
 use mosaic_crypto::{KdfProfile, derive_account_key};
 use mosaic_wasm::{
     AccountUnlockRequest, close_account_key_handle, close_epoch_key_handle,
-    create_epoch_key_handle, sign_manifest_with_epoch_handle, unlock_account_key,
-    verify_manifest_with_epoch,
+    create_epoch_key_handle, manifest_transcript_bytes_v2, sign_manifest_with_epoch_handle,
+    unlock_account_key, verify_manifest_with_epoch,
 };
 
 const PASSWORD: &[u8] = b"correct horse battery staple";
@@ -22,6 +22,8 @@ const ACCOUNT_SALT: [u8; 16] = [
 ];
 const EPOCH_ID: u32 = 11;
 const TRANSCRIPT: &[u8] = b"slice4 manifest transcript bytes";
+const ALBUM_ID: [u8; 16] = [0xa5; 16];
+const ENCRYPTED_META: &[u8] = &[0xaa, 0xbb, 0xcc];
 
 fn unlock_request(wrapped_account_key: Vec<u8>) -> AccountUnlockRequest {
     AccountUnlockRequest {
@@ -54,6 +56,14 @@ fn unlock_and_open_epoch_handle() -> (u64, u64, Vec<u8>) {
     assert_eq!(epoch.code, 0);
     (unlock.handle, epoch.handle, epoch.sign_public_key)
 }
+fn encoded_manifest_shards() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&[0x42; 16]);
+    bytes.extend_from_slice(&[0x99; 32]);
+    bytes
+}
 
 #[test]
 fn sign_and_verify_round_trip_through_epoch_handle() {
@@ -69,6 +79,48 @@ fn sign_and_verify_round_trip_through_epoch_handle() {
         sign_public.to_vec(),
     );
     assert_eq!(verify_code, ClientErrorCode::Ok.as_u16());
+
+    assert_eq!(close_epoch_key_handle(epoch_handle), 0);
+    assert_eq!(close_account_key_handle(account_handle), 0);
+}
+
+#[test]
+fn v2_manifest_sequence_is_signature_bound_through_facade() {
+    let (account_handle, epoch_handle, sign_public) = unlock_and_open_epoch_handle();
+
+    let transcript = manifest_transcript_bytes_v2(
+        ALBUM_ID.to_vec(),
+        EPOCH_ID,
+        17,
+        ENCRYPTED_META.to_vec(),
+        encoded_manifest_shards(),
+    );
+    assert_eq!(transcript.code, ClientErrorCode::Ok.as_u16());
+
+    let signed = sign_manifest_with_epoch_handle(epoch_handle, transcript.bytes.clone());
+    assert_eq!(signed.code, ClientErrorCode::Ok.as_u16());
+    assert_eq!(
+        verify_manifest_with_epoch(
+            transcript.bytes.clone(),
+            signed.bytes.clone(),
+            sign_public.clone(),
+        ),
+        ClientErrorCode::Ok.as_u16()
+    );
+
+    let altered_sequence = manifest_transcript_bytes_v2(
+        ALBUM_ID.to_vec(),
+        EPOCH_ID,
+        16,
+        ENCRYPTED_META.to_vec(),
+        encoded_manifest_shards(),
+    );
+    assert_eq!(altered_sequence.code, ClientErrorCode::Ok.as_u16());
+    assert_ne!(transcript.bytes, altered_sequence.bytes);
+    assert_eq!(
+        verify_manifest_with_epoch(altered_sequence.bytes, signed.bytes, sign_public),
+        ClientErrorCode::AuthenticationFailed.as_u16()
+    );
 
     assert_eq!(close_epoch_key_handle(epoch_handle), 0);
     assert_eq!(close_account_key_handle(account_handle), 0);

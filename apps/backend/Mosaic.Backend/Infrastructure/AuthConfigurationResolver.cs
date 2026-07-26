@@ -56,6 +56,39 @@ internal static class AuthConfigurationResolver
                 "Set a single auth mode or explicitly opt in with Auth:AllowDualMode=true.");
         }
 
+        var trustedProxies =
+            configuration.GetSection("Auth:TrustedProxies").Get<string[]>() ?? [];
+        var parsedTrustedProxies = trustedProxies
+            .Select(static configuredValue =>
+            {
+                var cidr = configuredValue?.Trim();
+                if (string.IsNullOrEmpty(cidr)
+                    || !System.Net.IPNetwork.TryParse(cidr, out var network))
+                {
+                    throw new InvalidOperationException(
+                        $"Auth:TrustedProxies contains invalid CIDR '{configuredValue ?? "<null>"}'. " +
+                        "Use an address and prefix length such as 10.0.0.5/32 or 10.0.0.0/24.");
+                }
+
+                return (ConfiguredValue: configuredValue, Network: network);
+            })
+            .ToArray();
+
+        if (environment.IsProduction())
+        {
+            var unsafeNetworks = parsedTrustedProxies
+                .Where(static configured => configured.Network.PrefixLength == 0)
+                .Select(static configured => configured.ConfiguredValue)
+                .ToArray();
+            if (unsafeNetworks.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    "Auth:TrustedProxies must not contain an unrestricted network in Production. " +
+                    $"Unsafe values: {string.Join(", ", unsafeNetworks)}. " +
+                    "Trust only the exact reverse-proxy addresses.");
+            }
+        }
+
         var serverSecret = configuration["Auth:ServerSecret"];
         if (!environment.IsDevelopment() && string.IsNullOrWhiteSpace(serverSecret))
         {

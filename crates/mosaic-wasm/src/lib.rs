@@ -3140,6 +3140,36 @@ pub fn manifest_transcript_bytes(
     }
 }
 
+/// Builds the canonical v2 manifest transcript with its signed freshness sequence.
+///
+/// `encoded_shards` is a repeated sequence of
+/// `chunk_index:u32le | tier:u8 | shard_id:16 bytes | sha256:32 bytes`.
+#[must_use]
+pub fn manifest_transcript_bytes_v2(
+    album_id: Vec<u8>,
+    epoch_id: u32,
+    manifest_seq: i64,
+    encrypted_meta: Vec<u8>,
+    encoded_shards: Vec<u8>,
+) -> BytesResult {
+    match manifest_transcript_bytes_v2_result(
+        &album_id,
+        epoch_id,
+        manifest_seq,
+        &encrypted_meta,
+        &encoded_shards,
+    ) {
+        Ok(bytes) => BytesResult {
+            code: mosaic_client::ClientErrorCode::Ok.as_u16(),
+            bytes,
+        },
+        Err(code) => BytesResult {
+            code,
+            bytes: Vec::new(),
+        },
+    }
+}
+
 /// Encrypts canonical metadata sidecar bytes with a Rust-owned epoch-key handle.
 #[must_use]
 pub fn encrypt_metadata_sidecar_with_epoch_handle(
@@ -5095,6 +5125,25 @@ pub fn manifest_transcript_bytes_js(
     ))
 }
 
+/// Builds the canonical v2 manifest transcript with its signed freshness sequence.
+#[wasm_bindgen(js_name = manifestTranscriptBytesV2)]
+#[must_use]
+pub fn manifest_transcript_bytes_v2_js(
+    album_id: Vec<u8>,
+    epoch_id: u32,
+    manifest_seq: i64,
+    encrypted_meta: Vec<u8>,
+    encoded_shards: Vec<u8>,
+) -> JsBytesResult {
+    js_bytes_result_from_rust(manifest_transcript_bytes_v2(
+        album_id,
+        epoch_id,
+        manifest_seq,
+        encrypted_meta,
+        encoded_shards,
+    ))
+}
+
 /// Returns the ADR-022 canonical manifest-finalize idempotency key through WASM.
 #[wasm_bindgen(js_name = finalizeIdempotencyKey)]
 pub fn finalize_idempotency_key_js(job_id: String) -> Result<String, JsError> {
@@ -5594,21 +5643,6 @@ pub fn get_auth_public_key_from_password_js(
     ))
 }
 
-/// Creates a share-link handle and first wrapped tier through WASM.
-#[wasm_bindgen(js_name = createLinkShareHandle)]
-#[must_use]
-pub fn create_link_share_handle_js(
-    album_id: String,
-    epoch_handle: u64,
-    tier_byte: u8,
-) -> JsCreateLinkShareHandleResult {
-    js_create_link_share_handle_result_from_rust(create_link_share_handle(
-        album_id,
-        epoch_handle,
-        tier_byte,
-    ))
-}
-
 /// v2 binding variant of `createLinkShareHandle` (batch 4c - A1).
 #[wasm_bindgen(js_name = createLinkShareHandleV2)]
 #[must_use]
@@ -5631,22 +5665,7 @@ pub fn import_link_share_handle_js(link_url_token: Vec<u8>) -> JsLinkTierHandleR
     js_link_tier_handle_result_from_rust(import_link_share_handle(link_url_token))
 }
 
-/// Wraps an epoch tier for an existing share-link handle through WASM.
-#[wasm_bindgen(js_name = wrapLinkTierHandle)]
-#[must_use]
-pub fn wrap_link_tier_handle_js(
-    link_share_handle: u64,
-    epoch_handle: u64,
-    tier_byte: u8,
-) -> JsWrappedTierKeyResult {
-    js_wrapped_tier_key_result_from_rust(wrap_link_tier_handle(
-        link_share_handle,
-        epoch_handle,
-        tier_byte,
-    ))
-}
-
-/// v2 binding variant of `wrapLinkTierHandle` (batch 4c - A1).
+/// Wraps an epoch tier with AAD bound to link, tier, and epoch through WASM.
 #[wasm_bindgen(js_name = wrapLinkTierHandleV2)]
 #[must_use]
 pub fn wrap_link_tier_handle_v2_js(
@@ -7592,6 +7611,22 @@ fn manifest_transcript_bytes_result(
     let transcript =
         mosaic_domain::ManifestTranscript::new(album_id, epoch_id, encrypted_meta, &shards);
     mosaic_domain::canonical_manifest_transcript_bytes(&transcript)
+        .map_err(map_manifest_transcript_error)
+}
+
+fn manifest_transcript_bytes_v2_result(
+    album_id: &[u8],
+    epoch_id: u32,
+    manifest_seq: i64,
+    encrypted_meta: &[u8],
+    encoded_shards: &[u8],
+) -> Result<Vec<u8>, u16> {
+    let album_id = uuid_bytes(album_id)?;
+    let shards = manifest_shards_from_encoded(encoded_shards)?;
+    let encrypted_meta = mosaic_domain::EncryptedMetadataEnvelope::new(encrypted_meta);
+    let transcript =
+        mosaic_domain::ManifestTranscript::new(album_id, epoch_id, encrypted_meta, &shards);
+    mosaic_domain::canonical_manifest_transcript_bytes_v2(&transcript, manifest_seq)
         .map_err(map_manifest_transcript_error)
 }
 

@@ -227,7 +227,7 @@ export async function processTieredUpload(
       sha256: thumbnailEncrypted.sha256,
       tier: 1,
       contentLength: thumbnailEncrypted.envelopeBytes.byteLength,
-      envelopeVersion: 3,
+      envelopeVersion: thumbnailEncrypted.envelopeVersion,
     });
     task.progress = 0.33;
     ctx.onProgress?.(task);
@@ -246,7 +246,7 @@ export async function processTieredUpload(
       sha256: previewEncrypted.sha256,
       tier: 2,
       contentLength: previewEncrypted.envelopeBytes.byteLength,
-      envelopeVersion: 3,
+      envelopeVersion: previewEncrypted.envelopeVersion,
     });
     task.progress = 0.66;
     ctx.onProgress?.(task);
@@ -265,7 +265,7 @@ export async function processTieredUpload(
       sha256: originalEncrypted.sha256,
       tier: 3,
       contentLength: originalEncrypted.envelopeBytes.byteLength,
-      envelopeVersion: 3,
+      envelopeVersion: originalEncrypted.envelopeVersion,
     });
     task.progress = 1;
     ctx.onProgress?.(task);

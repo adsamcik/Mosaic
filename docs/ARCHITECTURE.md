@@ -1,5 +1,9 @@
 # Mosaic Architecture Documentation
 
+> **Status:** Current source-design reference. Version labels in historical
+> introduction fields describe source/workstream lineage and are not proof of a
+> released artifact. See [RELEASE_STATE.md](RELEASE_STATE.md).
+>
 > **Zero-Knowledge Encrypted Photo Gallery**
 > 
 > This document provides a comprehensive technical overview of the Mosaic application architecture, generated through automated codebase investigation.
@@ -317,7 +321,8 @@ All workers use **Comlink** for RPC communication.
 
 The Rust workspace under `crates/` is the canonical implementation of every
 security-critical primitive. The web frontend and the Android app both consume
-it through facade crates so the same audited code runs on both clients.
+it through facade crates so the same canonical implementation runs on both
+clients.
 
 ### Crates
 
@@ -512,10 +517,10 @@ for client-side stores, and at upload time for server-stored blobs.
 Mismatches **fail closed** (no silent re-interpretation of bytes under a
 new layout).
 
-| Storage                                | Format Version | First shipped | Marker                                          | Notes                                                                                                                                       |
+| Storage                                | Format Version | Historical introduction label | Marker                                          | Notes                                                                                                                                       |
 |----------------------------------------|----------------|---------------|-------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
 | Shard envelope (uploaded ciphertext)   | `0x03`         | v0.1          | Byte at offset 4 (`Version` field)              | See "Shard Envelope Format" above. Validated on decrypt; reserved bytes must be zero.                                                       |
-| Tus blob (upload-time format marker)   | `1`            | v1.0.2        | Tus metadata `blob-format-version`              | Required since v1.0.2. Validated in `OnBeforeCreateAsync`; fail-closed for missing/unsupported values. Coordinated with client `BLOB_FORMAT_VERSION` constant. |
+| Tus blob (upload-time format marker)   | `1`            | internal `v1.0.2` workstream | Tus metadata `blob-format-version`              | Required in current source; no `v1.0.2` tag is implied. Validated in `OnBeforeCreateAsync`; fail-closed for missing/unsupported values. Coordinated with client `BLOB_FORMAT_VERSION` constant. |
 | IndexedDB `mosaic-link-keys`           | `1`            | v0.1          | `version: 1` field inside each stored record + IDB `DB_VERSION` | Encrypted envelope with `wrapVersion: 2`; pre-v0.4 WebCrypto-wrapped entries are discarded as cache misses. `VersionError` on open surfaces a clear user-facing message. |
 | OPFS SQLite snapshot (account metadata)| `1`            | v0.1          | Schema migration applied by `db.worker`         | Wrapped by the L2 account key; rotation invalidates the snapshot.                                                                            |
 | Epoch-key cache (in-memory)            | n/a            | v0.1          | None — process-local map of opaque Rust handles | Cleared via `clearAlbumKeys` (rotation) or `invalidateAlbum` (sync-detected member removed). Not persisted.                                  |
@@ -573,16 +578,21 @@ ShareLink (1) ──────< LinkEpochKeys
 
 ## Authentication
 
-### Mode 1: ProxyAuth (Production)
+### Mode 1: ProxyAuth (deployment-specific candidate)
 
-For use with trusted reverse proxies (Authelia, Caddy, nginx):
+ProxyAuth is off by default and is not approved for stable deployment until
+the exact-commit external boundary evidence in
+[RELEASE_STATE.md](RELEASE_STATE.md) passes. The sole documented candidate is
+the fixed-address Caddy + Authelia topology in
+[AUTHELIA.md](AUTHELIA.md):
 
 1. Request arrives from reverse proxy
-2. Middleware checks source IP against `Auth:TrustedProxies` CIDR list
+2. Middleware checks the captured immediate socket peer against the exact
+   frontend `/32` in `Auth:TrustedProxies`
 3. Extracts `Remote-User` header (set by auth proxy)
 4. Sets `HttpContext.Items["AuthenticatedUser"]`
 
-### Mode 2: LocalAuth (Development/Standalone)
+### Mode 2: LocalAuth (default/standalone)
 
 Challenge-response authentication with Ed25519:
 
@@ -649,7 +659,7 @@ cd tests/e2e && npx playwright test
 
 | Service | Image | Purpose |
 |---------|-------|---------|
-| `postgres` | postgres:17-alpine | Database |
+| `postgres` | digest-pinned `postgres:17-alpine` | Database |
 | `backend` | mosaic-backend | .NET API |
 | `frontend` | mosaic-frontend | React + nginx |
 
@@ -672,7 +682,10 @@ cd tests/e2e && npx playwright test
 .\scripts\dev.ps1 stop
 ```
 
-### Production Deployment
+### Candidate Deployment
+
+Stable publication and ProxyAuth remain blocked by the evidence state in
+[RELEASE_STATE.md](RELEASE_STATE.md). Local builds are previews.
 
 ```powershell
 # Build images
@@ -694,8 +707,8 @@ docker compose up -d
 | `ConnectionStrings__Default` | - | PostgreSQL connection string |
 | `Storage__Path` | `/app/data/blobs` | Blob storage path |
 | `Auth__LocalAuthEnabled` | `true` | Enable local auth |
-| `Auth__ProxyAuthEnabled` | `true` | Enable proxy auth |
-| `Auth__TrustedProxies__0` | Docker networks | Trusted CIDRs |
+| `Auth__ProxyAuthEnabled` | `false` | Enable candidate trusted-header auth |
+| `Auth__TrustedProxies__0` | none | Exact immediate proxy `/32` only |
 | `Quota__DefaultMaxBytes` | 10GB | Default user quota |
 
 ### Required Headers (nginx)
@@ -704,7 +717,7 @@ For SharedArrayBuffer support (required for WASM):
 
 ```nginx
 add_header Cross-Origin-Opener-Policy "same-origin" always;
-add_header Cross-Origin-Embedder-Policy "require-corp" always;
+add_header Cross-Origin-Embedder-Policy "credentialless" always;
 ```
 
 ---

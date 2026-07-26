@@ -37,7 +37,7 @@ public class GlobalExceptionMiddleware
     {
         // Get correlation ID for log tracing (already in scope from LogScopeMiddleware)
         var correlationId = context.GetCorrelationId() ?? Guid.NewGuid().ToString();
-        var path = context.Request.Path.Value ?? "/";
+        var path = SafeRequestPath.ForLogging(context);
 
         // Determine appropriate status code based on exception type
         var statusCode = exception switch

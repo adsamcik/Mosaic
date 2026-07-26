@@ -529,6 +529,8 @@ public class SecurityTests
             }
         };
 
+        controller.Request.Headers["Idempotency-Key"] = "share-link-non-owner-security-test";
+
         // Act
         var result = await controller.Create(album.Id, request);
 

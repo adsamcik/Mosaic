@@ -405,13 +405,12 @@ public class ShareLinkAccessController : ControllerBase
             }
         }
 
-        // Get non-deleted, non-expired manifests for the album with pagination
-        var now = _timeProvider.GetUtcNow();
+        // Per-photo expiration is deferred until it can be represented as a
+        // reservation-backed signed manifest lifecycle mutation.
         var query = _db.Manifests
             .AsNoTracking()
             .Where(m => m.AlbumId == shareLink.AlbumId
-                && !m.IsDeleted
-                && (m.ExpiresAt == null || m.ExpiresAt > now));
+                && !m.IsDeleted);
 
         var totalCount = await query.CountAsync();
 
@@ -514,14 +513,12 @@ public class ShareLinkAccessController : ControllerBase
                 statusCode: StatusCodes.Status404NotFound);
         }
 
-        // Verify the shard belongs to a non-expired photo in the linked album
-        var now = _timeProvider.GetUtcNow();
+        // Verify the shard belongs to a live photo in the linked album.
         var shardBelongsToAlbum = await _db.ManifestShards
             .Where(ms => ms.ShardId == shardId)
             .AnyAsync(ms =>
                 ms.Manifest.AlbumId == shareLink.AlbumId
                 && !ms.Manifest.IsDeleted
-                && (ms.Manifest.ExpiresAt == null || ms.Manifest.ExpiresAt > now)
                 && ms.Tier <= shareLink.AccessTier);
 
         if (!shardBelongsToAlbum)

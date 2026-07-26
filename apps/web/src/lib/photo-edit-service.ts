@@ -1,22 +1,112 @@
 import { getApi, toBase64 } from './api';
 import { getCryptoClient } from './crypto-client';
 import { getDbClient } from './db-client';
-import { getOrFetchEpochKey } from './epoch-key-service';
+import { fetchAndUnwrapEpochKeys } from './epoch-key-service';
+import { getCurrentEpochKey } from './epoch-key-store';
 import { createLogger } from './logger';
 import { manifestTranscriptInputForPhotoMeta } from './manifest-transcript';
 import type { EpochHandleId, PhotoMeta } from '../workers/types';
 
 const log = createLogger('PhotoEditService');
+const MANIFEST_SEQUENCE_STALE_RETRY_LIMIT = 1;
+
+function isManifestSequenceStaleError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const record = error as {
+    readonly status?: unknown;
+    readonly problem?: unknown;
+  };
+  if (
+    record.status !== 409 ||
+    typeof record.problem !== 'object' ||
+    record.problem === null
+  ) {
+    return false;
+  }
+  return (
+    (record.problem as { readonly code?: unknown }).code ===
+    'MANIFEST_SEQUENCE_STALE'
+  );
+}
 
 export type RotationDelta = 90 | -90 | 180;
+
+async function persistMetadataUpdate(
+  photoId: string,
+  newMeta: PhotoMeta,
+): Promise<number> {
+  await fetchAndUnwrapEpochKeys(newMeta.albumId);
+  const bundle = getCurrentEpochKey(newMeta.albumId);
+  if (bundle == null) {
+    throw new Error(
+      `cannot update manifest: no current epoch key cached for album ${newMeta.albumId}`,
+    );
+  }
+
+  newMeta.epochId = bundle.epochId;
+  const crypto = await getCryptoClient();
+  const epochHandleId = bundle.epochHandleId as EpochHandleId;
+  const plaintextJson = new TextEncoder().encode(JSON.stringify(newMeta));
+  const encrypted = await crypto.encryptManifestWithEpoch(
+    epochHandleId,
+    plaintextJson,
+  );
+  const signerPubkey = bundle.signPublicKey;
+  const api = getApi();
+  const operationId = globalThis.crypto.randomUUID();
+
+  for (
+    let staleRetry = 0;
+    staleRetry <= MANIFEST_SEQUENCE_STALE_RETRY_LIMIT;
+    staleRetry += 1
+  ) {
+    const reservation = await api.reserveManifestSequence({
+      albumId: newMeta.albumId,
+      signerPubkey: toBase64(signerPubkey),
+      targetManifestId: photoId,
+      operationId,
+      operationKind: 'MetadataUpdate',
+    });
+    const transcriptInput = {
+      ...manifestTranscriptInputForPhotoMeta(newMeta, encrypted.envelopeBytes),
+      manifestSeq: reservation.manifestSeq,
+    };
+    const transcript = await crypto.manifestTranscriptBytes(transcriptInput);
+    const signature = await crypto.signManifestWithEpoch(
+      epochHandleId,
+      transcript,
+    );
+
+    try {
+      const result = await api.updateManifestMetadata(photoId, {
+        encryptedMeta: toBase64(encrypted.envelopeBytes),
+        signature: toBase64(signature),
+        signerPubkey: toBase64(signerPubkey),
+        manifestSeq: reservation.manifestSeq,
+        sequenceReservationId: reservation.reservationId,
+      });
+      return result.versionCreated;
+    } catch (error) {
+      if (
+        !isManifestSequenceStaleError(error) ||
+        staleRetry === MANIFEST_SEQUENCE_STALE_RETRY_LIMIT
+      ) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error(
+    'Manifest metadata sequence retry loop exhausted unexpectedly',
+  );
+}
 
 export async function rotatePhoto(
   photo: PhotoMeta,
   deltaDegrees: RotationDelta,
 ): Promise<PhotoMeta> {
   const currentRotation = photo.rotation ?? 0;
-  const newRotation =
-    ((currentRotation + deltaDegrees) % 360 + 360) % 360;
+  const newRotation = (((currentRotation + deltaDegrees) % 360) + 360) % 360;
 
   log.info('Rotating photo', {
     photoId: photo.id,
@@ -31,32 +121,10 @@ export async function rotatePhoto(
   };
 
   try {
-    const bundle = await getOrFetchEpochKey(photo.albumId, photo.epochId);
-    const crypto = await getCryptoClient();
-    const epochHandleId = bundle.epochHandleId as EpochHandleId;
-    const plaintextJson = new TextEncoder().encode(JSON.stringify(newMeta));
-    const encrypted = await crypto.encryptManifestWithEpoch(
-      epochHandleId,
-      plaintextJson,
-    );
-    const transcript = await crypto.manifestTranscriptBytes(
-      manifestTranscriptInputForPhotoMeta(newMeta, encrypted.envelopeBytes),
-    );
-    const signature = await crypto.signManifestWithEpoch(
-      epochHandleId,
-      transcript,
-    );
-    const signerPubkey = bundle.signPublicKey;
-
-    const api = getApi();
-    const result = await api.updateManifestMetadata(photo.id, {
-      encryptedMeta: toBase64(encrypted.envelopeBytes),
-      signature: toBase64(signature),
-      signerPubkey: toBase64(signerPubkey),
-    });
+    const versionCreated = await persistMetadataUpdate(photo.id, newMeta);
 
     const db = await getDbClient();
-    await db.updatePhotoRotation(photo.id, newRotation, result.versionCreated);
+    await db.updatePhotoRotation(photo.id, newRotation, versionCreated);
 
     log.info('Photo rotated', {
       photoId: photo.id,
@@ -64,11 +132,7 @@ export async function rotatePhoto(
       newRotation,
     });
 
-    return {
-      ...photo,
-      rotation: newRotation,
-      updatedAt: newMeta.updatedAt,
-    };
+    return newMeta;
   } catch (error) {
     log.error('Failed to rotate photo', error, {
       photoId: photo.id,
@@ -117,32 +181,10 @@ export async function updatePhotoDescription(
   }
 
   try {
-    const bundle = await getOrFetchEpochKey(photo.albumId, photo.epochId);
-    const crypto = await getCryptoClient();
-    const epochHandleId = bundle.epochHandleId as EpochHandleId;
-    const plaintextJson = new TextEncoder().encode(JSON.stringify(newMeta));
-    const encrypted = await crypto.encryptManifestWithEpoch(
-      epochHandleId,
-      plaintextJson,
-    );
-    const transcript = await crypto.manifestTranscriptBytes(
-      manifestTranscriptInputForPhotoMeta(newMeta, encrypted.envelopeBytes),
-    );
-    const signature = await crypto.signManifestWithEpoch(
-      epochHandleId,
-      transcript,
-    );
-    const signerPubkey = bundle.signPublicKey;
-
-    const api = getApi();
-    const result = await api.updateManifestMetadata(photo.id, {
-      encryptedMeta: toBase64(encrypted.envelopeBytes),
-      signature: toBase64(signature),
-      signerPubkey: toBase64(signerPubkey),
-    });
+    const versionCreated = await persistMetadataUpdate(photo.id, newMeta);
 
     const db = await getDbClient();
-    await db.updatePhotoDescription(photo.id, normalized, result.versionCreated);
+    await db.updatePhotoDescription(photo.id, normalized, versionCreated);
 
     log.info('Description updated', {
       photoId: photo.id,
@@ -150,16 +192,7 @@ export async function updatePhotoDescription(
       newLength: (normalized ?? '').length,
     });
 
-    const updatedPhoto: PhotoMeta = {
-      ...photo,
-      updatedAt: newMeta.updatedAt,
-    };
-    if (normalized === null) {
-      delete updatedPhoto.description;
-    } else {
-      updatedPhoto.description = normalized;
-    }
-    return updatedPhoto;
+    return newMeta;
   } catch (error) {
     log.error('Failed to update description', error, {
       photoId: photo.id,

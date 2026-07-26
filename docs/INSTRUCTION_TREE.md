@@ -164,7 +164,7 @@ These events REQUIRE documentation updates:
 |-------|-----------------|
 | New feature implemented | Add to `docs/FEATURES.md` |
 | Feature behavior changed | Update `docs/FEATURES.md` entry |
-| New API endpoint | Update `docs/api/v1/openapi.yaml` |
+| New API endpoint | Annotate the controller/model and regenerate drift-gated `docs/openapi.json` |
 | Architecture change | Update `docs/ARCHITECTURE.md` |
 | Security model change | Update `docs/SECURITY.md` |
 | New pattern established | Add to relevant `.instructions.md` |

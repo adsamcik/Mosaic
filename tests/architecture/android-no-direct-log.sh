@@ -8,13 +8,14 @@
 #   - Timber.*
 #   - top-level kotlin println / print (or kotlin.io.println explicit imports)
 #
-# These APIs route to logcat / stdout without redaction wrappers. A future
-# centralized logger will own the runtime path; until then any direct call
-# is treated as a privacy regression.
+# These APIs route to logcat / stdout without redaction wrappers. The sole
+# production exception is the exact PrivacySafeLogger.kt boundary, where only
+# Log.i and Log.w are permitted behind a closed, typed event API.
 #
 # Allowed paths (NOT scanned):
 #   - src/test/, src/androidTest/  (test sources may use println for PASS/FAIL)
 #   - generated source under build/generated/ (UniFFI bindings)
+#   - PrivacySafeLogger.kt for its Log import and Log.i/Log.w sink calls only
 #
 # Exit code:
 #   0  no violations
@@ -33,6 +34,8 @@ ROOTS=(
   "apps/android-shell/src/main/kotlin"
   "apps/android-main/src/main/kotlin"
 )
+
+CENTRALIZED_LOGGER="apps/android-main/src/main/kotlin/org/mosaic/android/main/diagnostics/PrivacySafeLogger.kt"
 
 # Pattern table: parallel arrays of NAME / PCRE.
 # Notes:
@@ -119,6 +122,15 @@ for i in "${!PATTERN_NAMES[@]}"; do
       */src/test/*|*/src/androidTest/*|*/build/generated/*) continue ;;
     esac
 
+    # The centralized boundary is intentionally the only production code that
+    # may call logcat. Keep this allow-list narrow: verbose, debug, error, wtf,
+    # println, Timber, and alternate logger APIs remain forbidden there.
+    if [[ "$file" == "$CENTRALIZED_LOGGER" ]]; then
+      case "$pattern_name" in
+        "android.util.Log import"|"Log.i("|"Log.w(") continue ;;
+      esac
+    fi
+
     # Strip line-level comments so KDoc / `// example: Log.d(...)` does not
     # trip the guard. We re-test the trimmed line against the same pattern
     # to confirm the match is in actual code, not a comment.
@@ -146,4 +158,4 @@ if [[ "$violations_count" -gt 0 ]]; then
   exit 1
 fi
 
-echo "android-no-direct-log guard: OK (no direct logging in Android production Kotlin sources)"
+echo "android-no-direct-log guard: OK (production logging is isolated to the privacy-safe boundary)"

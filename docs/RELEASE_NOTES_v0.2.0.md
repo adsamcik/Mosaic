@@ -1,9 +1,12 @@
 v0.2.0 — pre-1.0 hardening release
 
-Substantial pre-1.0 release covering a 51-sweep adversarial audit cycle and
-its fix waves. Web + backend are production-quality; Android release
-pipeline is now operator-deployable (requires operator-supplied secrets and
-cert pins per ADR-019).
+Historical pre-1.0 change log covering a 51-sweep adversarial audit cycle and
+its fix waves.
+
+> **Status correction (2026 production-readiness audit):** No Mosaic surface
+> in this checkout is production-ready. Android is a developer preview only;
+> stable tags do not publish Android artifacts. These historical notes are not
+> a current support or release-readiness claim.
 
 Headline changes since v0.1.0
 =============================
@@ -46,8 +49,10 @@ Backend & API
 - OpenAPI doc backfilled with auth endpoints, Tus, 13 missing PATCH/PUT/GET
   routes (Sweep 23).
 
-Android release pipeline (operator-required)
-- assembleRelease/bundleRelease jobs in publish.yml.
+Android preview build pipeline (operator-only)
+- assembleRelease/bundleRelease run only from an explicit `workflow_dispatch`
+  with `android_preview=true`; artifacts are developer previews and are never
+  attached to stable tags.
 - signingConfigs.release reads operator secrets:
     MOSAIC_RELEASE_KEYSTORE_BASE64
     MOSAIC_RELEASE_KEYSTORE_PASSWORD

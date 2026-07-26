@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Mosaic.Backend.Controllers;
+using Mosaic.Backend.Services;
 using Mosaic.Backend.Tests.Helpers;
+using NSubstitute;
 using Xunit;
 
 namespace Mosaic.Backend.Tests.Controllers;
@@ -89,5 +91,24 @@ public class HealthControllerTests
 
         var ok = Assert.IsType<OkObjectResult>(result);
         Assert.Equal(200, ok.StatusCode);
+    }
+
+    [Fact]
+    public async Task Ready_Returns503AndUpdatesMetric_WhenAuditSinkIsUnwritable()
+    {
+        using var db = TestDbContextFactory.Create();
+        db.Dispose();
+        var probe = Substitute.For<IAuditSinkHealthProbe>();
+        probe.IsWritable().Returns(false);
+        using var metrics = new MosaicMetrics();
+        var controller = new HealthController(db, probe, metrics);
+
+        var result = await controller.Ready();
+
+        var unavailable = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(503, unavailable.StatusCode);
+        Assert.Equal(0, metrics.AuditSinkHealthyValue);
+        Assert.Contains("mosaic_audit_sink_healthy 0", metrics.RenderPrometheusText());
+        probe.Received(1).IsWritable();
     }
 }

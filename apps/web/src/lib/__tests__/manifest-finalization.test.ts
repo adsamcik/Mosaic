@@ -273,6 +273,8 @@ function effect(): FinalizeManifestEffect {
     encryptedMeta: new Uint8Array([1, 2, 3]),
     signature: new Uint8Array([4, 5, 6]),
     signerPubkey: new Uint8Array([7, 8, 9]),
+    manifestSeq: 1,
+    sequenceReservationId: '018f0000-0000-7000-8000-000000000004',
     tieredShards: [{
       shardId: '018f0000-0000-7000-8000-000000000003',
       tier: 3,

@@ -39,7 +39,7 @@ public sealed class IdempotencyMiddlewarePostgresTests : IClassFixture<Idempoten
             await context.Response.WriteAsync("""{"ok":true}""");
             await transaction.CommitAsync(context.RequestAborted);
         });
-        var context = CreateContext("/api/v1/manifests", "POST", "{}", "nested-transaction-key");
+        var context = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", "{}", "nested-transaction-key");
 
         var exception = await Record.ExceptionAsync(() => middleware.InvokeAsync(context, db, new MockCurrentUserService(db)));
 
@@ -69,7 +69,7 @@ public sealed class IdempotencyMiddlewarePostgresTests : IClassFixture<Idempoten
         var tasks = Enumerable.Range(0, requestCount).Select(async _ =>
         {
             await using var db = CreateDbContext();
-            var context = CreateContext("/api/v1/manifests", "POST", """{"albumId":"a","shardIds":["s"]}""", "pg-concurrent-key");
+            var context = CreateContext("/api/v1/manifests/11111111-1111-7111-8111-111111111111/finalize", "POST", """{"albumId":"a","shardIds":["s"]}""", "pg-concurrent-key");
 
             await middleware.InvokeAsync(context, db, new MockCurrentUserService(db));
 
@@ -239,7 +239,7 @@ internal sealed class DockerRequiredFactAttribute : FactAttribute
         }
     }
 
-    private static bool IsDockerAvailable()
+    internal static bool IsDockerAvailable()
     {
         if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DOCKER_HOST")))
         {

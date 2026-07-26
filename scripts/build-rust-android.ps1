@@ -68,6 +68,7 @@ try {
     New-Item -ItemType Directory -Force -Path $kotlinOutDir | Out-Null
     uniffi-bindgen generate `
         --language kotlin `
+        --config (Join-Path $ProjectRoot "crates/mosaic-uniffi/uniffi.toml") `
         --out-dir $kotlinOutDir `
         --no-format `
         --library `

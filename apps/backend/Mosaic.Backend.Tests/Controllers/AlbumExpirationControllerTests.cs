@@ -32,6 +32,7 @@ public class AlbumExpirationControllerTests
         {
             HttpContext = TestHttpContext.Create(OwnerAuthSub)
         };
+        controller.Request.Headers["Idempotency-Key"] = "album-expiration-default-create-test";
 
         var result = await controller.Create(new CreateAlbumRequest
         {

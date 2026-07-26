@@ -2,12 +2,13 @@ package org.mosaic.android.main.sync
 
 import android.content.Context
 import androidx.room.withTransaction
-import androidx.work.Logger
 import androidx.work.WorkManager
 import androidx.work.await
 import org.mosaic.android.main.crypto.ShardEncryptionScheduler
 import org.mosaic.android.main.crypto.ShardEnvelopeStore
 import org.mosaic.android.main.db.UploadQueueDatabase
+import org.mosaic.android.main.diagnostics.PrivacySafeDiagnosticEvent
+import org.mosaic.android.main.diagnostics.PrivacySafeLogger
 import org.mosaic.android.main.net.dto.AlbumId
 
 class AlbumPurger internal constructor(
@@ -34,7 +35,7 @@ class AlbumPurger internal constructor(
       // v1.0.1 s34: drop wrapped epoch seeds for the deleted album. Without
       // this, logout/multi-account would expose stale L3 epoch material.
       val deletedEpochKeys = database.albumEpochKeyDao().clear(albumId.value)
-      Logger.get().info(TAG, "Purged local album state after remote deletion")
+      PrivacySafeLogger.record(PrivacySafeDiagnosticEvent.REMOTE_ALBUM_STATE_PURGED)
       PurgeOutcome(
         jobIds = jobIds,
         result = PurgeResult(
@@ -81,7 +82,7 @@ class AlbumPurger internal constructor(
       val deletedContentHashes = database.albumContentHashDao().deleteByPhotoId(albumId.value, photoId)
       val deletedSnapshots = database.uploadJobSnapshotDao().deleteForJobIds(listOf(photoId))
       val deletedQueueRows = database.uploadQueueDao().deleteForJobId(photoId)
-      Logger.get().info(TAG, "Purged local photo state after remote deletion")
+      PrivacySafeLogger.record(PrivacySafeDiagnosticEvent.REMOTE_PHOTO_STATE_PURGED)
       PhotoPurgeResult(
         contentHashes = deletedContentHashes,
         uploadJobs = deletedQueueRows,
@@ -94,8 +95,6 @@ class AlbumPurger internal constructor(
   }
 
   companion object {
-    private const val TAG = "AlbumPurger"
-
     /**
      * Production factory wiring an [AlbumPurger] against the process-wide
      * [WorkManager] singleton and a [ShardEnvelopeStore] rooted at the app
