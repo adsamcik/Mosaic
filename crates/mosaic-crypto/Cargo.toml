@@ -27,7 +27,7 @@ serde_json = { version = "=1.0.149", default-features = false, features = ["allo
 spake2 = { version = "=0.4.0", default-features = false }
 hmac = { version = "=0.12.1", default-features = false }
 pbkdf2 = { version = "=0.12.2", default-features = false, features = ["hmac"] }
-unicode-normalization = { version = "=0.1.24", default-features = false }
+unicode-normalization = { version = "=0.1.25", default-features = false }
 
 [features]
 default = []
