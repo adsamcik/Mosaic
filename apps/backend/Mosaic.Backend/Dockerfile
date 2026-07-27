@@ -4,7 +4,7 @@
 # Multi-stage build for optimized production image
 
 # Build stage — use build platform for fast native compilation
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0@sha256:dc8430e6024d454edadad1e160e1973be3cabbb7125998ef190d9e5c6adf7dbb AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0@sha256:c0790639332692a0d56cdd81ed581cfd24d040d9839764c138994866df89a3b6 AS build
 ARG TARGETARCH
 ARG MOSAIC_BUILD_VERSION=0.0.0-dev
 WORKDIR /src
