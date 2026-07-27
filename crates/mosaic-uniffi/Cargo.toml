@@ -20,7 +20,7 @@ uniffi = { version = "=0.31.1", default-features = false, features = ["scaffoldi
 ciborium = "=0.2.2"
 blake2 = { version = "=0.10.6", default-features = false }
 zeroize = "=1.8.2"
-sha2 = "=0.10.9"
+sha2 = "=0.11.0"
 
 [features]
 default = []

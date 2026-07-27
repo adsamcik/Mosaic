@@ -12,7 +12,7 @@ mosaic-domain = { path = "../mosaic-domain", version = "0.0.0-dev" }
 mosaic-crypto = { path = "../mosaic-crypto", version = "0.0.0-dev" }
 serde = { version = "=1.0.228", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "=1.0.149", default-features = false, features = ["alloc"] }
-sha2 = { version = "=0.10.9", default-features = false }
+sha2 = { version = "=0.11.0", default-features = false }
 
 [dev-dependencies]
 
