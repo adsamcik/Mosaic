@@ -25,7 +25,7 @@ COPY apps/web/src/generated/mosaic-wasm/ /web/src/generated/mosaic-wasm/
 RUN dotnet publish -c Release -a $TARGETARCH --no-restore -o /app/publish -p:MosaicBuildVersion=$MOSAIC_BUILD_VERSION
 
 # Runtime stage
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble@sha256:9b5222b0ff8e9eb991a7c1a64b25f0f771d21ccc05dfa1c834f5668ffd9cd73f AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble@sha256:8c0b6857eab7b2aa57884c839bf4678414606bd7d17370f18a842ac5cf414711 AS runtime
 WORKDIR /app
 
 # Install wget for HEALTHCHECK probe.
