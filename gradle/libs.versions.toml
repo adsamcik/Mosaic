@@ -34,7 +34,7 @@ robolectric = "4.13"
 # AndroidX lifecycle, Room, exifinterface, OkHttp, and kotlinx libraries.
 # Consolidated from previously-hardcoded version literals in
 # `apps/android-main/build.gradle.kts` so version updates happen in one place.
-androidx-lifecycle = "2.9.0"
+androidx-lifecycle = "2.11.0"
 androidx-room = "2.6.1"
 androidx-exifinterface = "1.4.1"
 okhttp = "5.1.0"
