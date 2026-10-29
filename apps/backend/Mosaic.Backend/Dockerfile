@@ -4,7 +4,7 @@
 # Multi-stage build for optimized production image
 
 # Build stage — use build platform for fast native compilation
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0@sha256:dc8430e6024d454edadad1e160e1973be3cabbb7125998ef190d9e5c6adf7dbb AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.403@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b AS build
 ARG TARGETARCH
 ARG MOSAIC_BUILD_VERSION=0.0.0-dev
 WORKDIR /src
@@ -25,7 +25,7 @@ COPY apps/web/src/generated/mosaic-wasm/ /web/src/generated/mosaic-wasm/
 RUN dotnet publish -c Release -a $TARGETARCH --no-restore -o /app/publish -p:MosaicBuildVersion=$MOSAIC_BUILD_VERSION
 
 # Runtime stage
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble@sha256:9b5222b0ff8e9eb991a7c1a64b25f0f771d21ccc05dfa1c834f5668ffd9cd73f AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.14-noble@sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee AS runtime
 WORKDIR /app
 
 # Install wget for HEALTHCHECK probe.
